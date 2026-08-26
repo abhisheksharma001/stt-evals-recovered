@@ -1,0 +1,244 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap');
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-border: var(--primary-border);
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary-border: var(--secondary-border);
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted-border: var(--muted-border);
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-border: var(--accent-border);
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-border: var(--destructive-border);
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+
+  --color-entity-ro-number: hsl(var(--entity-ro-number));
+  --color-entity-unit-number: hsl(var(--entity-unit-number));
+  --color-entity-vin: hsl(var(--entity-vin));
+  --color-entity-phone-number: hsl(var(--entity-phone-number));
+  --color-entity-name: hsl(var(--entity-name));
+  --color-entity-address: hsl(var(--entity-address));
+  --color-entity-load-number: hsl(var(--entity-load-number));
+  --color-entity-city: hsl(var(--entity-city));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-primary-border: var(--sidebar-primary-border);
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-accent-border: var(--sidebar-accent-border);
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --button-outline: rgba(255, 255, 255, 0.08);
+  --badge-outline: rgba(255, 255, 255, 0.06);
+  --opaque-button-border-intensity: 10;
+  --elevate-1: rgba(255, 255, 255, 0.035);
+  --elevate-2: rgba(255, 255, 255, 0.07);
+
+  /*
+   * Warm clay ground, one coral accent, jade for good and rose for wrong.
+   * Committed to a single dark surface: transcript correction is long-form
+   * reading work, and the previous light-body / dark-sidebar split made the
+   * two halves of the app look like two products.
+   */
+  --background: 30 21% 7%;
+  --foreground: 32 39% 94%;
+  --border: 30 18% 15%;
+
+  --card: 30 19% 10%;
+  --card-foreground: 32 39% 94%;
+  --card-border: 30 17% 12%;
+
+  --sidebar: 28 19% 9%;
+  --sidebar-foreground: 32 39% 94%;
+  --sidebar-border: 30 18% 15%;
+  --sidebar-primary: 12 83% 66%;
+  --sidebar-primary-foreground: 30 21% 7%;
+  --sidebar-accent: 30 20% 14%;
+  --sidebar-accent-foreground: 32 39% 94%;
+  --sidebar-ring: 12 83% 66%;
+
+  --popover: 30 19% 10%;
+  --popover-foreground: 32 39% 94%;
+  --popover-border: 30 18% 15%;
+
+  --primary: 12 83% 66%;
+  --primary-foreground: 30 21% 7%;
+
+  --secondary: 30 20% 14%;
+  --secondary-foreground: 32 39% 94%;
+
+  --muted: 28 18% 12%;
+  /* 55% lightness (was 47%): 47% measured 4.38:1 on background -- below WCAG
+      AA -- while carrying the app's densest info layer (10px mono counts,
+      costs, model ids). UX review 2026-08-25. */
+  --muted-foreground: 33 10% 55%;
+
+  --accent: 30 20% 14%;
+  --accent-foreground: 32 39% 94%;
+
+  --destructive: 345 61% 61%;
+  --destructive-foreground: 30 21% 7%;
+
+  --input: 30 18% 15%;
+  --ring: 12 83% 66%;
+
+  /* Semantic state, kept separate from the brand accent. Every status pill
+     in the app should read from these three, never a raw Tailwind color --
+     that's what let green-500/amber-500/purple-500 leak in and clash with
+     the rest of the palette. */
+  --success: 152 33% 60%;
+  --success-foreground: 30 21% 7%;
+  --warning: 42 70% 58%;
+  --warning-foreground: 30 21% 7%;
+
+  /* Entity types: one hue each, all at a common low chroma so eight of them
+     read as a set rather than a rainbow. Referenced by the review UI. */
+  --entity-ro-number: 37 48% 69%;
+  --entity-unit-number: 147 28% 65%;
+  --entity-vin: 214 34% 71%;
+  --entity-phone-number: 322 30% 73%;
+  --entity-name: 11 52% 72%;
+  --entity-address: 178 26% 66%;
+  --entity-load-number: 76 28% 66%;
+  --entity-city: 249 32% 73%;
+
+  --chart-1: 12 83% 66%;
+  --chart-2: 152 33% 60%;
+  --chart-3: 214 34% 71%;
+  --chart-4: 37 48% 69%;
+  --chart-5: 322 30% 73%;
+
+  --app-font-sans: 'Archivo', system-ui, sans-serif;
+  /* Transcripts only -- the one place the interface face steps aside. */
+  --app-font-serif: 'Newsreader', Georgia, serif;
+  --app-font-mono: 'Spline Sans Mono', ui-monospace, monospace;
+
+  --radius: 0.625rem;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.26);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 12px -6px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 20px -6px rgba(0, 0, 0, 0.5);
+}
+
+/* The app ships one committed look; `.dark` stays as an alias so any
+   component that opts into it renders identically instead of drifting. */
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: '';
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: '';
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
+  }
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+}
+
+/* Keyboard focus visibility (UX review 2026-08-25): raw <button>s and the
+   gold-transcript textarea had no visible focus anywhere -- Tab/j-k
+   operators could not tell where focus sat. One global rule covers every
+   interactive element; components that style focus themselves override it. */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}

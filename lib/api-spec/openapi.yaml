@@ -1,0 +1,1376 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: API contract for the STT Benchmark Command Center
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: benchmark
+    description: Benchmark corpus, providers, scoring runs, and governance
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /benchmark/dashboard:
+    get:
+      operationId: getBenchmarkDashboard
+      tags: [benchmark]
+      summary: Get benchmark readiness and decision summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkDashboard"
+  /benchmark/calls:
+    get:
+      operationId: listBenchmarkCalls
+      tags: [benchmark]
+      summary: List approved benchmark calls
+      parameters:
+        - name: vertical
+          in: query
+          schema:
+            $ref: "#/components/schemas/Vertical"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/CallStatus"
+      responses:
+        "200":
+          description: Benchmark calls
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BenchmarkCall"
+    post:
+      operationId: createBenchmarkCall
+      tags: [benchmark]
+      summary: Register a de-identified call in the benchmark corpus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BenchmarkCallInput"
+      responses:
+        "201":
+          description: Created benchmark call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkCall"
+  /benchmark/calls/{callId}:
+    patch:
+      operationId: updateBenchmarkCall
+      tags: [benchmark]
+      summary: Update gold-reference readiness and benchmark call metadata
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BenchmarkCallUpdate"
+      responses:
+        "200":
+          description: Updated benchmark call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkCall"
+  /benchmark/calls/{callId}/attest-deid:
+    post:
+      operationId: attestBenchmarkCallDeid
+      tags: [benchmark]
+      summary: Record a de-identification approval (two distinct approvers required, FR-C3)
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttestDeidBody"
+      responses:
+        "200":
+          description: Updated benchmark call with attestation recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkCall"
+        "409":
+          description: Same approver cannot provide both attestations
+  /benchmark/vapi/accounts:
+    get:
+      operationId: listVapiAccounts
+      tags: [benchmark]
+      summary: List Vapi source accounts configured on the server. Returns labels and key fingerprints only -- never API keys.
+      responses:
+        "200":
+          description: Configured Vapi accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VapiAccount"
+  /benchmark/vapi/assistants:
+    get:
+      operationId: listVapiAssistants
+      tags: [benchmark]
+      summary: List every assistant across every configured Vapi account (2026-08-26 -- bulk selection picks real assistants directly, not by vertical). Pass accountId to narrow to one.
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assistants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VapiAssistant"
+        "400":
+          description: Unknown Vapi account id
+        "502":
+          description: Vapi API rejected the request
+  /benchmark/vapi/preview:
+    post:
+      operationId: previewVapiCalls
+      tags: [benchmark]
+      summary: Preview Vapi calls for an account and date range without importing anything (dry run, COR-01)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VapiPreviewInput"
+      responses:
+        "200":
+          description: Candidate calls, annotated with whether each is already in the corpus
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VapiPreviewResult"
+        "400":
+          description: Invalid request or unknown/unconfigured Vapi account
+        "502":
+          description: Vapi API rejected the request
+  /benchmark/vapi/import:
+    post:
+      operationId: importVapiCalls
+      tags: [benchmark]
+      summary: Import selected Vapi calls into the corpus as needs_review (no de-id, no gold transcript, COR-01)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VapiImportInput"
+      responses:
+        "201":
+          description: Import outcome per requested call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VapiImportResult"
+        "400":
+          description: Invalid request or unknown/unconfigured Vapi account
+        "502":
+          description: Vapi API rejected the request
+  /benchmark/providers:
+    get:
+      operationId: listBenchmarkProviders
+      tags: [benchmark]
+      summary: List transcription provider configurations
+      responses:
+        "200":
+          description: Providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Provider"
+    post:
+      operationId: createBenchmarkProvider
+      tags: [benchmark]
+      summary: Add or configure a transcription provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderInput"
+      responses:
+        "201":
+          description: Created provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+  /benchmark/providers/{providerId}:
+    patch:
+      operationId: updateBenchmarkProvider
+      tags: [benchmark]
+      summary: Manually disable/re-enable a provider or edit its cost/notes (FR-P3). Readiness itself is derived from whether its API key env var is set, not set here.
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderUpdate"
+      responses:
+        "200":
+          description: Updated provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+        "404":
+          description: Provider not found
+  /benchmark/settings:
+    get:
+      operationId: getAppSettings
+      tags: [benchmark]
+      summary: System-wide, changeable settings -- which provider real production calls actually use (separate from picking providers to benchmark in a bulk run), and which OpenAI model powers the transcript-quality agent's judge pass (2026-08-26)
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+    patch:
+      operationId: updateAppSettings
+      tags: [benchmark]
+      summary: Update the active production provider and/or the agent's judge model. Either field may be omitted (left unchanged) or set to null (cleared, falls back to the hardcoded default).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppSettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+        "400":
+          description: Unknown provider id
+  /benchmark/runs:
+    get:
+      operationId: listBenchmarkRuns
+      tags: [benchmark]
+      summary: List benchmark executions
+      responses:
+        "200":
+          description: Benchmark runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BenchmarkRun"
+    post:
+      operationId: createBenchmarkRun
+      tags: [benchmark]
+      summary: Queue a comparable run across selected providers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BenchmarkRunInput"
+      responses:
+        "201":
+          description: Queued benchmark run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkRun"
+  /benchmark/runs/{runId}/execute:
+    post:
+      operationId: executeBenchmarkRun
+      tags: [benchmark]
+      summary: (Re)execute a queued or failed run against configured providers (FR-E4 resumable)
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Execution started (async; poll GET /benchmark/runs or /results)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkRun"
+        "404":
+          description: Run not found
+  /benchmark/runs/{runId}/results:
+    get:
+      operationId: listBenchmarkRunResults
+      tags: [benchmark]
+      summary: Per-cell (provider x call) raw results and scores for a run (FR-E3, drill-down)
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider call results with attached scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderCallResult"
+  /benchmark/results/{resultId}/analyze-failure:
+    post:
+      operationId: analyzeResultFailure
+      tags: [benchmark]
+      summary: 2026-08-26 -- AI diagnosis + suggested fix for one failed cell's raw error message. On-demand only (real OpenAI cost per click); persisted on the result row so it survives a refresh and is never recomputed for free.
+      parameters:
+        - name: resultId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diagnosis and suggested fix, now persisted on this result row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultFailureAnalysis"
+        "400":
+          description: OpenAI is not configured
+        "404":
+          description: Result not found
+        "409":
+          description: This cell is not failed, or has no error message to analyze
+        "502":
+          description: OpenAI rejected the request
+  /benchmark/audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [benchmark]
+      summary: Append-only audit trail of state transitions (NFR-5, compliance review)
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audit log entries, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogEntry"
+  /benchmark/rankings:
+    get:
+      operationId: listBenchmarkRankings
+      tags: [benchmark]
+      summary: Get provider scores and recommendations by vertical
+      responses:
+        "200":
+          description: Ranked provider results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VerticalRanking"
+  /benchmark/plan:
+    get:
+      operationId: getBenchmarkPlan
+      tags: [benchmark]
+      summary: Get PRD implementation plan and task dependencies
+      responses:
+        "200":
+          description: Implementation plan
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanTask"
+  /benchmark/bulks:
+    get:
+      operationId: listBulks
+      tags: [benchmark]
+      summary: List evaluation bulks (FR-BLK-1), newest first
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/BulkStatus"
+      responses:
+        "200":
+          description: Bulks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bulk"
+    post:
+      operationId: createBulk
+      tags: [benchmark]
+      summary: Create a bulk from selection criteria. Resolves and FREEZES the call set, estimates cost, and either launches immediately (status running) or parks at awaiting_confirmation when the estimate exceeds the server cost threshold (FR-BLK-5) -- re-POST with confirm:true or call /launch to proceed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkInput"
+      responses:
+        "201":
+          description: Created bulk (running, or awaiting_confirmation when over the cost threshold)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bulk"
+        "400":
+          description: Invalid criteria or nothing matched
+        "409":
+          description: Bulk name already in use (names are unique, FR-BLK-2)
+  /benchmark/bulks/{bulkId}:
+    get:
+      operationId: getBulk
+      tags: [benchmark]
+      summary: Bulk detail with live progress aggregates (FR-EXC-4, FR-BLK-13)
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bulk with progress counters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkDetail"
+        "404":
+          description: Bulk not found
+  /benchmark/bulks/{bulkId}/launch:
+    post:
+      operationId: launchBulk
+      tags: [benchmark]
+      summary: Launch a draft/awaiting_confirmation bulk -- fans the frozen call set into shard runs (FR-BLK-3). Async; poll GET /benchmark/bulks/{bulkId}.
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Launch started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bulk"
+        "404":
+          description: Bulk not found
+        "409":
+          description: Bulk is not in a launchable state
+  /benchmark/bulks/{bulkId}/retry-failed:
+    post:
+      operationId: retryBulkFailed
+      tags: [benchmark]
+      summary: Re-enqueue only failed/pending cells of this bulk's shard runs (FR-BLK-6; already-succeeded cells are never re-billed)
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Retry started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bulk"
+        "404":
+          description: Bulk not found
+        "409":
+          description: Bulk is cancelled or still launching
+  /benchmark/bulks/{bulkId}/cancel:
+    post:
+      operationId: cancelBulk
+      tags: [benchmark]
+      summary: Cancel a running bulk -- un-started cells are marked cancelled; in-flight provider requests complete and are recorded (FR-BLK-7)
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled bulk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bulk"
+        "404":
+          description: Bulk not found
+        "409":
+          description: Bulk is already in a terminal state
+  /benchmark/bulks/{bulkId}/manifest:
+    get:
+      operationId: getBulkManifest
+      tags: [benchmark]
+      summary: Immutable bulk manifest -- the composition of every shard run's frozen manifest (FR-BLK-8, FR-REP1 replay evidence)
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bulk manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkManifest"
+        "404":
+          description: Bulk not found
+  /benchmark/bulk-templates:
+    get:
+      operationId: listBulkTemplates
+      tags: [benchmark]
+      summary: List saved reusable bulk templates (FR-BLK-9)
+      responses:
+        "200":
+          description: Bulk templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BulkTemplate"
+    post:
+      operationId: createBulkTemplate
+      tags: [benchmark]
+      summary: Save selection criteria as a named template. Criteria stay UNFROZEN -- a relative window like lastNDays is re-resolved at every launch (FR-BLK-9).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkTemplateInput"
+      responses:
+        "201":
+          description: Created template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkTemplate"
+        "409":
+          description: Template name already in use
+  /benchmark/bulk-templates/{templateId}/launch:
+    post:
+      operationId: launchBulkTemplate
+      tags: [benchmark]
+      summary: Launch a template -- re-resolves its relative date window against right now, then creates (and cost-gates) a fresh bulk (FR-BLK-9, AC-2.7)
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkTemplateLaunchInput"
+      responses:
+        "201":
+          description: Bulk created from the template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bulk"
+        "400":
+          description: Nothing matched the resolved criteria
+        "404":
+          description: Template not found
+  /benchmark/runs/{runId}/manifest:
+    get:
+      operationId: getBenchmarkRunManifest
+      tags: [benchmark]
+      summary: Immutable run manifest -- frozen corpus + provider config + scoring version snapshot (RUN-01, P2-T1)
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunManifest"
+        "404":
+          description: Run not found or predates manifests
+  /benchmark/agent/scans:
+    get:
+      operationId: listAgentScans
+      tags: [benchmark]
+      summary: List transcript-quality-agent scans, optionally filtered to one call
+      parameters:
+        - name: callId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent scans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentScan"
+    post:
+      operationId: createAgentScan
+      tags: [benchmark]
+      summary: Scan one call's current best transcript for likely mis-transcriptions, and (if any are found) re-transcribe it across the other configured providers for the agent to compare -- on-demand, one call at a time (not automatic on import)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentScanInput"
+      responses:
+        "201":
+          description: Completed scan (clean, or flagged with an agent pick to review)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentScan"
+        "404":
+          description: Call not found
+        "409":
+          description: Call has no transcript to scan yet
+  /benchmark/agent/scans/{scanId}/approve:
+    post:
+      operationId: approveAgentScan
+      tags: [benchmark]
+      summary: A human accepts the agent's picked transcript as gold -- drives the same PATCH /benchmark/calls logic and de-id gate as manual review (draft != gold rule; the agent's pick is never written on its own)
+      parameters:
+        - name: scanId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentScanDecision"
+      responses:
+        "200":
+          description: Updated scan and call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentScan"
+        "404":
+          description: Scan not found
+        "409":
+          description: Scan has no pick to approve, or is not awaiting a decision
+  /benchmark/agent/scans/{scanId}/reject:
+    post:
+      operationId: rejectAgentScan
+      tags: [benchmark]
+      summary: A human rejects the agent's pick -- no data changes, call keeps its current gold transcript
+      parameters:
+        - name: scanId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentScanDecision"
+      responses:
+        "200":
+          description: Updated scan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentScan"
+        "404":
+          description: Scan not found
+        "409":
+          description: Scan was already decided (approved or rejected)
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+    Vertical:
+      type: string
+      enum: [rush, property_management, trucking]
+    CallStatus:
+      type: string
+      enum: [needs_review, ready_for_gold, gold_in_review, ready_to_run, archived]
+    ProviderStatus:
+      type: string
+      enum: [not_configured, ready, disabled]
+    RunStatus:
+      type: string
+      enum: [queued, running, complete, blocked, failed, cancelled]
+    EntityType:
+      type: string
+      enum: [ro_number, unit_number, vin, phone_number, name, address, load_number, city]
+    EntityReference:
+      type: object
+      required: [type, value]
+      properties:
+        type: { $ref: "#/components/schemas/EntityType" }
+        value: { type: string }
+    BenchmarkCall:
+      type: object
+      required: [id, label, vertical, durationSeconds, status, hardCases, entityReferences, createdAt]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        durationSeconds: { type: number }
+        status: { $ref: "#/components/schemas/CallStatus" }
+        hardCases:
+          type: array
+          items: { type: string }
+        goldTranscript: { type: ["string", "null"] }
+        # The source provider's verbatim transcript. Reference material for
+        # the reviewer and the left side of the review diff -- never scored.
+        draftTranscript: { type: ["string", "null"] }
+        entityNotes: { type: ["string", "null"] }
+        entityReferences:
+          type: array
+          items: { $ref: "#/components/schemas/EntityReference" }
+        audioObjectPath: { type: ["string", "null"] }
+        deIdAttestedByLabel: { type: ["string", "null"] }
+        deIdAttestedAt: { type: ["string", "null"], format: date-time }
+        deIdSecondApproverLabel: { type: ["string", "null"] }
+        deIdSecondApprovedAt: { type: ["string", "null"], format: date-time }
+        # Provenance: where this recording came from. "manual" for calls
+        # registered by hand, "vapi" for imported ones.
+        sourceProvider: { type: string }
+        sourceCallId: { type: ["string", "null"] }
+        sourceAccountLabel: { type: ["string", "null"] }
+        sourceAssistantId: { type: ["string", "null"] }
+        sourceStartedAt: { type: ["string", "null"], format: date-time }
+        # Best-effort: which STT model produced draftTranscript, per Vapi's
+        # own assistant config at import time. Null when Vapi didn't echo it
+        # back. Surfaced so a reviewer can see if the draft came from a
+        # provider also being benchmarked (anchoring risk) -- see
+        # docs/backlog/good-to-have.md.
+        sourceTranscriberProvider: { type: ["string", "null"] }
+        sourceTranscriberModel: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+    BenchmarkCallInput:
+      type: object
+      required: [label, vertical, durationSeconds]
+      properties:
+        label: { type: string, minLength: 2 }
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        durationSeconds: { type: number, minimum: 1 }
+        hardCases:
+          type: array
+          items: { type: string }
+        entityNotes: { type: string }
+        entityReferences:
+          type: array
+          items: { $ref: "#/components/schemas/EntityReference" }
+        audioObjectPath: { type: string }
+    BenchmarkCallUpdate:
+      type: object
+      properties:
+        label: { type: string, minLength: 2 }
+        status: { $ref: "#/components/schemas/CallStatus" }
+        goldTranscript: { type: string }
+        entityNotes: { type: string }
+        entityReferences:
+          type: array
+          items: { $ref: "#/components/schemas/EntityReference" }
+        hardCases:
+          type: array
+          items: { type: string }
+    VapiAccount:
+      type: object
+      required: [id, label, envVar, keyFingerprint]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        # Which env var supplied the key, so an operator can tell where to
+        # rotate it. The key value itself is never serialized.
+        envVar: { type: string }
+        keyFingerprint: { type: string }
+    VapiAssistant:
+      type: object
+      required: [id, name, accountId, accountLabel]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        accountId: { type: string }
+        accountLabel: { type: string }
+    VapiPreviewInput:
+      type: object
+      required: [accountId]
+      properties:
+        accountId: { type: string, minLength: 1 }
+        limit: { type: number, minimum: 1, maximum: 500 }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        assistantId: { type: string }
+    VapiPreviewCall:
+      type: object
+      required: [vapiCallId, durationSeconds, hasRecording, alreadyImported, draftTranscriptChars]
+      properties:
+        vapiCallId: { type: string }
+        assistantId: { type: ["string", "null"] }
+        startedAt: { type: ["string", "null"], format: date-time }
+        durationSeconds: { type: number }
+        hasRecording: { type: boolean }
+        recordingUrl: { type: ["string", "null"] }
+        draftTranscriptChars: { type: number }
+        draftTranscriptPreview: { type: ["string", "null"] }
+        alreadyImported: { type: boolean }
+        existingCallId: { type: ["string", "null"] }
+    VapiPreviewResult:
+      type: object
+      required: [accountId, accountLabel, fetchedCount, importableCount, calls]
+      properties:
+        accountId: { type: string }
+        accountLabel: { type: string }
+        fetchedCount: { type: number }
+        importableCount: { type: number }
+        calls:
+          type: array
+          items: { $ref: "#/components/schemas/VapiPreviewCall" }
+    VapiImportInput:
+      type: object
+      required: [accountId, vertical, vapiCallIds]
+      properties:
+        accountId: { type: string, minLength: 1 }
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        vapiCallIds:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string }
+    VapiImportOutcome:
+      type: object
+      required: [vapiCallId, outcome]
+      properties:
+        vapiCallId: { type: string }
+        outcome: { type: string, enum: [imported, skipped_duplicate, skipped_no_recording, failed] }
+        callId: { type: ["string", "null"] }
+        label: { type: ["string", "null"] }
+        message: { type: ["string", "null"] }
+    VapiImportResult:
+      type: object
+      required: [importedCount, skippedCount, failedCount, results]
+      properties:
+        importedCount: { type: number }
+        skippedCount: { type: number }
+        failedCount: { type: number }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/VapiImportOutcome" }
+    AttestDeidBody:
+      type: object
+      required: [approverLabel]
+      properties:
+        approverLabel: { type: string, minLength: 2 }
+    Provider:
+      type: object
+      required: [id, name, model, status, supportsStreaming, supportsDiarization, costPerMinute, keywordBoosting, hasAdapter, apiKeyConfigured]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        model: { type: string }
+        status: { $ref: "#/components/schemas/ProviderStatus" }
+        supportsStreaming: { type: boolean }
+        supportsDiarization: { type: boolean }
+        costPerMinute: { type: number }
+        keywordBoosting: { type: boolean }
+        configNote: { type: ["string", "null"] }
+        # Derived, read-only signals (not stored input): whether a PRO-03
+        # adapter exists for this provider id, and whether its API key env
+        # var is currently set. `status` is computed from these.
+        hasAdapter: { type: boolean }
+        apiKeyConfigured: { type: boolean }
+    ProviderUpdate:
+      type: object
+      properties:
+        disabled: { type: boolean }
+        costPerMinute: { type: number, minimum: 0 }
+        configNote: { type: string }
+    ProviderInput:
+      type: object
+      required: [name, model, costPerMinute]
+      properties:
+        name: { type: string, minLength: 2 }
+        model: { type: string, minLength: 2 }
+        costPerMinute: { type: number, minimum: 0 }
+        supportsStreaming: { type: boolean }
+        supportsDiarization: { type: boolean }
+        keywordBoosting: { type: boolean }
+        configNote: { type: string }
+    AppSettings:
+      type: object
+      required: [activeProviderId, agentModel]
+      description: 2026-08-26. Null on either field means "no override -- fall back to the hardcoded default" (no active provider designated; lib/agent.ts's own JUDGE_MODEL constant).
+      properties:
+        activeProviderId: { type: ["string", "null"], description: "Which provider real production calls actually use. Independent of which providers a bulk run benchmarks." }
+        agentModel: { type: ["string", "null"], description: "OpenAI model for the transcript-quality agent's judge pass (lib/agent.ts). The cheap flag-pass model is not user-configurable." }
+    AppSettingsUpdate:
+      type: object
+      properties:
+        activeProviderId: { type: ["string", "null"] }
+        agentModel: { type: ["string", "null"] }
+    BenchmarkRun:
+      type: object
+      required: [id, status, providerIds, callCount, createdAt]
+      properties:
+        id: { type: string }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        providerIds:
+          type: array
+          items: { type: string }
+        callCount: { type: number }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+        notes: { type: ["string", "null"] }
+        # Bulk lineage (FR-BLK-13): null for ad-hoc Runs-page runs; set for
+        # shard runs fanned out from a bulk, with the bulk's display name.
+        bulkId: { type: ["string", "null"] }
+        bulkName: { type: ["string", "null"] }
+        shardIndex: { type: ["number", "null"] }
+    BenchmarkRunInput:
+      type: object
+      required: [providerIds, callIds]
+      properties:
+        providerIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        callIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        notes: { type: string }
+    Score:
+      type: object
+      # null means "no scored cells had this metric" -- not "scored zero".
+      # Was previously non-nullable with a 0 fallback at write time, which
+      # made "we never measured this" indistinguishable from "measured and
+      # it was zero" (found 2026-08-24: alphanumericAccuracy showing 0 on
+      # every ranking row because no entity in the corpus is both letters
+      # and digits after normalization, so it was never actually scored).
+      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore]
+      properties:
+        wer: { type: ["number", "null"] }
+        entityAccuracy: { type: ["number", "null"] }
+        alphanumericAccuracy: { type: ["number", "null"] }
+        latencyFirstPartialMs: { type: ["number", "null"] }
+        latencyFinalMs: { type: ["number", "null"] }
+        costPerMinute: { type: ["number", "null"] }
+        diarizationScore: { type: ["number", "null"] }
+    ProviderCallResult:
+      type: object
+      required: [id, runId, providerId, callId, status, createdAt]
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        providerId: { type: string }
+        callId: { type: string }
+        status: { type: string, enum: [pending, ok, failed, skipped_pending_review, cancelled] }
+        submittedAt: { type: ["string", "null"], format: date-time }
+        finalAt: { type: ["string", "null"], format: date-time }
+        httpStatus: { type: ["number", "null"] }
+        hypothesisTranscript: { type: ["string", "null"] }
+        errorMessage: { type: ["string", "null"] }
+        failureDiagnosis: { type: ["string", "null"], description: "2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed)." }
+        failureSuggestedFix: { type: ["string", "null"] }
+        rawOutputHash: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        score:
+          oneOf:
+            - $ref: "#/components/schemas/ScoreDetail"
+            - type: "null"
+    ScoreDetail:
+      type: object
+      required: [scoringVersion]
+      properties:
+        scoringVersion: { type: string }
+        wer: { type: ["number", "null"] }
+        entityAccuracy: { type: ["number", "null"] }
+        alphanumericAccuracy: { type: ["number", "null"] }
+        latencyFinalMs: { type: ["number", "null"] }
+        costPerMinute: { type: ["number", "null"] }
+        diarizationScore: { type: ["number", "null"] }
+        wordDiff:
+          type: array
+          items: { $ref: "#/components/schemas/WordDiffOp" }
+    WordDiffOp:
+      type: object
+      required: [op, ref, hyp]
+      properties:
+        op: { type: string, enum: [ok, sub, del, ins] }
+        ref: { type: ["string", "null"] }
+        hyp: { type: ["string", "null"] }
+    AgentFlag:
+      type: object
+      required: [text, reason]
+      properties:
+        text: { type: string }
+        reason: { type: string }
+    AgentScanCandidate:
+      type: object
+      required: [providerId, providerName, status, transcript]
+      properties:
+        providerId: { type: string }
+        providerName: { type: string }
+        status: { type: string, enum: [pending, ok, failed] }
+        transcript: { type: ["string", "null"] }
+    ResultFailureAnalysis:
+      type: object
+      required: [resultId, diagnosis, suggestedFix]
+      properties:
+        resultId: { type: string }
+        diagnosis: { type: string }
+        suggestedFix: { type: string }
+    AgentScan:
+      type: object
+      required: [id, callId, sourceLabel, sourceTranscript, status, flags, candidates, requestedByLabel, createdAt]
+      properties:
+        id: { type: string }
+        callId: { type: string }
+        sourceLabel: { type: string, enum: [gold, draft] }
+        sourceTranscript: { type: string, description: "Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged." }
+        # scanning: transient, never actually observed by a client (the scan
+        # route awaits the whole flow before responding -- see routes/agent.ts
+        # for why that's a deliberate v1 choice, not fire-and-forget).
+        status: { type: string, enum: [scanning, clean, flagged, error, approved, rejected] }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/AgentFlag" }
+        runId: { type: ["string", "null"] }
+        candidates:
+          type: array
+          items: { $ref: "#/components/schemas/AgentScanCandidate" }
+        agentPickProviderId: { type: ["string", "null"] }
+        agentPickReasoning: { type: ["string", "null"] }
+        errorMessage: { type: ["string", "null"] }
+        requestedByLabel: { type: string }
+        decidedByLabel: { type: ["string", "null"] }
+        decidedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+    AgentScanInput:
+      type: object
+      required: [callId]
+      properties:
+        callId: { type: string }
+    AgentScanDecision:
+      type: object
+      required: [approverLabel]
+      properties:
+        approverLabel: { type: string }
+    AuditLogEntry:
+      type: object
+      required: [id, entityType, entityId, actorLabel, action, occurredAt]
+      properties:
+        id: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        actorLabel: { type: string }
+        action: { type: string }
+        beforeState: {}
+        afterState: {}
+        occurredAt: { type: string, format: date-time }
+    VerticalRanking:
+      type: object
+      description: 2026-08-27 -- grouped by real Vapi assistant now (assistantId/assistantLabel), not vertical. `vertical` stays as a display tag per row, kept for context, not the grouping key anymore (see GET /benchmark/rankings).
+      required: [runId, vertical, assistantId, assistantLabel, providerId, providerName, rank, score, recommendation]
+      properties:
+        runId: { type: string }
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        assistantId: { type: ["string", "null"], description: "Null buckets into the \"Other\" group (a manually-added call with no Vapi assistant)." }
+        assistantLabel: { type: string, description: "Resolved live from Vapi at read time; \"Other (no assistant on file)\" when assistantId is null." }
+        providerId: { type: string }
+        providerName: { type: string }
+        rank: { type: number }
+        score: { $ref: "#/components/schemas/Score" }
+        recommendation: { type: string }
+    BenchmarkDashboard:
+      type: object
+      required: [corpusCount, readyToRunCount, goldReadyCount, configuredProviderCount, totalProviderCount, latestRunStatus, decisionStatus]
+      properties:
+        corpusCount: { type: number }
+        readyToRunCount: { type: number }
+        goldReadyCount: { type: number }
+        configuredProviderCount: { type: number }
+        totalProviderCount: { type: number }
+        latestRunStatus: { $ref: "#/components/schemas/RunStatus" }
+        decisionStatus: { type: string }
+    PlanTask:
+      type: object
+      required: [id, phase, title, description, status, dependencies, logicNotes]
+      properties:
+        id: { type: string }
+        phase: { type: string }
+        title: { type: string }
+        description: { type: string }
+        status: { type: string }
+        dependencies:
+          type: array
+          items: { type: string }
+        logicNotes:
+          type: array
+          items: { type: string }
+    BulkStatus:
+      type: string
+      # FR-BLK-4. partial = >=1 cell failed after retries; cancelled via
+      # POST /benchmark/bulks/{id}/cancel.
+      enum: [draft, estimating, awaiting_confirmation, running, complete, partial, failed, cancelled]
+    BulkSelectionCriteria:
+      type: object
+      description: On a template this is unfrozen (lastNDays re-resolves per launch); on a bulk it is frozen at creation, with resolvedCallIds pinning the exact corpus slice (FR-BLK-1 vs FR-BLK-9).
+      properties:
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        assistantIds:
+          type: array
+          items: { type: string }
+        accountLabel: { type: string }
+        startedAtFrom: { type: string, format: date-time }
+        startedAtTo: { type: string, format: date-time }
+        lastNDays: { type: number, minimum: 1 }
+        minDurationSeconds: { type: number, minimum: 0 }
+        callIds:
+          type: array
+          items: { type: string }
+        resolvedCallIds:
+          type: array
+          items: { type: string }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+    Bulk:
+      type: object
+      required: [id, name, status, selectionCriteria, providerIds, shardSize, minDurationSeconds, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/BulkStatus" }
+        selectionCriteria: { $ref: "#/components/schemas/BulkSelectionCriteria" }
+        providerIds:
+          type: array
+          items: { type: string }
+        shardSize: { type: number }
+        minDurationSeconds: { type: number }
+        estimatedCostCents: { type: ["number", "null"] }
+        launchedByLabel: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+    BulkInput:
+      type: object
+      required: [criteria, providerIds]
+      properties:
+        # FR-BLK-2: defaults to the launch date (YYYY-MM-DD) when omitted.
+        name: { type: string, minLength: 1 }
+        criteria: { $ref: "#/components/schemas/BulkSelectionCriteria" }
+        providerIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        shardSize: { type: number, minimum: 1, maximum: 500 }
+        minDurationSeconds: { type: number, minimum: 0 }
+        # FR-BLK-5: required true when the estimate exceeds the server cost
+        # threshold; without it the bulk parks at awaiting_confirmation.
+        confirm: { type: boolean }
+    BulkProgress:
+      type: object
+      required: [callsTotal, callsRun, cellsTotal, cellsOk, cellsFailed, cellsPending, cellsCancelled, cellsSkippedPendingReview]
+      properties:
+        # FR-BLK-13 structured counts.
+        callsTotal: { type: number }
+        callsRun: { type: number }
+        cellsTotal: { type: number }
+        cellsOk: { type: number }
+        cellsFailed: { type: number }
+        cellsPending: { type: number }
+        cellsCancelled: { type: number }
+        cellsSkippedPendingReview: { type: number }
+    BulkShardRun:
+      type: object
+      required: [id, shardIndex, status, callCount, createdAt]
+      properties:
+        id: { type: string }
+        shardIndex: { type: number }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        callCount: { type: number }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+    BulkDetail:
+      allOf:
+        - $ref: "#/components/schemas/Bulk"
+        - type: object
+          required: [progress, runs]
+          properties:
+            progress: { $ref: "#/components/schemas/BulkProgress" }
+            runs:
+              type: array
+              items: { $ref: "#/components/schemas/BulkShardRun" }
+    BulkTemplate:
+      type: object
+      required: [id, name, selectionCriteria, providerIds, shardSize, minDurationSeconds, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        selectionCriteria: { $ref: "#/components/schemas/BulkSelectionCriteria" }
+        providerIds:
+          type: array
+          items: { type: string }
+        shardSize: { type: number }
+        minDurationSeconds: { type: number }
+        createdByLabel: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BulkTemplateInput:
+      type: object
+      required: [name, criteria, providerIds]
+      properties:
+        name: { type: string, minLength: 1 }
+        criteria: { $ref: "#/components/schemas/BulkSelectionCriteria" }
+        providerIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        shardSize: { type: number, minimum: 1, maximum: 500 }
+        minDurationSeconds: { type: number, minimum: 0 }
+    BulkTemplateLaunchInput:
+      type: object
+      properties:
+        # Override the auto-generated bulk name (default: template name + date).
+        name: { type: string, minLength: 1 }
+        confirm: { type: boolean }
+    RunManifestCall:
+      type: object
+      required: [id, label, goldTranscriptSha256]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        goldTranscriptSha256: { type: ["string", "null"] }
+    RunManifestProvider:
+      type: object
+      required: [id, name, model, configSha256]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        model: { type: string }
+        configSha256: { type: string }
+    RunManifest:
+      type: object
+      required: [manifestVersion, runId, scoringVersion, createdAt, calls, providers]
+      properties:
+        manifestVersion: { type: number }
+        runId: { type: string }
+        scoringVersion: { type: string }
+        createdAt: { type: string, format: date-time }
+        calls:
+          type: array
+          items: { $ref: "#/components/schemas/RunManifestCall" }
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/RunManifestProvider" }
+    BulkManifest:
+      type: object
+      required: [manifestVersion, bulkId, name, status, selectionCriteria, providerIds, shardSize, createdAt, runs]
+      properties:
+        manifestVersion: { type: number }
+        bulkId: { type: string }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/BulkStatus" }
+        selectionCriteria: { $ref: "#/components/schemas/BulkSelectionCriteria" }
+        providerIds:
+          type: array
+          items: { type: string }
+        shardSize: { type: number }
+        createdAt: { type: string, format: date-time }
+        runs:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/RunManifest"
+              - type: object
+                properties:
+                  shardIndex: { type: ["number", "null"] }
+                  runStatus: { $ref: "#/components/schemas/RunStatus" }

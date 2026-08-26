@@ -1,0 +1,29 @@
+Based on the current benchmarks and the open question in your Replit chat, here's my take on both decisions you're facing.
+
+## Data sourcing: go with the manual starter set
+
+For a benchmark like this, start with a **small manually-approved starter set** (10-15 calls) rather than an automated de-identification pipeline. Building an automatic PII-scrubbing pipeline for VINs, RO numbers, names, and addresses is itself a project — get it wrong once and you've leaked real customer data to six external vendors. Once your scoring script and gold transcripts prove out on the small set, scale the same manual review process to the full 50-100 calls.
+
+## Provider shortlist: keep all six for round 1, but expect a shakeout
+
+Current 2026 data suggests real separation between these providers on both accuracy and cost, so it's worth testing all six before cutting anyone.
+
+| Provider | Reported WER (batch) | Batch price/min | Streaming latency | Notes |
+|---|---|---|---|---|
+| Deepgram Nova-3 | ~5.26% on Deepgram's own 9-domain test set  [futureagi](https://futureagi.com/blog/speech-to-text-apis-in-2026-benchmarks-pricing-developer-s-decision-guide/) | $0.0043 | Sub-300ms  [futureagi](https://futureagi.com/blog/speech-to-text-apis-in-2026-benchmarks-pricing-developer-s-decision-guide/) | Strong on alphanumeric/entity accuracy (2-4x better on account/tracking numbers per their own claims)  [deepgram](https://deepgram.com/learn/deepgram-vs-google-vs-assemblyai) |
+| AssemblyAI Universal-3.5 | ~7.0% avg across 16 independent datasets, beating Nova-3's 8.9% in that same test  [novascribe](https://novascribe.ai/how-accurate-is-assemblyai) | ~$0.0025-0.006  [novascribe](https://novascribe.ai/compare/best-transcription-api-for-developers) | ~760ms delta  [futureagi](https://futureagi.com/blog/speech-to-text-apis-in-2026-benchmarks-pricing-developer-s-decision-guide/) | Independent benchmark favors it on aggregate WER, worth testing since it contradicts Deepgram's own numbers |
+| ElevenLabs Scribe v2 | Not independently benchmarked in these sources | $0.0037 batch / $0.0065 stream  [novascribe](https://novascribe.ai/compare/best-transcription-api-for-developers) | Realtime supported | Cheapest of the premium tier |
+| Gladia (Solaria-1) | Not independently benchmarked here | $0.0102 (Starter) / $0.0033 (Growth)  [novascribe](https://novascribe.ai/compare/best-transcription-api-for-developers) | Sub-103ms claimed | Price drops a lot with volume commit |
+| Speechmatics | Not independently benchmarked here | From $0.24/hr (~$0.004/min)  [speechmatics](https://www.speechmatics.com/company/articles-and-news/best-speech-to-text-ai-guide-apis-platforms-and-services-compared) | Not specified | Diarization and add-ons billed separately |
+| OpenAI gpt-4o-transcribe | 10.7% WER (lags specialized providers)  [deepgram](https://deepgram.com/learn/best-speech-to-text-apis-2026) | $0.006/min ($0.003 for mini)  [speechmatics](https://www.speechmatics.com/company/articles-and-news/best-speech-to-text-ai-guide-apis-platforms-and-services-compared) | Not built for real-time streaming | Weakest fit for your streaming/entity-heavy use case; consider dropping unless cost matters more than latency |
+
+Two things jump out for your specific case:
+
+- **Deepgram vs AssemblyAI is a genuine toss-up on paper** — Deepgram's own benchmark favors Deepgram, an independent benchmark favors AssemblyAI, and neither of those tests your actual alphanumeric-heavy, noisy-shop-floor call data. This is exactly why your planned harness matters more than any published number — you can't trust vendor-reported WER for your use case. [novascribe](https://novascribe.ai/how-accurate-is-assemblyai)
+- **OpenAI Whisper/gpt-4o-transcribe is the weakest streaming candidate** on paper (highest WER, not built for real-time), so it's a reasonable one to drop early if VAPI support or time is tight, unless you want it as a cheap fallback for non-latency-sensitive verticals. [speechmatics](https://www.speechmatics.com/company/articles-and-news/best-speech-to-text-ai-guide-apis-platforms-and-services-compared)
+
+All six are supported as VAPI transcriber options, so provider integration isn't a blocker for testing any of them. [vapi](https://vapi.ai/blog/azure-alternatives)
+
+Given that vendor-published numbers actively disagree with each other, I'd push forward exactly as your Replit plan describes — run your own real Rush/property-management/trucking audio through all six rather than trusting any single published benchmark to make the call for you.
+
+Do you want to start with the small manually-approved starter set of calls, or do you already have a de-identified sample ready to test?

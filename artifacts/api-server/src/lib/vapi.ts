@@ -1,0 +1,456 @@
+// Vapi call-source integration (COR-01).
+//
+// Credential handling, deliberately: Vapi API keys are NEVER stored in the
+// database and never leave the server process. They live only as environment
+// variables, are read at request time, and only an account's *label* plus a
+// short non-reversible fingerprint are exposed over the API. Nothing here
+// logs or returns a key.
+//
+// Multiple accounts: the team pulls recordings from more than one Vapi
+// workspace, so accounts are discovered from the environment by convention:
+//
+//   VAPI_API_KEY               -> account id "default", label "Default"
+//   VAPI_API_KEY_ELLAVOX       -> account id "ellavox", label "Ellavox"
+//   VAPI_API_KEY_CLIENT_ACME   -> account id "client-acme", label "Client Acme"
+//
+// Adding an account is an env-var change and a server restart -- no schema
+// change, no secret in Postgres.
+
+import { createHash } from "node:crypto";
+
+const KEY_PREFIX = "VAPI_API_KEY";
+const DEFAULT_ACCOUNT_ID = "default";
+// Overridable so offline tests can point fetchVapiCalls at a local stub
+// (see rehearsal/proof scripts); production never sets VAPI_BASE_URL and
+// gets the real endpoint.
+const VAPI_BASE_URL = process.env.VAPI_BASE_URL ?? "https://api.vapi.ai";
+const VAPI_MAX_LIMIT = 1000;
+// Hard page cap for the pagination loop in fetchVapiCalls -- a safety bound
+// against pathological API behavior; 50 pages x 1000 = far past any planned
+// corpus backfill, and the seen-id freshness check breaks earlier anyway.
+const MAX_VAPI_PAGES = 50;
+
+export type VapiAccount = {
+  id: string;
+  label: string;
+  envVar: string;
+  /**
+   * First 8 hex chars of sha256(key). Lets an operator tell two accounts
+   * apart, and confirm the server picked up the key they think it did,
+   * without the key (or any reversible part of it) reaching the browser.
+   */
+  keyFingerprint: string;
+};
+
+export class VapiConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VapiConfigError";
+  }
+}
+
+export class VapiRequestError extends Error {
+  readonly httpStatus: number;
+  constructor(httpStatus: number, message: string) {
+    super(message);
+    this.name = "VapiRequestError";
+    this.httpStatus = httpStatus;
+  }
+}
+
+function labelFromSuffix(suffix: string): string {
+  return suffix
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function fingerprint(key: string): string {
+  return createHash("sha256").update(key).digest("hex").slice(0, 8);
+}
+
+/**
+ * Discovers configured Vapi accounts from the environment. Derived on every
+ * call (not cached) so an operator restarting the server with a new key sees
+ * it immediately, and a revoked key disappears immediately.
+ */
+export function listVapiAccounts(): VapiAccount[] {
+  const accounts: VapiAccount[] = [];
+
+  const defaultKey = process.env[KEY_PREFIX]?.trim();
+  if (defaultKey) {
+    accounts.push({
+      id: DEFAULT_ACCOUNT_ID,
+      label: "Default",
+      envVar: KEY_PREFIX,
+      keyFingerprint: fingerprint(defaultKey),
+    });
+  }
+
+  for (const [envVar, value] of Object.entries(process.env)) {
+    if (!envVar.startsWith(`${KEY_PREFIX}_`)) continue;
+    const key = value?.trim();
+    if (!key) continue;
+    const suffix = envVar.slice(KEY_PREFIX.length + 1);
+    accounts.push({
+      id: suffix.toLowerCase().replace(/_/g, "-"),
+      label: labelFromSuffix(suffix),
+      envVar,
+      keyFingerprint: fingerprint(key),
+    });
+  }
+
+  return accounts.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function resolveKey(accountId: string): string {
+  const account = listVapiAccounts().find((a) => a.id === accountId);
+  if (!account) {
+    const known = listVapiAccounts().map((a) => a.id);
+    throw new VapiConfigError(
+      known.length === 0
+        ? `No Vapi accounts are configured. Set ${KEY_PREFIX} (or ${KEY_PREFIX}_<LABEL>) on the API server and restart it.`
+        : `Unknown Vapi account "${accountId}". Configured accounts: ${known.join(", ")}.`,
+    );
+  }
+  const key = process.env[account.envVar]?.trim();
+  if (!key) {
+    throw new VapiConfigError(`${account.envVar} is no longer set.`);
+  }
+  return key;
+}
+
+export type VapiCostEntry = {
+  type: string;
+  transcriber?: { provider?: string; model?: string };
+};
+
+export type VapiCall = {
+  id: string;
+  assistantId?: string;
+  status?: string;
+  startedAt?: string;
+  endedAt?: string;
+  createdAt?: string;
+  recordingUrl?: string;
+  transcript?: string;
+  customer?: { number?: string };
+  artifact?: {
+    recordingUrl?: string;
+    transcript?: string;
+    // The actually-signed, directly-fetchable link -- confirmed live against
+    // the real Vapi API on 2026-08-24. `recordingUrl`/`artifact.recordingUrl`
+    // are just the bare object path and are NOT guaranteed fetchable (this
+    // account's calls 403 "Missing signature" on that field). Mono is what
+    // this corpus uses (see the "-mono.wav" filename convention); stereo
+    // kept as a fallback in case an account only has that.
+    presignedMonoUrl?: string;
+    presignedStereoUrl?: string;
+  };
+  // Cost-breakdown entries, one per pipeline stage. The transcriber entry
+  // (type "transcriber") is the only place Vapi's live API actually reports
+  // which STT model produced draftTranscriptOf() -- confirmed against a real
+  // call 2026-08-24. There is no separate `call.assistant` object on the
+  // real response (despite what Vapi's docs pages implied); don't read one.
+  costs?: VapiCostEntry[];
+};
+
+export type VapiFetchOptions = {
+  accountId: string;
+  limit: number;
+  /** ISO datetime, inclusive lower bound on Vapi's createdAt. */
+  createdAtGe?: string;
+  /** ISO datetime, inclusive upper bound on Vapi's createdAt. */
+  createdAtLe?: string;
+  assistantId?: string;
+};
+
+export function recordingUrlOf(call: VapiCall): string | undefined {
+  return (
+    call.artifact?.presignedMonoUrl ??
+    call.artifact?.presignedStereoUrl ??
+    call.artifact?.recordingUrl ??
+    call.recordingUrl
+  );
+}
+
+export function draftTranscriptOf(call: VapiCall): string | undefined {
+  return call.artifact?.transcript ?? call.transcript;
+}
+
+/**
+ * Which STT provider/model actually generated draftTranscriptOf(), read from
+ * the transcriber cost-breakdown entry. Confirmed against a real call
+ * 2026-08-24 (Deepgram flux-general-multi). Legitimately undefined if Vapi
+ * didn't cost-track a transcriber stage for this call.
+ */
+export function transcriberOf(
+  call: VapiCall,
+): { provider: string | undefined; model: string | undefined } | undefined {
+  const entry = call.costs?.find((c) => c.type === "transcriber");
+  const t = entry?.transcriber;
+  if (!t || (!t.provider && !t.model)) return undefined;
+  return { provider: t.provider, model: t.model };
+}
+
+export function durationSecondsOf(call: VapiCall): number {
+  if (!call.startedAt || !call.endedAt) return 0;
+  const ms = new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime();
+  return ms > 0 ? Math.round(ms / 1000) : 0;
+}
+
+async function vapiGet<T>(path: string, key: string): Promise<T> {
+  const res = await fetch(`${VAPI_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  if (!res.ok) {
+    // The body can echo request params; it never contains the key (which is
+    // only ever sent as a header), so it is safe to surface to the operator.
+    throw new VapiRequestError(
+      res.status,
+      `Vapi API returned HTTP ${res.status}: ${(await res.text()).slice(0, 500)}`,
+    );
+  }
+  return (await res.json()) as T;
+}
+
+export type VapiAssistant = {
+  id: string;
+  name: string;
+  accountId: string;
+  accountLabel: string;
+};
+
+/**
+ * Lists every assistant across every configured Vapi account (2026-08-26,
+ * per Abhishek: bulk selection should pick real assistants directly, not be
+ * divided by vertical). Verified live: a single `limit=1000` request
+ * returns the whole list in one page for both configured accounts here
+ * (138 and 70 assistants respectively) -- comfortably under
+ * VAPI_MAX_LIMIT, so no pagination loop is needed the way fetchVapiCalls
+ * needs one for calls.
+ */
+export async function fetchVapiAssistants(
+  accountId?: string,
+): Promise<VapiAssistant[]> {
+  const accounts = accountId
+    ? listVapiAccounts().filter((a) => a.id === accountId)
+    : listVapiAccounts();
+  if (accountId && accounts.length === 0) {
+    const known = listVapiAccounts().map((a) => a.id);
+    throw new VapiConfigError(`Unknown Vapi account "${accountId}". Configured accounts: ${known.join(", ")}.`);
+  }
+
+  const results = await Promise.all(
+    accounts.map(async (account) => {
+      const key = resolveKey(account.id);
+      const raw = await vapiGet<Array<{ id: string; name?: string }>>(
+        `/assistant?limit=${VAPI_MAX_LIMIT}`,
+        key,
+      );
+      return raw.map((a) => ({
+        id: a.id,
+        name: a.name?.trim() || a.id,
+        accountId: account.id,
+        accountLabel: account.label,
+      }));
+    }),
+  );
+  return results.flat().sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Fetches calls for one account over a date range, paginating past Vapi's
+ * per-request cap so wide date windows no longer silently truncate at
+ * VAPI_MAX_LIMIT (found as triage claim #10 in ox-alpha/triage.md).
+ *
+ * Pagination is defensive about sort order: we request ascending order and
+ * walk a `createdAtGt` cursor, but if the API ignored the order hint and
+ * returns newest-first, each page still advances (newer calls), and the
+ * seen-id set guarantees termination either way -- the loop only continues
+ * while a page contributes calls we have not seen before.
+ *
+ * Note on assistantId: Vapi's own `assistantId` query filter was observed to
+ * return an empty list for assistants that demonstrably have calls, so the
+ * filter is applied client-side here instead. That costs a slightly larger
+ * fetch but is the difference between "no results" and correct results --
+ * the over-fetch multiplier is applied per PAGE now, not just once up front.
+ */
+export async function fetchVapiCalls(
+  opts: VapiFetchOptions,
+): Promise<VapiCall[]> {
+  const key = resolveKey(opts.accountId);
+  const matchesAssistant = (c: VapiCall) =>
+    !opts.assistantId || c.assistantId === opts.assistantId;
+
+  const collected = new Map<string, VapiCall>();
+  let cursor: string | null = null; // createdAtGt watermark
+
+  for (let page = 0; page < MAX_VAPI_PAGES; page++) {
+    // Per-page over-fetch keeps the requested limit reachable even after the
+    // local assistant filter drops non-matching calls from THIS page.
+    const remaining = opts.limit - [...collected.values()].filter(matchesAssistant).length;
+    if (remaining <= 0) break;
+    const wireLimit = opts.assistantId
+      ? Math.min(VAPI_MAX_LIMIT, Math.max(remaining * 10, 100))
+      : Math.min(VAPI_MAX_LIMIT, remaining);
+
+    const params = new URLSearchParams();
+    params.set("limit", String(wireLimit));
+    // No `order` param: verified live 2026-08-26 that Vapi's /call endpoint
+    // now rejects it outright ("property order should not exist"), not just
+    // ignores it. The pagination loop below was already written to tolerate
+    // either sort order (see the class comment above), so dropping the hint
+    // is safe -- nothing here assumed ascending order to be true, only
+    // defended against it not being honored.
+    if (opts.createdAtGe && page === 0) params.set("createdAtGe", opts.createdAtGe);
+    // `Ge` not `Gt` (review 2026-08-25): a strict cursor skips the rest of a
+    // tie group whose timestamp straddles the page edge. `Ge` re-serves the
+    // boundary ties, the collected-Map dedupes them, and the freshCount==0
+    // break below still terminates the loop at end of data.
+    if (cursor) params.set("createdAtGe", cursor);
+    if (opts.createdAtLe) params.set("createdAtLe", opts.createdAtLe);
+
+    const calls = await vapiGet<VapiCall[]>(`/call?${params.toString()}`, key);
+    if (!Array.isArray(calls) || calls.length === 0) break;
+
+    let newestCreatedAt = "";
+    let freshCount = 0;
+    for (const c of calls) {
+      if (!collected.has(c.id)) freshCount += 1;
+      collected.set(c.id, c);
+      // createdAt is optional on VapiCall; missing timestamps sort as "" so
+      // they never become the cursor watermark.
+      if ((c.createdAt ?? "") > newestCreatedAt) newestCreatedAt = c.createdAt ?? "";
+    }
+    if (freshCount === 0) break; // sort-order surprise: nothing new -> done
+
+    if (calls.length < wireLimit) break; // short page: end of the window
+    cursor = newestCreatedAt;
+  }
+
+  return [...collected.values()]
+    .filter(matchesAssistant)
+    .slice(0, opts.limit);
+}
+
+/**
+ * Re-fetches a single call by id at import time. The importer deliberately
+ * does NOT trust a recording URL sent up by the browser -- it asks Vapi again
+ * so the stored `audioObjectPath` always comes from the source of truth.
+ */
+export async function fetchVapiCall(
+  accountId: string,
+  callId: string,
+): Promise<VapiCall> {
+  const key = resolveKey(accountId);
+  return vapiGet<VapiCall>(`/call/${encodeURIComponent(callId)}`, key);
+}
+
+// --- Recording URL refresh (COR-01 / shared by playback AND run execution) -
+//
+// Vapi's own recording URLs (and the presigned* fields) are short-lived --
+// the one captured at import time is routinely dead by the time a call is
+// reviewed or run, let alone re-run. This is the single place that resolves
+// a fresh, live URL for a call so the browser player and the run executor
+// can't silently drift into using two different (and differently stale)
+// notions of "the audio." Never caches or persists the URL it returns.
+
+const VAPI_CALL_ID_IN_FILENAME = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+
+export type RecordingUrlSourceCall = {
+  sourceCallId: string | null;
+  sourceAccountLabel: string | null;
+  audioObjectPath: string | null;
+};
+
+/**
+ * Recovers Vapi's own call id for a corpus row. `sourceCallId` is exact and
+ * authoritative; calls imported before that column existed (or ones seeded
+ * outside the Vapi importer but sourced from real Vapi audio) don't have it,
+ * but Vapi's call UUID is embedded as the first segment of the recording
+ * FILENAME -- recover it from there. Deliberately scoped to the filename,
+ * not the whole URL: some storage providers (Supabase) put an unrelated
+ * project UUID earlier in the path, and matching the full URL silently
+ * picks that up instead (verified against all 22 corpus calls before this
+ * was trusted).
+ */
+export function guessVapiCallId(call: RecordingUrlSourceCall): string | null {
+  if (call.sourceCallId) return call.sourceCallId;
+  if (!call.audioObjectPath) return null;
+  let filename: string;
+  try {
+    filename = new URL(call.audioObjectPath).pathname.split("/").pop() ?? "";
+  } catch {
+    filename = call.audioObjectPath.split("/").pop() ?? "";
+  }
+  const match = filename.match(VAPI_CALL_ID_IN_FILENAME);
+  return match?.[1] ?? null;
+}
+
+export class VapiNoRecordingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VapiNoRecordingError";
+  }
+}
+
+/**
+ * Resolves a fresh, live recording URL for a corpus call by re-asking Vapi.
+ * Throws VapiConfigError (no/ambiguous account), VapiNoRecordingError (no
+ * call id on file, or Vapi has no recording for it), or VapiRequestError
+ * (Vapi API call itself failed) -- callers decide how to surface each.
+ */
+export async function resolveFreshRecordingUrl(
+  call: RecordingUrlSourceCall,
+): Promise<string> {
+  const vapiCallId = guessVapiCallId(call);
+  if (!vapiCallId) {
+    throw new VapiNoRecordingError(
+      "No source recording is on file for this call (no audio was ever imported).",
+    );
+  }
+
+  const accounts = listVapiAccounts();
+  // Calls from before per-account labeling existed don't know which account
+  // they came from -- fall back to whichever single account is configured,
+  // since that was the only option at the time they were imported.
+  const account =
+    accounts.find(
+      (a) => a.label.toLowerCase() === (call.sourceAccountLabel ?? "").toLowerCase(),
+    ) ?? (accounts.length === 1 ? accounts[0] : undefined);
+  if (!account) {
+    throw new VapiConfigError(
+      accounts.length === 0
+        ? `No Vapi account is configured on the server, so a fresh recording link can't be requested. Set ${KEY_PREFIX} and restart the server.`
+        : `This call's source account ("${call.sourceAccountLabel ?? "unknown"}") isn't among the configured Vapi accounts (${accounts.map((a) => a.label).join(", ")}).`,
+    );
+  }
+
+  // Observed live (2026-08-24): the SAME call's presigned URL came back
+  // bare/unsigned on one fetch and fully-signed (real X-Amz-Signature query
+  // string) on a later one a few minutes apart -- a transient state on
+  // Vapi/storage's side while the signed link is (re)generated, not a
+  // permanent per-call failure. A short retry costs little and measurably
+  // recovers calls that would otherwise fail every provider for no real
+  // reason. `call.recordingUrl`'s own bare fallback (no presigned* field at
+  // all) can never gain a query string no matter how many times it's
+  // fetched, so this only spends retries when there's an actual chance.
+  const RECORDING_URL_RETRIES = 2;
+  const RECORDING_URL_RETRY_DELAY_MS = 1500;
+  let freshUrl: string | undefined;
+  for (let attempt = 0; attempt <= RECORDING_URL_RETRIES; attempt++) {
+    const fresh = await fetchVapiCall(account.id, vapiCallId);
+    freshUrl = recordingUrlOf(fresh);
+    if (!freshUrl) break; // Vapi has nothing at all -- retrying won't help
+    if (freshUrl.includes("?")) break; // signed -- done
+    if (attempt < RECORDING_URL_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, RECORDING_URL_RETRY_DELAY_MS));
+    }
+  }
+  if (!freshUrl) {
+    throw new VapiNoRecordingError("Vapi has no recording URL for this call anymore.");
+  }
+  return freshUrl;
+}

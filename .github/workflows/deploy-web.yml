@@ -1,0 +1,77 @@
+# Deploys the benchmark web UI to Vercel.
+#
+# Architecture note (see ox-alpha/deployment.md): ONLY the static web app runs
+# on Vercel. The Express API server is a long-running process (in-flight run
+# execution, Cartesia WebSocket streams) and must stay on a long-running host;
+# the web build talks to it via VITE_API_BASE_URL at build time.
+#
+# Required repository secrets:
+#   VERCEL_TOKEN       -- a Vercel token with deploy scope
+#   VERCEL_ORG_ID      -- the Vercel org/team id
+#   VERCEL_PROJECT_ID  -- the Vercel project id for this web app
+# Optional repository variable:
+#   VITE_API_BASE_URL  -- e.g. https://stt-api.example.com/api ; falls back to
+#                         relative /api (same-origin) when unset.
+
+name: Deploy web (Vercel)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/stt-benchmark/**"
+      - "lib/api-spec/**"
+      - "lib/api-zod/**"
+      - "lib/api-client-react/**"
+      - "lib/scoring/**"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to Vercel
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `--yes` auto-links on the first run (creates/adopts the project from
+      # VERCEL_ORG_ID + VERCEL_PROJECT_ID), so no committed .vercel folder is
+      # needed. The vercel.json in artifacts/stt-benchmark carries the build
+      # command, output dir, and SPA rewrites.
+      - name: Deploy to Vercel (production)
+        working-directory: artifacts/stt-benchmark
+        run: |
+          npx --yes vercel@latest deploy \
+            --prod \
+            --yes \
+            --build-env VITE_API_BASE_URL="$VITE_API_BASE_URL" \
+            --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deployment URL
+        working-directory: artifacts/stt-benchmark
+        run: npx --yes vercel@latest ls --token "$VERCEL_TOKEN" | head -20
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

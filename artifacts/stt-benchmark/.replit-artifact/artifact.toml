@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "STT Benchmark Command Center"
+description = "An internal, UI-first workspace for preparing call-audio transcription benchmarks, managing gold references and provider configurations, reviewing entity-aware accuracy and latency results, and documenting a defensible per-vertical transcriber recommendation."
+version = "1.0.0"
+id = "artifacts/stt-benchmark"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25918
+
+[services.development]
+run = "pnpm --filter @workspace/stt-benchmark run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/stt-benchmark", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/stt-benchmark/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25918"
+BASE_PATH = "/"

@@ -1,0 +1,541 @@
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ STATUS: STALE TRACKER (flagged 2026-08-25, review finding #24)          │
+# │ Every task below says `status: not_started`, which stopped being true   │
+# │ during implementation (provider adapters, run executor, Vapi import UI,  │
+# │ review workspace, agent scans, concurrency rework all shipped -- see     │
+# │ docs/HANDOFF.md "What exists today"). This file is kept as the stable    │
+# │ TASK-ID REGISTRY ONLY; do NOT read its statuses as truth.                │
+# │ Current state of the world: docs/HANDOFF.md + docs/backlog/good-to-have  │
+# │ .md; live claim triage: ox-alpha/triage.md.                              │
+# └─────────────────────────────────────────────────────────────────────────┘
+# STT Benchmark — Machine-Readable Task Registry
+# Mirror of docs/execution-plan.md
+# All task IDs are stable across the project lifecycle.
+# logic_gate: true means the task contains an algorithmic or policy decision that must
+#             be resolved before coding begins. See docs/logic-register.md for details.
+
+version: "1"
+generated_from: "docs/execution-plan.md"
+
+tasks:
+
+  # ─── Phase 0: Foundation ────────────────────────────────────────────────────
+
+  - id: P0-T1
+    phase: "0-foundation"
+    title: "Define and migrate core database schema"
+    depends_on: []
+    deliverable: "Drizzle ORM schema file; all PRD §8 tables; applied migration in dev DB"
+    acceptance: |
+      pnpm --filter @workspace/db run push succeeds;
+      all tables and enum types present in DB;
+      benchmark_calls, providers, benchmark_runs, provider_call_results, scores, audit_log tables exist
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P0-T2
+    phase: "0-foundation"
+    title: "Wire audio object-store path handling"
+    depends_on: [P0-T1]
+    deliverable: "Storage utility; pre-signed URL generation; unauthorized access returns 403; access logged"
+    acceptance: |
+      Upload test WAV; authorized role generates read URL;
+      unauthorized role gets 403;
+      URL access logged with actor_id, call_id, generated_at, url_expires_at
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P0-T3
+    phase: "0-foundation"
+    title: "Implement all OpenAPI endpoints with stub handlers"
+    depends_on: [P0-T1]
+    deliverable: "Express route handlers for all 10 OpenAPI paths; Zod validation; stubs return valid shapes"
+    acceptance: |
+      All routes respond to valid requests;
+      invalid request bodies return 400 with field errors;
+      GET /healthz returns 200
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P0-T4
+    phase: "0-foundation"
+    title: "Append-only audit log middleware"
+    depends_on: [P0-T1, P0-T3]
+    deliverable: "Express middleware writing audit_log on every mutating request; records actor, entity, before/after state"
+    acceptance: |
+      Every PATCH on a call produces an audit_log row;
+      before_state and after_state are correct;
+      rows are never deleted by application code
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P0-T5
+    phase: "0-foundation"
+    title: "Two-person de-identification attestation gate"
+    depends_on: [P0-T1, P0-T3, P0-T4]
+    deliverable: |
+      PATCH /benchmark/calls/:id enforces de_id_attested_by != created_by before status advances past ready_for_gold;
+      attestation recorded in audit log
+    acceptance: |
+      Self-attestation returns 422;
+      cross-user attestation succeeds;
+      audit record created with both user IDs
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P0-T6
+    phase: "0-foundation"
+    title: "Provider config CRUD with secret-name storage"
+    depends_on: [P0-T1, P0-T3]
+    deliverable: |
+      POST /benchmark/providers stores API key secret name (not value);
+      config_hash computed on write;
+      rate_verified boolean added to schema
+    acceptance: |
+      Provider record stores apiKeySecretName string, not raw key;
+      config_hash changes when any field changes;
+      rate_verified defaults to false
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  # ─── Phase 1: MVP Corpus & Harness ──────────────────────────────────────────
+
+  - id: P1-T1
+    phase: "1-mvp-corpus"
+    title: "Write gold transcript annotation style guide"
+    depends_on: [P0-T5]
+    deliverable: "docs/gold-style-guide.md with rules for capitalization, punctuation, numbers, filler words, entity tagging"
+    acceptance: |
+      Two independent curators annotate the same 2-minute segment and achieve >= 90% token-level agreement;
+      OD-2 decisions documented: filler word policy, number format, abbreviation expansion rules
+    logic_gate: true
+    logic_notes:
+      - "OD-2: Resolve before writing normalization code: (a) strip or keep filler words? (b) numbers as digits or words in gold? (c) abbreviation expansion per vertical?"
+    status: "not_started"
+
+  - id: P1-T2
+    phase: "1-mvp-corpus"
+    title: "Define entity annotation schema"
+    depends_on: [P1-T1]
+    deliverable: |
+      JSON schema for entity_notes field;
+      types: ro_number, unit_id, vin, phone, person_name, address;
+      each annotation has span (start/end char offset), type, normalized_value
+    acceptance: |
+      Schema validated with >= 2 calls from each vertical;
+      round-trip parse/serialize works;
+      OD-3 decision documented (entity extraction method for hypothesis)
+    logic_gate: true
+    logic_notes:
+      - "OD-3: Choose entity extraction method for hypothesis transcripts: regex (default), LLM-assisted, or gold-span alignment. Resolve before P1-T10."
+    status: "not_started"
+
+  - id: P1-T3
+    phase: "1-mvp-corpus"
+    title: "Curate and approve MVP corpus (10-15 calls)"
+    depends_on: [P0-T5, P1-T1, P1-T2]
+    deliverable: |
+      >= 10 calls in ready_to_run status;
+      >= 3 calls per vertical;
+      gold transcripts, entity annotations, hard_case tags applied;
+      de_id_attested_by != created_by on all calls
+    acceptance: |
+      PRD AC-MVP-1 satisfied;
+      all gold transcripts pass style-guide review;
+      corpus manifest v0.1 generated
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P1-T4
+    phase: "1-mvp-harness"
+    title: "Integrate Deepgram Nova-3"
+    depends_on: [P0-T6]
+    deliverable: "Provider adapter; smoke-test; ProviderCallResult row with latency fields; raw_output stored verbatim"
+    acceptance: |
+      Test call returns transcript;
+      first_partial_at populated if streaming;
+      raw_output stored;
+      latency fields (submitted_at, final_at) populated
+    logic_gate: true
+    logic_notes:
+      - "Decide: streaming vs batch mode for latency measurement. If batch, first_partial_at is null — document as missing capability."
+      - "Confirm keyword-boosting parameter name and syntax from current Deepgram API docs."
+    status: "not_started"
+
+  - id: P1-T5
+    phase: "1-mvp-harness"
+    title: "Integrate AssemblyAI Universal"
+    depends_on: [P0-T6]
+    deliverable: "Provider adapter; smoke-test; ProviderCallResult row"
+    acceptance: "Same as P1-T4"
+    logic_gate: true
+    logic_notes:
+      - "Confirm: async two-step (upload + poll) vs synchronous endpoint for short audio. Affects latency instrumentation design."
+      - "Confirm diarization parameter name and diarization availability on current plan."
+    status: "not_started"
+
+  - id: P1-T6
+    phase: "1-mvp-harness"
+    title: "Integrate OpenAI gpt-4o-transcribe and Whisper"
+    depends_on: [P0-T6]
+    deliverable: "Single adapter supporting both model variants via config; smoke-tests for both models"
+    acceptance: |
+      Both models return transcripts;
+      model captured in provider record;
+      file size limit handled (25 MB or current limit)
+    logic_gate: true
+    logic_notes:
+      - "Confirm gpt-4o-transcribe is a distinct model or alias — determines whether it is 1 or 2 provider records."
+      - "Confirm current API endpoint name and pricing — do not hardcode."
+      - "Confirm streaming availability for gpt-4o-transcribe (Whisper is batch-only)."
+    status: "not_started"
+
+  - id: P1-T7
+    phase: "1-mvp-harness"
+    title: "Integrate ElevenLabs Scribe"
+    depends_on: [P0-T6]
+    deliverable: "Provider adapter; smoke-test; ProviderCallResult row"
+    acceptance: "Same as P1-T4"
+    logic_gate: true
+    logic_notes:
+      - "Confirm Scribe diarization support — if unsupported, document as missing capability, do not impute score."
+      - "Confirm Scribe is GA (not beta). Verify DPA availability (data-governance.md V4 — blocker)."
+    status: "not_started"
+
+  - id: P1-T8
+    phase: "1-mvp-harness"
+    title: "Implement transcript normalization pipeline"
+    depends_on: [P1-T1]
+    deliverable: "lib/scoring/normalize.ts; unit tests >= 15 cases; deterministic output"
+    acceptance: |
+      Unit tests pass;
+      normalization is deterministic (same input always same output);
+      applied identically to gold and hypothesis;
+      implements OD-2 decisions exactly
+    logic_gate: true
+    logic_notes:
+      - "OD-2 implementation: normalization rules must be frozen (from gold-style-guide.md) before writing this module. No decisions inside the code."
+    status: "not_started"
+
+  - id: P1-T9
+    phase: "1-mvp-harness"
+    title: "Implement WER computation"
+    depends_on: [P1-T8]
+    deliverable: "lib/scoring/wer.ts; Wagner-Fischer WER; unit tests >= 10 edge cases"
+    acceptance: |
+      Output matches manual calculation on 3 spot-check pairs;
+      WER >= 0 and edge cases (empty hypothesis -> 1.0, empty gold -> undefined/warn) handled without crash;
+      denominator = reference word count (confirmed)
+    logic_gate: true
+    logic_notes:
+      - "Confirm WER denominator = reference word count (standard). Document edge cases: empty hypothesis WER=1.0, empty gold logs warning and excludes from aggregation."
+    status: "not_started"
+
+  - id: P1-T10
+    phase: "1-mvp-harness"
+    title: "Implement entity extraction from hypothesis transcripts"
+    depends_on: [P1-T2, P1-T8]
+    deliverable: "lib/scoring/entity-extract.ts; per-entity-type extraction; unit tests per entity type"
+    acceptance: |
+      Correctly extracts >= 90% of entities from 3 manually annotated test transcripts;
+      handles zero-vs-O and one-vs-I confusions;
+      OD-3 method implemented as decided
+    logic_gate: true
+    logic_notes:
+      - "OD-3 implementation: regex patterns per entity type must be reviewed by domain SME before coding."
+      - "Decide: spaCy NER vs gold-span alignment for name/address extraction."
+      - "Decide: are spoken-form VINs (phonetically spelled) in scope for MVP?"
+    status: "not_started"
+
+  - id: P1-T11
+    phase: "1-mvp-harness"
+    title: "Implement entity accuracy scorer"
+    depends_on: [P1-T10, P1-T2]
+    deliverable: "lib/scoring/entity-score.ts; per-type exact-match accuracy; aggregate accuracy"
+    acceptance: |
+      Correctly scores 5 manually constructed gold/hypothesis pairs;
+      tie-breaking and normalization-before-match tested;
+      no edit-distance tolerance applied without explicit approval
+    logic_gate: true
+    logic_notes:
+      - "Matching strategy: exact match after normalization is the default. Any Levenshtein tolerance requires explicit sign-off."
+      - "Confirm which entity types count toward alphanumericAccuracy vs entityAccuracy."
+    status: "not_started"
+
+  - id: P1-T12
+    phase: "1-mvp-harness"
+    title: "Instrument and record provider latency"
+    depends_on: [P1-T4, P1-T5, P1-T6, P1-T7]
+    deliverable: "All adapters record submitted_at, first_partial_at (null if batch), final_at; latency in ms in Score"
+    acceptance: |
+      Streaming provider: first_partial_at within 5s of submitted_at on real call;
+      final_at > first_partial_at;
+      no negative latency;
+      all adapters use Date.now() not provider-reported timestamps
+    logic_gate: true
+    logic_notes:
+      - "All adapters must use Date.now() on harness server — not provider-reported timestamps — for comparability."
+      - "Document network round-trip as a confound in run manifest."
+    status: "not_started"
+
+  - id: P1-T13
+    phase: "1-mvp-harness"
+    title: "Implement cost estimation and recording"
+    depends_on: [P0-T6, P1-T3]
+    deliverable: "lib/scoring/cost.ts; pre-flight estimate; cost recorded in Score; rate_verified flag"
+    acceptance: |
+      Pre-flight estimate within 1% of post-run computed cost;
+      if cost_per_minute is 0 or null, cost reported as 'unverified' not 0;
+      rate_verified=false shows 'unverified' label in all outputs
+    logic_gate: true
+    logic_notes:
+      - "Never hardcode any provider cost per minute. Always read from provider config at run time."
+      - "Add rate_verified boolean to Provider schema (may require schema migration in P0-T1)."
+    status: "not_started"
+
+  - id: P1-T14
+    phase: "1-mvp-harness"
+    title: "Wire scoring pipeline into run execution"
+    depends_on: [P1-T9, P1-T11, P1-T12, P1-T13]
+    deliverable: "Scoring orchestrator; Score row created for each ProviderCallResult; partial failure handled gracefully"
+    acceptance: |
+      3 calls x 2 providers produces 6 Score rows;
+      detail JSONB includes per-entity-type breakdown;
+      failed scoring records error without deleting raw output
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P1-T15
+    phase: "1-mvp-harness"
+    title: "Implement run queue, execution, and status machine"
+    depends_on: [P1-T4, P1-T5, P1-T6, P1-T7, P1-T14, P0-T4]
+    deliverable: "POST /benchmark/runs queues and executes run; status machine queued->running->complete/failed/blocked"
+    acceptance: |
+      PRD AC-MVP-3: full run completes without operator intervention;
+      1 intentionally failing cell -> run reaches 'blocked' not 'failed';
+      successful cells not re-submitted on resume
+    logic_gate: true
+    logic_notes:
+      - "Decide execution model before building: (a) in-process sequential (MVP default), (b) job queue (BullMQ/pg-boss), (c) serverless. In-process is acceptable for MVP but has timeout risk for large runs."
+    status: "not_started"
+
+  - id: P1-T16
+    phase: "1-mvp-harness"
+    title: "MVP end-to-end integration test"
+    depends_on: [P1-T15, P1-T14, P1-T3]
+    deliverable: "Automated test: 3 test calls + mock provider -> correct Score rows; WER matches pre-calculated value"
+    acceptance: |
+      Test suite passes in CI;
+      WER computed from mock output matches expected value to 4 decimal places;
+      Score detail JSONB matches expected structure
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  # ─── Phase 2: Harness Hardening ─────────────────────────────────────────────
+
+  - id: P2-T1
+    phase: "2-hardening"
+    title: "Generate and store immutable run manifest"
+    depends_on: [P1-T15]
+    deliverable: "Run manifest generated at POST /benchmark/runs; corpus_snapshot + provider_snapshot JSONB; exportable as JSON"
+    acceptance: |
+      Modifying a call's gold transcript after run creation does NOT change run manifest;
+      manifest export includes all fields per docs/reproducibility.md §3;
+      audio_sha256, gold_transcript_sha256, entity_annotations_sha256 all computed correctly
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P2-T2
+    phase: "2-hardening"
+    title: "Re-score from stored raw outputs"
+    depends_on: [P2-T1, P1-T14]
+    deliverable: "CLI or API endpoint: re-score a run from raw_output; new Score rows tagged with new scoring_version"
+    acceptance: |
+      PRD AC-MVP-7: re-scoring with same scoring version produces bit-identical scores;
+      re-scoring with new normalization rule produces documented diff;
+      original Score rows preserved
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P2-T3
+    phase: "2-hardening"
+    title: "Run resume: re-run only failed cells"
+    depends_on: [P1-T15, P2-T1]
+    deliverable: "Resume endpoint for blocked/failed runs; only cells with missing or failed results are re-submitted"
+    acceptance: |
+      Run with 2 of 12 cells failed can be resumed;
+      previously successful cells not re-submitted;
+      final status is complete after all cells succeed
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P2-T4
+    phase: "2-hardening"
+    title: "Pre-flight cost estimate before run creation"
+    depends_on: [P1-T13, P1-T15]
+    deliverable: "POST /benchmark/runs returns cost estimate; requires confirm:true flag if estimate > threshold; threshold configurable via env"
+    acceptance: |
+      100-call x 6-provider run with $0.01/min and 2-min avg shows $12 estimate;
+      run requires explicit confirm:true to proceed above threshold
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P2-T5
+    phase: "2-hardening"
+    title: "Detect and flag stale run results"
+    depends_on: [P2-T1]
+    deliverable: "Staleness detection: compare current hashes vs run manifest; surface warning in rankings/run response"
+    acceptance: |
+      Modifying a call after a run produces staleness warning on that run's rankings;
+      unmodified runs show no staleness warning
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  # ─── Phase 3: Full Benchmark ─────────────────────────────────────────────────
+
+  - id: P3-T1
+    phase: "3-full-benchmark"
+    title: "Scale corpus to 50-100 approved calls"
+    depends_on: [P2-T1, P1-T3]
+    deliverable: ">= 50 calls in ready_to_run; >= 12 per vertical; hard-case distribution documented; corpus manifest v1.0"
+    acceptance: |
+      PRD AC-FULL-1;
+      each vertical has >= 3 hard-case categories represented by >= 2 calls each
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  - id: P3-T2
+    phase: "3-full-benchmark"
+    title: "Integrate Gladia and Speechmatics"
+    depends_on: [P0-T6, P1-T12]
+    deliverable: "providers/gladia.ts, providers/speechmatics.ts; smoke-tests; provider records; capability flags verified"
+    acceptance: |
+      PRD AC-FULL-2;
+      diarization and keyword-boosting flags verified against current API docs;
+      same latency instrumentation as other providers
+    logic_gate: true
+    logic_notes:
+      - "Speechmatics: decide batch vs real-time API (real-time = TTFP measurement possible but different pricing)."
+      - "Gladia: confirm which tier (transcription-only vs audio-intelligence) is used for benchmark; affects cost."
+    status: "not_started"
+
+  - id: P3-T3
+    phase: "3-full-benchmark"
+    title: "Implement diarization scoring"
+    depends_on: [P1-T2, P1-T8]
+    deliverable: "lib/scoring/diarization.ts; DER computation; null output for providers without diarization support"
+    acceptance: |
+      PRD AC-FULL-3;
+      DER computed correctly on 2 manually constructed RTTM examples;
+      providers without diarization output diarization_score: null (not 0);
+      collar = 0.25s
+    logic_gate: true
+    logic_notes:
+      - "OD-4: Confirm gold annotation format = RTTM before building gold annotation tooling."
+      - "OD-7: Confirm DER as primary metric, JER as secondary. Confirm collar = 0.25s."
+      - "Verify tooling: use pyannote.metrics or equivalent; pin version in package.json."
+    status: "not_started"
+
+  - id: P3-T4
+    phase: "3-full-benchmark"
+    title: "Implement composite ranking score"
+    depends_on: [P1-T11, P1-T9, P1-T12, P1-T13, P3-T3]
+    deliverable: "lib/scoring/composite.ts; GET /benchmark/rankings returns ranked list per vertical; weight vector from config"
+    acceptance: |
+      Rankings reproducible from stored Score rows;
+      changing weights reruns ranking without re-calling providers;
+      null diarization_score providers ranked on available metrics with weight redistribution
+    logic_gate: true
+    logic_notes:
+      - "OD-1: Weight vector must be approved by Decision Maker before this task is built. Proposed default: WER 35%, entity 35%, latency 10%, cost 10%, diarization 10%."
+      - "Weight vector stored in run manifest so rankings are reproducible."
+    status: "not_started"
+
+  - id: P3-T5
+    phase: "3-full-benchmark"
+    title: "Compute confidence intervals and significance flags"
+    depends_on: [P3-T4]
+    deliverable: "lib/scoring/significance.ts; bootstrap CIs on WER and entity accuracy; tie flags in ranking output"
+    acceptance: |
+      PRD AC-FULL-5;
+      bootstrap B=1000 produces stable CIs on fixed dataset;
+      tied pairs (overlapping 95% CIs) correctly flagged;
+      corpus-size warning at N < 20 calls per vertical
+    logic_gate: true
+    logic_notes:
+      - "OD-5: Confirm bootstrap percentile CI as method. Confirm B=1000 (10000 for final report). Confirm alpha=0.05 and tie definition."
+    status: "not_started"
+
+  - id: P3-T6
+    phase: "3-full-benchmark"
+    title: "Design and run keyword-boosting experiment"
+    depends_on: [P3-T1, P3-T2, P0-T6]
+    deliverable: "Paired provider config variants (boosted vs baseline); delta report on entity accuracy per vertical"
+    acceptance: |
+      Boosted and unboosted configs have distinct config_hash;
+      delta report shows per-entity-type improvement;
+      vocabulary list versioned and hashed
+    logic_gate: true
+    logic_notes:
+      - "OD-8: Confirm paired design (same call, same provider, boosted vs not). Confirm vocabulary list curated per vertical by domain SME, not by provider recommendation."
+    status: "not_started"
+
+  - id: P3-T7
+    phase: "3-full-benchmark"
+    title: "Execute full benchmark run (50-100 calls x 6 providers)"
+    depends_on: [P3-T1, P3-T2, P3-T3, P3-T4, P2-T4, P2-T3]
+    deliverable: "Completed run record; all Score rows; staleness check passes; run manifest archived"
+    acceptance: |
+      PRD AC-FULL-2;
+      run completes or reaches complete after resume;
+      cost within 10% of pre-flight estimate;
+      no staleness warnings
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"
+
+  # ─── Phase 4: Decision & Handoff ─────────────────────────────────────────────
+
+  - id: P4-T1
+    phase: "4-decision"
+    title: "Export decision-ready report"
+    depends_on: [P3-T5, P3-T6, P3-T7]
+    deliverable: "benchmark-report-v{N}.json + benchmark-report-v{N}.md; per-vertical rankings; CI bounds; recommendation per vertical"
+    acceptance: |
+      PRD AC-FULL-6;
+      report reviewed and signed off by Decision Maker;
+      recommendation per vertical names a provider and config;
+      cost projection at volume included;
+      all cost figures footnoted as unverified or invoice-verified
+    logic_gate: true
+    logic_notes:
+      - "OD-9: Tie-breaking order must be agreed by Decision Maker before report is written. Default order: entity accuracy > cost > TTF p95 > keyword-boosting support > human judgment."
+    status: "not_started"
+
+  - id: P4-T2
+    phase: "4-decision"
+    title: "Archive corpus and activate retention schedule"
+    depends_on: [P4-T1, P0-T5]
+    deliverable: "Corpus snapshot archived; retention policy enforced; deletion log active; OD-10 resolved"
+    acceptance: |
+      Archived calls cannot be used in new runs without explicit un-archive action;
+      retention schedule documented per data-governance.md §5;
+      PRD AC-FULL-7 satisfied
+    logic_gate: false
+    logic_notes: []
+    status: "not_started"

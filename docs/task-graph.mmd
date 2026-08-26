@@ -1,0 +1,145 @@
+---
+title: STT Benchmark — Task Dependency Graph
+---
+flowchart TD
+    %% ── Phase 0: Foundation ──────────────────────────────────────────
+    P0T1["P0-T1\nDB Schema"]
+    P0T2["P0-T2\nObject Storage"]
+    P0T3["P0-T3\nAPI Skeleton"]
+    P0T4["P0-T4\nAudit Log"]
+    P0T5["P0-T5\nDe-id Attestation"]
+    P0T6["P0-T6\nProvider Config CRUD"]
+
+    P0T1 --> P0T2
+    P0T1 --> P0T3
+    P0T1 --> P0T6
+    P0T3 --> P0T4
+    P0T3 --> P0T5
+    P0T4 --> P0T5
+
+    %% ── Phase 1: MVP Corpus & Harness ────────────────────────────────
+    P1T1["P1-T1\nGold Style Guide\n⚠ OD-2"]
+    P1T2["P1-T2\nEntity Annotation Format\n⚠ OD-3"]
+    P1T3["P1-T3\nCorpus Curation\n10–15 Calls"]
+    P1T4["P1-T4\nDeepgram Nova-3\n⚠ streaming decision"]
+    P1T5["P1-T5\nAssemblyAI Universal\n⚠ async upload?"]
+    P1T6["P1-T6\nOpenAI gpt-4o + Whisper\n⚠ endpoint confirm"]
+    P1T7["P1-T7\nElevenLabs Scribe\n⚠ diarization?"]
+    P1T8["P1-T8\nTranscript Normalization\n⚠ OD-2 impl"]
+    P1T9["P1-T9\nWER Computation\n⚠ denominator"]
+    P1T10["P1-T10\nEntity Extraction\n⚠ OD-3 impl"]
+    P1T11["P1-T11\nEntity Accuracy Scorer\n⚠ match strategy"]
+    P1T12["P1-T12\nLatency Instrumentation"]
+    P1T13["P1-T13\nCost Model\n⚠ rate_verified flag"]
+    P1T14["P1-T14\nScoring Orchestrator"]
+    P1T15["P1-T15\nRun Execution Engine\n⚠ exec model"]
+    P1T16["P1-T16\nMVP E2E Test"]
+
+    P0T5 --> P1T1
+    P1T1 --> P1T2
+    P1T1 --> P1T3
+    P1T2 --> P1T3
+    P1T1 --> P1T8
+    P1T8 --> P1T9
+    P1T2 --> P1T10
+    P1T8 --> P1T10
+    P1T10 --> P1T11
+    P1T2 --> P1T11
+    P0T6 --> P1T4
+    P0T6 --> P1T5
+    P0T6 --> P1T6
+    P0T6 --> P1T7
+    P1T4 --> P1T12
+    P1T5 --> P1T12
+    P1T6 --> P1T12
+    P1T7 --> P1T12
+    P0T6 --> P1T13
+    P1T3 --> P1T13
+    P1T9 --> P1T14
+    P1T11 --> P1T14
+    P1T12 --> P1T14
+    P1T13 --> P1T14
+    P1T4 --> P1T15
+    P1T5 --> P1T15
+    P1T6 --> P1T15
+    P1T7 --> P1T15
+    P1T14 --> P1T15
+    P0T4 --> P1T15
+    P1T15 --> P1T16
+    P1T14 --> P1T16
+    P1T3 --> P1T16
+
+    %% ── Phase 2: Hardening ───────────────────────────────────────────
+    P2T1["P2-T1\nRun Manifest"]
+    P2T2["P2-T2\nRe-score from Raw"]
+    P2T3["P2-T3\nResume-on-Failure"]
+    P2T4["P2-T4\nCost Pre-flight"]
+    P2T5["P2-T5\nStaleness Detection"]
+
+    P1T15 --> P2T1
+    P2T1 --> P2T2
+    P1T14 --> P2T2
+    P2T1 --> P2T3
+    P1T15 --> P2T3
+    P1T13 --> P2T4
+    P1T15 --> P2T4
+    P2T1 --> P2T5
+
+    %% ── Phase 3: Full Benchmark ──────────────────────────────────────
+    P3T1["P3-T1\nCorpus Scale 50–100"]
+    P3T2["P3-T2\nGladia + Speechmatics\n⚠ API tier"]
+    P3T3["P3-T3\nDiarization Scoring\n⚠ OD-4 OD-7"]
+    P3T4["P3-T4\nComposite Ranking\n⚠ OD-1 weights"]
+    P3T5["P3-T5\nStatistical Significance\n⚠ OD-5"]
+    P3T6["P3-T6\nKeyword-Boosting Exp\n⚠ OD-8"]
+    P3T7["P3-T7\nFull Benchmark Run"]
+
+    P2T1 --> P3T1
+    P1T3 --> P3T1
+    P0T6 --> P3T2
+    P1T12 --> P3T2
+    P1T2 --> P3T3
+    P1T8 --> P3T3
+    P1T11 --> P3T4
+    P1T9 --> P3T4
+    P1T12 --> P3T4
+    P1T13 --> P3T4
+    P3T3 --> P3T4
+    P3T4 --> P3T5
+    P3T1 --> P3T6
+    P3T2 --> P3T6
+    P0T6 --> P3T6
+    P3T1 --> P3T7
+    P3T2 --> P3T7
+    P3T3 --> P3T7
+    P3T4 --> P3T7
+    P2T4 --> P3T7
+    P2T3 --> P3T7
+
+    %% ── Phase 4: Decision & Handoff ──────────────────────────────────
+    P4T1["P4-T1\nDecision Report\n⚠ OD-9 tie-break"]
+    P4T2["P4-T2\nCorpus Archive"]
+
+    P3T5 --> P4T1
+    P3T6 --> P4T1
+    P3T7 --> P4T1
+    P4T1 --> P4T2
+    P0T5 --> P4T2
+
+    %% ── Styling ──────────────────────────────────────────────────────
+    classDef phase0 fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef phase1 fill:#dcfce7,stroke:#22c55e,color:#14532d
+    classDef phase2 fill:#fef9c3,stroke:#eab308,color:#713f12
+    classDef phase3 fill:#fce7f3,stroke:#ec4899,color:#831843
+    classDef phase4 fill:#ede9fe,stroke:#8b5cf6,color:#3b0764
+    classDef logic fill:#fee2e2,stroke:#ef4444,color:#7f1d1d
+
+    class P0T1,P0T2,P0T3,P0T4,P0T5,P0T6 phase0
+    class P1T3,P1T12,P1T13,P1T14,P1T15,P1T16 phase1
+    class P2T1,P2T2,P2T3,P2T4,P2T5 phase2
+    class P3T1,P3T7 phase3
+    class P4T2 phase4
+
+    class P1T1,P1T2,P1T4,P1T5,P1T6,P1T7,P1T8,P1T9,P1T10,P1T11,P1T15 logic
+    class P3T2,P3T3,P3T4,P3T5,P3T6 logic
+    class P4T1 logic
