@@ -46,7 +46,7 @@ pays for.
 | T-01 | ✅ **done** (PR #4). **Judge cost precision.** `judge_cost_cents` is `integer`; the value is fractional (`0.4905`), so every judged insert fails. Replace with integer micro-cents (`judge_cost_microcents`, 1¢ = 10,000µ¢). Apply the same treatment to `benchmark_scores.cost_cents`, where `Math.round(x*100)` currently loses ~8%. | `lib/db/src/schema/benchmark-agent-scans.ts`, `benchmark-scores.ts`, `lib/agent.ts`, `lib/agent-verify.ts`, `lib/run-executor.ts`, `routes/bulks.ts`, `openapi.yaml` | A judged scan row reads back with a non-null cost, and a bulk's `agentCostCents` is > 0 |
 | T-02 | ✅ **done** (PR #5). **Never discard a good judge payload.** Split the single `try` in `verifyCallWithAgent` so the OpenAI call and the DB write are caught separately, with distinct error prefixes (`judge_failed:` / `scan_write_failed:`). If the full insert fails, retry once without the cost columns. | `lib/agent-verify.ts` | Forcing a write error still persists the reasoning and the pick; the error names the write, not the judge |
 | T-03 | ✅ **done** (PR #6). **Stop conflating "flagged" with "the AI crashed."** `agentCallsFlagged` counted `flagged \|\| error`. Split into `agentCallsFlagged` and `agentCallsErrored`, both exposed; a destructive strip renders when errored > 0, on both the bulk detail and the per-bulk Rankings header. `agentCostMicrocents` is now nullable and distinguishes three states: a real total, a real zero (nothing flagged, so no judge call was ever made), and null = "not recorded" (judge calls ran, no cost survived). | `routes/bulks.ts`, `openapi.yaml`, `Rankings.tsx`, `Bulks.tsx`, `lib/utils.ts` | Forcing one scan to error shows the strip; the ranking table is visibly unaffected |
-| T-04 | **Build identity in `/api/healthz`.** Return `commitSha`, `builtAt`, `startedAt`, and `providersConfigured` (**names only — never a key or part of one**), injected at build time via esbuild `define`. | `build.mjs`, `routes/health.ts`, `api-zod`, `openapi.yaml` | `curl /api/healthz` shows the SHA of the running build |
+| T-04 | ✅ **done** (PR #7). **Build identity in `/api/healthz`.** Returns `commitSha`, `builtAt`, `startedAt`, `providersConfigured` (**names only**). SHA and build time are frozen into the bundle by esbuild `define` at build time, so they describe the bundle rather than the working tree at start. A dirty tree at build time stamps a `-dirty` suffix; running from source (tsx) reports `commitSha: "dev"`, `builtAt: null` — never a fabricated commit. No database work in the handler: a liveness probe must answer when the database is what is down. | `build.mjs`, `src/lib/build-info.ts`, `routes/health.ts`, `api-zod`, `openapi.yaml` | `curl /api/healthz` shows the SHA of the running build |
 | T-05 | **Build badge in the UI footer.** Quiet, monospaced, from T-04. | `components/layout.tsx` | Rebuild + restart changes the SHA on screen |
 | T-06 | **Classify cell failures.** Add `failureClass` enum (`retention_expired \| audio_url_forbidden \| provider_timeout \| provider_5xx \| rate_limited \| audio_decode \| unknown`), set at the throw site — never by regexing a message afterwards. | `lib/db/src/schema/benchmark-results.ts`, `lib/run-executor.ts`, `openapi.yaml` | Last bulk's 45 failures classify as 42/2/1; `unknown` stays visible |
 | T-07 | **Group failures in the UI; retry only what's retryable.** Replace the bare count with a grouped breakdown. The retry button carries the *retryable* count and is disabled (with a reason) at zero. | `Bulks.tsx` | Bulk `7d2585da` renders 42/2/1 and a button reading "Retry 1 retryable cell" |
@@ -187,6 +187,17 @@ Append anything learned mid-task here rather than losing it to a compaction.
   the probe cost. `GET /benchmark/rankings` contains no reference to
   `benchmark_agent_scans` at all, so "the ranking table is unaffected" is structural,
   not just observed.
+
+- **2026-08-28 (T-04):** the stale-build failure mode was reproduced deliberately and
+  is now visible. Rebuilt the bundle without restarting: the on-disk bundle stamped
+  `builtAt 23:44:42`, while the running process kept answering `builtAt 23:44:17`,
+  `startedAt 23:44:26`. **`builtAt` newer on disk than the one the server reports is
+  the exact signal for "rebuilt but not restarted"** — the thing that silently wasted
+  two earlier verification passes. Live response also confirmed 6 configured
+  providers by name (assemblyai-universal, cartesia-ink-whisper, deepgram-nova-3,
+  elevenlabs-scribe, gladia-solaria, openai-gpt-4o-transcribe); Speechmatics is
+  correctly absent, having no key. No key material appears in the payload — only
+  provider ids and a boolean-by-omission of whether the env var is non-empty.
 
 - **2026-08-28:** measured per-provider latency (bulk `7d2585da`): Cartesia 128.8s,
   Gladia 15.3s, AssemblyAI 13.0s, Deepgram 3.5s, OpenAI 3.1s. **Cartesia is 79% of

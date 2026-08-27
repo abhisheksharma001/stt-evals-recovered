@@ -4,11 +4,38 @@ import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
 import { rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+
+// T-04 (2026-08-28): stamp the running build with the commit it came from.
+// There is no watch mode on this server, so a source change only reaches
+// the process after a rebuild AND a manual restart -- and until now nothing
+// on screen said which of the two had actually happened. Twice already a
+// "fixed" behaviour was checked against a process still running older code.
+// The SHA is read at BUILD time and frozen into the bundle by esbuild's
+// `define`, so it describes the bundle itself, not whatever the working
+// tree happens to be when the process later starts.
+function readGit(args, fallback) {
+  try {
+    return execFileSync("git", args, { cwd: artifactDir, encoding: "utf8" }).trim() || fallback;
+  } catch {
+    // Building outside a git checkout (a container, a tarball) is legitimate.
+    // "unknown" is honest; a fabricated SHA would not be.
+    return fallback;
+  }
+}
+
+const commitSha = readGit(["rev-parse", "--short=12", "HEAD"], "unknown");
+// A dirty tree means the bundle does NOT correspond to that commit. Say so
+// in the SHA itself rather than letting it silently claim otherwise.
+const isDirty = readGit(["status", "--porcelain"], "") !== "";
+const buildCommitSha = commitSha === "unknown" ? "unknown" : isDirty ? `${commitSha}-dirty` : commitSha;
+const buildAt = new Date().toISOString();
+console.log(`build identity: ${buildCommitSha} @ ${buildAt}`);
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -102,6 +129,11 @@ async function buildAll() {
       "electron",
     ],
     sourcemap: "linked",
+    // Frozen into the bundle at build time; read back by src/lib/build-info.ts.
+    define: {
+      __BUILD_COMMIT_SHA__: JSON.stringify(buildCommitSha),
+      __BUILD_AT__: JSON.stringify(buildAt),
+    },
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })
