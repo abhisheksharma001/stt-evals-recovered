@@ -1,0 +1,1078 @@
+<title>STT-evals v4 Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --ground:        #eff1f2;
+    --surface:       #ffffff;
+    --surface-sunk:  #e6e9eb;
+    --line:          #d3d8db;
+    --line-strong:   #b3bbbf;
+    --ink:           #14191d;
+    --ink-soft:      #4d585f;
+    --ink-faint:     #78848b;
+    --accent:        #9a6f14;
+    --accent-bg:     #f5ead2;
+    --critical:      #a63d33;
+    --critical-bg:   #f8e3e0;
+    --warn:          #8a6410;
+    --ok:            #256b5c;
+    --ok-bg:         #dcece8;
+    --shadow:        0 1px 2px rgba(20,25,29,.06), 0 8px 24px -18px rgba(20,25,29,.4);
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:       #0e1215;
+      --surface:      #161b1f;
+      --surface-sunk: #101518;
+      --line:         #262d33;
+      --line-strong:  #3a444b;
+      --ink:          #e3e8ea;
+      --ink-soft:     #a3aeb4;
+      --ink-faint:    #7b868c;
+      --accent:       #d9a441;
+      --accent-bg:    #2b2417;
+      --critical:     #e2837a;
+      --critical-bg:  #2e1c1a;
+      --warn:         #cf9d3c;
+      --ok:           #62bda7;
+      --ok-bg:        #142623;
+      --shadow:       0 1px 2px rgba(0,0,0,.5), 0 10px 28px -20px rgba(0,0,0,.9);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:       #0e1215;
+    --surface:      #161b1f;
+    --surface-sunk: #101518;
+    --line:         #262d33;
+    --line-strong:  #3a444b;
+    --ink:          #e3e8ea;
+    --ink-soft:     #a3aeb4;
+    --ink-faint:    #7b868c;
+    --accent:       #d9a441;
+    --accent-bg:    #2b2417;
+    --critical:     #e2837a;
+    --critical-bg:  #2e1c1a;
+    --warn:         #cf9d3c;
+    --ok:           #62bda7;
+    --ok-bg:        #142623;
+    --shadow:       0 1px 2px rgba(0,0,0,.5), 0 10px 28px -20px rgba(0,0,0,.9);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 clamp(18px, 4vw, 48px) 96px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    padding: clamp(44px, 7vw, 88px) 0 34px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+  }
+
+  h1 {
+    font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+    font-weight: 700;
+    font-size: clamp(38px, 6.4vw, 68px);
+    line-height: 1.02;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+
+  .thesis {
+    max-width: var(--measure);
+    font-size: clamp(17px, 1.7vw, 20px);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  .thesis strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- status strip ---------- */
+
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 18px 20px 20px;
+  }
+
+  .stat dt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 6px;
+  }
+
+  .stat dd {
+    margin: 0;
+    font-family: "IBM Plex Sans Condensed", sans-serif;
+    font-size: 27px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  .stat dd small {
+    display: block;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--ink-faint);
+    letter-spacing: 0;
+    margin-top: 3px;
+  }
+
+  .stat dd.is-bad { color: var(--critical); }
+  .stat dd.is-ok  { color: var(--ok); }
+
+  /* ---------- sections ---------- */
+
+  section { padding-top: clamp(46px, 6vw, 76px); }
+
+  h2 {
+    font-family: "IBM Plex Sans Condensed", sans-serif;
+    font-size: clamp(24px, 3vw, 33px);
+    font-weight: 600;
+    letter-spacing: -.01em;
+    line-height: 1.14;
+    text-wrap: balance;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  h2 .h2-tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 2px 7px;
+  }
+
+  h3 {
+    font-family: "IBM Plex Sans Condensed", sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    color: var(--ink-soft);
+    margin: 0 0 30px;
+  }
+
+  p { max-width: var(--measure); }
+  p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .88em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: .08em .34em;
+  }
+
+  /* ---------- pipeline ---------- */
+
+  .pipe-wrap { overflow-x: auto; padding-bottom: 6px; }
+
+  .pipe {
+    display: flex;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    min-width: 640px;
+  }
+
+  .stage {
+    background: var(--surface);
+    flex: 1;
+    padding: 16px 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border-top: 3px solid var(--ok);
+  }
+
+  .stage.is-broken { border-top-color: var(--critical); }
+
+  .stage-name {
+    font-family: "IBM Plex Sans Condensed", sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+  }
+
+  .stage-note {
+    font-size: 12.5px;
+    line-height: 1.42;
+    color: var(--ink-faint);
+  }
+
+  .stage-state {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ok);
+    margin-top: auto;
+  }
+
+  .stage.is-broken .stage-state { color: var(--critical); }
+
+  /* ---------- tables ---------- */
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 560px;
+    font-size: 14.5px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--surface-sunk);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", monospace; }
+
+  .pill {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .pill.live    { background: var(--ok-bg);       color: var(--ok);       border-color: color-mix(in srgb, var(--ok) 32%, transparent); }
+  .pill.pending { background: var(--accent-bg);   color: var(--accent);   border-color: color-mix(in srgb, var(--accent) 32%, transparent); }
+  .pill.none    { background: var(--surface-sunk); color: var(--ink-faint); border-color: var(--line-strong); }
+
+  /* ---------- findings ---------- */
+
+  .findings { display: grid; gap: 18px; }
+
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--critical);
+    box-shadow: var(--shadow);
+    padding: 22px clamp(18px, 3vw, 28px) 24px;
+  }
+
+  .finding.sev-warn { border-left-color: var(--warn); }
+
+  .finding-head {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .finding-id {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--critical);
+  }
+
+  .finding.sev-warn .finding-id { color: var(--warn); }
+
+  .finding h3 { margin: 0; flex: 1 1 260px; }
+
+  .finding p { margin: 0 0 12px; }
+
+  .evidence {
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 13px 15px;
+    margin: 14px 0;
+    overflow-x: auto;
+  }
+
+  .evidence pre {
+    margin: 0;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+
+  .evidence-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .fix {
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    margin-top: 16px;
+  }
+
+  .fix-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  ul.tight { max-width: var(--measure); padding-left: 20px; margin: 0; }
+  ul.tight li { margin-bottom: 7px; }
+  ul.tight li:last-child { margin-bottom: 0; }
+
+  /* ---------- verdicts ---------- */
+
+  .verdicts { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    padding: 24px clamp(18px, 2.4vw, 26px) 26px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .verdict-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 4px;
+  }
+
+  .verdict-name {
+    font-family: "IBM Plex Sans Condensed", sans-serif;
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -.005em;
+    margin: 0;
+  }
+
+  .verdict-call {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 2px;
+    background: var(--ok-bg);
+    color: var(--ok);
+    border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
+    white-space: nowrap;
+  }
+
+  .verdict-what {
+    font-size: 13px;
+    color: var(--ink-faint);
+    margin: 0 0 16px;
+  }
+
+  .verdict h4 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    margin: 18px 0 8px;
+  }
+
+  .verdict h4:first-of-type { margin-top: 0; }
+  .verdict p, .verdict ul { max-width: none; font-size: 14.5px; }
+
+  .verdict .closing {
+    margin-top: auto;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 14.5px;
+  }
+
+  .verdict .closing strong { color: var(--accent); }
+
+  /* ---------- phases ---------- */
+
+  .phases { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+
+  .phase {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 66px 1fr;
+    gap: 0 20px;
+    padding: 20px clamp(16px, 2.4vw, 24px);
+  }
+
+  .phase-n {
+    font-family: "IBM Plex Sans Condensed", sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--line-strong);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .phase.is-now .phase-n { color: var(--accent); }
+
+  .phase-body h3 { margin-bottom: 4px; }
+  .phase-body p { margin: 0 0 8px; font-size: 14.5px; }
+
+  .exit {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    border-left: 2px solid var(--line-strong);
+    padding-left: 12px;
+    margin: 0;
+  }
+
+  .exit b {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: block;
+    font-weight: 500;
+  }
+
+  /* ---------- next actions ---------- */
+
+  .actions { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+
+  .action {
+    background: var(--surface);
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: baseline;
+  }
+
+  .action-i {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .action-text { font-size: 15px; }
+  .action-text small { display: block; color: var(--ink-faint); font-size: 13px; }
+
+  .action-cost {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+
+  /* ---------- docs footer ---------- */
+
+  .docs {
+    margin-top: 20px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .doc {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 16px 18px;
+  }
+
+  .doc code { background: none; border: none; padding: 0; color: var(--accent); font-size: 13px; }
+  .doc p { font-size: 13.5px; color: var(--ink-soft); margin: 6px 0 0; }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 620px) {
+    .phase { grid-template-columns: 1fr; gap: 6px; }
+    .action { grid-template-columns: 1fr; gap: 4px; }
+    .action-cost { text-align: left; }
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">Product requirements · v4 · 28 Aug 2026</p>
+    <h1>What v4 has to fix</h1>
+    <p class="thesis">
+      The benchmark pipeline works end to end. The platform underneath it does not hold
+      onto what the pipeline produces: <strong>the last bulk ran 63 AI judgements,
+      paid for all of them, and saved none of them</strong> — then reported the loss to
+      the user as <strong>$0.00</strong>. Two structural answers are on the table:
+      durable execution, and a typed LLM layer. Here is the evidence, the call on each,
+      and the order to do it in.
+    </p>
+  </header>
+
+  <dl class="strip">
+    <div class="stat">
+      <dt>Last bulk</dt>
+      <dd>72<small>calls, all attempted</small></dd>
+    </div>
+    <div class="stat">
+      <dt>Cells OK</dt>
+      <dd class="is-ok">315<small>of 360 · 87.5%</small></dd>
+    </div>
+    <div class="stat">
+      <dt>Cells failed</dt>
+      <dd>45<small>3 unrelated causes</small></dd>
+    </div>
+    <div class="stat">
+      <dt>Judgements kept</dt>
+      <dd class="is-bad">0<small>of 63 computed</small></dd>
+    </div>
+    <div class="stat">
+      <dt>Providers live</dt>
+      <dd>6<small>of 7 keyed</small></dd>
+    </div>
+    <div class="stat">
+      <dt>Deployed build</dt>
+      <dd class="is-bad">−4<small>commits behind repo</small></dd>
+    </div>
+  </dl>
+
+  <section>
+    <h2>Where the pipeline actually stands <span class="h2-tag">verified, not remembered</span></h2>
+    <p class="lede">
+      Six stages. Five of them are solid and live-proven against real provider APIs.
+      One computes the right answer and then throws it away.
+    </p>
+
+    <div class="pipe-wrap">
+      <div class="pipe">
+        <div class="stage">
+          <span class="stage-name">Import</span>
+          <span class="stage-note">Pulls real calls from two Vapi accounts, resolves signed audio URLs.</span>
+          <span class="stage-state">Working</span>
+        </div>
+        <div class="stage">
+          <span class="stage-name">Cache audio</span>
+          <span class="stage-note">Once fetched, kept on local disk forever — survives Vapi's 14-day deletion.</span>
+          <span class="stage-state">Working</span>
+        </div>
+        <div class="stage">
+          <span class="stage-name">Run providers</span>
+          <span class="stage-note">Same audio through every candidate. 315 of 360 cells succeeded last run.</span>
+          <span class="stage-state">Working</span>
+        </div>
+        <div class="stage">
+          <span class="stage-name">Flag</span>
+          <span class="stage-note">Free, deterministic: providers disagreeing with each other, plus self-reported doubt.</span>
+          <span class="stage-state">Working</span>
+        </div>
+        <div class="stage is-broken">
+          <span class="stage-name">Judge</span>
+          <span class="stage-note">Asks GPT-4o which transcript reads right. Runs, succeeds, then fails to save.</span>
+          <span class="stage-state">Losing data</span>
+        </div>
+        <div class="stage">
+          <span class="stage-name">Rank</span>
+          <span class="stage-note">Composite score per provider, scoped per bulk or all-time.</span>
+          <span class="stage-state">Working</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Providers</h2>
+    <p class="lede">
+      Seven adapters written. Six now have keys — ElevenLabs was added last night and is
+      waiting on a restart to appear in a run for the first time.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Provider</th>
+            <th scope="col">ID</th>
+            <th scope="col">Key</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>AssemblyAI</td><td><code>assemblyai-universal</code></td><td>configured</td><td><span class="pill live">Live-proven</span></td></tr>
+          <tr><td>Deepgram</td><td><code>deepgram-nova-3</code></td><td>configured</td><td><span class="pill live">Live-proven</span></td></tr>
+          <tr><td>Gladia</td><td><code>gladia-solaria</code></td><td>configured</td><td><span class="pill live">Live-proven</span></td></tr>
+          <tr><td>OpenAI</td><td><code>openai-gpt-4o-transcribe</code></td><td>configured</td><td><span class="pill live">Live-proven</span></td></tr>
+          <tr><td>Cartesia</td><td><code>cartesia-ink-whisper</code></td><td>configured</td><td><span class="pill pending">Long-call fix built, not deployed</span></td></tr>
+          <tr><td>ElevenLabs</td><td><code>elevenlabs-scribe</code></td><td>configured</td><td><span class="pill pending">Awaiting first run</span></td></tr>
+          <tr><td>Speechmatics</td><td><code>speechmatics</code></td><td>none</td><td><span class="pill none">Adapter only</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Three P0 findings <span class="h2-tag">fix before anything new</span></h2>
+    <p class="lede">
+      Each of these was found by reading the last bulk's real output, not by inspection
+      of the code in the abstract. Each destroys or hides information the tool exists to
+      produce.
+    </p>
+
+    <div class="findings">
+
+      <article class="finding">
+        <div class="finding-head">
+          <span class="finding-id">V4-T1</span>
+          <h3>Every AI judgement is computed, paid for, and discarded</h3>
+        </div>
+        <p>
+          The judge column <code>judge_cost_cents</code> is an <em>integer</em>. A real
+          judgement costs <code>0.4905</code> cents. Postgres rejects the insert, and the
+          surrounding <code>catch</code> assumes any exception means the judge itself
+          failed — so it writes an error row and drops the model's actual answer.
+        </p>
+        <p>
+          The OpenAI call had fully succeeded: 1,350 prompt tokens, 153 completion tokens,
+          a coherent paragraph picking AssemblyAI with reasons, and a resolved pick. All
+          of it gone. About <strong>31 cents of spend and 63 real judgements lost</strong>,
+          reported on screen as <code>$0.00</code> and "0 judged".
+        </p>
+        <div class="evidence">
+          <span class="evidence-label">Bulk 7d2585da — actual cost, as returned by the API</span>
+          <pre>agentCostCents:    0        ← money was spent
+agentCallsChecked: 63
+agentCallsFlagged: 63       ← counts "flagged" OR "error" as one thing
+agentCallsJudged:  0        ← all 63 were errors</pre>
+        </div>
+        <div class="fix">
+          <span class="fix-label">Fix — three separate defects</span>
+          <ul class="tight">
+            <li><b>Precision.</b> Store integer micro-cents (1¢ = 10,000&nbsp;µ¢). The same
+              rounding bug quietly costs ~8% on STT cells, where a 0.92¢ cell is recorded as 1¢.</li>
+            <li><b>Blast radius.</b> A storage failure must never be reported as a judge
+              failure. Separate the two <code>try</code> blocks and the two error prefixes.</li>
+            <li><b>Never discard a good payload.</b> If the write fails, retry it without the
+              cost columns. Losing a cost number is annoying; losing the judgement is not acceptable.</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head">
+          <span class="finding-id">V4-T2</span>
+          <h3>The running server can be arbitrarily behind the repo, invisibly</h3>
+        </div>
+        <p>
+          The process serving traffic started from a bundle built before four commits of
+          fixes — the Cartesia long-call fix, the judge-pick fallback, retention filtering,
+          and the peer-flag exposure. All shipped in git, none live. There is no watch mode
+          on the API server, so every backend change needs a manual rebuild and restart,
+          and forgetting one leaves no trace on screen.
+        </p>
+        <div class="fix">
+          <span class="fix-label">Fix</span>
+          <p><code>/api/healthz</code> returns the commit SHA, build time, start time, and the
+          <em>names</em> of configured providers — never keys, never partial keys. The UI
+          footer renders the SHA. A stale deploy becomes a glance instead of a <code>ps</code>.</p>
+        </div>
+      </article>
+
+      <article class="finding sev-warn">
+        <div class="finding-head">
+          <span class="finding-id">V4-T3</span>
+          <h3>"45 cells failed" is three unrelated problems wearing one label</h3>
+        </div>
+        <p>
+          The number reads as "the tool is 12% broken". In truth roughly 93% of those
+          failures cannot be fixed from this application by anyone, and one of them is
+          already fixed and merely undeployed.
+        </p>
+        <div class="table-wrap" style="margin: 14px 0;">
+          <table>
+            <thead>
+              <tr><th scope="col">Cause</th><th scope="col">Count</th><th scope="col">Fixable here?</th><th scope="col">Right action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Vapi's 14-day retention deleted the recording</td><td class="num">42</td><td>Never</td><td>Exclude from selection — <em>built, undeployed</em></td></tr>
+              <tr><td>Storage bucket rejects the signed URL (403)</td><td class="num">2</td><td>No, not from here</td><td>Needs Vapi support or bucket access</td></tr>
+              <tr><td>Cartesia timed out on a long call</td><td class="num">1</td><td>Yes</td><td>Retry after deploy — <em>fix built</em></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Worse than the label: the <strong>"Retry failed cells" button sits directly under
+          that number</strong>, inviting the user to spend money retrying 44 failures that
+          are guaranteed to fail again.
+        </p>
+        <div class="fix">
+          <span class="fix-label">Fix</span>
+          <p>Classify failures at the throw site into a real <code>failureClass</code> enum — never
+          by regexing the message afterwards. Group them on screen, and put the
+          <em>retryable</em> count in the button's label.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>The two structural calls</h2>
+    <p class="lede">
+      Both proposals are a good fit. Neither is a drop-in, and the interesting part of each
+      is the caveat, not the pitch.
+    </p>
+
+    <div class="verdicts">
+
+      <article class="verdict">
+        <div class="verdict-top">
+          <h3 class="verdict-name">Vercel Workflow</h3>
+          <span class="verdict-call">Adopt the engine</span>
+        </div>
+        <p class="verdict-what">Durable execution for TypeScript. Mark a function
+        <code>"use workflow"</code>, its units of work <code>"use step"</code>; the runtime logs
+        each step's result and replays after a crash instead of starting over.</p>
+
+        <h4>Why it fits here</h4>
+        <p>The run executor is already shaped like a durable workflow, and has hand-rolled
+        in-memory versions of four things the engine gives for free: a double-execution
+        guard, per-cell retries, provider back-off, and resumability. The decomposition is
+        already in the code — bulk → shard → call → provider cell — and a cell is a perfect
+        step: idempotent on <code>(runId, callId, providerId)</code>, independently retryable.</p>
+
+        <h4>What it costs</h4>
+        <ul class="tight">
+          <li>The audio cache is <em>local disk</em>. Serverless has no shared filesystem — this must
+            move to blob storage before any serverless hosting, and it is not optional.</li>
+          <li>Steps must pass blob keys, never audio buffers. A 50-call shard once held ~200MB.</li>
+          <li>Cartesia is a long-lived WebSocket — the least natural fit in the system.</li>
+          <li>Postgres connections need pooling discipline under serverless fan-out.</li>
+        </ul>
+
+        <p class="closing">
+          <strong>Separate "durable" from "Vercel."</strong> The DevKit is open source and not
+          Vercel-only. Run the engine <em>inside the existing Express process</em> first: you get
+          resumability and engine-managed retries without touching hosting, storage, or
+          pooling — closing the "no durable job queue" gap that has been a known risk since
+          MVP. Host on Vercel later, if and when someone outside this laptop needs the tool.
+        </p>
+      </article>
+
+      <article class="verdict">
+        <div class="verdict-top">
+          <h3 class="verdict-name">BAML</h3>
+          <span class="verdict-call">Adopt, judge only</span>
+        </div>
+        <p class="verdict-what">A small typed language for LLM functions. Input, output
+        <em>type</em>, and prompt declared together; a compiler generates a typed TypeScript
+        client, and its parser coerces imperfect model output into the declared type
+        instead of hard-failing.</p>
+
+        <h4>Why it fits here</h4>
+        <p>The judge's contract is currently enforced by hope. When the model didn't return
+        a usable pick, the fix was <strong>a regex over the reasoning paragraph</strong> —
+        a heuristic guessing at what the model meant, in exactly the place where this
+        project's own rule says never guess. In BAML the pick becomes an enum constrained to
+        the actual candidate providers: unparseable fails loudly instead of guessing.</p>
+
+        <h4>What it also buys</h4>
+        <ul class="tight">
+          <li>The prompt becomes a versioned, diffable file instead of a template literal.</li>
+          <li>Prompt changes get test cases — and there are already <strong>75 real saved scans</strong>
+            with real transcripts and flags to use as the regression suite.</li>
+          <li>Model fallback (gpt-4o → gpt-4o-mini) declared rather than coded.</li>
+        </ul>
+
+        <h4>What to watch</h4>
+        <ul class="tight">
+          <li>BAML ships a native binary per platform. This repo has already been broken twice
+            by platform-pinned binaries — pin BAML's in the same commit that adds it.</li>
+          <li>It does <em>not</em> solve cost precision. V4-T1 is still yours.</li>
+        </ul>
+
+        <p class="closing">
+          Put it behind the existing <code>judgeCandidates()</code> signature so the caller never
+          knows — a bad result is a one-file revert. <strong>Do V4-T1 first:</strong> a better judge
+          in front of a write path that discards its output still produces $0.00.
+        </p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Order of work</h2>
+    <p class="lede">
+      Each phase has one exit criterion you can actually test. Phase 3's is the whole point
+      of adopting a workflow engine — if it doesn't pass, the migration bought nothing.
+    </p>
+
+    <div class="phases">
+
+      <div class="phase is-now">
+        <div class="phase-n">0</div>
+        <div class="phase-body">
+          <h3>Deploy what's already fixed</h3>
+          <p>Rebuild and restart with the four merged commits plus the new ElevenLabs key. Nothing to write — this is purely a deploy that was blocked while a bulk was running.</p>
+          <p class="exit"><b>Exit</b>ElevenLabs appears in a run, Cartesia's long calls pass, and a new bulk shows the "skipped, older than 14 days" note.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">1</div>
+        <div class="phase-body">
+          <h3>Stop losing data</h3>
+          <p>V4-T1, V4-T2, V4-T3 — cost precision, build visibility, failure classification.</p>
+          <p class="exit"><b>Exit</b>A bulk reports non-zero agent cost, judged equals flagged, zero errored scans, and failures grouped by cause.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">2</div>
+        <div class="phase-body">
+          <h3>Typed LLM layer</h3>
+          <p>BAML behind <code>judgeCandidates</code>, plus the judge contract test replaying the 75 saved scans in CI.</p>
+          <p class="exit"><b>Exit</b>A full bulk judged through BAML with zero null picks, contract tests green.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">3</div>
+        <div class="phase-body">
+          <h3>Durable execution</h3>
+          <p>Workflow DevKit inside the existing process. Add the per-cell uniqueness constraint the DB should have had all along.</p>
+          <p class="exit"><b>Exit</b>Kill the server mid-bulk. On restart it resumes, and does not re-charge a single completed cell.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">4</div>
+        <div class="phase-body">
+          <h3>Portable storage</h3>
+          <p>Audio cache moves from local disk to blob storage. Worth doing on its own merits — it also makes the corpus portable to a second machine.</p>
+          <p class="exit"><b>Exit</b>A run completes on a machine with no local <code>audio-cache/</code> directory.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">5</div>
+        <div class="phase-body">
+          <h3>Hosting <span style="font-weight:400;color:var(--ink-faint)">— optional</span></h3>
+          <p>Move to Vercel. A business decision about who needs access, not a technical one. Nothing about the benchmark work requires it today.</p>
+          <p class="exit"><b>Exit</b>Someone who is not Abhishek opens the tool and reads a ranking.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>What the screen has to stop saying</h2>
+    <p class="lede">
+      The UI didn't lie on purpose — it faithfully rendered numbers that were themselves
+      wrong, and had no way to express "this number is broken" as distinct from "this
+      number is zero". A confident <code>$0.00</code> is worse than a blank.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">ID</th><th scope="col">Says today</th><th scope="col">Must say instead</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num">U-1</td>
+            <td>"63 checked · 63 flagged, 0 judged · Agent cost $0.00"</td>
+            <td>A warning strip: AI verification failed on 63 of 63 calls, results not saved. Cost reads <em>not recorded</em>, never $0.00. Flag counts are still valid; the AI's opinion is not.</td>
+          </tr>
+          <tr>
+            <td class="num">U-2</td>
+            <td>"45 cells failed" + a Retry button for all of them</td>
+            <td>Grouped by cause, ordered by what's actionable, with the button labelled "Retry 1 retryable cell" — disabled with a reason when nothing can be retried.</td>
+          </tr>
+          <tr>
+            <td class="num">U-3</td>
+            <td>Nothing about which build is serving</td>
+            <td>A quiet footer: <code>build 7313012 · started 22:40</code>. Provider names only, never keys.</td>
+          </tr>
+          <tr>
+            <td class="num">U-4</td>
+            <td>A tooltip on the Rank header</td>
+            <td>A click-through panel with this row's real numbers, and the sentence that appears nowhere today: only 3 of 6 providers report confidence at all, so that column is not comparable across all of them.</td>
+          </tr>
+          <tr>
+            <td class="num">U-5</td>
+            <td>Exclusions buried in a notes paragraph, read after launch</td>
+            <td>Before the cost gate: "Selecting 72 calls. 12 skipped — older than Vapi's 14-day window and not cached."</td>
+          </tr>
+          <tr>
+            <td class="num">U-6</td>
+            <td>Winner callout with no reasoning behind it</td>
+            <td>The judge's reasoning, model, and that judgement's cost — with the existing rule intact: the trophy shows only for a genuine AI pick, never for a fewest-flags fallback.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Do next</h2>
+    <div class="actions">
+      <div class="action">
+        <span class="action-i">01</span>
+        <span class="action-text">Rebuild and restart the API server
+          <small>Unblocks four merged fixes and lights up ElevenLabs. The bulk that was blocking this has finished.</small></span>
+        <span class="action-cost">minutes</span>
+      </div>
+      <div class="action">
+        <span class="action-i">02</span>
+        <span class="action-text">Fix the judge cost column and the swallowed write error
+          <small>V4-T1. Until this lands, every AI judgement the tool makes is still being thrown away.</small></span>
+        <span class="action-cost">half a day</span>
+      </div>
+      <div class="action">
+        <span class="action-i">03</span>
+        <span class="action-text">Run one small bulk and confirm the numbers are real
+          <small>Non-zero agent cost, judged = flagged, ElevenLabs present. This is the proof, not the typecheck.</small></span>
+        <span class="action-cost">~$0.50</span>
+      </div>
+      <div class="action">
+        <span class="action-i">04</span>
+        <span class="action-text">Classify failures, then group them on screen
+          <small>V4-T3 + U-2. Turns "45 failed" into "1 worth retrying" and stops the retry button burning money.</small></span>
+        <span class="action-cost">one day</span>
+      </div>
+      <div class="action">
+        <span class="action-i">05</span>
+        <span class="action-text">Spike BAML on the judge, in a worktree
+          <small>One function, behind the existing signature. Decide on evidence from a real bulk, not on the pitch.</small></span>
+        <span class="action-cost">one to two days</span>
+      </div>
+    </div>
+
+    <div class="docs">
+      <div class="doc">
+        <code>docs/PRD-v4-technical.md</code>
+        <p>Full technical PRD — every finding with file, line, current behaviour, required behaviour, and how to prove it's done.</p>
+      </div>
+      <div class="doc">
+        <code>docs/PRD-v4-uiux.md</code>
+        <p>Full UI/UX PRD — what each screen says today, what it must say instead, and the check for each.</p>
+      </div>
+      <div class="doc">
+        <code>docs/PRD-v3-technical.md</code>
+        <p>Still current, different subject: whether the ranking maths itself is biased. v4 does not touch it.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>STT-evals · Ellavox.ai · repo HEAD 7313012</span>
+    <span>Evidence: bulk 7d2585da, 72 calls × 5 providers</span>
+  </footer>
+
+</div>
