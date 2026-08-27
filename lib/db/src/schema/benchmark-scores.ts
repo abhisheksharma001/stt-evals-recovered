@@ -22,13 +22,20 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   // T-11 fix (2026-08-27, base-solidity review): costPerMinute above is
   // mislabeled -- it has always held the cost of THIS ONE CELL (provider
   // rate * this call's duration), not a per-minute rate, and that leaked
-  // into the Rankings UI and CSV export under a "Cost/Min" header. costCents
-  // is the same underlying number, correctly named and cents-denominated
-  // (an integer, no float-cents rounding surprises). Added alongside rather
-  // than replacing costPerMinute so nothing reading it today breaks --
-  // full UI rename tracked in docs/PRD-v3-uiux.md U-8.
+  // into the Rankings UI and CSV export under a "Cost/Min" header.
+  // costMicrocents is the same underlying number, correctly named, and
+  // denominated so it cannot round away. Added alongside rather than
+  // replacing costPerMinute so nothing reading it today breaks -- full UI
+  // rename tracked in docs/PRD-v3-uiux.md U-8.
+  //
+  // T-01 (2026-08-28): this was `cost_cents integer`, written as
+  // Math.round(costForThisCell * 100). A typical cell costs ~0.92 cents, so
+  // every cell was rounded to 1 -- an ~8% error compounding across every
+  // cell in a bulk, in the number the whole cost comparison rests on. Now
+  // micro-cents (1 cent = 10,000 microcents), the same unit the judge cost
+  // uses, so the two are addable without a conversion in between.
   costPerMinute: real("cost_per_minute"),
-  costCents: integer("cost_cents"),
+  costMicrocents: integer("cost_microcents"),
   diarizationScore: real("diarization_score"),
   // 2026-08-27, per Abhishek: gold-transcript-free hybrid flagging (see
   // lib/scoring/src/hybrid.ts). wer/entityAccuracy above go permanently null

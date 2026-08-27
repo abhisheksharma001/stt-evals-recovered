@@ -196,7 +196,7 @@ export async function verifyCallWithAgent(params: {
         agentPickReasoning: judgeResult.reasoning,
         judgePromptTokens: judgeResult.promptTokens,
         judgeCompletionTokens: judgeResult.completionTokens,
-        judgeCostCents: judgeResult.costCents,
+        judgeCostMicrocents: judgeResult.costMicrocents,
         requestedByLabel: params.requestedByLabel,
         runId: params.runId,
       })

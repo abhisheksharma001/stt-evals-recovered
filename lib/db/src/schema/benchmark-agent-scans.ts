@@ -83,9 +83,20 @@ export const benchmarkAgentScansTable = pgTable("benchmark_agent_scans", {
   // cost breakdowns can show real agent spend, not just STT spend. Captured
   // from the OpenAI response's own `usage` block in lib/agent.ts -- not
   // estimated after the fact.
+  //
+  // T-01 (2026-08-28): this column was `judge_cost_cents integer` and it
+  // destroyed every judgement the system ever made. A real judge call costs
+  // a FRACTION of a cent (0.4905 observed live), Postgres rejected the
+  // insert, and the catch in agent-verify.ts read that write failure as a
+  // JUDGE failure -- so the model's actual answer was discarded and an
+  // "error" row written instead. 63/63 scans in bulk 7d2585da, ~31c of real
+  // OpenAI spend, reported to the user as $0.00. Denominated in MICRO-CENTS
+  // now (1 cent = 10,000 microcents): an integer unit small enough that no
+  // real judge call ever rounds to zero, and no float ever reaches the DB.
+  // Format at the edge, never here.
   judgePromptTokens: integer("judge_prompt_tokens"),
   judgeCompletionTokens: integer("judge_completion_tokens"),
-  judgeCostCents: integer("judge_cost_cents"),
+  judgeCostMicrocents: integer("judge_cost_microcents"),
   errorMessage: text("error_message"),
   requestedByLabel: text("requested_by_label").notNull(),
   // Set only via the approve/reject routes -- never by the scan itself.

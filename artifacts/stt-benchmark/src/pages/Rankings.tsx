@@ -10,6 +10,7 @@ import {
   type VerticalRanking,
 } from "@workspace/api-client-react"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck } from "lucide-react"
+import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -313,7 +314,7 @@ export default function Rankings() {
             <div>
               <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">STT cost</div>
               <div className="font-mono text-base font-semibold">
-                {formatCents(bulkDetail.actualCost.sttCostCents)}
+                {formatMicrocents(bulkDetail.actualCost.sttCostMicrocents)}
                 {bulkDetail.estimatedSttCostCents != null && (
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                     est. {formatCents(bulkDetail.estimatedSttCostCents)}
@@ -324,7 +325,7 @@ export default function Rankings() {
             <div>
               <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Agent verification cost</div>
               <div className="font-mono text-base font-semibold">
-                {formatCents(bulkDetail.actualCost.agentCostCents)}
+                {formatMicrocents(bulkDetail.actualCost.agentCostMicrocents)}
                 {bulkDetail.estimatedAgentCostCents != null && (
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                     est. {formatCents(bulkDetail.estimatedAgentCostCents)}

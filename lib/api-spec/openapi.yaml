@@ -1185,6 +1185,14 @@ components:
           items: { $ref: "#/components/schemas/AgentScanCandidate" }
         agentPickProviderId: { type: ["string", "null"] }
         agentPickReasoning: { type: ["string", "null"] }
+        # T-01 (2026-08-28): these three were serialised by routes/agent.ts
+        # but never declared here, so the response parse dropped them and no
+        # client could ever see what a judgement cost. Micro-cents; null on
+        # "clean" scans (no LLM call was made) and on models with no
+        # published rate -- null means "not recorded", never zero.
+        judgePromptTokens: { type: ["number", "null"] }
+        judgeCompletionTokens: { type: ["number", "null"] }
+        judgeCostMicrocents: { type: ["number", "null"] }
         errorMessage: { type: ["string", "null"] }
         requestedByLabel: { type: string }
         decidedByLabel: { type: ["string", "null"] }
@@ -1380,15 +1388,21 @@ components:
             actualCost: { $ref: "#/components/schemas/BulkActualCost" }
     BulkActualCost:
       type: object
-      required: [sttCostCents, agentCostCents, agentCallsChecked, agentCallsFlagged, agentCallsJudged]
+      required: [sttCostMicrocents, agentCostMicrocents, agentCallsChecked, agentCallsFlagged, agentCallsJudged]
       properties:
-        # Real spend, summed from benchmark_scores.cost_cents /
-        # benchmark_agent_scans.judge_cost_cents for this bulk's calls --
+        # Real spend, summed from benchmark_scores.cost_microcents /
+        # benchmark_agent_scans.judge_cost_microcents for this bulk's calls --
         # never combined into one number (STT and OpenAI agent spend are
         # different budgets to a person deciding whether to keep running
         # this).
-        sttCostCents: { type: number }
-        agentCostCents: { type: number }
+        #
+        # T-01 (2026-08-28): MICRO-CENTS, not cents (1 cent = 10,000
+        # microcents). Both underlying columns were integer cents, which
+        # rounded a real judge call (0.4905c) to a failed insert and a real
+        # STT cell (~0.92c) to 1c. Divide by 10,000 to display; never render
+        # a rounded 0 as if it were a measured 0.
+        sttCostMicrocents: { type: number }
+        agentCostMicrocents: { type: number }
         # Coverage evidence that the auto-verification pass actually ran,
         # not just claimed to: how many calls got a scan, how many were
         # flagged by the free hybrid pass, how many of those got a real

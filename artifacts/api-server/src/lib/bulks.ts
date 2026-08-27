@@ -211,26 +211,34 @@ export async function estimateBulkCostCents(
 // Falls back to a documented placeholder assumption before any real scan
 // history exists, same placeholder-and-flag-it convention as
 // costPerMinute's Nova-2 placeholder elsewhere in this codebase.
-const AGENT_COST_ESTIMATE_FALLBACK = { assumedFlagRate: 0.3, assumedCostCentsPerJudgeCall: 1 };
+const AGENT_COST_ESTIMATE_FALLBACK = { assumedFlagRate: 0.3, assumedCostMicrocentsPerJudgeCall: 5_000 };
 
+// T-01 (2026-08-28): reads micro-cents from the scan table now (the column
+// it used to read was integer cents and never held a value -- every judged
+// insert failed, so this estimator has only ever seen the fallback). Returns
+// whole CENTS, because a bulk-level estimate is a budget figure a person
+// reads, and estimates elsewhere on the bulk are cents too. Actuals stay in
+// micro-cents; only this projection rounds.
 export async function estimateBulkAgentCostCents(callCount: number): Promise<number> {
   if (callCount === 0) return 0;
   const scans = await db
-    .select({ status: benchmarkAgentScansTable.status, judgeCostCents: benchmarkAgentScansTable.judgeCostCents })
+    .select({ status: benchmarkAgentScansTable.status, judgeCostMicrocents: benchmarkAgentScansTable.judgeCostMicrocents })
     .from(benchmarkAgentScansTable);
 
+  const toCents = (microcents: number) => Math.ceil((callCount * microcents) / 10_000);
+
   if (scans.length === 0) {
-    return Math.ceil(callCount * AGENT_COST_ESTIMATE_FALLBACK.assumedFlagRate * AGENT_COST_ESTIMATE_FALLBACK.assumedCostCentsPerJudgeCall);
+    return toCents(AGENT_COST_ESTIMATE_FALLBACK.assumedFlagRate * AGENT_COST_ESTIMATE_FALLBACK.assumedCostMicrocentsPerJudgeCall);
   }
 
   const flaggedCount = scans.filter((s) => s.status === "flagged").length;
   const flagRate = flaggedCount / scans.length;
-  const judgeCosts = scans.map((s) => s.judgeCostCents).filter((c): c is number => c !== null);
-  const avgJudgeCostCents = judgeCosts.length
+  const judgeCosts = scans.map((s) => s.judgeCostMicrocents).filter((c): c is number => c !== null);
+  const avgJudgeCostMicrocents = judgeCosts.length
     ? judgeCosts.reduce((sum, c) => sum + c, 0) / judgeCosts.length
-    : AGENT_COST_ESTIMATE_FALLBACK.assumedCostCentsPerJudgeCall;
+    : AGENT_COST_ESTIMATE_FALLBACK.assumedCostMicrocentsPerJudgeCall;
 
-  return Math.ceil(callCount * flagRate * avgJudgeCostCents);
+  return toCents(flagRate * avgJudgeCostMicrocents);
 }
 
 export type CreateBulkResult = {

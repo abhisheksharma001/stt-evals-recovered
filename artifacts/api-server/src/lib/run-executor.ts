@@ -814,10 +814,14 @@ async function runCell(
       // always held the cost of THIS CELL (rate * this call's duration),
       // not a per-minute rate, and that mislabeling now leaks into the UI
       // and CSV export (docs/PRD-v3-uiux.md U-8 tracks the full rename).
-      // costCents is the same value, correctly named and cents-denominated,
-      // added alongside rather than replacing the column above so nothing
-      // reading costPerMinute today breaks.
-      costCents: Math.round(costForThisCell * 100),
+      // costMicrocents is the same value, correctly named, added alongside
+      // rather than replacing the column above so nothing reading
+      // costPerMinute today breaks. T-01 (2026-08-28): this used to be
+      // `Math.round(costForThisCell * 100)` -- integer cents, so a typical
+      // ~0.92c cell was recorded as 1c, an ~8% error compounding across
+      // every cell. costForThisCell is in DOLLARS, so $1 = 1,000,000
+      // microcents.
+      costMicrocents: Math.round(costForThisCell * 1_000_000),
       diarizationScore: result.diarizationScore,
       detail,
     });

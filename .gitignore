@@ -56,3 +56,6 @@ Thumbs.db
 # local audio byte cache (technical-fixes FIX-2) -- de-identified corpus
 # audio, but still real binary data and machine-local, never committed
 artifacts/api-server/audio-cache/
+
+# stray local worktrees from earlier sessions -- never committed
+.claude/worktrees/

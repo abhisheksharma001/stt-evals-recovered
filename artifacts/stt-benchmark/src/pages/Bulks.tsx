@@ -1,4 +1,5 @@
 import * as React from "react"
+import { formatMicrocents } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBulks,
@@ -612,11 +613,11 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
             <div className="grid grid-cols-3 gap-3 rounded-md border border-border bg-muted/20 px-3 py-2.5 text-sm">
               <div>
                 <div className="text-[10px] font-mono uppercase text-muted-foreground">Actual STT cost</div>
-                <div className="font-mono font-semibold">${(detail.actualCost.sttCostCents / 100).toFixed(2)}</div>
+                <div className="font-mono font-semibold">{formatMicrocents(detail.actualCost.sttCostMicrocents)}</div>
               </div>
               <div>
                 <div className="text-[10px] font-mono uppercase text-muted-foreground">Actual agent cost</div>
-                <div className="font-mono font-semibold">${(detail.actualCost.agentCostCents / 100).toFixed(2)}</div>
+                <div className="font-mono font-semibold">{formatMicrocents(detail.actualCost.agentCostMicrocents)}</div>
               </div>
               <div>
                 <div className="text-[10px] font-mono uppercase text-muted-foreground">Agent coverage</div>
