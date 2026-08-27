@@ -13,6 +13,7 @@ import {
   useLaunchBulkTemplate,
   useListBenchmarkProviders,
   useListVapiAssistants,
+  useListVapiAccounts,
   getListBulksQueryKey,
   getGetBulkQueryKey,
   getListBulkTemplatesQueryKey,
@@ -33,6 +34,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 
 function BulkStatusBadge({ status }: { status: BulkStatus }) {
@@ -76,16 +78,29 @@ function criteriaSummary(c: BulkSelectionCriteria): string {
 function AssistantMultiSelect({
   selectedIds,
   onChange,
+  accountLabel,
+  onAccountLabelChange,
 }: {
   selectedIds: string[]
   onChange: (ids: string[]) => void
+  accountLabel: string
+  onAccountLabelChange: (label: string) => void
 }) {
   const [filter, setFilter] = React.useState("")
   const { data: assistants, isLoading, isError } = useListVapiAssistants()
+  // 2026-08-27, per Abhishek: this multi-account setup (Default, Land And
+  // Apartment, ...) had no ORG picker at all -- assistants from every
+  // configured Vapi account were shown mixed together, with only a small
+  // per-row label as a hint. accountLabel is a real BulkSelectionCriteria
+  // field the server already filters on (bulks.ts's
+  // resolveCriteriaCallIds) -- this was the only place that never set it.
+  const { data: accounts } = useListVapiAccounts()
   const showAccountLabel = new Set((assistants ?? []).map((a) => a.accountId)).size > 1
 
-  const filtered = (assistants ?? []).filter((a) =>
-    a.name.toLowerCase().includes(filter.toLowerCase()),
+  const filtered = (assistants ?? []).filter(
+    (a) =>
+      a.name.toLowerCase().includes(filter.toLowerCase()) &&
+      (!accountLabel || a.accountLabel === accountLabel),
   )
 
   const toggle = (id: string) =>
@@ -101,6 +116,22 @@ function AssistantMultiSelect({
           </button>
         )}
       </div>
+      {accounts && accounts.length > 1 && (
+        <Select
+          value={accountLabel || "__all__"}
+          onValueChange={(v) => onAccountLabelChange(v === "__all__" ? "" : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All Vapi accounts" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Vapi accounts</SelectItem>
+            {accounts.map((acc) => (
+              <SelectItem key={acc.id} value={acc.label}>{acc.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <Input
         placeholder="Filter assistants by name…"
         value={filter}
@@ -140,8 +171,8 @@ function CriteriaFields({
   setShardSize,
 }: {
   providers: Provider[] | undefined
-  criteria: { assistantIds: string[]; lastNDays: string; minDurationSeconds: string }
-  setCriteria: (c: { assistantIds: string[]; lastNDays: string; minDurationSeconds: string }) => void
+  criteria: { assistantIds: string[]; accountLabel: string; lastNDays: string; minDurationSeconds: string }
+  setCriteria: (c: { assistantIds: string[]; accountLabel: string; lastNDays: string; minDurationSeconds: string }) => void
   providerIds: string[]
   setProviderIds: (ids: string[]) => void
   shardSize: string
@@ -150,6 +181,8 @@ function CriteriaFields({
   return (
     <div className="space-y-4">
       <AssistantMultiSelect
+        accountLabel={criteria.accountLabel}
+        onAccountLabelChange={(label) => setCriteria({ ...criteria, accountLabel: label, assistantIds: [] })}
         selectedIds={criteria.assistantIds}
         onChange={(ids) => setCriteria({ ...criteria, assistantIds: ids })}
       />
@@ -211,9 +244,10 @@ function CriteriaFields({
   )
 }
 
-function buildCriteria(input: { assistantIds: string[]; lastNDays: string; minDurationSeconds: string }): BulkSelectionCriteria {
+function buildCriteria(input: { assistantIds: string[]; accountLabel: string; lastNDays: string; minDurationSeconds: string }): BulkSelectionCriteria {
   const criteria: BulkSelectionCriteria = {}
   if (input.assistantIds.length > 0) criteria.assistantIds = input.assistantIds
+  if (input.accountLabel) criteria.accountLabel = input.accountLabel
   const days = Number.parseInt(input.lastNDays, 10)
   if (Number.isFinite(days) && days > 0) criteria.lastNDays = days
   const minDuration = Number.parseInt(input.minDurationSeconds, 10)
@@ -224,7 +258,7 @@ function buildCriteria(input: { assistantIds: string[]; lastNDays: string; minDu
 function CreateBulkDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState({ assistantIds: [] as string[], lastNDays: "", minDurationSeconds: "5" })
+  const [criteria, setCriteria] = React.useState({ assistantIds: [] as string[], accountLabel: "", lastNDays: "", minDurationSeconds: "5" })
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
@@ -308,7 +342,7 @@ function CreateBulkDialog() {
 function CreateTemplateDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState({ assistantIds: [] as string[], lastNDays: "7", minDurationSeconds: "5" })
+  const [criteria, setCriteria] = React.useState({ assistantIds: [] as string[], accountLabel: "", lastNDays: "7", minDurationSeconds: "5" })
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
