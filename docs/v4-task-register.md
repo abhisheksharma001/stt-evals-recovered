@@ -44,7 +44,7 @@ pays for.
 | ID | Task | Files | Done when |
 |---|---|---|---|
 | T-01 | ✅ **done** (PR #4). **Judge cost precision.** `judge_cost_cents` is `integer`; the value is fractional (`0.4905`), so every judged insert fails. Replace with integer micro-cents (`judge_cost_microcents`, 1¢ = 10,000µ¢). Apply the same treatment to `benchmark_scores.cost_cents`, where `Math.round(x*100)` currently loses ~8%. | `lib/db/src/schema/benchmark-agent-scans.ts`, `benchmark-scores.ts`, `lib/agent.ts`, `lib/agent-verify.ts`, `lib/run-executor.ts`, `routes/bulks.ts`, `openapi.yaml` | A judged scan row reads back with a non-null cost, and a bulk's `agentCostCents` is > 0 |
-| T-02 | **Never discard a good judge payload.** Split the single `try` in `verifyCallWithAgent` so the OpenAI call and the DB write are caught separately, with distinct error prefixes (`judge_failed:` / `scan_write_failed:`). If the full insert fails, retry once without the cost columns. | `lib/agent-verify.ts` | Forcing a write error still persists the reasoning and the pick; the error names the write, not the judge |
+| T-02 | ✅ **done** (PR #5). **Never discard a good judge payload.** Split the single `try` in `verifyCallWithAgent` so the OpenAI call and the DB write are caught separately, with distinct error prefixes (`judge_failed:` / `scan_write_failed:`). If the full insert fails, retry once without the cost columns. | `lib/agent-verify.ts` | Forcing a write error still persists the reasoning and the pick; the error names the write, not the judge |
 | T-03 | **Stop conflating "flagged" with "the AI crashed."** `agentCallsFlagged` counts `flagged \|\| error`. Split into `agentCallsFlagged` and `agentCallsErrored`, expose both, and render a destructive strip when errored > 0. Cost renders "not recorded", never `$0.00`, when null or when errors exist. | `routes/bulks.ts`, `openapi.yaml`, `Rankings.tsx`, `Bulks.tsx` | Forcing one scan to error shows the strip; the ranking table is visibly unaffected |
 | T-04 | **Build identity in `/api/healthz`.** Return `commitSha`, `builtAt`, `startedAt`, and `providersConfigured` (**names only — never a key or part of one**), injected at build time via esbuild `define`. | `build.mjs`, `routes/health.ts`, `api-zod`, `openapi.yaml` | `curl /api/healthz` shows the SHA of the running build |
 | T-05 | **Build badge in the UI footer.** Quiet, monospaced, from T-04. | `components/layout.tsx` | Rebuild + restart changes the SHA on screen |
@@ -163,6 +163,15 @@ Append anything learned mid-task here rather than losing it to a compaction.
   none**. And the old integer rounding *understated* bulk `7d2585da` by 3.8% ($2.90
   shown, $3.0135 real) — rounding half-up on ~0.90c cells cut both ways, so the error
   was not a consistent overstatement as assumed when the PRD was written.
+- **2026-08-28 (T-02):** both failure paths proved against the real database and the
+  real judge, with a throwaway probe (deleted after use, plus its scan and audit rows).
+  Forcing the write to fail with a CHECK constraint: the row still lands `status:
+  flagged`, 1,202 characters of reasoning kept, the pick kept, cost null, and
+  `errorMessage` reading `scan_write_failed: ...`. Forcing the judge to fail with a
+  bogus model: `status: error`, `errorMessage` reading `judge_failed: The model ... does
+  not exist`. The pick lookup is now best-effort on its own — losing it costs the link
+  to a result row, never the answer.
+
 - **2026-08-28:** measured per-provider latency (bulk `7d2585da`): Cartesia 128.8s,
   Gladia 15.3s, AssemblyAI 13.0s, Deepgram 3.5s, OpenAI 3.1s. **Cartesia is 79% of
   all vendor wait.** Own code is ~0.1% of runtime — which is why no language rewrite

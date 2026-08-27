@@ -160,73 +160,145 @@ export async function verifyCallWithAgent(params: {
     .where(eq(appSettingsTable.id, APP_SETTINGS_ID))
     .limit(1);
 
+  // T-02 (2026-08-28). These used to share one `try`, and that is exactly
+  // how T-01's bug hid for as long as it did: Postgres rejected the
+  // fractional cost column, the catch below wrote `status: "error"`, and the
+  // system reported "the judge failed" for 63/63 calls whose judge had in
+  // fact answered perfectly -- after we had already paid OpenAI for every
+  // one of them. Two different failures, two different meanings, two
+  // different catches, forever:
+  //
+  //   judge_failed:      the OpenAI call itself did not produce an answer.
+  //                      Nothing to keep. A real "error" scan row.
+  //   scan_write_failed: the judge answered and we paid for it; only our
+  //                      storage of that answer failed. Never an "error"
+  //                      row, never discarded -- degrade and keep going.
+  let judgeResult: Awaited<ReturnType<typeof judgeCandidates>>;
   try {
-    const judgeResult = await judgeCandidates({
+    judgeResult = await judgeCandidates({
       originalTranscript: params.draftTranscript?.trim() || "(no draft transcript on file)",
       flags,
       candidates: params.candidates.map((c) => ({ providerId: c.providerId, providerName: c.providerName, transcript: c.transcript })),
       model: settings?.agentModel,
     });
-
-    const pickedResult = judgeResult.pickedProviderId
-      ? await db
-          .select({ id: benchmarkProviderCallResultsTable.id })
-          .from(benchmarkProviderCallResultsTable)
-          .where(
-            and(
-              eq(benchmarkProviderCallResultsTable.callId, params.callId),
-              eq(benchmarkProviderCallResultsTable.providerId, judgeResult.pickedProviderId),
-              eq(benchmarkProviderCallResultsTable.status, "ok"),
-            ),
-          )
-          .orderBy(desc(benchmarkProviderCallResultsTable.createdAt))
-          .limit(1)
-      : [];
-
-    const [flagged] = await db
-      .insert(benchmarkAgentScansTable)
-      .values({
-        callId: params.callId,
-        sourceLabel: params.draftTranscript?.trim() ? "draft" : null,
-        sourceTranscript: params.draftTranscript?.trim() || null,
-        status: "flagged",
-        flags,
-        hybridFlags: hybridFlagsSummary,
-        agentPickResultId: pickedResult[0]?.id ?? null,
-        agentPickReasoning: judgeResult.reasoning,
-        judgePromptTokens: judgeResult.promptTokens,
-        judgeCompletionTokens: judgeResult.completionTokens,
-        judgeCostMicrocents: judgeResult.costMicrocents,
-        requestedByLabel: params.requestedByLabel,
-        runId: params.runId,
-      })
-      .returning();
-
-    await writeAudit({
-      entityType: "agent_scan",
-      entityId: flagged.id,
-      actorLabel: params.requestedByLabel,
-      action: "auto_verify_flagged",
-      afterState: { callId: params.callId, flagCount: totalFlagCount, pickedResultId: pickedResult[0]?.id ?? null },
-    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const [errored] = await db
-      .insert(benchmarkAgentScansTable)
-      .values({
-        callId: params.callId,
-        sourceLabel: params.draftTranscript?.trim() ? "draft" : null,
-        sourceTranscript: params.draftTranscript?.trim() || null,
-        status: "error",
-        flags: [],
-        hybridFlags: hybridFlagsSummary,
-        errorMessage: message,
-        requestedByLabel: params.requestedByLabel,
-        runId: params.runId,
-      })
-      .returning();
-    logger.error({ err, callId: params.callId, scanId: errored.id }, "auto agent verification failed");
+    try {
+      const [errored] = await db
+        .insert(benchmarkAgentScansTable)
+        .values({
+          callId: params.callId,
+          sourceLabel: params.draftTranscript?.trim() ? "draft" : null,
+          sourceTranscript: params.draftTranscript?.trim() || null,
+          status: "error",
+          flags: [],
+          hybridFlags: hybridFlagsSummary,
+          errorMessage: `judge_failed: ${message}`,
+          requestedByLabel: params.requestedByLabel,
+          runId: params.runId,
+        })
+        .returning();
+      logger.error({ err, callId: params.callId, scanId: errored.id }, "judge_failed: the OpenAI judge call did not return an answer");
+    } catch (writeErr) {
+      logger.error({ err: writeErr, callId: params.callId, judgeError: message }, "scan_write_failed: could not even record the judge failure");
+    }
+    return;
   }
+
+  // Past this line the money is spent and the answer is in hand. Nothing
+  // below may throw it away, and nothing below may be blamed on the judge.
+
+  // Which of this call's result rows the judge picked. Best-effort on
+  // purpose: losing this lookup loses the LINK to a row, not the answer --
+  // the reasoning and the token/cost record still get stored below.
+  let agentPickResultId: string | null = null;
+  if (judgeResult.pickedProviderId) {
+    try {
+      const picked = await db
+        .select({ id: benchmarkProviderCallResultsTable.id })
+        .from(benchmarkProviderCallResultsTable)
+        .where(
+          and(
+            eq(benchmarkProviderCallResultsTable.callId, params.callId),
+            eq(benchmarkProviderCallResultsTable.providerId, judgeResult.pickedProviderId),
+            eq(benchmarkProviderCallResultsTable.status, "ok"),
+          ),
+        )
+        .orderBy(desc(benchmarkProviderCallResultsTable.createdAt))
+        .limit(1);
+      agentPickResultId = picked[0]?.id ?? null;
+    } catch (err) {
+      logger.error(
+        { err, callId: params.callId, pickedProviderId: judgeResult.pickedProviderId },
+        "scan_write_failed: could not resolve the picked result row -- storing the judge's reasoning without the link",
+      );
+    }
+  }
+
+  const scanRow = {
+    callId: params.callId,
+    sourceLabel: params.draftTranscript?.trim() ? "draft" : null,
+    sourceTranscript: params.draftTranscript?.trim() || null,
+    status: "flagged" as const,
+    flags,
+    hybridFlags: hybridFlagsSummary,
+    agentPickResultId,
+    agentPickReasoning: judgeResult.reasoning,
+    judgePromptTokens: judgeResult.promptTokens,
+    judgeCompletionTokens: judgeResult.completionTokens,
+    judgeCostMicrocents: judgeResult.costMicrocents,
+    requestedByLabel: params.requestedByLabel,
+    runId: params.runId,
+  };
+
+  let scanId: string;
+  let degraded = false;
+  try {
+    const [flagged] = await db.insert(benchmarkAgentScansTable).values(scanRow).returning();
+    scanId = flagged.id;
+  } catch (err) {
+    // The cost/token columns are the only numeric ones here and therefore
+    // the only plausible source of a type/range rejection -- exactly what
+    // broke before. Drop them and keep the judgement itself. The row stays
+    // "flagged" (the judge succeeded), with errorMessage naming the WRITE.
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ err, callId: params.callId }, "scan_write_failed: full insert rejected, retrying without the cost columns");
+    const { judgePromptTokens, judgeCompletionTokens, judgeCostMicrocents, ...withoutCost } = scanRow;
+    try {
+      const [retried] = await db
+        .insert(benchmarkAgentScansTable)
+        .values({ ...withoutCost, errorMessage: `scan_write_failed: ${message}` })
+        .returning();
+      scanId = retried.id;
+      degraded = true;
+    } catch (retryErr) {
+      // Both writes failed. The judgement is unrecoverable from the DB, so
+      // put the whole paid-for payload in the log -- that is the last place
+      // it can be read back from.
+      logger.error(
+        {
+          err: retryErr,
+          firstError: message,
+          callId: params.callId,
+          pickedProviderId: judgeResult.pickedProviderId,
+          reasoning: judgeResult.reasoning,
+          promptTokens: judgeResult.promptTokens,
+          completionTokens: judgeResult.completionTokens,
+          costMicrocents: judgeResult.costMicrocents,
+        },
+        "scan_write_failed: could not store a successful judgement at all -- payload logged so the spend is not silently lost",
+      );
+      return;
+    }
+  }
+
+  await writeAudit({
+    entityType: "agent_scan",
+    entityId: scanId,
+    actorLabel: params.requestedByLabel,
+    action: degraded ? "auto_verify_flagged_degraded" : "auto_verify_flagged",
+    afterState: { callId: params.callId, flagCount: totalFlagCount, pickedResultId: agentPickResultId, costRecorded: !degraded },
+  });
 }
 
 /** Called once per completed run (run-executor.ts, after
