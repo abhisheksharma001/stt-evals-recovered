@@ -179,6 +179,40 @@ const defaultProviders = [
     configNote:
       "Added on direct request, not in the original written ticket's list. WebSocket-streaming only (no batch REST endpoint), so this is the one provider with a real, measured time-to-first-partial instead of an untested 0. Planning price from public per-hour rate ($0.13/hr on the Scale plan); verify against current pricing and confirm the finalize/close handshake against a real key before trusting output.",
   },
+  // 2026-08-27, per Abhishek: a vendor is not a model. These are the other
+  // Deepgram models this corpus has real evidence for -- both were observed
+  // as the live transcriber on Abhishek's own Vapi calls (flux-general-en on
+  // 86 of 121, nova-2 on 2), which is exactly why they matter: the benchmark
+  // was ranking candidates against a production baseline it never measured.
+  //
+  // Seeded manuallyDisabled so adding them costs nothing until someone opts
+  // in on the Providers page. Cost per minute is copied from the nova-3 row
+  // as a PLACEHOLDER -- confirm real per-model pricing before trusting any
+  // ranking that turns on cost.
+  {
+    id: "deepgram-flux-general-en",
+    name: "Deepgram",
+    model: "Flux General EN",
+    supportsStreaming: true,
+    supportsDiarization: true,
+    costPerMinute: 0.0043,
+    keywordBoosting: true,
+    manuallyDisabled: true,
+    configNote:
+      "The model most of this corpus was actually recorded with in production (86 of 121 calls). Enable it to benchmark against the real baseline. Price is a placeholder copied from Nova-3 -- verify per-model pricing before relying on cost.",
+  },
+  {
+    id: "deepgram-nova-2",
+    name: "Deepgram",
+    model: "Nova-2",
+    supportsStreaming: true,
+    supportsDiarization: true,
+    costPerMinute: 0.0043,
+    keywordBoosting: true,
+    manuallyDisabled: true,
+    configNote:
+      "Observed on 2 calls in this corpus. Price is a placeholder copied from Nova-3 -- verify per-model pricing before relying on cost.",
+  },
 ] as const;
 
 async function ensureDefaultProviders(): Promise<void> {

@@ -56,7 +56,9 @@ export const deepgramAdapter: ProviderAdapter = {
 
     const submittedAt = new Date().toISOString();
     const params = new URLSearchParams({
-      model: "nova-3",
+      // Falls back to the historical hardcoded model so existing provider
+      // rows behave exactly as before; the catalog supplies the rest.
+      model: input.model ?? "nova-3",
       smart_format: "true",
       diarize: String(input.diarize ?? true),
     });
