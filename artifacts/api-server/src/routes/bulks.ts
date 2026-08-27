@@ -239,33 +239,33 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
   // whether to keep running this.
   const sttCostRows = runs.length
     ? await db
-        .select({ costCents: benchmarkScoresTable.costCents })
+        .select({ costMicrocents: benchmarkScoresTable.costMicrocents })
         .from(benchmarkScoresTable)
         .innerJoin(benchmarkProviderCallResultsTable, eq(benchmarkProviderCallResultsTable.id, benchmarkScoresTable.resultId))
         .where(inArray(benchmarkProviderCallResultsTable.runId, runs.map((run) => run.id)))
     : [];
-  const sttCostCents = sttCostRows.reduce((sum, r) => sum + (r.costCents ?? 0), 0);
+  const sttCostMicrocents = sttCostRows.reduce((sum, r) => sum + (r.costMicrocents ?? 0), 0);
 
   const agentScanRows = runs.length
     ? await db
         .select({
           status: benchmarkAgentScansTable.status,
-          judgeCostCents: benchmarkAgentScansTable.judgeCostCents,
+          judgeCostMicrocents: benchmarkAgentScansTable.judgeCostMicrocents,
         })
         .from(benchmarkAgentScansTable)
         .where(inArray(benchmarkAgentScansTable.runId, runs.map((run) => run.id)))
     : [];
-  const agentCostCents = agentScanRows.reduce((sum, r) => sum + (r.judgeCostCents ?? 0), 0);
+  const agentCostMicrocents = agentScanRows.reduce((sum, r) => sum + (r.judgeCostMicrocents ?? 0), 0);
   const agentCallsChecked = agentScanRows.length;
   const agentCallsFlagged = agentScanRows.filter((r) => r.status === "flagged" || r.status === "error").length;
-  const agentCallsJudged = agentScanRows.filter((r) => r.status === "flagged" && r.judgeCostCents !== null).length;
+  const agentCallsJudged = agentScanRows.filter((r) => r.status === "flagged" && r.judgeCostMicrocents !== null).length;
 
   res.json(
     GetBulkResponse.parse({
       ...serializeBulk(bulk),
       actualCost: {
-        sttCostCents,
-        agentCostCents,
+        sttCostMicrocents,
+        agentCostMicrocents,
         agentCallsChecked,
         agentCallsFlagged,
         agentCallsJudged,

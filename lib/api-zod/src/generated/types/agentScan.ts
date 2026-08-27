@@ -38,6 +38,12 @@ export interface AgentScan {
   /** @nullable */
   agentPickReasoning?: string | null;
   /** @nullable */
+  judgePromptTokens?: number | null;
+  /** @nullable */
+  judgeCompletionTokens?: number | null;
+  /** @nullable */
+  judgeCostMicrocents?: number | null;
+  /** @nullable */
   errorMessage?: string | null;
   requestedByLabel: string;
   /** @nullable */

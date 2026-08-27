@@ -92,7 +92,7 @@ async function serializeScan(scan: BenchmarkAgentScanRow) {
     agentPickReasoning: scan.agentPickReasoning,
     judgePromptTokens: scan.judgePromptTokens,
     judgeCompletionTokens: scan.judgeCompletionTokens,
-    judgeCostCents: scan.judgeCostCents,
+    judgeCostMicrocents: scan.judgeCostMicrocents,
     errorMessage: scan.errorMessage,
     requestedByLabel: scan.requestedByLabel,
     decidedByLabel: scan.decidedByLabel,

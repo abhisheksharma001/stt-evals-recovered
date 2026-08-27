@@ -26,15 +26,22 @@ const JUDGE_MODEL = "gpt-4o";
 // 1,000 tokens. Same placeholder-and-flag-it convention as provider
 // costPerMinute elsewhere in this codebase -- verify against OpenAI's
 // current pricing page before trusting this for a real budget decision.
-const MODEL_COST_CENTS_PER_1K_TOKENS: Record<string, { prompt: number; completion: number }> = {
-  "gpt-4o-mini": { prompt: 0.0015, completion: 0.006 },
-  "gpt-4o": { prompt: 0.25, completion: 1.0 },
+// T-01 (2026-08-28): denominated in MICRO-CENTS per 1,000 tokens (1 cent =
+// 10,000 microcents), because the cents version of this table produced
+// fractional values that an integer DB column rejected -- silently
+// destroying every judgement the system made. See
+// lib/db/src/schema/benchmark-agent-scans.ts for the full post-mortem.
+const MODEL_COST_MICROCENTS_PER_1K_TOKENS: Record<string, { prompt: number; completion: number }> = {
+  "gpt-4o-mini": { prompt: 15, completion: 60 },
+  "gpt-4o": { prompt: 2_500, completion: 10_000 },
 };
 
-function costCentsFor(model: string, promptTokens: number, completionTokens: number): number | null {
-  const rates = MODEL_COST_CENTS_PER_1K_TOKENS[model];
+/** Integer micro-cents, or null for a model we have no published rate for --
+ * null means "not recorded", and must never be rendered as a confident 0. */
+function costMicrocentsFor(model: string, promptTokens: number, completionTokens: number): number | null {
+  const rates = MODEL_COST_MICROCENTS_PER_1K_TOKENS[model];
   if (!rates) return null; // unknown/custom model override -- don't guess a cost
-  return (promptTokens / 1000) * rates.prompt + (completionTokens / 1000) * rates.completion;
+  return Math.round((promptTokens / 1000) * rates.prompt + (completionTokens / 1000) * rates.completion);
 }
 
 export class AgentConfigError extends Error {
@@ -53,7 +60,7 @@ export class AgentRequestError extends Error {
   }
 }
 
-type OpenAiUsage = { promptTokens: number; completionTokens: number; costCents: number | null };
+type OpenAiUsage = { promptTokens: number; completionTokens: number; costMicrocents: number | null };
 
 async function callOpenAi(params: {
   model: string;
@@ -108,7 +115,7 @@ async function callOpenAi(params: {
     usage: {
       promptTokens,
       completionTokens,
-      costCents: costCentsFor(params.model, promptTokens, completionTokens),
+      costMicrocents: costMicrocentsFor(params.model, promptTokens, completionTokens),
     },
   };
 }
@@ -133,7 +140,7 @@ export async function judgeCandidates(params: {
   reasoning: string;
   promptTokens: number | null;
   completionTokens: number | null;
-  costCents: number | null;
+  costMicrocents: number | null;
 }> {
   if (params.candidates.length === 0) {
     return {
@@ -141,7 +148,7 @@ export async function judgeCandidates(params: {
       reasoning: "No candidate transcripts were available to compare (every re-run provider failed).",
       promptTokens: null,
       completionTokens: null,
-      costCents: null,
+      costMicrocents: null,
     };
   }
 
@@ -191,7 +198,7 @@ export async function judgeCandidates(params: {
   return {
     promptTokens: usage.promptTokens,
     completionTokens: usage.completionTokens,
-    costCents: usage.costCents,
+    costMicrocents: usage.costMicrocents,
     pickedProviderId,
     reasoning,
   };
