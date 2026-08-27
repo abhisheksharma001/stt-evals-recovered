@@ -1,4 +1,4 @@
-import { asc, count, countDistinct, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, inArray } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   benchmarkBulksTable,
@@ -204,17 +204,34 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
   const cellsWritten = grouped.reduce((sum, g) => sum + g.cells, 0);
   const callsTotal = bulk.selectionCriteria.resolvedCallIds?.length ?? 0;
   const plannedCells = callsTotal * bulk.providerIds.length;
-  const ranStatuses = ["ok", "failed", "cancelled"];
+  const ranStatuses = ["ok", "failed", "cancelled"] as const;
+
+  // callsRun must count each call once even if its cells landed in more than
+  // one status (e.g. some providers ok, some cancelled mid-flight) -- summing
+  // the per-status distinct counts above double-counts those calls, which is
+  // how callsRun could come out higher than callsTotal. Count distinct calls
+  // across all ran statuses in a single query instead.
+  const [ranCalls] = runs.length
+    ? await db
+        .select({ calls: countDistinct(benchmarkProviderCallResultsTable.callId) })
+        .from(benchmarkProviderCallResultsTable)
+        .where(
+          and(
+            inArray(
+              benchmarkProviderCallResultsTable.runId,
+              runs.map((run) => run.id),
+            ),
+            inArray(benchmarkProviderCallResultsTable.status, [...ranStatuses]),
+          ),
+        )
+    : [{ calls: 0 }];
 
   res.json(
     GetBulkResponse.parse({
       ...serializeBulk(bulk),
       progress: {
         callsTotal,
-        callsRun: ranStatuses.reduce(
-          (sum, s) => sum + (byStatus.get(s)?.calls ?? 0),
-          0,
-        ),
+        callsRun: ranCalls?.calls ?? 0,
         cellsTotal: plannedCells,
         cellsOk: byStatus.get("ok")?.cells ?? 0,
         cellsFailed: byStatus.get("failed")?.cells ?? 0,

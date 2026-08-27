@@ -325,8 +325,12 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
   ]);
 
   const latestRunStatus = latestRuns[0]?.status ?? "blocked";
-  // 2026-08-27, per Abhishek: gold-transcript stage retired -- readyToRun
-  // now gates on de-id alone (see PATCH /benchmark/calls above).
+  // 2026-08-27, per Abhishek: gold-transcript stage retired, then the
+  // de-identification gate itself retired too -- import lands a call
+  // directly at ready_to_run (see PATCH /benchmark/calls above), so
+  // readyToRunCount === 0 with a non-empty corpus shouldn't happen under
+  // normal use any more. Keep the branch (a call could still be moved to
+  // another status by hand) but don't blame a gate that no longer exists.
   const readyToRunCount = calls.filter((call) => call.status === "ready_to_run").length;
 
   const data = {
@@ -341,7 +345,7 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
       calls.length === 0
         ? "Starter corpus not registered"
         : readyToRunCount === 0
-          ? "De-identification not complete"
+          ? "No calls ready to run yet"
           : providers.every((provider) => provider.status !== "ready")
             ? "Provider credentials not configured"
             : "Ready for controlled benchmark run",

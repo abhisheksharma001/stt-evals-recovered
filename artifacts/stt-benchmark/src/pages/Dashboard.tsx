@@ -5,7 +5,7 @@ import {
   useListBenchmarkCalls,
   useListBenchmarkProviders,
 } from "@workspace/api-client-react"
-import { Activity, AlertCircle, ArrowRight, Check, CloudDownload, GitMerge, ShieldCheck } from "lucide-react"
+import { Activity, AlertCircle, ArrowRight, Check, CloudDownload, GitMerge } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
@@ -107,10 +107,11 @@ export default function Dashboard() {
   }
 
   // 2026-08-27, per Abhishek: "we don't need a gold transcript any more" --
-  // the pipeline dropped its Review/gold stage entirely. A call now only
-  // needs de-id sign-off to reach readyToRunCount, so the funnel is
-  // corpus -> needs de-id -> ready, not the old 3-stage gold/de-id split.
-  const needsDeid = data.corpusCount - data.readyToRunCount
+  // the pipeline dropped its Review/gold stage entirely. Then, same day, the
+  // de-identification gate itself was removed too ("we dont need the 2
+  // verification shit... just keep the whole process a little simple") --
+  // an imported call goes straight to ready_to_run, no sign-off step. The
+  // funnel is just corpus -> ready -> run now.
   const runReady = data.readyToRunCount > 0 && data.configuredProviderCount >= 1
 
   // The single "what do I do next" line the old four-stat-card layout never
@@ -123,9 +124,7 @@ export default function Dashboard() {
       ? { text: "A benchmark run is in flight right now.", href: "/runs", label: "Monitor run", icon: Activity }
       : data.corpusCount === 0
       ? { text: "Import calls from Vapi to start building the corpus.", href: "/sources", label: "Import calls", icon: CloudDownload }
-      : needsDeid > 0
-        ? { text: `${needsDeid} call${needsDeid === 1 ? "" : "s"} still need${needsDeid === 1 ? "s" : ""} de-identification sign-off.`, href: "/corpus", label: "Attest de-ID", icon: ShieldCheck }
-        : data.configuredProviderCount === 0
+      : data.configuredProviderCount === 0
           ? { text: "No provider has an API key configured yet.", href: "/providers", label: "Configure providers", icon: Check }
           // technical-fixes FIX-6 / ux-fixes UX-4: Runs no longer launches
           // anything itself -- launching lives in Bulks now, one surface.
@@ -138,33 +137,26 @@ export default function Dashboard() {
         <p className="mt-1 text-muted-foreground">Where the corpus stands and what unblocks the next step.</p>
       </div>
 
-      {/* pipeline strip -- 4 stages now (2026-08-27: dropped the gold-
-          transcript Review stage -- de-id alone gates a call into a bundle). */}
+      {/* pipeline strip -- 3 stages (2026-08-27: dropped the gold-transcript
+          Review stage, then dropped the de-identification gate itself --
+          import now lands a call directly at ready_to_run). */}
       <div className="flex gap-2">
         <StageCard
           step={1}
           label="Import"
           tone={data.corpusCount > 0 ? "done" : "current"}
           value={data.corpusCount}
-          detail="calls pulled from Vapi"
+          detail="calls pulled from Vapi, ready to run"
         />
         <StageCard
           step={2}
-          label="De-ID"
-          tone={needsDeid === 0 && data.corpusCount > 0 ? "done" : "current"}
-          current={needsDeid > 0}
-          value={`${data.readyToRunCount} / ${data.corpusCount || 0}`}
-          detail="two approvers signed off"
-        />
-        <StageCard
-          step={3}
           label="Run"
           tone={data.latestRunStatus === "complete" ? "done" : data.latestRunStatus === "failed" ? "blocked" : runReady ? "current" : "pending"}
           value={data.latestRunStatus === "blocked" ? "—" : data.latestRunStatus.replace("_", " ")}
           detail="latest run status"
         />
         <StageCard
-          step={4}
+          step={3}
           label="Decide"
           tone={data.latestRunStatus === "complete" ? "current" : "pending"}
           value={data.latestRunStatus === "complete" ? "Ready" : "—"}

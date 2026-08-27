@@ -215,7 +215,7 @@ export default function Import() {
           queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
           toast({
             title: `Imported ${result.importedCount} call${result.importedCount === 1 ? "" : "s"}`,
-            description: "They are in the corpus as needs_review -- two de-identification approvals are still required.",
+            description: "They are ready to run -- no review step required.",
           })
         },
         onError: (err) => {
@@ -476,7 +476,7 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
             <StepHeading
               step={3}
               title="Tag and import"
-              hint="Every imported call lands in needs_review. It needs two de-identification approvals before it can be run -- no transcript work required."
+              hint="Every imported call lands ready to run -- no review or approval step, no transcript work required."
             />
           </CardHeader>
           <CardContent className="space-y-4">
@@ -550,7 +550,7 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
                 Go to Corpus <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
               <span className="text-xs text-muted-foreground">
-                Next step: get two de-identification approvals on each call.
+                Next step: launch a bulk run against these calls.
               </span>
             </div>
           </CardContent>
@@ -561,8 +561,8 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
         <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
           <Play className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            Import &rarr; de-id (Corpus) &rarr; queue a run (Runs) &rarr;
-            compare providers (Rankings). Each stage blocks the next until its prerequisites exist.
+            Import &rarr; launch a bulk (Bulks) &rarr; compare providers (Rankings). Imported calls are
+            ready to run immediately -- no review stage in between.
           </p>
         </CardContent>
       </Card>
