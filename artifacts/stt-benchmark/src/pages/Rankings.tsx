@@ -75,6 +75,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
   const header = [
     "assistant", "vertical", "rank", "provider_id", "provider_name",
     "avg_flag_count", "avg_flag_severity_score",
+    "avg_peer_flag_count", "avg_peer_flag_severity_score",
     "latency_first_partial_ms", "latency_final_ms",
     "cost_per_minute", "diarization_score", "run_id", "recommendation",
   ]
@@ -82,6 +83,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
     [
       groupLabel, r.vertical, r.rank, r.providerId, r.providerName,
       r.score.avgFlagCount, r.score.avgFlagSeverityScore,
+      r.score.avgPeerFlagCount, r.score.avgPeerFlagSeverityScore,
       r.score.latencyFirstPartialMs, r.score.latencyFinalMs,
       r.score.costPerMinute, r.score.diarizationScore, r.runId, r.recommendation,
     ].map(escape).join(","),
@@ -398,6 +400,7 @@ export default function Rankings() {
                       aria-sort={sortAria("rank")}
                       className="w-16 text-center cursor-pointer select-none hover:text-foreground"
                       onClick={() => toggleSort("rank")}
+                      title="Computed from peer flags (cross-provider disagreement + wrong entities only) plus cost and latency -- NOT the Avg Flags column, which includes a provider's own self-reported low confidence and is only fairly comparable among providers that report it at all. See the small 'peer' number under Avg Flags for the figure Rank actually uses."
                     >
                       Rank{renderSortIcon("rank")}
                     </TableHead>
@@ -458,9 +461,28 @@ export default function Rankings() {
                             </div>
                           )
                         })()}
+                        {/* 2026-08-27, found live ("for this call why its
+                            different then?" -- Rank contradicted this
+                            column with no visible reason): Rank is actually
+                            sorted by THIS number, not the one above --
+                            avgFlagCount includes a provider's own self-
+                            reported low confidence, which only 3 of 7
+                            providers report at all, so it isn't fair to
+                            rank on directly. Shown small and separate so
+                            the two are never confused for the same thing. */}
+                        {r.score.avgPeerFlagCount != null && (
+                          <div className="text-[10px] font-normal text-muted-foreground" title="Cross-provider disagreement + wrong entities only, excluding self-reported confidence -- this is the number Rank is actually computed from.">
+                            peer: {r.score.avgPeerFlagCount.toFixed(2)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono" title="0=none .. 3=high, averaged across this provider's cells in this group">
                         {r.score.avgFlagSeverityScore != null ? r.score.avgFlagSeverityScore.toFixed(2) : <span title="Not measured in this run">—</span>}
+                        {r.score.avgPeerFlagSeverityScore != null && (
+                          <div className="text-[10px] font-normal text-muted-foreground" title="Severity of peer-only flags -- what Rank actually uses.">
+                            peer: {r.score.avgPeerFlagSeverityScore.toFixed(2)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {r.score.latencyFinalMs != null ? `${r.score.latencyFinalMs}ms` : <span title="Not measured in this run">—</span>}

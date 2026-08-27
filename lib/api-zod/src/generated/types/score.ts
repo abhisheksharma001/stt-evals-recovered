@@ -28,13 +28,23 @@ export interface Score {
   /** @nullable */
   diarizationScore: number | null;
   /**
-     * 2026-08-27: gold-free hybrid flag count, averaged across this provider's cells in the group. Lower is better. This (plus cost/latency) is what Rankings now sorts by.
+     * Gold-free hybrid flag count (disagreement + confidence + entity), averaged across this provider's cells. Includes self-reported low-confidence spans, so only directly comparable among the providers that report confidence at all -- NOT what Rank is computed from (see avgPeerFlagCount).
      * @nullable
      */
   avgFlagCount: number | null;
   /**
-     * severityRank() averaged across cells: 0=none .. 3=high.
+     * severityRank() averaged across cells: 0=none .. 3=high. Same confidence-inclusive caveat as avgFlagCount.
      * @nullable
      */
   avgFlagSeverityScore: number | null;
+  /**
+     * Confidence-EXCLUDED flag count (cross-provider disagreement + entity mismatches only) -- comparable fairly across every provider regardless of whether it reports confidence. This, not avgFlagCount, is what the composite Rank actually sorts by.
+     * @nullable
+     */
+  avgPeerFlagCount: number | null;
+  /**
+     * severityRank() of avgPeerFlagCount's flags, averaged: 0=none .. 3=high.
+     * @nullable
+     */
+  avgPeerFlagSeverityScore: number | null;
 }

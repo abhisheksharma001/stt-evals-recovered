@@ -590,7 +590,7 @@ export const ListBenchmarkRankingsResponseItem = zod.object({
   "runId": zod.string(),
   "vertical": zod.enum(['rush', 'property_management', 'trucking']),
   "assistantId": zod.string().nullable().describe('Null buckets into the \"Other\" group (a manually-added call with no Vapi assistant).'),
-  "assistantLabel": zod.string().describe('Resolved live from Vapi at read time; \"Other (no assistant on file)\" when assistantId is null.'),
+  "assistantLabel": zod.string().describe('Resolved live from Vapi at read time; \"Unassigned (no assistant ID captured at import)\" when assistantId is null.'),
   "providerId": zod.string(),
   "providerName": zod.string(),
   "rank": zod.number(),
@@ -602,8 +602,10 @@ export const ListBenchmarkRankingsResponseItem = zod.object({
   "latencyFinalMs": zod.number().nullable(),
   "costPerMinute": zod.number().nullable(),
   "diarizationScore": zod.number().nullable(),
-  "avgFlagCount": zod.number().nullable().describe('2026-08-27: gold-free hybrid flag count, averaged across this provider\'s cells in the group. Lower is better. This (plus cost\/latency) is what Rankings now sorts by.'),
-  "avgFlagSeverityScore": zod.number().nullable().describe('severityRank() averaged across cells: 0=none .. 3=high.')
+  "avgFlagCount": zod.number().nullable().describe('Gold-free hybrid flag count (disagreement + confidence + entity), averaged across this provider\'s cells. Includes self-reported low-confidence spans, so only directly comparable among the providers that report confidence at all -- NOT what Rank is computed from (see avgPeerFlagCount).'),
+  "avgFlagSeverityScore": zod.number().nullable().describe('severityRank() averaged across cells: 0=none .. 3=high. Same confidence-inclusive caveat as avgFlagCount.'),
+  "avgPeerFlagCount": zod.number().nullable().describe('Confidence-EXCLUDED flag count (cross-provider disagreement + entity mismatches only) -- comparable fairly across every provider regardless of whether it reports confidence. This, not avgFlagCount, is what the composite Rank actually sorts by.'),
+  "avgPeerFlagSeverityScore": zod.number().nullable().describe('severityRank() of avgPeerFlagCount\'s flags, averaged: 0=none .. 3=high.')
 }),
   "recommendation": zod.string()
 }).describe('2026-08-27 -- grouped by real Vapi assistant now (assistantId\/assistantLabel), not vertical. `vertical` stays as a display tag per row, kept for context, not the grouping key anymore (see GET \/benchmark\/rankings).')

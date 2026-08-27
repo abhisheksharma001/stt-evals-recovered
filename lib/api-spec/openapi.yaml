@@ -1046,7 +1046,7 @@ components:
       # it was zero" (found 2026-08-24: alphanumericAccuracy showing 0 on
       # every ranking row because no entity in the corpus is both letters
       # and digits after normalization, so it was never actually scored).
-      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore]
+      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore, avgPeerFlagCount, avgPeerFlagSeverityScore]
       properties:
         wer: { type: ["number", "null"], description: "2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change." }
         entityAccuracy: { type: ["number", "null"], description: "Same as wer -- permanently null going forward, kept for historical runs." }
@@ -1055,8 +1055,18 @@ components:
         latencyFinalMs: { type: ["number", "null"] }
         costPerMinute: { type: ["number", "null"] }
         diarizationScore: { type: ["number", "null"] }
-        avgFlagCount: { type: ["number", "null"], description: "2026-08-27: gold-free hybrid flag count, averaged across this provider's cells in the group. Lower is better. This (plus cost/latency) is what Rankings now sorts by." }
-        avgFlagSeverityScore: { type: ["number", "null"], description: "severityRank() averaged across cells: 0=none .. 3=high." }
+        # 2026-08-27, found live (Abhishek: "for this call why its different
+        # then?" on a case where Rank contradicted this column): this is the
+        # FULL flag picture, including a provider's own self-reported low-
+        # confidence spans -- only fair to compare among the 3 of 7
+        # providers that report confidence at all (AssemblyAI/Deepgram/
+        # Gladia). This is NOT what Rank sorts by (avgPeerFlagCount is) --
+        # kept here for display/context, the stale claim that it drives
+        # sorting is corrected below.
+        avgFlagCount: { type: ["number", "null"], description: "Gold-free hybrid flag count (disagreement + confidence + entity), averaged across this provider's cells. Includes self-reported low-confidence spans, so only directly comparable among the providers that report confidence at all -- NOT what Rank is computed from (see avgPeerFlagCount)." }
+        avgFlagSeverityScore: { type: ["number", "null"], description: "severityRank() averaged across cells: 0=none .. 3=high. Same confidence-inclusive caveat as avgFlagCount." }
+        avgPeerFlagCount: { type: ["number", "null"], description: "Confidence-EXCLUDED flag count (cross-provider disagreement + entity mismatches only) -- comparable fairly across every provider regardless of whether it reports confidence. This, not avgFlagCount, is what the composite Rank actually sorts by." }
+        avgPeerFlagSeverityScore: { type: ["number", "null"], description: "severityRank() of avgPeerFlagCount's flags, averaged: 0=none .. 3=high." }
     ProviderCallResult:
       type: object
       required: [id, runId, providerId, callId, status, createdAt]
@@ -1240,7 +1250,7 @@ components:
         runId: { type: string }
         vertical: { $ref: "#/components/schemas/Vertical" }
         assistantId: { type: ["string", "null"], description: "Null buckets into the \"Other\" group (a manually-added call with no Vapi assistant)." }
-        assistantLabel: { type: string, description: "Resolved live from Vapi at read time; \"Other (no assistant on file)\" when assistantId is null." }
+        assistantLabel: { type: string, description: "Resolved live from Vapi at read time; \"Unassigned (no assistant ID captured at import)\" when assistantId is null." }
         providerId: { type: string }
         providerName: { type: string }
         rank: { type: number }

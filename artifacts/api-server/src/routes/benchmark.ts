@@ -1559,6 +1559,14 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
           // hadn't been serializing them into the response yet.
           avgFlagCount: ranking.avgFlagCount,
           avgFlagSeverityScore: ranking.avgFlagSeverityScore,
+          // 2026-08-27, found live ("for this call why its different
+          // then?" -- Rank contradicted avgFlagCount because Rank is
+          // actually computed from THESE two fields, which weren't being
+          // sent to the client at all): the confidence-excluded numbers
+          // the composite score (run-executor.ts's aggregateRankingRows)
+          // actually sorts by.
+          avgPeerFlagCount: ranking.avgPeerFlagCount,
+          avgPeerFlagSeverityScore: ranking.avgPeerFlagSeverityScore,
         },
         recommendation: ranking.recommendation,
       })),

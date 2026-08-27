@@ -19,7 +19,7 @@ export interface VerticalRanking {
      * @nullable
      */
   assistantId: string | null;
-  /** Resolved live from Vapi at read time; "Other (no assistant on file)" when assistantId is null. */
+  /** Resolved live from Vapi at read time; "Unassigned (no assistant ID captured at import)" when assistantId is null. */
   assistantLabel: string;
   providerId: string;
   providerName: string;
