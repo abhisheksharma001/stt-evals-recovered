@@ -336,6 +336,332 @@ discards its output would make a better judge produce exactly the same `$0.00`.
 
 ---
 
+## Part C-2 — Did the new requirements change the recommendation? (Asked directly, answered directly)
+
+Abhishek asked whether Workflow + BAML are genuinely the right choices, or whether
+something else fits better now that parallelism, comparison detail and graph memory
+are in scope. Honest answer: **the new requirements strengthen the case for both, and
+add exactly one thing neither of them covers.**
+
+### The Workflow call, re-checked against Parts F–H
+
+Parts F–H add: agent parallelism (V4-T13), per-call comparison work, and an
+incremental memory write at the end of every run. All three are *more* work fanned
+out per bulk, with *more* places to fail halfway. That is the argument for durable
+execution getting stronger, not weaker. Still **adopt the engine in-process first**;
+nothing here changes the hosting caveat, and the local-disk audio cache remains the
+blocker for anything serverless.
+
+**Alternatives weighed, and why not:**
+
+| Option | Why not here |
+|---|---|
+| **Temporal** | The most capable durable-execution engine, and the heaviest — a server cluster to operate. Correct at a scale this project is nowhere near. |
+| **Inngest / Trigger.dev** | Both good, both hosted-first — they'd want to reach your API, which means exposing it. Workflow DevKit runs in-process today with no such requirement. |
+| **BullMQ + Redis** | A job queue, not durable execution. Gives retries and a queue; does **not** give resume-mid-function-after-crash, which is the actual requirement. Adds Redis to operate. |
+| **Keep hand-rolling it** | The status quo. Already produced one documented race condition and an in-memory guard that only protects a single process. |
+
+**Verdict: unchanged. Workflow DevKit, in-process, Phase 3.**
+
+### The BAML call, re-checked
+
+V4-T14 (structured verdicts with margins), the per-call comparison (U-13) and V4-T16
+(feeding known blind spots into the judge prompt) all want **the same thing**: the
+LLM returning a typed object with several fields, reliably, from a prompt that is
+going to be edited repeatedly and must not silently regress. That is precisely BAML's
+job, and the case is stronger than it was an hour ago.
+
+**Alternatives weighed:**
+
+| Option | Why not here |
+|---|---|
+| **OpenAI structured outputs / strict JSON mode** | Free, no new dependency, and already available. Real option — but it's per-vendor, it constrains generation in a way that measurably costs quality on reasoning-heavy prompts, and it gives you no prompt versioning and no test harness. |
+| **Zod + a retry loop** | Roughly what exists today, one layer better. Fixes parsing; does nothing for prompt versioning, testing, or model fallback. |
+| **Vercel AI SDK `generateObject`** | Genuinely good, and pairs naturally if you go Vercel. Typed output via Zod, multi-provider. Weaker than BAML on prompt-as-artifact and on a real test suite. **This is the credible runner-up** — pick it over BAML if you want one less toolchain and are already committing to the Vercel stack. |
+| **LangChain / LlamaIndex** | Far more framework than one judge function needs. |
+
+**Verdict: BAML, for the judge only, behind the existing signature.** If adding a
+Rust-compiled codegen step proves annoying in practice, `generateObject` from the AI
+SDK is the fallback and costs a day to switch.
+
+### The one thing neither covers, and the only new tool worth considering
+
+Neither Workflow nor BAML gives you the **graph memory** in Part H. The right answer
+there is deliberately boring: **build it in the Postgres you already run.** Two
+tables, a unique index, recursive CTEs for traversal. Do not add Neo4j, and do not
+reach for a hosted memory product — the value is in *your* flags and *your* audit
+trail, which no general-purpose memory service knows anything about, and this project
+has already removed one memory dependency (Mem0) rather than carry it.
+
+### The honest risk in all of this
+
+Three new subsystems — parallel agent, structured verdicts, graph memory — is a lot
+of new surface for a tool whose *current* problem is that it silently discards the
+results it already computes. **Sequencing is the actual recommendation here.** Fix
+the data loss, deploy, prove one bulk end to end with real numbers on screen. Then
+add memory. A memory built on top of a pipeline that loses 63 of 63 judgements would
+faithfully remember nothing.
+
+
+---
+
+## Part F — Corpus selection: pick the calls that actually teach us something
+
+Added 2026-08-28 at Abhishek's request. **Every number in this part was measured
+against the live Vapi API on 2026-08-28 (100 most recent calls, "Land And
+Apartment" account), not assumed.**
+
+### V4-T10 (P1): Duration band, not a floor
+
+**Today.** `resolveCriteriaCallIds` supports `minDurationSeconds` only
+(`lib/bulks.ts:135`, `gte(...)`, default 5). There is no upper bound, so a
+20-second "wrong number" and an 8-minute outlier land in the same bulk with equal
+weight.
+
+**Required.** Add `maxDurationSeconds` alongside it (`lte(...)`), thread it through
+`selectionCriteria`, the OpenAPI `Bulk`/`BulkDetail`/create schemas, and the create
+dialog. **Default the band to 60–120 seconds**, overridable — a 1–2 minute call is
+long enough to contain names, numbers, addresses and a real exchange, and short
+enough to stay cheap.
+
+**Measured consequence — read this before shipping the default.** Of the 100 most
+recent calls:
+
+| Band | Count |
+|---|---|
+| 0–20s | 42 |
+| 20–60s | 33 |
+| **60–120s (the target band)** | **11** |
+| 2–5 min | 9 |
+| >5 min | 1 |
+| no start/end times | 4 |
+
+**The 1–2 minute band is 11% of traffic.** The band is the right *quality* call —
+but a bulk built from it will be roughly a tenth the size of one built from
+everything over 20s. Two consequences the UI must state, not hide (U-11): a bulk may
+come back much smaller than expected, and reaching a useful sample size will need a
+wider date range than a single week.
+
+**Done when:** a bulk created with `min=60, max=120` contains only calls whose
+`durationSeconds` is in that range, and the create dialog shows the resulting count
+*before* the cost gate.
+
+### V4-T11 (P1): Capture Vapi's call outcome — we currently throw it away
+
+**Today.** `VapiCall` (`lib/vapi.ts:129`) declares `status` and never reads
+`endedReason` at all. `benchmark_calls` has no column for either. So the corpus
+cannot distinguish a completed conversation from a misdial from a call the assistant
+handed to a human.
+
+**Measured — the real distribution across 100 calls:**
+
+| `endedReason` | Count | What it is |
+|---|---|---|
+| `customer-ended-call` | 49 | Caller hung up — a normal completed call |
+| `assistant-forwarded-call` | **39** | **Assistant handed off to a human** |
+| `twilio-reported-customer-misdialed` | 4 | Misdial — no real conversation |
+| `silence-timed-out` | 4 | Nobody spoke |
+| `assistant-ended-call` | 2 | Assistant closed it |
+| `assistant-said-end-call-phrase` | 1 | Assistant closed it, by phrase |
+| `voicemail` | 1 | Machine, not a person |
+
+Vapi also returns `analysis.successEvaluation` on **every** call (87 `true`,
+4 `false`, 9 `null`) plus `analysis.summary` and `analysis.structuredData`.
+
+**Why this matters more than it looks.** 39% of calls are
+`assistant-forwarded-call` — the assistant gave up and passed the caller to a human.
+Those are disproportionately the calls where the AI *misheard something*, which
+makes them the **highest-signal calls in the corpus for an STT benchmark**, not
+noise to filter out. Meanwhile `voicemail`, `silence-timed-out` and
+`twilio-reported-customer-misdialed` contain little or no human speech and are close
+to worthless for scoring — they inflate the corpus and every provider's cost with
+nothing to learn from.
+
+**Required.**
+
+1. Add to `VapiCall`: `endedReason?: string` and
+   `analysis?: { successEvaluation?: string | boolean | null; summary?: string }`.
+   Read them at import. **Do not add fields Vapi doesn't actually return** — the
+   list above is the verified set; anything beyond it needs its own live check
+   first (this project has been burned by exactly that twice).
+2. Add to `benchmark_calls`: `sourceEndedReason text`,
+   `sourceSuccessEvaluation text` (store Vapi's raw value verbatim — it is
+   `"true"`/`"false"` strings today, and normalising it now would destroy
+   information if Vapi widens it later).
+3. Add three selection filters, all optional, all off by default:
+   `includeEndedReasons` / `excludeEndedReasons` / `successEvaluation`.
+4. **Backfill.** Existing corpus calls have no `endedReason`. It is re-fetchable
+   from Vapi *only within the 14-day window*; older calls will stay null forever.
+   Backfill what's reachable, leave the rest null, and never let null silently mean
+   "normal call".
+
+**Suggested default preset — "worth benchmarking":**
+`endedReason IN (customer-ended-call, assistant-forwarded-call, assistant-ended-call,
+assistant-said-end-call-phrase)`, i.e. exclude misdials, silence timeouts, and
+voicemail. On the measured sample that keeps 91 of 100 and drops 9 that contain
+almost no speech.
+
+**Done when:** the Corpus table shows an outcome column, a bulk can be built from
+forwarded calls only, and one imported call read back from the API carries the same
+`endedReason` string Vapi returned.
+
+### V4-T12 (P1): Make the 14-day window a selection rule, not only an exclusion
+
+**Today.** The retention filter (shipped, undeployed) *removes* calls older than 14
+days at bulk-creation time — after the user has already picked a date range.
+
+**Required.** Push it upstream so it is a stated rule rather than a late surprise:
+the import date-range picker and the bulk criteria both default their lower bound to
+**today − 14 days**, labelled with the reason. Selecting earlier is still allowed —
+already-cached calls remain perfectly runnable and must not be blocked — but the
+default should never invite a user to pick a range Vapi cannot serve.
+
+---
+
+## Part G — The agent: parallel, and legible
+
+### V4-T13 (P0): Agent verification runs strictly one call at a time
+
+**Today.** `runAutoAgentVerificationForRun` (`lib/agent-verify.ts:259`) is a plain
+sequential loop:
+
+```ts
+for (const [callId, callRows] of byCallId) {
+  await verifyCallWithAgent({ ... });   // one OpenAI round-trip, blocking
+}
+```
+
+Every provider cell in the same run went through a bounded concurrency pool. The
+agent pass then walks the same calls **serially**. On a 72-call bulk that is 72
+sequential OpenAI round-trips — minutes of wall-clock for work that is embarrassingly
+parallel and has no ordering constraint whatsoever.
+
+**Required.** Reuse the existing bounded-concurrency helper the run executor already
+exports (`lib/run-executor.ts:192` — written precisely to avoid unbounded
+`Promise.all` blowups). Add `AGENT_CONCURRENCY` (default 4, clamped, same
+`envInt` pattern as `CELL_MAX_ATTEMPTS`). Keep the existing per-call `try/catch` —
+one call's failure must still never take the run down. Honour OpenAI 429s with the
+same halve-and-back-off treatment providers get.
+
+**Done when:** a bulk's agent pass wall-clock drops by roughly the concurrency
+factor, no call is verified twice, and a forced failure on one call still leaves the
+other results intact.
+
+### V4-T14 (P1): State the verdict in percentages, with the winner and the margin on top
+
+Abhishek's ask, verbatim in intent: *an average of how well each one does, the
+percent very clear, and at the top whether it is better or worse and by exactly how
+much.*
+
+**Today.** Rankings shows raw averages — `avgPeerFlagCount` 0.84, `avgFlagCount`
+2.10 — with no denominator. "0.84 flags" is meaningless without knowing 0.84 *out of
+how many words*.
+
+**Required — computed in the API, never in the component:**
+
+1. **Normalise per 100 words.** `flagsPerHundredWords = avgPeerFlagCount /
+   (avgWordCount / 100)`. A rate is comparable across calls of different lengths;
+   a raw count is not.
+2. **A clean-call percentage.** `% of this provider's calls with zero peer flags` —
+   the single number a non-technical reader understands immediately.
+3. **A headline verdict object** per ranking group:
+   ```
+   { winnerProviderId, runnerUpProviderId,
+     marginPct,            // relative improvement in flags/100w over runner-up
+     vsProductionPct,      // same, against the provider Vapi runs live today
+     evidenceCalls,        // how many calls this rests on
+     confidenceComparable  // how many providers reported confidence at all
+   }
+   ```
+   Rendered as one sentence at the top of the page (U-12).
+4. **Never state a margin without its evidence count.** A 12% margin over 3 calls is
+   noise; over 70 it is a decision. The number and its denominator ship together or
+   not at all.
+
+---
+
+## Part H — Memory: remember what each provider gets wrong
+
+Abhishek's ask: the system should remember what a given model usually fails on, and
+what our own agent usually fails to *detect*, so both can be improved — represented
+as a **graph**, not a flat list.
+
+This is the most genuinely new capability in v4 and it is also the easiest one to
+get dangerously wrong. Read V4-T17 before building V4-T15.
+
+### V4-T15 (P2): A failure-pattern graph
+
+**The shape.** Every flag the hybrid pass produces already names: a call, a provider,
+a span of words, a reason, and (often) an entity type. Today that is written once per
+run and never looked at again. Turn it into a small graph in the Postgres already in
+use:
+
+```
+node kinds:  provider · error_pattern · entity_type · phrase · vertical · call
+edges:       (provider) --misheard-->  (phrase)        weight, n_observations
+             (provider) --weak_on-->   (entity_type)   weight, n_observations
+             (error_pattern) --seen_in--> (call)
+             (phrase) --occurs_in-->  (vertical)
+```
+
+Two tables — `memory_nodes(id, kind, key, label, first_seen, last_seen)` and
+`memory_edges(src, dst, kind, weight, n_observations, last_seen)` — plus a unique
+index on `(kind, key)` and on `(src, dst, kind)`. Written incrementally at the end of
+each run from flags that already exist. No new LLM calls, no new cost.
+
+**Why a graph and not a table.** Abhishek's instinct here is right, and the reason is
+specific: the useful questions are *multi-hop*. "Which providers are weak on the
+entity types that matter in property-management calls?" is provider → entity_type →
+vertical — two hops. A flat "errors" table answers one-hop questions only and needs a
+new report for every new question. A graph answers questions you didn't pre-plan,
+which is exactly what a growing corpus of verticals needs.
+
+**Stay in Postgres.** Recursive CTEs handle two- and three-hop traversal
+comfortably at this scale (thousands of nodes, not millions). **Do not add Neo4j** —
+a second datastore to run, back up, and keep consistent, to serve a graph that fits
+in a laptop's RAM. If similarity search over phrases is wanted later, `pgvector`
+on Supabase is the next step, not a new database. *Verify pgvector is enabled on the
+project before designing around it — do not assume.*
+
+### V4-T16 (P2): Agent self-audit — what the judge itself misses
+
+The second half of the ask, and the harder half. A judge that is never checked
+accumulates blind spots silently.
+
+**Source of truth:** the `approve`/`reject` audit trail that already exists on
+`benchmark_agent_scans` and currently feeds nothing. Every rejection is a labelled
+example of the agent being wrong.
+
+**Required.** An `agent_blindspots` view over that trail: flag categories where
+human rejection rate is high, entity types the judge consistently picks wrong on,
+providers it appears to favour independent of evidence. Surface it as a page section
+(U-14), and **feed the top patterns into the judge prompt as explicit
+"known weaknesses, check these carefully" context** — which is precisely the kind of
+prompt change BAML makes safe to version and test rather than hand-edit.
+
+### V4-T17 (P1 — a guard rail, do this with V4-T15): memory must inform, never prejudge
+
+**The risk, stated plainly.** A memory that says "Cartesia usually gets phone numbers
+wrong" and is then fed to the judge has just put a thumb on the scale. The next time
+Cartesia gets a phone number *right*, the judge has been primed to doubt it. That is
+the same failure this project already has a standing rule against — *the draft
+transcript must never become the gold standard* — wearing a new costume.
+
+**Non-negotiable rules for anything built in Part H:**
+
+- Memory may **surface evidence** ("this provider has been flagged on phone numbers
+  in 14 of 62 calls — here they are"). It may **never adjust a score, a rank, or a
+  weight**.
+- The judge may receive memory as *context to check*, never as a *prior to apply*.
+  The prompt says "verify these carefully", never "this provider is usually wrong".
+- Every memory-derived claim shown in the UI carries its observation count and links
+  to the underlying calls. An unfalsifiable claim is not evidence.
+- A/B it: run one bulk with the memory-primed judge and one without, on the same
+  calls, and compare. If the primed judge's picks correlate with the memory more than
+  with the transcripts, the feature is harming the tool and must come out.
+
+---
+
 ## Part D — Robustness backlog (P1, after Part A)
 
 - **V4-T4: Cost precision everywhere.** Micro-cents for STT cells and judge calls;
@@ -364,12 +690,15 @@ discards its output would make a better judge produce exactly the same `$0.00`.
 |---|---|---|
 | **0. Deploy what's already fixed** | Restart with `7313012` + ElevenLabs key | ElevenLabs appears in a run; Cartesia long calls pass; retention exclusion note visible on a new bulk |
 | **1. Stop losing data** | V4-T1, V4-T2, V4-T3 | A bulk reports non-zero agent cost, judged == flagged, failures grouped by class |
-| **2. Typed LLM layer** | BAML for `judgeCandidates`, V4-T7 | Judge contract tests green in CI; a full bulk judged through BAML with zero null picks |
-| **3. Durable execution** | Workflow DevKit in-process, V4-T5 | Kill the server mid-bulk; on restart it resumes and does **not** re-charge completed cells |
-| **4. Portable storage** | Audio cache → blob storage | Corpus runs from a second machine with no local `audio-cache/` |
-| **5. Hosting (optional)** | Vercel | Only when someone other than Abhishek needs to open the tool |
+| **2. Better corpus, faster agent** | V4-T10 duration band, V4-T11 `endedReason` capture + backfill, V4-T12 window default, V4-T13 agent concurrency | A bulk of 60–120s forwarded-only calls runs, and its agent pass finishes ~4x faster than serial |
+| **3. Legible verdicts** | V4-T14 rates + percentages + headline verdict; U-12/U-13 | A non-technical reader gets the winner, the margin, and the evidence count from one sentence |
+| **4. Typed LLM layer** | BAML for `judgeCandidates`, V4-T7 | Judge contract tests green in CI; a full bulk judged through BAML with zero null picks |
+| **5. Durable execution** | Workflow DevKit in-process, V4-T5 | Kill the server mid-bulk; on restart it resumes and does **not** re-charge completed cells |
+| **6. Memory** | V4-T15 graph, V4-T16 self-audit, V4-T17 guard rails | The A/B in V4-T17 shows the memory-primed judge tracking transcripts, not the memory |
+| **7. Portable storage** | Audio cache → blob storage | Corpus runs from a second machine with no local `audio-cache/` |
+| **8. Hosting (optional)** | Vercel | Only when someone other than Abhishek needs to open the tool |
 
-**Phase 3's exit criterion is the whole point of Part B.** If killing the process
+**Phase 5's exit criterion is the whole point of Part B.** If killing the process
 mid-bulk doesn't resume cleanly, the migration bought nothing.
 
 ---

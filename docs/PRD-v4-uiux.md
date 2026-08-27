@@ -198,6 +198,123 @@ key.**
 
 ---
 
+## Part B-2 — Added 2026-08-28: selection, comparison, verdict, memory
+
+Five items from Abhishek's second pass. Each maps to a technical item in
+`PRD-v4-technical.md` and adds nothing the backend won't already have.
+
+### U-11 (P1): Show the size of the corpus a filter will actually produce, before launch
+
+**Why.** The new 60–120 second duration band (V4-T10) is the right *quality* of call
+and a small *quantity* of them: measured against 100 recent live calls, only **11
+fall in that band** — 42 are under 20 seconds. A user who sets the band expecting 70
+calls and gets 9 will assume the tool is broken.
+
+**Required.** In the create-bulk dialog, above the cost gate, a live count that
+updates as filters change:
+
+```
+Duration 60–120s · last 14 days · outcome: completed or forwarded
+   → 11 calls match     (of 84 in range)
+     42 excluded: shorter than 60s
+      9 excluded: no speech (voicemail, silence, misdial)
+     22 excluded: longer than 120s
+```
+
+Every excluded bucket is named and counted. Nothing is silently dropped. **The count
+appears before the cost estimate**, because it is the number that makes the cost
+estimate mean anything.
+
+### U-12 (P0): One sentence at the top that states the verdict
+
+**Why.** The whole tool exists to answer one question, and the answer is currently
+something the reader has to assemble from a table.
+
+**Required.** Above the rankings table, from the V4-T14 headline object:
+
+> **Deepgram Nova-3 is the best fit for this bulk.**
+> 1.4 flags per 100 words — **38% cleaner** than the runner-up (AssemblyAI), and
+> **22% cleaner** than the provider running in production today.
+> Based on **72 calls**. 3 of 6 providers report confidence, so the
+> confidence-inclusive column is not comparable across all of them.
+
+Rules, all of them load-bearing:
+
+- **Never a margin without its evidence count.** They render in the same sentence or
+  neither renders. A 38% margin over 4 calls must read as provisional, and the page
+  should say so outright below ~20 calls.
+- **Percentages, not raw averages**, as the primary number. "0.84" needs a
+  denominator the reader doesn't have; "1.4 per 100 words, 38% cleaner" does not.
+- **Direction in words.** "cleaner", "worse", "the same within noise" — not a signed
+  delta the reader has to interpret.
+- When the top two are within the noise floor, say **"too close to call on this
+  evidence"** and name what would settle it (more calls). A benchmark that refuses to
+  pick a winner it can't justify is more trustworthy than one that always picks.
+
+### U-13 (P1): Per-call comparison — what differs, and why one is best
+
+**Why.** Abhishek's ask: for each call, see every provider's output, what the
+differences actually are, and why the chosen one is right — so the verdict can be
+trusted rather than taken on faith.
+
+**Today.** `ProviderComparisonPanel` in `Corpus.tsx` shows each provider's transcript
+side by side with low-confidence chips and a winner callout. Good foundation, missing
+the reasoning layer.
+
+**Required, inside the existing panel:**
+
+1. **The disagreements, extracted.** Not six transcripts to read in full — a compact
+   list of the spans where providers actually differ, each showing what each provider
+   heard:
+   ```
+   "…ending in three six six eight"
+     AssemblyAI  3668        Deepgram  3668
+     Gladia      36 68  ⚠ 0% confidence
+     Cartesia    thirty-six sixty-eight
+   ```
+   Agreement is not interesting; disagreement is the entire signal. Show the diffs,
+   collapse the rest.
+2. **The judge's reasoning**, its model, and that judgement's cost (available once
+   V4-T1 lands).
+3. **A per-call outcome chip** from V4-T11 — `forwarded to human`, `caller hung up`,
+   `voicemail`. On a forwarded call, say so prominently: the assistant gave up on
+   this call, which makes it one of the more informative calls in the set.
+4. **The existing trophy rule stays exactly as it is** — the AI-pick badge renders
+   only for a genuine pick, never for a fewest-flags fallback. That guard already
+   caught one live mislabelling bug.
+
+### U-14 (P2): The memory view — what each provider keeps getting wrong
+
+**Why.** V4-T15 builds a failure-pattern graph. It is worthless if nobody can look
+at it.
+
+**Required.** A section (on Results, not a new page) with two readings of the same
+data:
+
+- **Per provider:** "Cartesia has been flagged on phone numbers in 14 of 62 calls
+  (23%)" — every claim carrying its observation count and linking to the calls behind
+  it.
+- **The graph itself:** nodes for providers, entity types and recurring phrases;
+  edges weighted by how often the pattern recurs. Clicking a node filters the list
+  below it. Render it on **Canvas**, not hand-authored SVG, and make sure the list
+  view is complete on its own — the graph is a way in, never the only way to the
+  information.
+
+**The hard rule, from V4-T17.** Memory claims are **evidence, never a verdict**. The
+UI may never show a memory-derived statement next to a score in a way that implies it
+adjusted the score, because it did not and must not. Keep them visually separate and
+label the section for what it is: *observed history*, not *this bulk's result*.
+
+### U-15 (P2): Agent progress should look parallel, because it now is
+
+Once V4-T13 lands, the agent pass runs several calls at once. The current UI shows a
+single blocking phase with no detail. Show `n / total verified · k in flight`, and
+keep it visibly distinct from the STT phase — they cost different money to different
+vendors, and conflating them is what made the $0.00 bug (U-1) hard to spot.
+
+
+---
+
 ## Part C — P2. Polish, once the truthfulness items are done.
 
 - **U-8: Empty and error states.** Every table needs three distinguishable states:

@@ -632,6 +632,10 @@
       <dd class="is-bad">0<small>of 63 computed</small></dd>
     </div>
     <div class="stat">
+      <dt>1&ndash;2 min calls</dt>
+      <dd>11%<small>of recent traffic</small></dd>
+    </div>
+    <div class="stat">
       <dt>Providers live</dt>
       <dd>6<small>of 7 keyed</small></dd>
     </div>
@@ -820,10 +824,178 @@ agentCallsJudged:  0        ← all 63 were errors</pre>
   </section>
 
   <section>
-    <h2>The two structural calls</h2>
+    <h2>Second pass: better inputs, a faster agent, and memory <span class="h2-tag">measured 28 Aug, live Vapi API</span></h2>
     <p class="lede">
-      Both proposals are a good fit. Neither is a drop-in, and the interesting part of each
-      is the caveat, not the pitch.
+      Five additions. Three of them turned out to have hard numbers behind them once
+      checked against the last 100 real calls, rather than reasoned about.
+    </p>
+
+    <div class="findings">
+
+      <article class="finding sev-warn">
+        <div class="finding-head">
+          <span class="finding-id">V4-T10</span>
+          <h3>The 1&ndash;2 minute band is the right call, and only 11% of traffic</h3>
+        </div>
+        <p>
+          Selection supports a duration <em>floor</em> only, so a 20-second wrong number and an
+          8-minute outlier carry equal weight. Adding a ceiling is straightforward. The
+          consequence is not.
+        </p>
+        <div class="table-wrap" style="margin:14px 0;">
+          <table>
+            <thead><tr><th scope="col">Duration</th><th scope="col">Calls</th><th scope="col"></th></tr></thead>
+            <tbody>
+              <tr><td>0&ndash;20s</td><td class="num">42</td><td>too short to score</td></tr>
+              <tr><td>20&ndash;60s</td><td class="num">33</td><td></td></tr>
+              <tr><td><strong>60&ndash;120s</strong></td><td class="num"><strong>11</strong></td><td><span class="pill pending">target band</span></td></tr>
+              <tr><td>2&ndash;5 min</td><td class="num">9</td><td></td></tr>
+              <tr><td>&gt;5 min</td><td class="num">1</td><td></td></tr>
+              <tr><td>no timing data</td><td class="num">4</td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          A bulk built from this band will be roughly a tenth the size of one built from
+          everything over 20 seconds. That is a fine trade &mdash; those are the calls with real
+          content in them &mdash; but reaching a useful sample needs a wider date range than a
+          week, and <strong>the screen has to say the count before the cost gate</strong>, not after.
+        </p>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head">
+          <span class="finding-id">V4-T11</span>
+          <h3>Vapi tells us how every call ended. We read none of it.</h3>
+        </div>
+        <p>
+          <code>endedReason</code> is on every call and is not in our type, our schema, or our
+          corpus. Neither is <code>analysis.successEvaluation</code>, which Vapi returned on all
+          100 sampled calls (87 true, 4 false, 9 null).
+        </p>
+        <div class="table-wrap" style="margin:14px 0;">
+          <table>
+            <thead><tr><th scope="col">How the call ended</th><th scope="col">Count</th><th scope="col">Worth benchmarking?</th></tr></thead>
+            <tbody>
+              <tr><td><code>customer-ended-call</code></td><td class="num">49</td><td>Yes &mdash; a normal completed call</td></tr>
+              <tr><td><code>assistant-forwarded-call</code></td><td class="num">39</td><td><strong>Yes &mdash; highest signal in the corpus</strong></td></tr>
+              <tr><td><code>twilio-reported-customer-misdialed</code></td><td class="num">4</td><td>No &mdash; no conversation</td></tr>
+              <tr><td><code>silence-timed-out</code></td><td class="num">4</td><td>No &mdash; nobody spoke</td></tr>
+              <tr><td><code>assistant-ended-call</code></td><td class="num">2</td><td>Yes</td></tr>
+              <tr><td><code>assistant-said-end-call-phrase</code></td><td class="num">1</td><td>Yes</td></tr>
+              <tr><td><code>voicemail</code></td><td class="num">1</td><td>No &mdash; machine, not a person</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>39% of calls end with the assistant handing off to a human.</strong> Those are
+          disproportionately the calls where the AI misheard something &mdash; which makes them the
+          most informative calls available for a speech-to-text benchmark, not noise to
+          discard. Meanwhile voicemail, silence timeouts and misdials contain almost no human
+          speech and cost real money on every provider to learn nothing.
+        </p>
+        <div class="fix">
+          <span class="fix-label">Fix</span>
+          <p>Capture both fields, backfill what's still inside the 14-day window, and add a
+          "worth benchmarking" preset that keeps 91 of 100 and drops the 9 with no speech in them.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="finding-head">
+          <span class="finding-id">V4-T13</span>
+          <h3>The agent verifies one call at a time</h3>
+        </div>
+        <p>
+          Every provider cell goes through a bounded concurrency pool. The agent pass then
+          walks the same calls in a plain <code>for</code> loop with an <code>await</code> inside it &mdash;
+          on a 72-call bulk, 72 sequential OpenAI round-trips for work that has no ordering
+          constraint at all.
+        </p>
+        <div class="fix">
+          <span class="fix-label">Fix</span>
+          <p>Reuse the bounded-concurrency helper the run executor already exports, with its own
+          <code>AGENT_CONCURRENCY</code> limit and the same 429 back-off providers get. Keep the
+          per-call catch &mdash; one failure must still never take a run down.</p>
+        </div>
+      </article>
+
+      <article class="finding sev-warn">
+        <div class="finding-head">
+          <span class="finding-id">V4-T14</span>
+          <h3>The verdict needs a sentence, not a table</h3>
+        </div>
+        <p>
+          Rankings shows raw averages &mdash; "0.84 flags" &mdash; with no denominator. Nobody can act
+          on that. Normalise to flags per 100 words, add a clean-call percentage, and put the
+          answer on top:
+        </p>
+        <div class="evidence">
+          <span class="evidence-label">Required headline</span>
+          <pre>Deepgram Nova-3 is the best fit for this bulk.
+1.4 flags per 100 words — 38% cleaner than the runner-up,
+22% cleaner than the provider running in production today.
+Based on 72 calls. 3 of 6 providers report confidence, so the
+confidence-inclusive column is not comparable across all of them.</pre>
+        </div>
+        <p>
+          <strong>Never a margin without its evidence count</strong> &mdash; they ship in the same
+          sentence or neither ships. And when the top two are inside the noise floor, the page
+          should say "too close to call on this evidence" rather than invent a winner.
+        </p>
+      </article>
+
+      <article class="finding sev-warn">
+        <div class="finding-head">
+          <span class="finding-id">V4-T15&nbsp;/&nbsp;T17</span>
+          <h3>Graph memory &mdash; and the one way it could poison the tool</h3>
+        </div>
+        <p>
+          Every flag already names a call, a provider, a span of words, a reason and often an
+          entity type. Written once, never read again. Turning that into a small graph in the
+          Postgres already running gives multi-hop questions a home: <em>which providers are weak
+          on the entity types that matter in this vertical?</em> is provider &rarr; entity type &rarr;
+          vertical, and a flat errors table cannot answer it without a new report each time.
+        </p>
+        <div class="evidence">
+          <span class="evidence-label">Two tables, no new datastore</span>
+          <pre>nodes:  provider · error_pattern · entity_type · phrase · vertical · call
+edges:  (provider) --misheard-->  (phrase)      weight, n_observations
+        (provider) --weak_on-->   (entity_type) weight, n_observations
+        (phrase)   --occurs_in--> (vertical)</pre>
+        </div>
+        <p>
+          Recursive CTEs handle the traversal at this scale. <strong>Do not add Neo4j</strong> for a
+          graph that fits in a laptop's memory.
+        </p>
+        <div class="fix">
+          <span class="fix-label">The guard rail &mdash; build this with the memory, not after it</span>
+          <p>
+            A memory that tells the judge "Cartesia usually gets phone numbers wrong" has put a
+            thumb on the scale: next time Cartesia gets one <em>right</em>, the judge has been primed
+            to doubt it. That is this project's own standing rule &mdash; the draft transcript must
+            never become the gold standard &mdash; wearing a new costume.
+          </p>
+          <ul class="tight">
+            <li>Memory <strong>surfaces evidence</strong>. It never adjusts a score, a rank, or a weight.</li>
+            <li>The judge may receive memory as context to <em>check</em>, never as a prior to <em>apply</em>.</li>
+            <li>Every memory claim carries its observation count and links to the calls behind it.</li>
+            <li>A/B it: same calls, primed judge vs. unprimed. If the primed judge's picks track the
+              memory more than the transcripts, the feature is harming the tool and comes out.</li>
+          </ul>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Workflow, BAML, and what else was weighed</h2>
+    <p class="lede">
+      Asked directly: are these actually the right choices, or is something else a better
+      fit now that parallelism, comparison detail and memory are in scope? Honest answer &mdash;
+      <strong>the new requirements strengthen the case for both</strong>, and add exactly one
+      thing neither of them covers.
     </p>
 
     <div class="verdicts">
@@ -901,6 +1073,56 @@ agentCallsJudged:  0        ← all 63 were errors</pre>
         </p>
       </article>
 
+      <article class="verdict">
+        <div class="verdict-top">
+          <h3 class="verdict-name">Graph memory</h3>
+          <span class="verdict-call">Build it in Postgres</span>
+        </div>
+        <p class="verdict-what">The one requirement neither Workflow nor BAML covers.
+        Two tables and a unique index in the database already running &mdash; nodes, weighted
+        edges, recursive CTEs for traversal.</p>
+
+        <h4>Why boring is right</h4>
+        <p>The value is in <em>your</em> flags and <em>your</em> approve/reject trail, which no
+        general-purpose memory service knows anything about. This project already removed one
+        memory dependency rather than carry it.</p>
+
+        <h4>Not this</h4>
+        <ul class="tight">
+          <li><b>Neo4j</b> &mdash; a second datastore to run, back up and keep consistent, for a graph
+            that fits in a laptop's RAM.</li>
+          <li><b>A hosted memory product</b> &mdash; generic memory of conversations, not of which
+            provider mishears which entity type in which vertical.</li>
+          <li><b>pgvector</b> &mdash; not yet. It's the right <em>next</em> step if phrase similarity is
+            wanted, and it's already available on Supabase. Verify it's enabled before designing
+            around it.</li>
+        </ul>
+
+        <p class="closing">
+          <strong>The real risk isn't the technology.</strong> Three new subsystems is a lot of
+          surface for a tool whose current problem is that it silently discards results it has
+          already computed. Memory built on a pipeline that loses 63 of 63 judgements would
+          faithfully remember nothing.
+        </p>
+      </article>
+
+    </div>
+
+    <h3 style="margin-top:34px;">Alternatives weighed, and why not</h3>
+    <div class="table-wrap" style="margin-top:14px;">
+      <table>
+        <thead><tr><th scope="col">Instead of</th><th scope="col">Option</th><th scope="col">Why not here</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="4">Workflow</td><td>Temporal</td><td>The most capable engine and the heaviest &mdash; a cluster to operate, correct at a scale this project is nowhere near.</td></tr>
+          <tr><td>Inngest / Trigger.dev</td><td>Both good, both hosted-first &mdash; they need to reach your API, which means exposing it. Workflow runs in-process today.</td></tr>
+          <tr><td>BullMQ + Redis</td><td>A job queue, not durable execution. Gives retries; does not give resume-after-crash, which is the actual requirement.</td></tr>
+          <tr><td>Keep hand-rolling</td><td>The status quo &mdash; already produced one documented race condition and a guard that protects only a single process.</td></tr>
+          <tr><td rowspan="4">BAML</td><td>OpenAI strict JSON mode</td><td>Free and available. But per-vendor, measurably costly on reasoning-heavy prompts, and gives no prompt versioning or test harness.</td></tr>
+          <tr><td>Zod + retry loop</td><td>Roughly today, one layer better. Fixes parsing; does nothing for versioning, testing, or model fallback.</td></tr>
+          <tr><td>Vercel AI SDK <code>generateObject</code></td><td><strong>The credible runner-up.</strong> Typed output, multi-provider, one less toolchain. Pick it over BAML if you commit to the Vercel stack.</td></tr>
+          <tr><td>LangChain / LlamaIndex</td><td>Far more framework than one judge function needs.</td></tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
@@ -917,7 +1139,7 @@ agentCallsJudged:  0        ← all 63 were errors</pre>
         <div class="phase-n">0</div>
         <div class="phase-body">
           <h3>Deploy what's already fixed</h3>
-          <p>Rebuild and restart with the four merged commits plus the new ElevenLabs key. Nothing to write — this is purely a deploy that was blocked while a bulk was running.</p>
+          <p>Rebuild and restart with the four merged commits plus the ElevenLabs key. Nothing to write &mdash; a deploy that was blocked while a bulk was running.</p>
           <p class="exit"><b>Exit</b>ElevenLabs appears in a run, Cartesia's long calls pass, and a new bulk shows the "skipped, older than 14 days" note.</p>
         </div>
       </div>
@@ -926,43 +1148,70 @@ agentCallsJudged:  0        ← all 63 were errors</pre>
         <div class="phase-n">1</div>
         <div class="phase-body">
           <h3>Stop losing data</h3>
-          <p>V4-T1, V4-T2, V4-T3 — cost precision, build visibility, failure classification.</p>
-          <p class="exit"><b>Exit</b>A bulk reports non-zero agent cost, judged equals flagged, zero errored scans, and failures grouped by cause.</p>
+          <p>Cost precision, build visibility, failure classification.</p>
+          <p class="exit"><b>Exit</b>A bulk reports non-zero agent cost, judged equals flagged, zero errored scans, failures grouped by cause.</p>
         </div>
       </div>
 
       <div class="phase">
         <div class="phase-n">2</div>
         <div class="phase-body">
-          <h3>Typed LLM layer</h3>
-          <p>BAML behind <code>judgeCandidates</code>, plus the judge contract test replaying the 75 saved scans in CI.</p>
-          <p class="exit"><b>Exit</b>A full bulk judged through BAML with zero null picks, contract tests green.</p>
+          <h3>Better corpus, faster agent</h3>
+          <p>Duration band, <code>endedReason</code> capture and backfill, the 14-day window as a default, and agent concurrency.</p>
+          <p class="exit"><b>Exit</b>A bulk of 60&ndash;120s forwarded-only calls runs, and its agent pass finishes roughly four times faster than serial.</p>
         </div>
       </div>
 
       <div class="phase">
         <div class="phase-n">3</div>
         <div class="phase-body">
-          <h3>Durable execution</h3>
-          <p>Workflow DevKit inside the existing process. Add the per-cell uniqueness constraint the DB should have had all along.</p>
-          <p class="exit"><b>Exit</b>Kill the server mid-bulk. On restart it resumes, and does not re-charge a single completed cell.</p>
+          <h3>Legible verdicts</h3>
+          <p>Rates per 100 words, clean-call percentages, the headline sentence, and the per-call disagreement view.</p>
+          <p class="exit"><b>Exit</b>A non-technical reader gets the winner, the margin and the evidence count from one sentence.</p>
         </div>
       </div>
 
       <div class="phase">
         <div class="phase-n">4</div>
         <div class="phase-body">
-          <h3>Portable storage</h3>
-          <p>Audio cache moves from local disk to blob storage. Worth doing on its own merits — it also makes the corpus portable to a second machine.</p>
-          <p class="exit"><b>Exit</b>A run completes on a machine with no local <code>audio-cache/</code> directory.</p>
+          <h3>Typed LLM layer</h3>
+          <p>BAML behind <code>judgeCandidates</code>, plus the contract test replaying the 75 saved scans in CI.</p>
+          <p class="exit"><b>Exit</b>A full bulk judged through BAML with zero null picks, contract tests green.</p>
         </div>
       </div>
 
       <div class="phase">
         <div class="phase-n">5</div>
         <div class="phase-body">
-          <h3>Hosting <span style="font-weight:400;color:var(--ink-faint)">— optional</span></h3>
-          <p>Move to Vercel. A business decision about who needs access, not a technical one. Nothing about the benchmark work requires it today.</p>
+          <h3>Durable execution</h3>
+          <p>Workflow DevKit inside the existing process, plus the per-cell uniqueness constraint the database should have had all along.</p>
+          <p class="exit"><b>Exit</b>Kill the server mid-bulk. On restart it resumes, and does not re-charge a single completed cell.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">6</div>
+        <div class="phase-body">
+          <h3>Memory</h3>
+          <p>The failure-pattern graph, the agent self-audit over the approve/reject trail, and the guard rails that keep both honest.</p>
+          <p class="exit"><b>Exit</b>The A/B shows the memory-primed judge tracking the transcripts, not the memory.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">7</div>
+        <div class="phase-body">
+          <h3>Portable storage</h3>
+          <p>Audio cache moves from local disk to blob storage. Worth doing on its own merits &mdash; it makes the corpus portable to a second machine.</p>
+          <p class="exit"><b>Exit</b>A run completes on a machine with no local <code>audio-cache/</code> directory.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-n">8</div>
+        <div class="phase-body">
+          <h3>Hosting <span style="font-weight:400;color:var(--ink-faint)">&mdash; optional</span></h3>
+          <p>Move to Vercel. A decision about who needs access, not a technical one. Nothing about the benchmark work requires it today.</p>
           <p class="exit"><b>Exit</b>Someone who is not Abhishek opens the tool and reads a ranking.</p>
         </div>
       </div>
@@ -1031,26 +1280,32 @@ agentCallsJudged:  0        ← all 63 were errors</pre>
       <div class="action">
         <span class="action-i">02</span>
         <span class="action-text">Fix the judge cost column and the swallowed write error
-          <small>V4-T1. Until this lands, every AI judgement the tool makes is still being thrown away.</small></span>
+          <small>Until this lands, every AI judgement the tool makes is still being thrown away.</small></span>
         <span class="action-cost">half a day</span>
       </div>
       <div class="action">
         <span class="action-i">03</span>
-        <span class="action-text">Run one small bulk and confirm the numbers are real
-          <small>Non-zero agent cost, judged = flagged, ElevenLabs present. This is the proof, not the typecheck.</small></span>
-        <span class="action-cost">~$0.50</span>
-      </div>
-      <div class="action">
-        <span class="action-i">04</span>
-        <span class="action-text">Classify failures, then group them on screen
-          <small>V4-T3 + U-2. Turns "45 failed" into "1 worth retrying" and stops the retry button burning money.</small></span>
+        <span class="action-text">Capture <code>endedReason</code> and add the duration band
+          <small>Two small schema additions that change which calls the benchmark learns from. Backfill what's still inside the 14-day window.</small></span>
         <span class="action-cost">one day</span>
       </div>
       <div class="action">
+        <span class="action-i">04</span>
+        <span class="action-text">Parallelise the agent pass
+          <small>Reuse the concurrency helper that already exists. Roughly a 4x wall-clock win for a small change.</small></span>
+        <span class="action-cost">half a day</span>
+      </div>
+      <div class="action">
         <span class="action-i">05</span>
-        <span class="action-text">Spike BAML on the judge, in a worktree
-          <small>One function, behind the existing signature. Decide on evidence from a real bulk, not on the pitch.</small></span>
-        <span class="action-cost">one to two days</span>
+        <span class="action-text">Run one small bulk and confirm every number is real
+          <small>60&ndash;120s forwarded calls, non-zero agent cost, judged = flagged, ElevenLabs present. This is the proof, not the typecheck.</small></span>
+        <span class="action-cost">~$0.50</span>
+      </div>
+      <div class="action">
+        <span class="action-i">06</span>
+        <span class="action-text">Then the headline verdict, then BAML, then memory
+          <small>In that order. Memory built on a pipeline that loses its results would remember nothing.</small></span>
+        <span class="action-cost">phases 3&ndash;6</span>
       </div>
     </div>
 
