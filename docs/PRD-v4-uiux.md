@@ -330,12 +330,247 @@ vendors, and conflating them is what made the $0.00 bug (U-1) hard to spot.
 
 ---
 
-## Non-goals
+## Non-goals — **partially superseded 2026-08-28, see Part D**
 
-- No new pages. Seven routes is the right number.
-- No visual restyle. The v3 layout is good; this is about what it *says*.
-- No change to the ranking maths — that is v3's territory (`PRD-v3-technical.md`).
-  If the peer-flag composite is wrong, fix it there, not by re-labelling it here.
+The first three parts of this document deliberately avoided redesign, on the
+grounds that a working app should not be rebuilt while it is still telling lies.
+That still holds for Parts A–C: **do those first, they need no redesign at all.**
+
+Abhishek then asked explicitly for a rethink of the design and for the tool to go
+past market standard. **Part D is that rethink**, and it overrides the first two
+bullets below. The third bullet stands unchanged.
+
+- ~~No new pages. Seven routes is the right number.~~ → Part D argues for four.
+- ~~No visual restyle.~~ → Part D, section D.5.
+- **No change to the ranking maths** — that is v3's territory
+  (`PRD-v3-technical.md`). If the peer-flag composite is wrong, fix it there, not
+  by re-labelling it here. This is still true and still not negotiable.
+
+---
+
+# Part D — The rethink: past market standard
+
+Added 2026-08-28, at Abhishek's explicit request. Parts A–C fix what the app says.
+This part questions what the app *is*.
+
+## D.0 The honest read of what exists today
+
+The current UI is a competent shadcn/Radix + Tailwind admin dashboard: a left
+sidebar, seven routes, cards, tables, dialogs. It is clean, it is consistent, and it
+works.
+
+It is also **exactly what every internal tool built in the last three years looks
+like.** That is the definition of market standard, not a criticism of the execution —
+the execution is good. But "beyond market standard" cannot be reached by tightening
+this. It requires questioning the shape.
+
+## D.1 The one structural problem
+
+**The navigation mirrors the database schema, not the user's question.**
+
+Corpus, Runs, Bulks, Results, Providers, Sources are the *tables*. A person opens
+this tool with exactly one question:
+
+> *Which speech-to-text provider should we use for this client?*
+
+and the app answers it by making them assemble the answer out of six screens. The
+Results page — the only page that contains the answer — is fifth in the sidebar, and
+opens on a picker rather than on a verdict.
+
+Every move below follows from inverting that.
+
+## D.2 What to keep — explicitly
+
+A rethink that discards working work is just churn. These stay:
+
+- **The provider comparison panel.** It is the best thing in the app and the hardest
+  part to have got right. It gets *more* prominent, not replaced.
+- **The bulk cost gate.** A confirmation step before spending real money is correct
+  and rare. Keep it exactly as it is.
+- **The trophy guard** — the AI-pick badge rendering only for a genuine pick. That
+  rule caught a live bug. It is a principle, not a detail.
+- **Radix + Tailwind.** The component layer is fine. D.5 changes the *tokens*, not
+  the toolkit. Do not migrate component libraries; that is pure cost.
+
+## D.3 Five moves that actually go past standard
+
+### D.3.1 Open on the answer, not on a dashboard
+
+**Standard:** land on a dashboard of counts — calls imported, runs completed, cells
+ok. Numbers about the *tool's activity*, not about the *decision*.
+
+**Beyond:** the landing page is the verdict, per client, in a sentence a
+non-technical person can read aloud:
+
+```
+Land & Apartment  ·  72 calls  ·  last checked 27 Aug
+
+    Use Deepgram Nova-3.
+
+    1.4 flags per 100 words — 38% cleaner than the runner-up,
+    22% cleaner than what's running in production today.
+    Switching costs $0.0011/min more: about $18/month at your volume.
+
+    [ see the evidence ]   [ share this verdict ]
+```
+
+Counts still exist — one line beneath, not the headline. **The tool's job is to end
+an argument, and it should lead with the thing that ends it.**
+
+### D.3.2 Audio-anchored evidence — the actual differentiator
+
+This is the move no comparable tool makes, and this codebase is unusually ready for it.
+
+**Standard:** show transcripts side by side. The reader compares six blocks of text
+and takes the winner on faith.
+
+**Beyond:** *a disagreement is a play button.* Where providers disagree, show the
+span and let the reader hear those three seconds and decide for themselves:
+
+```
+  ▸ 0:47   "…ending in three six six eight"
+           AssemblyAI  3668              Deepgram  3668
+           Gladia      36 68   ⚠ 0%      Cartesia  thirty-six sixty-eight
+```
+
+Click the timestamp, hear 0:45–0:50, done in two seconds. No scrubbing, no reading.
+
+**Why this is buildable now, not someday:** the audio is already cached on disk
+permanently (`audio-cache/`), and most providers already return **word-level
+timings** — the same data the confidence spans are built from. The pieces exist and
+are currently used only for flagging. This is assembly, not research.
+
+**Why it matters more than it sounds:** every other number in this tool is a claim
+that the reader must trust. This is the one place where the reader can *verify*
+without trusting anything. A benchmark whose evidence you can check with your own
+ears is categorically more credible than one you can only read.
+
+### D.3.3 Show the uncertainty, don't hide it
+
+**Standard:** a leaderboard. Confident numbers, ranked, no error bars. It looks
+authoritative and it is sometimes wrong.
+
+**Beyond:** the noise floor is drawn. When two providers are within it, the page says
+so and refuses to pick:
+
+```
+  Deepgram    ▇▇▇▇▇▇▇▇▇▇▇▇▏  1.4  ├──┤
+  AssemblyAI  ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▏1.9  ├───┤
+  Gladia      ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▏2.0  ├─────┤   ← overlaps AssemblyAI
+
+  Deepgram wins clearly. 2nd place is too close to call on 72 calls.
+```
+
+Evidence count sits next to every claim. Below ~20 calls the whole verdict renders as
+provisional, with the number of calls that would settle it. **A tool that admits what
+it doesn't know is trusted more, not less** — and this one is being used to spend a
+client's money.
+
+### D.3.4 Trend, because these are monthly checks
+
+Bulks are named "monthly check". There is no view of change over time, so the tool
+answers "who is best today" and never "who is getting worse for us".
+
+**Beyond:** a per-client sparkline strip — flags per 100 words, per provider, per
+bulk, over time. A provider that regressed 30% since last month is a more urgent
+finding than one that is 2% better today, and right now that finding is invisible.
+`recharts` is already installed.
+
+### D.3.5 Cost as a decision axis, not a footnote
+
+**Standard:** a cost column in a table.
+
+**Beyond:** the switch decision, in money, at this client's actual volume: *"Deepgram
+is 38% cleaner and $0.0011/min more — about $18/month at your call volume."* That is
+the sentence someone repeats in a meeting. A per-minute rate is not.
+
+## D.4 Navigation: seven routes → four
+
+Reshaped around what a person is doing, not which table they are reading:
+
+| New | Absorbs | The question it answers |
+|---|---|---|
+| **Verdict** (`/`) | Results, Dashboard | *Which provider, and why?* |
+| **Evidence** (`/evidence`) | Corpus | *Show me the calls and let me hear them* |
+| **Work** (`/work`) | Runs + Bulks | *What has run, what is running, what did it cost?* |
+| **Setup** (`/setup`) | Providers + Sources | *Keys, accounts, imports* |
+
+**Runs and Bulks are one concept at two zoom levels** — a bulk *is* a group of runs.
+Two sidebar entries for that is schema leaking into navigation. Merge, with bulks as
+the default grouping and individual runs expandable inside.
+
+**Do this last** (D.7). It is the highest-risk item here and the lowest-value one
+until the content underneath is right.
+
+## D.5 The visual system
+
+Not a restyle for its own sake — four specific changes, each with a reason:
+
+1. **Density.** Default shadcn spacing is tuned for comfortable reading. This is a
+   tool for *scanning* tables of numbers. Tighten row height and vertical rhythm on
+   data tables specifically; leave prose and dialogs alone.
+2. **Tabular numerals everywhere digits align.** `font-variant-numeric: tabular-nums`
+   on every metric cell. Without it, columns of numbers do not line up and cannot be
+   compared by eye — which is the single most common thing anyone does on this page.
+3. **Semantic colour separate from accent colour.** Good / caution / critical must
+   be their own scale, not tints of the brand hue. Severity is information here, and
+   it currently competes with decoration.
+4. **Stop wrapping everything in a card.** When every block is a card, no block is
+   emphasised. Reserve elevation for the one thing that matters on each screen — the
+   verdict, the failure warning — and let the rest sit flat on the ground.
+
+Type: one characterful face for headings and metrics, one workhorse for body, one
+mono for data and identifiers. The current stack is the framework default; choosing
+deliberately costs nothing and reads as considered.
+
+## D.6 The shareable verdict
+
+The CEO does not need the app. They need one screen, and today the only way to give
+it to them is a screenshot.
+
+**Required:** a read-only verdict view, print-clean, carrying the winner, the margin,
+the evidence count, the cost delta, the confidence caveat, and the build SHA and date
+it was produced. Not a live dashboard — **a dated artefact you can attach to an
+email**, that still says something true when read a month later.
+
+## D.7 How to do this without breaking a working app
+
+The risk here is real: a big-bang redesign of the only working tool the team has, in
+the same window as five behavioural changes. Sequence it so nothing is ever half-done:
+
+| Step | Contents | Risk |
+|---|---|---|
+| **1** | Parts A–C (truthfulness). No redesign at all. | None — these are strictly corrections |
+| **2** | D.5 visual tokens: density, tabular numerals, semantic colour, less card-soup | Low — token-level, reversible |
+| **3** | D.3.1 verdict headline + D.3.3 uncertainty, added **on top of** the existing Results page | Low — additive; the table stays |
+| **4** | D.3.2 audio-anchored evidence inside the existing comparison panel | Medium — the highest-value item here |
+| **5** | D.3.4 trend + D.3.5 cost framing | Low |
+| **6** | D.4 navigation merge | **Highest.** Do it only once 1–5 have proven out |
+| **7** | D.6 shareable verdict | Low |
+
+**Steps 3 and 4 are where the value is.** If time runs out, do those two and stop —
+they change what the tool *is* without touching what it *is built from*.
+
+## D.8 What "beyond market standard" does not mean
+
+Worth writing down, because it is the easy way to waste the effort:
+
+- **Not more animation.** Motion on a data tool is noise. The one place it earns its
+  place is audio playback position.
+- **Not an AI chat box.** The system already has an LLM doing the one job an LLM is
+  good for here. A chat interface bolted on top would be a worse way to reach answers
+  the page can state directly.
+- **Not more charts.** One well-chosen chart beats six. The bar-with-noise-floor
+  (D.3.3) and the trend sparkline (D.3.4) are the two that carry information; anything
+  beyond those needs to justify itself.
+- **Not a dark-mode toggle as a feature.** Support the viewer's preference properly
+  and say nothing about it.
+
+**The bar is this:** someone who evaluates speech-to-text providers for a living
+opens this tool and sees a claim they would normally have to build a spreadsheet to
+verify — and then finds they can check it, by ear, in two clicks. Nothing on the
+market does that. Everything else in this part is in service of that sentence.
+
 
 ---
 

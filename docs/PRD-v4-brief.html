@@ -1127,6 +1127,162 @@ edges:  (provider) --misheard-->  (phrase)      weight, n_observations
   </section>
 
   <section>
+    <h2>Which libraries &mdash; and the one that was asked about and rejected</h2>
+    <p class="lede">
+      <strong>Not LangChain, not LangGraph.</strong> LangGraph exists for agentic control
+      flow &mdash; an LLM deciding what happens next, looping, branching on its own output.
+      This pipeline has none of that: the flow is fixed before it starts, and there is
+      exactly one LLM call in the entire system, which decides nothing.
+    </p>
+
+    <div class="evidence" style="max-width:none;">
+      <span class="evidence-label">The name collision, which is probably the confusion</span>
+      <pre>LangGraph's "graph"  =  the EXECUTION graph — your program's steps as nodes
+Part H's    "graph"  =  the DATA graph — "Cartesia mishears phone numbers here"</pre>
+    </div>
+    <p style="margin-top:14px;">
+      Same word, unrelated things. Adopting LangGraph would not give you the memory graph
+      &mdash; that still gets built in a database either way.
+    </p>
+
+    <div class="table-wrap" style="margin-top:22px;">
+      <table>
+        <thead><tr><th scope="col">Job</th><th scope="col">Pick</th><th scope="col">Phase</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+          <tr><td>Durability, resume after crash</td><td><code>workflow</code> (Vercel DevKit)</td><td class="num">5</td><td>Only candidate that resumes mid-function. Runs in-process.</td></tr>
+          <tr><td>Typed LLM output</td><td><strong>BAML</strong></td><td class="num">4</td><td>Pick becomes an enum; prompt becomes a versioned, testable file.</td></tr>
+          <tr><td>Graph memory storage</td><td><strong>nothing new</strong> &mdash; Drizzle + Postgres</td><td class="num">6</td><td>Two tables, recursive CTEs. Thousands of nodes, not millions.</td></tr>
+          <tr><td>Graph visual (the "dots")</td><td><code>react-force-graph-2d</code></td><td class="num">6</td><td>Canvas node/edge view. <code>d3-force</code> if the wrapper annoys.</td></tr>
+          <tr><td>Charts, rates, trend</td><td><code>recharts</code> &mdash; <strong>already installed</strong></td><td class="num">3</td><td>Present and unused. Use it before adding anything.</td></tr>
+          <tr><td>Agent concurrency</td><td><strong>nothing new</strong> &mdash; the existing helper</td><td class="num">2</td><td>Already exported by the run executor for exactly this.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:20px;">
+      <strong>Phases 1&ndash;3 need zero new dependencies.</strong> The discarded judgements, the
+      duration band, <code>endedReason</code>, the parallel agent and the percentage verdict are
+      all plain code in files that already exist. Install nothing before phase 4 &mdash; and when
+      you do, pin any native binary in the same commit, because this repo has already lost a
+      day twice to exactly that.
+    </p>
+  </section>
+
+  <section>
+    <h2>The design rethink <span class="h2-tag">what the tool is, not what it says</span></h2>
+    <p class="lede">
+      The current UI is a competent shadcn admin dashboard. That is the definition of market
+      standard, not a criticism of the execution. Going past it means questioning the shape,
+      and there is one structural problem to question.
+    </p>
+
+    <div class="findings">
+      <article class="finding sev-warn">
+        <div class="finding-head">
+          <span class="finding-id">D.1</span>
+          <h3>The navigation mirrors the database, not the question</h3>
+        </div>
+        <p>
+          Corpus, Runs, Bulks, Results, Providers, Sources are the <em>tables</em>. A person
+          opens this tool with exactly one question &mdash; <em>which provider should we use for
+          this client?</em> &mdash; and the app makes them assemble the answer out of six screens.
+          The one page that holds the answer is fifth in the sidebar, and opens on a picker.
+        </p>
+      </article>
+    </div>
+
+    <div class="verdicts" style="margin-top:20px;">
+
+      <article class="verdict">
+        <div class="verdict-top">
+          <h3 class="verdict-name">Open on the answer</h3>
+          <span class="verdict-call">Move 1</span>
+        </div>
+        <p class="verdict-what">The landing page is the verdict, per client, in a sentence
+        someone can read aloud in a meeting.</p>
+        <div class="evidence" style="margin-top:0;">
+          <pre>Use Deepgram Nova-3.
+
+1.4 flags per 100 words — 38% cleaner than the
+runner-up, 22% cleaner than production today.
+Switching costs $0.0011/min more: ~$18/month
+at your volume.</pre>
+        </div>
+        <p class="closing">Counts still exist &mdash; one line beneath, not the headline.
+        <strong>The tool's job is to end an argument</strong>, so it should lead with the thing
+        that ends it.</p>
+      </article>
+
+      <article class="verdict">
+        <div class="verdict-top">
+          <h3 class="verdict-name">A disagreement is a play button</h3>
+          <span class="verdict-call">Move 2 &mdash; the differentiator</span>
+        </div>
+        <p class="verdict-what">Where providers disagree, don't ask the reader to compare six
+        blocks of text. Let them hear the three seconds and decide.</p>
+        <div class="evidence" style="margin-top:0;">
+          <pre>▸ 0:47  "…ending in three six six eight"
+   AssemblyAI  3668       Deepgram  3668
+   Gladia      36 68 ⚠0%  Cartesia  thirty-six sixty-eight</pre>
+        </div>
+        <h4>Why it's buildable now</h4>
+        <p>The audio is already cached permanently on disk, and most providers already return
+        word-level timings &mdash; the same data the confidence spans are built from. This is
+        assembly, not research.</p>
+        <p class="closing">Every other number here is a claim the reader has to trust. This is
+        the one place they can <strong>verify without trusting anything</strong>. A benchmark
+        you can check with your own ears is categorically more credible than one you can only
+        read. <strong>Nothing on the market does this.</strong></p>
+      </article>
+
+      <article class="verdict">
+        <div class="verdict-top">
+          <h3 class="verdict-name">Draw the noise floor</h3>
+          <span class="verdict-call">Move 3</span>
+        </div>
+        <p class="verdict-what">A leaderboard with confident numbers looks authoritative and is
+        sometimes wrong. Show the uncertainty instead.</p>
+        <div class="evidence" style="margin-top:0;">
+          <pre>Deepgram    1.4  ├──┤
+AssemblyAI  1.9  ├───┤
+Gladia      2.0  ├─────┤   ← overlaps AssemblyAI
+
+Deepgram wins clearly.
+2nd place is too close to call on 72 calls.</pre>
+        </div>
+        <p class="closing">A tool that admits what it doesn't know is trusted <em>more</em>, not
+        less &mdash; and this one is used to spend a client's money.</p>
+      </article>
+
+    </div>
+
+    <p style="margin-top:26px;"><strong>Two more moves, lower risk:</strong> a per-client trend
+    strip, because these are monthly checks and "who is getting worse for us" is currently
+    invisible; and cost framed as the switch decision in real money at this client's volume,
+    not a per-minute rate in a table column. Then, and only once those have proven out, seven
+    routes collapse to four &mdash; <strong>Verdict · Evidence · Work · Setup</strong> &mdash;
+    because Runs and Bulks are one concept at two zoom levels, and two sidebar entries for that
+    is the schema leaking into the navigation.</p>
+
+    <h3 style="margin-top:34px;">What it does <em>not</em> mean</h3>
+    <ul class="tight" style="margin-top:10px;">
+      <li><b>Not more animation.</b> Motion on a data tool is noise. The one place it earns its
+        keep is audio playback position.</li>
+      <li><b>Not an AI chat box.</b> The system already has an LLM doing the one job an LLM is
+        good for here.</li>
+      <li><b>Not more charts.</b> Two carry information &mdash; the noise-floor bar and the trend
+        sparkline. Anything past those has to justify itself.</li>
+      <li><b>Not throwing away what works.</b> The comparison panel, the cost gate and the
+        trophy guard all stay. The component toolkit stays. This changes tokens and hierarchy,
+        not the stack.</li>
+    </ul>
+
+    <p style="margin-top:22px;"><strong>The bar:</strong> someone who evaluates speech-to-text
+    providers for a living opens this tool, sees a claim they'd normally build a spreadsheet to
+    verify &mdash; and finds they can check it, by ear, in two clicks.</p>
+  </section>
+
+  <section>
     <h2>Order of work</h2>
     <p class="lede">
       Each phase has one exit criterion you can actually test. Phase 3's is the whole point

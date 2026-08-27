@@ -662,6 +662,76 @@ transcript must never become the gold standard* — wearing a new costume.
 
 ---
 
+## Part I — Library decisions, and the ones deliberately not taken
+
+Added 2026-08-28. Abhishek asked directly whether LangChain / LangGraph belong here.
+**They do not.** This part records that call and every other library decision in one
+place, so nobody re-litigates it in six weeks.
+
+### I-1: Not LangChain, not LangGraph
+
+**LangGraph is for agentic control flow** — an LLM deciding what happens next,
+looping, branching on its own output, calling tools. This pipeline has none of that.
+The flow is fixed and fully known before it starts:
+
+```
+fetch audio → run N providers → compute flags (deterministic, no LLM) → one LLM call → rank
+```
+
+**There is exactly one LLM call in the entire system**, and it decides nothing about
+control flow. Wrapping a fixed five-step pipeline in an agent framework buys an
+abstraction tax for a capability that is never used.
+
+**LangChain** has the same problem one level down. `callOpenAi` is a plain `fetch`
+(`lib/agent.ts`). Replacing it with LangChain swaps ~50 lines of directly-readable
+code for a large dependency tree and a layer of indirection, and the cost-capture
+work (V4-T1) still has to be written by hand afterwards.
+
+**The name collision, stated explicitly, because it is the likely source of
+confusion.** "Graph" means two unrelated things here:
+
+| | What "graph" refers to |
+|---|---|
+| **LangGraph** | The *execution* graph — your program's steps, wired as nodes |
+| **Part H memory** | The *data* graph — "Cartesia mishears phone numbers in this vertical" |
+
+Adopting LangGraph would **not** provide the memory graph. That still has to be built
+in a database either way. The two are unrelated despite the shared word.
+
+**Revisit this decision if, and only if,** the system ever needs an LLM to choose its
+own next step — e.g. an agent that decides *which* providers to re-run based on what
+it found. Nothing in v4 requires that.
+
+### I-2: The full library table
+
+| Job | Decision | Phase | Why |
+|---|---|---|---|
+| Durability, retries, resume-after-crash | **`workflow` (Vercel DevKit)** | 5 | The only candidate that resumes mid-function after a crash. Runs in-process; no hosting change required. |
+| Typed LLM output for the judge | **BAML** (runner-up: AI SDK `generateObject`) | 4 | Turns the pick into an enum, the prompt into a versioned file, and prompt edits into testable changes. |
+| Graph memory storage | **No new library.** Drizzle + the existing Postgres | 6 | Two tables, a unique index, recursive CTEs. Scale is thousands of nodes. |
+| Graph visualisation | **`react-force-graph-2d`** | 6 | Canvas-based node/edge view — the "dots" picture. `d3-force` + a hand-written Canvas renderer is the lighter alternative if the wrapper proves awkward. |
+| Charts (rates, percentages, trend) | **`recharts` — already installed** | 3 | Present in `artifacts/stt-benchmark` today and unused by the pages this PRD touches. Use it before adding anything. |
+| Bounded concurrency for the agent pass | **No new library.** The helper already exported from `run-executor.ts:192` | 2 | Written for exactly this; adding `p-limit` alongside it would be two implementations of one idea. |
+| HTTP, DB, validation, UI | **Unchanged** — Express 5, Drizzle, Zod, Radix/Tailwind | — | No reason to touch any of them. |
+
+### I-3: The point worth internalising
+
+**Phases 1, 2 and 3 require zero new dependencies.** Fixing the discarded judgements,
+the duration band, `endedReason` capture, the parallel agent pass and the percentage
+verdict are all plain code in files that already exist.
+
+Libraries enter at phase 4 and later. **Install nothing before then.** Every
+dependency this repo has added under pressure has cost a day somewhere later —
+`@esbuild/darwin-arm64` and `@rollup/rollup-darwin-arm64` both had to be pinned by
+hand after a lockfile mismatch broke a fresh checkout (`81fbbb4`). Two rules follow
+from that, and they apply to BAML and `workflow` equally:
+
+1. **Pin any native binary in the same commit that adds the library.** Not later.
+2. **Add one library per commit**, with a typecheck and a real run between them.
+
+
+---
+
 ## Part D — Robustness backlog (P1, after Part A)
 
 - **V4-T4: Cost precision everywhere.** Micro-cents for STT cells and judge calls;
