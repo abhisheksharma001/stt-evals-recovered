@@ -22,12 +22,11 @@ export const HealthCheckResponse = zod.object({
 export const GetBenchmarkDashboardResponse = zod.object({
   "corpusCount": zod.number(),
   "readyToRunCount": zod.number(),
-  "goldReadyCount": zod.number(),
   "configuredProviderCount": zod.number(),
   "totalProviderCount": zod.number(),
   "latestRunStatus": zod.enum(['queued', 'running', 'complete', 'blocked', 'failed', 'cancelled']),
   "decisionStatus": zod.string()
-})
+}).describe('2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.')
 
 
 /**
@@ -520,7 +519,25 @@ export const ListBenchmarkRunResultsResponseItem = zod.object({
   "op": zod.enum(['ok', 'sub', 'del', 'ins']),
   "ref": zod.string().nullable(),
   "hyp": zod.string().nullable()
+})).optional(),
+  "flagCount": zod.number().nullish().describe('2026-08-27: gold-free hybrid flag count for this cell (cross-provider disagreement + confidence + entity mismatches).'),
+  "flagSeverity": zod.union([zod.literal('none'),zod.literal('low'),zod.literal('medium'),zod.literal('high'),zod.literal(null)]).nullish(),
+  "hybridFlags": zod.object({
+  "crossProviderDisagreement": zod.object({
+  "disagreementRate": zod.number().optional(),
+  "mismatchWords": zod.number().optional(),
+  "comparedWords": zod.number().optional()
+}).nullish(),
+  "lowConfidenceSpans": zod.array(zod.object({
+  "words": zod.array(zod.string()).optional(),
+  "avgConfidence": zod.number().optional(),
+  "severity": zod.enum(['none', 'low', 'medium', 'high']).optional()
+})).optional(),
+  "entityMismatches": zod.array(zod.object({
+  "type": zod.string().optional(),
+  "valuesByProvider": zod.record(zod.string(), zod.array(zod.string())).optional()
 })).optional()
+}).optional().describe('The structured breakdown behind flagCount\/flagSeverity -- what a reviewer actually sees when they expand a flagged cell.')
 }),zod.null()]).optional()
 })
 export const ListBenchmarkRunResultsResponse = zod.array(ListBenchmarkRunResultsResponseItem)
@@ -573,13 +590,15 @@ export const ListBenchmarkRankingsResponseItem = zod.object({
   "providerName": zod.string(),
   "rank": zod.number(),
   "score": zod.object({
-  "wer": zod.number().nullable(),
-  "entityAccuracy": zod.number().nullable(),
+  "wer": zod.number().nullable().describe('2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change.'),
+  "entityAccuracy": zod.number().nullable().describe('Same as wer -- permanently null going forward, kept for historical runs.'),
   "alphanumericAccuracy": zod.number().nullable(),
   "latencyFirstPartialMs": zod.number().nullable(),
   "latencyFinalMs": zod.number().nullable(),
   "costPerMinute": zod.number().nullable(),
-  "diarizationScore": zod.number().nullable()
+  "diarizationScore": zod.number().nullable(),
+  "avgFlagCount": zod.number().nullable().describe('2026-08-27: gold-free hybrid flag count, averaged across this provider\'s cells in the group. Lower is better. This (plus cost\/latency) is what Rankings now sorts by.'),
+  "avgFlagSeverityScore": zod.number().nullable().describe('severityRank() averaged across cells: 0=none .. 3=high.')
 }),
   "recommendation": zod.string()
 }).describe('2026-08-27 -- grouped by real Vapi assistant now (assistantId\/assistantLabel), not vertical. `vertical` stays as a display tag per row, kept for context, not the grouping key anymore (see GET \/benchmark\/rankings).')
@@ -1122,13 +1141,30 @@ export const ListAgentScansQueryParams = zod.object({
 export const ListAgentScansResponseItem = zod.object({
   "id": zod.string(),
   "callId": zod.string(),
-  "sourceLabel": zod.enum(['gold', 'draft']),
-  "sourceTranscript": zod.string().describe('Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged.'),
+  "sourceLabel": zod.union([zod.literal('draft'),zod.literal('gold'),zod.literal(null)]).nullable().describe('\"gold\" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce \"draft\" or null.'),
+  "sourceTranscript": zod.string().nullable().describe('Vapi\'s own draft transcript at scan time, for context only -- null if the call has no draft on file.'),
   "status": zod.enum(['scanning', 'clean', 'flagged', 'error', 'approved', 'rejected']),
   "flags": zod.array(zod.object({
   "text": zod.string(),
   "reason": zod.string()
 })),
+  "hybridFlags": zod.union([zod.object({
+  "flagCount": zod.number(),
+  "flagSeverity": zod.enum(['none', 'low', 'medium', 'high']),
+  "crossProviderDisagreements": zod.array(zod.object({
+  "providerId": zod.string().optional(),
+  "disagreementRate": zod.number().optional()
+})),
+  "lowConfidenceSpans": zod.record(zod.string(), zod.array(zod.object({
+  "words": zod.array(zod.string()).optional(),
+  "avgConfidence": zod.number().optional(),
+  "severity": zod.string().optional()
+}))),
+  "entityMismatches": zod.array(zod.object({
+  "type": zod.string().optional(),
+  "valuesByProvider": zod.record(zod.string(), zod.array(zod.string())).optional()
+}))
+}),zod.null()]).optional(),
   "runId": zod.string().nullish(),
   "candidates": zod.array(zod.object({
   "providerId": zod.string(),
@@ -1143,7 +1179,7 @@ export const ListAgentScansResponseItem = zod.object({
   "decidedByLabel": zod.string().nullish(),
   "decidedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
-})
+}).describe('2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel\/sourceTranscript are best-effort context (Vapi\'s own draft), not an analysis input anymore.')
 export const ListAgentScansResponse = zod.array(ListAgentScansResponseItem)
 
 
@@ -1157,13 +1193,30 @@ export const CreateAgentScanBody = zod.object({
 export const CreateAgentScanResponse = zod.object({
   "id": zod.string(),
   "callId": zod.string(),
-  "sourceLabel": zod.enum(['gold', 'draft']),
-  "sourceTranscript": zod.string().describe('Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged.'),
+  "sourceLabel": zod.union([zod.literal('draft'),zod.literal('gold'),zod.literal(null)]).nullable().describe('\"gold\" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce \"draft\" or null.'),
+  "sourceTranscript": zod.string().nullable().describe('Vapi\'s own draft transcript at scan time, for context only -- null if the call has no draft on file.'),
   "status": zod.enum(['scanning', 'clean', 'flagged', 'error', 'approved', 'rejected']),
   "flags": zod.array(zod.object({
   "text": zod.string(),
   "reason": zod.string()
 })),
+  "hybridFlags": zod.union([zod.object({
+  "flagCount": zod.number(),
+  "flagSeverity": zod.enum(['none', 'low', 'medium', 'high']),
+  "crossProviderDisagreements": zod.array(zod.object({
+  "providerId": zod.string().optional(),
+  "disagreementRate": zod.number().optional()
+})),
+  "lowConfidenceSpans": zod.record(zod.string(), zod.array(zod.object({
+  "words": zod.array(zod.string()).optional(),
+  "avgConfidence": zod.number().optional(),
+  "severity": zod.string().optional()
+}))),
+  "entityMismatches": zod.array(zod.object({
+  "type": zod.string().optional(),
+  "valuesByProvider": zod.record(zod.string(), zod.array(zod.string())).optional()
+}))
+}),zod.null()]).optional(),
   "runId": zod.string().nullish(),
   "candidates": zod.array(zod.object({
   "providerId": zod.string(),
@@ -1178,7 +1231,7 @@ export const CreateAgentScanResponse = zod.object({
   "decidedByLabel": zod.string().nullish(),
   "decidedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
-})
+}).describe('2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel\/sourceTranscript are best-effort context (Vapi\'s own draft), not an analysis input anymore.')
 
 
 /**
@@ -1195,13 +1248,30 @@ export const ApproveAgentScanBody = zod.object({
 export const ApproveAgentScanResponse = zod.object({
   "id": zod.string(),
   "callId": zod.string(),
-  "sourceLabel": zod.enum(['gold', 'draft']),
-  "sourceTranscript": zod.string().describe('Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged.'),
+  "sourceLabel": zod.union([zod.literal('draft'),zod.literal('gold'),zod.literal(null)]).nullable().describe('\"gold\" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce \"draft\" or null.'),
+  "sourceTranscript": zod.string().nullable().describe('Vapi\'s own draft transcript at scan time, for context only -- null if the call has no draft on file.'),
   "status": zod.enum(['scanning', 'clean', 'flagged', 'error', 'approved', 'rejected']),
   "flags": zod.array(zod.object({
   "text": zod.string(),
   "reason": zod.string()
 })),
+  "hybridFlags": zod.union([zod.object({
+  "flagCount": zod.number(),
+  "flagSeverity": zod.enum(['none', 'low', 'medium', 'high']),
+  "crossProviderDisagreements": zod.array(zod.object({
+  "providerId": zod.string().optional(),
+  "disagreementRate": zod.number().optional()
+})),
+  "lowConfidenceSpans": zod.record(zod.string(), zod.array(zod.object({
+  "words": zod.array(zod.string()).optional(),
+  "avgConfidence": zod.number().optional(),
+  "severity": zod.string().optional()
+}))),
+  "entityMismatches": zod.array(zod.object({
+  "type": zod.string().optional(),
+  "valuesByProvider": zod.record(zod.string(), zod.array(zod.string())).optional()
+}))
+}),zod.null()]).optional(),
   "runId": zod.string().nullish(),
   "candidates": zod.array(zod.object({
   "providerId": zod.string(),
@@ -1216,7 +1286,7 @@ export const ApproveAgentScanResponse = zod.object({
   "decidedByLabel": zod.string().nullish(),
   "decidedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
-})
+}).describe('2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel\/sourceTranscript are best-effort context (Vapi\'s own draft), not an analysis input anymore.')
 
 
 /**
@@ -1233,13 +1303,30 @@ export const RejectAgentScanBody = zod.object({
 export const RejectAgentScanResponse = zod.object({
   "id": zod.string(),
   "callId": zod.string(),
-  "sourceLabel": zod.enum(['gold', 'draft']),
-  "sourceTranscript": zod.string().describe('Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged.'),
+  "sourceLabel": zod.union([zod.literal('draft'),zod.literal('gold'),zod.literal(null)]).nullable().describe('\"gold\" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce \"draft\" or null.'),
+  "sourceTranscript": zod.string().nullable().describe('Vapi\'s own draft transcript at scan time, for context only -- null if the call has no draft on file.'),
   "status": zod.enum(['scanning', 'clean', 'flagged', 'error', 'approved', 'rejected']),
   "flags": zod.array(zod.object({
   "text": zod.string(),
   "reason": zod.string()
 })),
+  "hybridFlags": zod.union([zod.object({
+  "flagCount": zod.number(),
+  "flagSeverity": zod.enum(['none', 'low', 'medium', 'high']),
+  "crossProviderDisagreements": zod.array(zod.object({
+  "providerId": zod.string().optional(),
+  "disagreementRate": zod.number().optional()
+})),
+  "lowConfidenceSpans": zod.record(zod.string(), zod.array(zod.object({
+  "words": zod.array(zod.string()).optional(),
+  "avgConfidence": zod.number().optional(),
+  "severity": zod.string().optional()
+}))),
+  "entityMismatches": zod.array(zod.object({
+  "type": zod.string().optional(),
+  "valuesByProvider": zod.record(zod.string(), zod.array(zod.string())).optional()
+}))
+}),zod.null()]).optional(),
   "runId": zod.string().nullish(),
   "candidates": zod.array(zod.object({
   "providerId": zod.string(),
@@ -1254,6 +1341,6 @@ export const RejectAgentScanResponse = zod.object({
   "decidedByLabel": zod.string().nullish(),
   "decidedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
-})
+}).describe('2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel\/sourceTranscript are best-effort context (Vapi\'s own draft), not an analysis input anymore.')
 
 

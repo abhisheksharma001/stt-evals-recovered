@@ -1035,15 +1035,17 @@ components:
       # it was zero" (found 2026-08-24: alphanumericAccuracy showing 0 on
       # every ranking row because no entity in the corpus is both letters
       # and digits after normalization, so it was never actually scored).
-      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore]
+      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore]
       properties:
-        wer: { type: ["number", "null"] }
-        entityAccuracy: { type: ["number", "null"] }
+        wer: { type: ["number", "null"], description: "2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change." }
+        entityAccuracy: { type: ["number", "null"], description: "Same as wer -- permanently null going forward, kept for historical runs." }
         alphanumericAccuracy: { type: ["number", "null"] }
         latencyFirstPartialMs: { type: ["number", "null"] }
         latencyFinalMs: { type: ["number", "null"] }
         costPerMinute: { type: ["number", "null"] }
         diarizationScore: { type: ["number", "null"] }
+        avgFlagCount: { type: ["number", "null"], description: "2026-08-27: gold-free hybrid flag count, averaged across this provider's cells in the group. Lower is better. This (plus cost/latency) is what Rankings now sorts by." }
+        avgFlagSeverityScore: { type: ["number", "null"], description: "severityRank() averaged across cells: 0=none .. 3=high." }
     ProviderCallResult:
       type: object
       required: [id, runId, providerId, callId, status, createdAt]
@@ -1080,6 +1082,34 @@ components:
         wordDiff:
           type: array
           items: { $ref: "#/components/schemas/WordDiffOp" }
+        flagCount: { type: ["number", "null"], description: "2026-08-27: gold-free hybrid flag count for this cell (cross-provider disagreement + confidence + entity mismatches)." }
+        flagSeverity: { type: ["string", "null"], enum: [none, low, medium, high, null] }
+        hybridFlags: { $ref: "#/components/schemas/HybridFlagDetail" }
+    HybridFlagDetail:
+      type: object
+      description: The structured breakdown behind flagCount/flagSeverity -- what a reviewer actually sees when they expand a flagged cell.
+      properties:
+        crossProviderDisagreement:
+          type: ["object", "null"]
+          properties:
+            disagreementRate: { type: number }
+            mismatchWords: { type: number }
+            comparedWords: { type: number }
+        lowConfidenceSpans:
+          type: array
+          items:
+            type: object
+            properties:
+              words: { type: array, items: { type: string } }
+              avgConfidence: { type: number }
+              severity: { type: string, enum: [none, low, medium, high] }
+        entityMismatches:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              valuesByProvider: { type: object, additionalProperties: { type: array, items: { type: string } } }
     WordDiffOp:
       type: object
       required: [op, ref, hyp]
@@ -1110,12 +1140,13 @@ components:
         suggestedFix: { type: string }
     AgentScan:
       type: object
+      description: 2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel/sourceTranscript are best-effort context (Vapi's own draft), not an analysis input anymore.
       required: [id, callId, sourceLabel, sourceTranscript, status, flags, candidates, requestedByLabel, createdAt]
       properties:
         id: { type: string }
         callId: { type: string }
-        sourceLabel: { type: string, enum: [gold, draft] }
-        sourceTranscript: { type: string, description: "Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged." }
+        sourceLabel: { type: ["string", "null"], enum: [draft, gold, null], description: "\"gold\" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce \"draft\" or null." }
+        sourceTranscript: { type: ["string", "null"], description: "Vapi's own draft transcript at scan time, for context only -- null if the call has no draft on file." }
         # scanning: transient, never actually observed by a client (the scan
         # route awaits the whole flow before responding -- see routes/agent.ts
         # for why that's a deliberate v1 choice, not fire-and-forget).
@@ -1123,6 +1154,10 @@ components:
         flags:
           type: array
           items: { $ref: "#/components/schemas/AgentFlag" }
+        hybridFlags:
+          oneOf:
+            - $ref: "#/components/schemas/HybridFlagSummary"
+            - type: "null"
         runId: { type: ["string", "null"] }
         candidates:
           type: array
@@ -1134,6 +1169,36 @@ components:
         decidedByLabel: { type: ["string", "null"] }
         decidedAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
+    HybridFlagSummary:
+      type: object
+      required: [flagCount, flagSeverity, crossProviderDisagreements, lowConfidenceSpans, entityMismatches]
+      properties:
+        flagCount: { type: number }
+        flagSeverity: { type: string, enum: [none, low, medium, high] }
+        crossProviderDisagreements:
+          type: array
+          items:
+            type: object
+            properties:
+              providerId: { type: string }
+              disagreementRate: { type: number }
+        lowConfidenceSpans:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              properties:
+                words: { type: array, items: { type: string } }
+                avgConfidence: { type: number }
+                severity: { type: string }
+        entityMismatches:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              valuesByProvider: { type: object, additionalProperties: { type: array, items: { type: string } } }
     AgentScanInput:
       type: object
       required: [callId]
@@ -1172,11 +1237,11 @@ components:
         recommendation: { type: string }
     BenchmarkDashboard:
       type: object
-      required: [corpusCount, readyToRunCount, goldReadyCount, configuredProviderCount, totalProviderCount, latestRunStatus, decisionStatus]
+      description: 2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.
+      required: [corpusCount, readyToRunCount, configuredProviderCount, totalProviderCount, latestRunStatus, decisionStatus]
       properties:
         corpusCount: { type: number }
         readyToRunCount: { type: number }
-        goldReadyCount: { type: number }
         configuredProviderCount: { type: number }
         totalProviderCount: { type: number }
         latestRunStatus: { $ref: "#/components/schemas/RunStatus" }

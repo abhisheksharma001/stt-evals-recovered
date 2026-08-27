@@ -34,6 +34,17 @@ export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   latencyFinalMs: real("latency_final_ms"),
   costPerMinute: real("cost_per_minute"),
   diarizationScore: real("diarization_score"),
+  // 2026-08-27, per Abhishek: gold-transcript-free hybrid flagging replaces
+  // wer/entityAccuracy as the primary ranking signal (see
+  // lib/scoring/src/hybrid.ts and run-executor.ts's computeRankingsForRun).
+  // wer/entityAccuracy above go permanently null going forward; kept as
+  // columns (not dropped) so a historical run computed before this change
+  // stays inspectable. avgFlagSeverityScore is severityRank() averaged
+  // across the provider's cells in this group (0=none .. 3=high) -- a
+  // single number the composite can weight even though flagSeverity itself
+  // is categorical per cell.
+  avgFlagCount: real("avg_flag_count"),
+  avgFlagSeverityScore: real("avg_flag_severity_score"),
   recommendation: text("recommendation").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

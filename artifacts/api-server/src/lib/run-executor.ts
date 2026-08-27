@@ -13,7 +13,13 @@ import {
   type BenchmarkCallRow,
   type BenchmarkProviderRow,
 } from "@workspace/db";
-import { RANKING_WEIGHTS, compositeScore, score, SCORING_VERSION } from "@workspace/scoring";
+import {
+  score,
+  SCORING_VERSION,
+  severityRank,
+  hybridCompositeScore,
+  type HybridSeverity,
+} from "@workspace/scoring";
 import {
   ProviderConfigError,
   getProviderAdapter,
@@ -23,6 +29,7 @@ import { logger } from "./logger";
 import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
 import { getOrCacheAudioBytes } from "./audio-cache";
+import { computeHybridFlagsForRun } from "./hybrid-flagging";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
 // documented race (see the comment on the run.status check below) --
@@ -416,6 +423,17 @@ async function executeBenchmarkRunInner(
     }
   });
 
+  // 2026-08-27, per Abhishek ("we don't need a gold transcript any more"):
+  // gold-free hybrid flagging (lib/scoring/src/hybrid.ts) across every
+  // provider that succeeded in this run, compared against each other --
+  // free (no LLM call), so it runs unconditionally before rankings, which
+  // now sorts on its output instead of WER/entity-accuracy.
+  try {
+    await computeHybridFlagsForRun(runId);
+  } catch (err) {
+    logger.error({ err, runId }, "Failed to compute hybrid flags for run");
+  }
+
   try {
     await computeRankingsForRun(runId, run.callIds, run.providerIds);
   } catch (err) {
@@ -796,12 +814,25 @@ export async function computeRankingsForRun(
       ...rowsForGroup.map((r) => r.score.latencyFinalMs ?? 0),
     );
     const maxCostPerMinute = Math.max(0, ...rowsForGroup.map((r) => r.score.costPerMinute ?? 0));
+    // flagBadness = avgFlagCount + avgFlagSeverityScore (severityRank 0..3) --
+    // see hybridCompositeScore's own comment for why these are blended into
+    // one number instead of weighted as two separate metrics.
+    const flagBadnessOf = (r: (typeof rowsForGroup)[number]): number | null =>
+      r.score.flagCount === null && r.score.flagSeverity === null
+        ? null
+        : (r.score.flagCount ?? 0) + severityRank((r.score.flagSeverity as HybridSeverity | null) ?? "none");
+    const maxFlagBadness = Math.max(0, ...rowsForGroup.map((r) => flagBadnessOf(r) ?? 0));
 
     const providerAggregates = [...byProvider.entries()].map(([providerId, rows]) => {
       const avg = (values: Array<number | null>) => {
         const present = values.filter((v): v is number => v !== null);
         return present.length ? present.reduce((a, b) => a + b, 0) / present.length : null;
       };
+      // 2026-08-27, per Abhishek: gold-free. wer/entityAccuracy are no
+      // longer scored (see run-executor's per-cell score() call and
+      // routes/benchmark.ts's retired ready_to_run gold gate) -- averaging
+      // them here would just average nulls into null, harmless to leave in
+      // for historical runs but not what this run's rows will have.
       const wer = avg(rows.map((r) => r.score.wer));
       const entityAccuracy = avg(rows.map((r) => r.score.entityAccuracy));
       const alphanumericAccuracy = avg(rows.map((r) => r.score.alphanumericAccuracy));
@@ -809,13 +840,17 @@ export async function computeRankingsForRun(
       const latencyFinalMs = avg(rows.map((r) => r.score.latencyFinalMs));
       const costPerMinute = avg(rows.map((r) => r.score.costPerMinute));
       const diarizationScore = avg(rows.map((r) => r.score.diarizationScore));
+      const avgFlagCount = avg(rows.map((r) => r.score.flagCount));
+      const avgFlagSeverityScore = avg(
+        rows.map((r) => (r.score.flagSeverity === null ? null : severityRank(r.score.flagSeverity as HybridSeverity))),
+      );
+      const flagBadness = avg(rows.map(flagBadnessOf));
 
-      const composite = compositeScore({
-        wer,
-        entityAccuracy,
-        alphanumericAccuracy,
+      const composite = hybridCompositeScore({
+        flagBadness,
         latencyFinalMs,
         costPerMinute,
+        maxFlagBadness,
         maxLatencyFinalMs,
         maxCostPerMinute,
       });
@@ -830,6 +865,8 @@ export async function computeRankingsForRun(
         latencyFinalMs,
         costPerMinute,
         diarizationScore,
+        avgFlagCount,
+        avgFlagSeverityScore,
         composite,
         sampleSize: rows.length,
       };
@@ -877,12 +914,14 @@ export async function computeRankingsForRun(
         latencyFinalMs: agg.latencyFinalMs,
         costPerMinute: agg.costPerMinute,
         diarizationScore: agg.diarizationScore,
+        avgFlagCount: agg.avgFlagCount,
+        avgFlagSeverityScore: agg.avgFlagSeverityScore,
         recommendation:
           agg.composite === null
-            ? "Insufficient evidence (missing WER or entity accuracy) -- do not rank this provider yet."
+            ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
             : index === 0
-              ? `Leading candidate for ${assistantId ? `this assistant's calls (${vertical})` : `calls with no assistant on file (${vertical})`}. ${confidenceNoteFor(agg.sampleSize)}`
-              : `Behind rank 1 on composite score. ${confidenceNoteFor(agg.sampleSize)}`,
+              ? `Leading candidate for ${assistantId ? `this assistant's calls (${vertical})` : `calls with no assistant on file (${vertical})`} -- fewest/least-severe hybrid flags among ready providers. ${confidenceNoteFor(agg.sampleSize)}`
+              : `Behind rank 1 on hybrid flag composite (more or more-severe cross-provider/confidence/entity flags). ${confidenceNoteFor(agg.sampleSize)}`,
       })),
     );
   }
@@ -894,8 +933,6 @@ export async function computeRankingsForRun(
     }
   });
 }
-
-export { RANKING_WEIGHTS };
 
 // Boot recovery for the async job states: the executor is still in-process
 // fire-and-forget (the durable-queue move to pg-boss, FR-EXC-1, remains

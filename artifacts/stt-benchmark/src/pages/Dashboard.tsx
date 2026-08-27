@@ -5,7 +5,7 @@ import {
   useListBenchmarkCalls,
   useListBenchmarkProviders,
 } from "@workspace/api-client-react"
-import { Activity, AlertCircle, ArrowRight, Check, CloudDownload, GitMerge, AudioLines, ShieldCheck } from "lucide-react"
+import { Activity, AlertCircle, ArrowRight, Check, CloudDownload, GitMerge, ShieldCheck } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
@@ -106,8 +106,11 @@ export default function Dashboard() {
     )
   }
 
-  const needsReview = data.corpusCount - data.goldReadyCount
-  const needsDeid = data.goldReadyCount - data.readyToRunCount
+  // 2026-08-27, per Abhishek: "we don't need a gold transcript any more" --
+  // the pipeline dropped its Review/gold stage entirely. A call now only
+  // needs de-id sign-off to reach readyToRunCount, so the funnel is
+  // corpus -> needs de-id -> ready, not the old 3-stage gold/de-id split.
+  const needsDeid = data.corpusCount - data.readyToRunCount
   const runReady = data.readyToRunCount > 0 && data.configuredProviderCount >= 1
 
   // The single "what do I do next" line the old four-stat-card layout never
@@ -120,15 +123,13 @@ export default function Dashboard() {
       ? { text: "A benchmark run is in flight right now.", href: "/runs", label: "Monitor run", icon: Activity }
       : data.corpusCount === 0
       ? { text: "Import calls from Vapi to start building the corpus.", href: "/sources", label: "Import calls", icon: CloudDownload }
-      : needsReview > 0
-        ? { text: `${needsReview} call${needsReview === 1 ? "" : "s"} still need${needsReview === 1 ? "s" : ""} a gold transcript.`, href: "/review", label: "Continue review", icon: AudioLines }
-        : needsDeid > 0
-          ? { text: `${needsDeid} call${needsDeid === 1 ? "" : "s"} have a gold transcript but are missing de-identification sign-off.`, href: "/corpus", label: "Attest de-ID", icon: ShieldCheck }
-          : data.configuredProviderCount === 0
-            ? { text: "No provider has an API key configured yet.", href: "/providers", label: "Configure providers", icon: Check }
-            // technical-fixes FIX-6 / ux-fixes UX-4: Runs no longer launches
-            // anything itself -- launching lives in Bulks now, one surface.
-            : { text: `${data.readyToRunCount} calls are ready. Launch a run against ${data.configuredProviderCount} configured provider${data.configuredProviderCount === 1 ? "" : "s"}.`, href: "/bulks", label: "Launch a run", icon: GitMerge }
+      : needsDeid > 0
+        ? { text: `${needsDeid} call${needsDeid === 1 ? "" : "s"} still need${needsDeid === 1 ? "s" : ""} de-identification sign-off.`, href: "/corpus", label: "Attest de-ID", icon: ShieldCheck }
+        : data.configuredProviderCount === 0
+          ? { text: "No provider has an API key configured yet.", href: "/providers", label: "Configure providers", icon: Check }
+          // technical-fixes FIX-6 / ux-fixes UX-4: Runs no longer launches
+          // anything itself -- launching lives in Bulks now, one surface.
+          : { text: `${data.readyToRunCount} calls are ready. Launch a run against ${data.configuredProviderCount} configured provider${data.configuredProviderCount === 1 ? "" : "s"}.`, href: "/bulks", label: "Launch a run", icon: GitMerge }
 
   return (
     <div className="space-y-7">
@@ -137,7 +138,8 @@ export default function Dashboard() {
         <p className="mt-1 text-muted-foreground">Where the corpus stands and what unblocks the next step.</p>
       </div>
 
-      {/* pipeline strip -- mirrors the five stages the whole app is built around */}
+      {/* pipeline strip -- 4 stages now (2026-08-27: dropped the gold-
+          transcript Review stage -- de-id alone gates a call into a bundle). */}
       <div className="flex gap-2">
         <StageCard
           step={1}
@@ -148,28 +150,21 @@ export default function Dashboard() {
         />
         <StageCard
           step={2}
-          label="Review"
-          tone={needsReview === 0 && data.corpusCount > 0 ? "done" : "current"}
-          current={needsReview > 0}
-          value={`${data.goldReadyCount} / ${data.corpusCount || 0}`}
-          detail="have a gold transcript"
-        />
-        <StageCard
-          step={3}
           label="De-ID"
-          tone={needsDeid === 0 && data.goldReadyCount > 0 ? "done" : needsReview === 0 && needsDeid > 0 ? "current" : "pending"}
-          value={`${data.readyToRunCount} / ${data.goldReadyCount || 0}`}
+          tone={needsDeid === 0 && data.corpusCount > 0 ? "done" : "current"}
+          current={needsDeid > 0}
+          value={`${data.readyToRunCount} / ${data.corpusCount || 0}`}
           detail="two approvers signed off"
         />
         <StageCard
-          step={4}
+          step={3}
           label="Run"
           tone={data.latestRunStatus === "complete" ? "done" : data.latestRunStatus === "failed" ? "blocked" : runReady ? "current" : "pending"}
           value={data.latestRunStatus === "blocked" ? "—" : data.latestRunStatus.replace("_", " ")}
           detail="latest run status"
         />
         <StageCard
-          step={5}
+          step={4}
           label="Decide"
           tone={data.latestRunStatus === "complete" ? "current" : "pending"}
           value={data.latestRunStatus === "complete" ? "Ready" : "—"}

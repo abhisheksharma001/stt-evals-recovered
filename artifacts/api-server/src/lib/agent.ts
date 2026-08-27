@@ -85,53 +85,12 @@ async function callOpenAi(params: {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
-export async function flagTranscript(
-  transcript: string,
-  vertical: string,
-): Promise<BenchmarkAgentFlag[]> {
-  const result = await callOpenAi({
-    model: FLAG_MODEL,
-    system:
-      "You review call-center transcripts for a speech-to-text benchmarking tool. " +
-      "Read the transcript and flag any word or short phrase that reads as likely " +
-      "mis-transcribed: nonsensical in context, grammatically broken in a way that " +
-      "suggests a wrong word substitution, or inconsistent with the surrounding " +
-      "conversation (e.g. a name, number, or address that doesn't fit the sentence). " +
-      "Do NOT flag disfluencies, filler words, informal grammar, or things that are " +
-      "merely awkward but plausible as real speech -- only flag things that likely " +
-      "represent a transcription error. If the transcript reads cleanly, return no flags. " +
-      `This call is from the "${vertical}" vertical.`,
-    user: transcript,
-    schemaName: "transcript_flags",
-    schema: {
-      type: "object",
-      properties: {
-        flags: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              text: { type: "string", description: "The exact flagged word or short phrase, verbatim from the transcript." },
-              reason: { type: "string", description: "One sentence: why this looks like a transcription error." },
-            },
-            required: ["text", "reason"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["flags"],
-      additionalProperties: false,
-    },
-  });
-
-  const flags = result.flags;
-  if (!Array.isArray(flags)) return [];
-  return flags.filter(
-    (f): f is BenchmarkAgentFlag =>
-      typeof f === "object" && f !== null && typeof f.text === "string" && typeof f.reason === "string",
-  );
-}
-
+// 2026-08-27: the blind "read one transcript, guess what sounds wrong" flag
+// pass (flagTranscript) is retired -- it needed a single anchor transcript
+// (gold or draft) to read, which no longer fits the gold-free hybrid model
+// (lib/scoring/src/hybrid.ts compares candidates to each other instead).
+// judgeCandidates below is unchanged in shape but is now always called with
+// hybrid-derived flags instead of an LLM's own blind guess at what's wrong.
 export async function judgeCandidates(params: {
   originalTranscript: string;
   flags: BenchmarkAgentFlag[];

@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AgentScanSourceLabel = typeof AgentScanSourceLabel[keyof typeof AgentScanSourceLabel];
+/**
+ * "gold" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce "draft" or null.
+ * @nullable
+ */
+export type AgentScanSourceLabel = typeof AgentScanSourceLabel[keyof typeof AgentScanSourceLabel] | null;
 
 
 export const AgentScanSourceLabel = {
-  gold: 'gold',
   draft: 'draft',
+  gold: 'gold',
 } as const;

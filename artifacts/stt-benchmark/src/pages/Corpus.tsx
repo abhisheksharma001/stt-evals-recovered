@@ -10,7 +10,7 @@ import {
   CallStatus,
   Vertical,
 } from "@workspace/api-client-react"
-import { Plus, Search, AlertCircle, ExternalLink, Settings2, ShieldCheck, AudioLines, TimerReset } from "lucide-react"
+import { Plus, Search, AlertCircle, Settings2, ShieldCheck, AudioLines, TimerReset } from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -43,7 +43,7 @@ export default function Corpus() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Corpus</h1>
-          <p className="text-muted-foreground mt-1">De-identified audio and their gold-transcript status. Correcting a transcript happens in Review.</p>
+          <p className="text-muted-foreground mt-1">De-identified audio and its de-id sign-off status. No gold transcript required any more -- de-id alone gates a call into a bundle.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative w-56">
@@ -146,7 +146,7 @@ export default function Corpus() {
                       <div className="flex justify-end gap-1.5">
                         <Link href={`/review?call=${call.id}`}>
                           <Button variant="outline" size="sm">
-                            <AudioLines className="w-3.5 h-3.5 mr-1.5" /> Review
+                            <AudioLines className="w-3.5 h-3.5 mr-1.5" /> De-ID
                           </Button>
                         </Link>
                         <CallDetailsDialog call={call} />
@@ -369,27 +369,25 @@ function CallDetailsDialog({ call }: { call: any }) {
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-2">
             <label className="text-sm font-medium">Status</label>
+            {/* 2026-08-27: gold-transcript statuses (ready_for_gold,
+                gold_in_review) are vestigial now that a call reaches
+                ready_to_run on de-id alone -- dropped from the picker so
+                nobody manually parks a call in a stage nothing reads
+                anymore. Still valid on old rows (schema unchanged), just
+                not offered going forward. */}
             <select
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono uppercase text-xs"
               value={status}
               onChange={(e) => setStatus(e.target.value as CallStatus)}
             >
               <option value="needs_review">Needs Review</option>
-              <option value="ready_for_gold">Ready for Gold</option>
-              <option value="gold_in_review">Gold in Review</option>
               <option value="ready_to_run">Ready to Run</option>
               <option value="archived">Archived</option>
             </select>
             {status === 'ready_to_run' && !deidComplete && (
               <p className="text-xs text-warning flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Needs two distinct de-id approvals first (above).</p>
             )}
-            {status === 'ready_to_run' && deidComplete && !call.goldTranscript?.trim() && (
-              <p className="text-xs text-warning flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Also needs a gold transcript (edit in Review) before it can run.</p>
-            )}
           </div>
-          <Link href={`/review?call=${call.id}`} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-            <ExternalLink className="w-3 h-3" /> Edit gold transcript &amp; entities in Review
-          </Link>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             {/* UX review 2026-08-25: this combination is a guaranteed 409 --
@@ -397,7 +395,7 @@ function CallDetailsDialog({ call }: { call: any }) {
                 action and read an error toast. */}
             <Button
               type="submit"
-              disabled={updateCall.isPending || (status === 'ready_to_run' && (!deidComplete || !call.goldTranscript?.trim()))}
+              disabled={updateCall.isPending || (status === 'ready_to_run' && !deidComplete)}
             >
               {updateCall.isPending ? 'Saving...' : 'Save'}
             </Button>

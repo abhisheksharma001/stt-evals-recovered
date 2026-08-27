@@ -288,16 +288,13 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
   ]);
 
   const latestRunStatus = latestRuns[0]?.status ?? "blocked";
-  const goldReadyCount = calls.filter(
-    (call) =>
-      call.status === "ready_to_run" || call.status === "gold_in_review",
-  ).length;
+  // 2026-08-27, per Abhishek: gold-transcript stage retired -- readyToRun
+  // now gates on de-id alone (see PATCH /benchmark/calls above).
+  const readyToRunCount = calls.filter((call) => call.status === "ready_to_run").length;
 
   const data = {
     corpusCount: calls.length,
-    readyToRunCount: calls.filter((call) => call.status === "ready_to_run")
-      .length,
-    goldReadyCount,
+    readyToRunCount,
     configuredProviderCount: providers.filter(
       (provider) => provider.status === "ready",
     ).length,
@@ -306,8 +303,8 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
     decisionStatus:
       calls.length === 0
         ? "Starter corpus not registered"
-        : goldReadyCount === 0
-          ? "Gold references not ready"
+        : readyToRunCount === 0
+          ? "De-identification not complete"
           : providers.every((provider) => provider.status !== "ready")
             ? "Provider credentials not configured"
             : "Ready for controlled benchmark run",
@@ -404,16 +401,15 @@ router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   }
 
   const current = existing[0];
-  const nextGold = body.data.goldTranscript ?? current.goldTranscript;
+  // 2026-08-27, per Abhishek: "we don't need a gold transcript any more" --
+  // a call reaches ready_to_run on de-id alone now. WER/entity-accuracy
+  // scoring (which needed a gold transcript to diff against) is retired in
+  // favor of the gold-free hybrid flag pipeline (lib/scoring/src/hybrid.ts),
+  // which needs nothing from Review at all -- see run-executor.ts.
   if (body.data.status === "ready_to_run") {
-    if (!nextGold?.trim()) {
-      res
-        .status(409)
-        .json({ error: "A human-corrected gold transcript is required first" });
-      return;
-    }
     // FR-C3: two distinct approvers must attest de-identification before a
-    // call can be used in a run.
+    // call can be used in a run. This gate is unchanged -- de-id is a
+    // compliance requirement, independent of the (now-retired) gold gate.
     if (!current.deIdAttestedByLabel || !current.deIdSecondApproverLabel) {
       res.status(409).json({
         error:
@@ -1254,6 +1250,14 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
                 (score.detail as { wordDiff?: unknown } | null)?.wordDiff as
                   | Array<{ op: string; ref: string | null; hyp: string | null }>
                   | undefined,
+              // 2026-08-27: gold-free hybrid flagging (computeHybridFlagsForRun
+              // writes flagCount/flagSeverity directly onto this row, and the
+              // structured breakdown into detail.hybridFlags -- both were
+              // missing from this serialization until now, so the UI never
+              // actually saw them despite the pass computing them correctly).
+              flagCount: score.flagCount,
+              flagSeverity: score.flagSeverity,
+              hybridFlags: (score.detail as { hybridFlags?: unknown } | null)?.hybridFlags,
             }
           : null,
         };
@@ -1450,6 +1454,11 @@ router.get("/benchmark/rankings", async (_req, res): Promise<void> => {
           latencyFinalMs: ranking.latencyFinalMs,
           costPerMinute: ranking.costPerMinute,
           diarizationScore: ranking.diarizationScore,
+          // 2026-08-27: gold-free hybrid flagging -- computeRankingsForRun
+          // already writes these onto the ranking row, this route just
+          // hadn't been serializing them into the response yet.
+          avgFlagCount: ranking.avgFlagCount,
+          avgFlagSeverityScore: ranking.avgFlagSeverityScore,
         },
         recommendation: ranking.recommendation,
       })),

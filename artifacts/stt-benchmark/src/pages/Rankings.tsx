@@ -8,15 +8,18 @@ import { Button } from "@/components/ui/button"
 
 // Sortable metric keys -- "rank" keeps the composite-score ordering the run
 // computed server-side (FR-R1 adds per-metric resorting on top of it).
-type SortKey = "rank" | "wer" | "entityAccuracy" | "latencyFinalMs" | "costPerMinute" | "diarizationScore"
+// 2026-08-27: wer/entityAccuracy retired (no gold transcript to score
+// against) -- avgFlagCount/avgFlagSeverityScore (gold-free hybrid flagging)
+// replace them as the primary ranking signal.
+type SortKey = "rank" | "avgFlagCount" | "avgFlagSeverityScore" | "latencyFinalMs" | "costPerMinute" | "diarizationScore"
 
 // Lower-is-better metrics sort ascending by default; accuracy metrics
 // descending. Nulls always sink to the bottom regardless of direction --
 // "not measured" must never masquerade as a great or terrible score.
 const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
   rank: true,
-  wer: true,
-  entityAccuracy: false,
+  avgFlagCount: true,
+  avgFlagSeverityScore: true,
   latencyFinalMs: true,
   costPerMinute: true,
   diarizationScore: false,
@@ -24,8 +27,8 @@ const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
 
 const SORT_LABELS: Record<SortKey, string> = {
   rank: "Composite",
-  wer: "WER",
-  entityAccuracy: "Entity Acc.",
+  avgFlagCount: "Avg Flags",
+  avgFlagSeverityScore: "Flag Severity",
   latencyFinalMs: "Latency (Final)",
   costPerMinute: "Cost/Min",
   diarizationScore: "Diarization",
@@ -61,14 +64,14 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
   }
   const header = [
     "assistant", "vertical", "rank", "provider_id", "provider_name",
-    "wer", "entity_accuracy", "alphanumeric_accuracy",
+    "avg_flag_count", "avg_flag_severity_score",
     "latency_first_partial_ms", "latency_final_ms",
     "cost_per_minute", "diarization_score", "run_id", "recommendation",
   ]
   const lines = rows.map((r) =>
     [
       groupLabel, r.vertical, r.rank, r.providerId, r.providerName,
-      r.score.wer, r.score.entityAccuracy, r.score.alphanumericAccuracy,
+      r.score.avgFlagCount, r.score.avgFlagSeverityScore,
       r.score.latencyFirstPartialMs, r.score.latencyFinalMs,
       r.score.costPerMinute, r.score.diarizationScore, r.runId, r.recommendation,
     ].map(escape).join(","),
@@ -262,25 +265,27 @@ export default function Rankings() {
                       </TableCell>
                       {/* Null "—" means "not measured in this run" (spec:
                           distinct from a true zero) -- title says so instead
-                          of leaving the dash ambiguous (UX review). FIX-4/UX-6:
-                          a non-active row with a measured WER shows its delta
-                          against the active provider's WER right underneath --
-                          lower is better, so a negative (green) delta means
-                          this candidate beats the active provider. */}
+                          of leaving the dash ambiguous (UX review). 2026-08-27:
+                          gold-free -- avgFlagCount replaces WER as the
+                          primary metric. FIX-4/UX-6: a non-active row shows
+                          its delta against the active provider's flag count
+                          right underneath -- lower is better, so a negative
+                          (green) delta means this candidate beats the active
+                          provider. */}
                       <TableCell className="text-right font-mono font-medium" title={r.recommendation ?? undefined}>
-                        {r.score.wer != null ? `${(r.score.wer * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
-                        {activeRow && r.providerId !== activeProviderId && r.score.wer != null && activeRow.score.wer != null && (() => {
-                          const deltaPp = (r.score.wer! - activeRow.score.wer!) * 100
-                          const better = deltaPp < 0
+                        {r.score.avgFlagCount != null ? r.score.avgFlagCount.toFixed(2) : <span title="Not measured in this run">—</span>}
+                        {activeRow && r.providerId !== activeProviderId && r.score.avgFlagCount != null && activeRow.score.avgFlagCount != null && (() => {
+                          const delta = r.score.avgFlagCount! - activeRow.score.avgFlagCount!
+                          const better = delta < 0
                           return (
-                            <div className={`text-[10px] font-normal ${better ? "text-success" : deltaPp > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {better ? "" : "+"}{deltaPp.toFixed(1)}pp vs active
+                            <div className={`text-[10px] font-normal ${better ? "text-success" : delta > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                              {better ? "" : "+"}{delta.toFixed(2)} vs active
                             </div>
                           )
                         })()}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {r.score.entityAccuracy != null ? `${(r.score.entityAccuracy * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
+                      <TableCell className="text-right font-mono" title="0=none .. 3=high, averaged across this provider's cells in this group">
+                        {r.score.avgFlagSeverityScore != null ? r.score.avgFlagSeverityScore.toFixed(2) : <span title="Not measured in this run">—</span>}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {r.score.latencyFinalMs != null ? `${r.score.latencyFinalMs}ms` : <span title="Not measured in this run">—</span>}

@@ -7,10 +7,12 @@
  */
 import type { RunStatus } from './runStatus';
 
+/**
+ * 2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.
+ */
 export interface BenchmarkDashboard {
   corpusCount: number;
   readyToRunCount: number;
-  goldReadyCount: number;
   configuredProviderCount: number;
   totalProviderCount: number;
   latestRunStatus: RunStatus;

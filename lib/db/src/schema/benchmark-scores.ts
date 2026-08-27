@@ -21,6 +21,15 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   latencyFinalMs: integer("latency_final_ms"),
   costPerMinute: real("cost_per_minute"),
   diarizationScore: real("diarization_score"),
+  // 2026-08-27, per Abhishek: gold-transcript-free hybrid flagging (see
+  // lib/scoring/src/hybrid.ts). wer/entityAccuracy above go permanently null
+  // going forward (nothing to diff against without a gold transcript) --
+  // these two are what Rankings now sorts by instead. flagSeverity is the
+  // coarse "none"|"low"|"medium"|"high" from combineHybridFlags(); the full
+  // structured breakdown (which words, which entities, whose confidence)
+  // lives in `detail.hybridFlags` below, same pattern as wordDiff already did.
+  flagCount: integer("flag_count"),
+  flagSeverity: text("flag_severity"),
   detail: jsonb("detail").$type<Record<string, unknown>>(),
   scoredAt: timestamp("scored_at", { withTimezone: true })
     .notNull()

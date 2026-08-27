@@ -10,25 +10,44 @@ import {
   getListBenchmarkCallsQueryKey,
   type AgentScan,
 } from "@workspace/api-client-react"
-import { Bot, ChevronDown, ChevronRight, Check, X, Sparkles } from "lucide-react"
+import { Bot, ChevronDown, ChevronRight, Check, X, Sparkles, AlertTriangle } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
-import { diffWords, normalizeTranscript } from "@workspace/scoring"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { WordDiffView } from "@/pages/Runs"
 
-// A call is scannable once it has *some* transcript to read (draft counts --
-// a call still mid-review is exactly when catching a likely mis-transcription
-// early is most useful, not just after it's already gold).
+// 2026-08-27, per Abhishek: "we don't need a gold transcript any more ...
+// make agent system better ... use a hybrid system." A scan no longer reads
+// one "true" transcript and guesses what sounds wrong -- it runs the same
+// gold-free hybrid pipeline every bundle run gets automatically (cross-
+// provider disagreement + provider confidence + domain-entity cross-check),
+// reusing whatever candidates the call already has. An LLM only explains the
+// flags the hybrid pass actually found -- it's not the thing doing the
+// finding any more.
+
+const SEVERITY_STYLES: Record<string, string> = {
+  none: "bg-secondary text-muted-foreground border-border",
+  low: "bg-secondary text-muted-foreground border-border",
+  medium: "bg-warning/10 text-warning border-warning/25",
+  high: "bg-destructive/10 text-destructive border-destructive/25",
+}
+
+function SeverityBadge({ severity }: { severity: string }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-widest border ${SEVERITY_STYLES[severity] ?? SEVERITY_STYLES.none}`}>
+      {severity}
+    </span>
+  )
+}
+
 function useScannableCalls() {
   const { data: calls } = useListBenchmarkCalls()
-  return React.useMemo(
-    () => (calls ?? []).filter((c) => c.goldTranscript?.trim() || c.draftTranscript?.trim()),
-    [calls],
-  )
+  // Anything with audio on file can be scanned -- the scan spawns a
+  // transcription pass itself if the call doesn't already have candidates
+  // from a prior bundle run.
+  return React.useMemo(() => (calls ?? []).filter((c) => c.audioObjectPath), [calls])
 }
 
 function TriggerScanCard() {
@@ -42,10 +61,6 @@ function TriggerScanCard() {
   // progress visible without server-side job plumbing.
   const [scanStartedAt, setScanStartedAt] = React.useState<number | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = React.useState(0)
-  // B-36: pending state lives in this component, so navigating away and back
-  // re-enabled Scan while the first scan still ran server-side -> duplicate
-  // billed re-transcription. Derive in-flight from the (polled) scans list;
-  // the server's decided-scan 409s remain the backstop.
   const { data: scansForInFlight } = useListAgentScans()
   const scanInFlight =
     !!callId && (scansForInFlight?.some((s) => s.status === "scanning" && s.callId === callId) ?? false)
@@ -66,9 +81,9 @@ function TriggerScanCard() {
           setScanStartedAt(null)
           queryClient.invalidateQueries({ queryKey: getListAgentScansQueryKey() })
           if (scan.status === "clean") {
-            toast({ title: "Clean", description: "The agent found nothing worth flagging in this transcript." })
+            toast({ title: "Clean", description: "No cross-provider disagreement, low-confidence span, or entity mismatch found." })
           } else if (scan.status === "flagged") {
-            toast({ title: "Flagged", description: `${scan.flags.length} span(s) flagged -- review the pick below.` })
+            toast({ title: "Flagged", description: `${scan.hybridFlags?.flagCount ?? scan.flags.length} flag(s) found -- review below.` })
           } else {
             toast({ title: "Scan error", description: scan.errorMessage ?? "The scan could not complete.", variant: "destructive" })
           }
@@ -92,22 +107,24 @@ function TriggerScanCard() {
             <div>
               <div className="font-semibold text-sm">Scan a call</div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Reads the call's current transcript for spans that sound wrong, then -- if it
-                finds any -- re-transcribes the call across every other configured provider and
-                picks whichever reads most sensibly. On-demand only: nothing runs until you pick
-                a call and scan it. This can take a minute or two when it finds something to
-                re-transcribe.
+                Compares this call's candidate transcripts across providers -- cross-provider word
+                disagreement, provider-native confidence (AssemblyAI/Deepgram/Gladia), and domain
+                entities (phone/VIN/reference numbers) that don't match between candidates. Reuses
+                whatever this call has already been transcribed by; only spawns a fresh
+                transcription pass if fewer than 2 providers have ever succeeded on it. An LLM only
+                explains the flags found here -- it never runs blind, and never runs at all on a
+                clean call.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Select value={callId} onValueChange={setCallId} disabled={createScan.isPending}>
                 <SelectTrigger className="w-full max-w-[420px]">
-                  <SelectValue placeholder={scannableCalls.length === 0 ? "No calls with transcripts yet -- import first" : "Select a call to scan..."} />
+                  <SelectValue placeholder={scannableCalls.length === 0 ? "No calls with audio yet -- import first" : "Select a call to scan..."} />
                 </SelectTrigger>
                 <SelectContent>
                   {scannableCalls.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.label} -- {c.vertical} -- {c.goldTranscript?.trim() ? "gold" : "draft only"}
+                      {c.label} -- {c.vertical}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -119,8 +136,8 @@ function TriggerScanCard() {
             </div>
             {createScan.isPending && (
               <p className="text-xs text-muted-foreground">
-                Re-transcribing across providers -- this can take a minute or two. Keep this tab
-                open; the result appears here when done.
+                This can take a minute or two if this call needs a fresh transcription pass. Keep
+                this tab open; the result appears here when done.
               </p>
             )}
           </div>
@@ -153,51 +170,50 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
   const approve = useApproveAgentScan()
   const reject = useRejectAgentScan()
 
-  const canDecide = scan.status === "flagged" && !!scan.agentPickProviderId
-  // B-58: a crashed scan stays "scanning" forever; the server accepts
-  // rejects for any undecided scan, so the operator needs an exit from
-  // scanning/error rows too — hiding Reject left them stuck.
+  const canDecide = scan.status === "flagged"
   const canReject = scan.status !== "approved" && scan.status !== "rejected"
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getListAgentScansQueryKey() })
     queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
   }
-  // B-59: a whitespace-only prompt used to write decidedByLabel:"" into the
-  // DB and the audit log.
   const promptApprover = (verb: string): string | null => {
-    const approver = window.prompt(`${verb} from (name or email):`)?.trim() ?? ""
+    const approver = window.prompt(`${verb} (name or email):`)?.trim() ?? ""
     if (!approver) return null
     return approver
   }
 
   const handleApprove = () => {
-    const approver = promptApprover("Approve this pick as gold")
+    const approver = promptApprover("Acknowledge these flags as reviewed, from")
     if (!approver) return
     approve.mutate(
       { scanId: scan.id, data: { approverLabel: approver } },
       {
         onSuccess: () => {
           invalidate()
-          toast({ title: "Approved", description: "The agent's pick is now this call's gold transcript." })
+          toast({ title: "Acknowledged", description: "Recorded in the audit log -- no transcript was changed." })
         },
-        onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Approve failed.", variant: "destructive" }),
+        onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed.", variant: "destructive" }),
       },
     )
   }
   const handleReject = () => {
-    const approver = promptApprover("Reject this pick")
+    const approver = promptApprover("Dismiss this scan, from")
     if (!approver) return
     reject.mutate(
       { scanId: scan.id, data: { approverLabel: approver } },
       {
         onSuccess: () => {
           invalidate()
-          toast({ title: "Rejected", description: "No change made -- the call keeps its current gold transcript." })
+          toast({ title: "Dismissed" })
         },
-        onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Reject failed.", variant: "destructive" }),
+        onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed.", variant: "destructive" }),
       },
     )
   }
+
+  const hybrid = scan.hybridFlags
+  const disagreementByProvider = new Map((hybrid?.crossProviderDisagreements ?? []).map((d) => [d.providerId, d.disagreementRate]))
+  const confidenceByProvider = hybrid?.lowConfidenceSpans ?? {}
 
   return (
     <div className="border-b last:border-b-0">
@@ -209,8 +225,9 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
         {expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
         <span className="font-mono text-xs w-40 truncate">{callLabel}</span>
         <StatusBadge status={scan.status} />
+        {hybrid && hybrid.flagCount > 0 && <SeverityBadge severity={hybrid.flagSeverity} />}
         <span className="text-xs text-muted-foreground">
-          {scan.flags.length > 0 ? `${scan.flags.length} flag(s)` : "no flags"}
+          {hybrid ? `${hybrid.flagCount} flag(s)` : scan.flags.length > 0 ? `${scan.flags.length} flag(s)` : "no flags"}
         </span>
         <span className="ml-auto text-xs text-muted-foreground font-mono">
           {formatDistanceToNow(new Date(scan.createdAt), { addSuffix: true })}
@@ -221,7 +238,7 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
         <div className="px-4 pb-4 space-y-4">
           {scan.flags.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Flagged spans</div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">What the hybrid pass found</div>
               <div className="space-y-1.5">
                 {scan.flags.map((f, i) => (
                   <div key={i} className="text-sm bg-warning/5 border border-warning/20 rounded-md px-3 py-2">
@@ -233,52 +250,86 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
             </div>
           )}
 
-          <div>
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-              Real transcript ({scan.sourceLabel})
+          {scan.sourceTranscript && (
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                Vapi's own draft transcript (context only -- not what candidates are compared against)
+              </div>
+              <p className="text-sm bg-muted/40 rounded-md px-3 py-2 leading-relaxed text-muted-foreground">{scan.sourceTranscript}</p>
             </div>
-            <p className="text-sm bg-muted/40 rounded-md px-3 py-2 leading-relaxed">{scan.sourceTranscript}</p>
-          </div>
+          )}
 
           {scan.candidates.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
-                Candidates -- highlighted against the real transcript above
+                Candidates -- compared against each other, not a human reference
               </div>
               <div className="space-y-2">
                 {scan.candidates.map((c) => {
-                  // 2026-08-26, per Abhishek: show exactly what changed from
-                  // the real transcript to each candidate, color-highlighted
-                  // -- same diff/colors as the Results page (WordDiffView),
-                  // not a second convention.
-                  const wordDiff = c.transcript
-                    ? diffWords(
-                        normalizeTranscript(scan.sourceTranscript).split(" ").filter(Boolean),
-                        normalizeTranscript(c.transcript).split(" ").filter(Boolean),
-                      )
-                    : null
+                  const disagreementRate = disagreementByProvider.get(c.providerId)
+                  const confidenceSpans = confidenceByProvider[c.providerId] ?? []
                   return (
                     <div
                       key={c.providerId}
                       className={`text-sm rounded-md border px-3 py-2 ${c.providerId === scan.agentPickProviderId ? "border-primary bg-primary/5" : "border-border"}`}
                     >
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         <span className="font-semibold text-xs">{c.providerName}</span>
                         {c.providerId === scan.agentPickProviderId && (
                           <Badge className="text-[10px]">agent's pick</Badge>
+                        )}
+                        {disagreementRate !== undefined && disagreementRate > 0.15 && (
+                          <Badge variant="outline" className="text-[10px] gap-1">
+                            <AlertTriangle className="h-2.5 w-2.5" /> {Math.round(disagreementRate * 100)}% disagrees with peers
+                          </Badge>
                         )}
                         <Badge variant={c.status === "ok" ? "default" : "destructive"} className="text-[10px] uppercase ml-auto">
                           {c.status}
                         </Badge>
                       </div>
-                      {wordDiff ? (
-                        <WordDiffView wordDiff={wordDiff} />
+                      {c.transcript ? (
+                        <>
+                          <p className="text-foreground leading-relaxed">{c.transcript}</p>
+                          {confidenceSpans.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {confidenceSpans.map((span, i) => (
+                                <span
+                                  key={i}
+                                  className="rounded border border-destructive/25 bg-destructive/10 px-1.5 py-0.5 font-mono text-[10px] text-destructive"
+                                  title={`avg confidence ${((span.avgConfidence ?? 0) * 100).toFixed(0)}%`}
+                                >
+                                  {(span.words ?? []).join(" ")}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       ) : (
                         <p className="text-muted-foreground text-xs leading-relaxed">(no transcript -- this provider failed)</p>
                       )}
                     </div>
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {hybrid && hybrid.entityMismatches.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Entity mismatches</div>
+              <div className="space-y-1.5">
+                {hybrid.entityMismatches.map((m, i) => (
+                  <div key={i} className="text-sm bg-destructive/5 border border-destructive/20 rounded-md px-3 py-2">
+                    <span className="font-mono font-semibold text-destructive uppercase text-xs">{(m.type ?? "").replace(/_/g, " ")}</span>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {Object.entries(m.valuesByProvider ?? {}).map(([providerId, values]) => (
+                        <span key={providerId}>
+                          <span className="font-mono">{providerId}</span>: {values.join(", ")}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -299,42 +350,38 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
           {canDecide && (
             <div className="flex items-center gap-2 pt-1">
               <p className="text-xs text-muted-foreground flex-1">
-                This is a suggestion, not a fact -- it never becomes gold on its own. Approving writes
-                this pick as the call's gold transcript (same rules as manual review -- no audio
-                verification happens here); verify it against the audio in Review first.
+                This is a diagnostic, not a fact -- nothing here writes to any transcript.
+                Acknowledging just records that a human looked at these flags.
               </p>
               <Button size="sm" variant="outline" onClick={handleReject} disabled={reject.isPending}>
-                <X className="w-3.5 h-3.5 mr-1.5" /> Reject
+                <X className="w-3.5 h-3.5 mr-1.5" /> Dismiss
               </Button>
               <Button size="sm" onClick={handleApprove} disabled={approve.isPending}>
-                <Check className="w-3.5 h-3.5 mr-1.5" /> Approve as gold
+                <Check className="w-3.5 h-3.5 mr-1.5" /> Acknowledge
               </Button>
             </div>
           )}
 
-          {/* B-58: flagged-but-unpickable (all candidates failed) or crashed
-              scans need an exit too — reject is valid for any undecided scan. */}
           {!canDecide && canReject && (
             <div className="flex items-center gap-2 pt-1">
               <p className="text-xs text-muted-foreground flex-1">
-                {scan.status === "scanning" && "Still scanning — rejecting cancels this record if the scan never completes."}
-                {scan.status === "error" && "This scan errored. Reject to close it out."}
-                {scan.status === "flagged" && "No viable pick: the candidate providers did not return a usable transcript."}
+                {scan.status === "scanning" && "Still scanning — dismissing cancels this record if the scan never completes."}
+                {scan.status === "error" && "This scan errored. Dismiss to close it out."}
               </p>
               <Button size="sm" variant="outline" onClick={handleReject} disabled={reject.isPending}>
-                <X className="w-3.5 h-3.5 mr-1.5" /> Reject
+                <X className="w-3.5 h-3.5 mr-1.5" /> Dismiss
               </Button>
             </div>
           )}
 
           {scan.status === "approved" && (
             <div className="text-xs text-success flex items-center gap-1.5">
-              <Check className="w-3.5 h-3.5" /> Approved by {scan.decidedByLabel} -- this call's gold transcript was updated.
+              <Check className="w-3.5 h-3.5" /> Acknowledged by {scan.decidedByLabel}.
             </div>
           )}
           {scan.status === "rejected" && (
             <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <X className="w-3.5 h-3.5" /> Rejected by {scan.decidedByLabel} -- no change made.
+              <X className="w-3.5 h-3.5" /> Dismissed by {scan.decidedByLabel}.
             </div>
           )}
         </div>
@@ -345,9 +392,6 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
 
 export default function Agent() {
   const { data: scans, isLoading, isError, error } = useListAgentScans(undefined, {
-    // A row observed mid-run (second tab, or after navigating back during a
-    // scan) used to freeze on "scanning" forever -- poll only while a scan
-    // is actually in flight (UX review 2026-08-25).
     query: {
       queryKey: getListAgentScansQueryKey(),
       refetchInterval: (q) =>
@@ -365,8 +409,8 @@ export default function Agent() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Transcript Agent</h1>
         <p className="text-muted-foreground mt-1">
-          Flags likely mis-transcriptions and compares candidates from other providers.
-          Every pick is a suggestion until a human approves it.
+          Gold-free hybrid quality checks: cross-provider disagreement, provider confidence, and
+          entity cross-checks -- with an LLM explaining flags, never inventing them.
         </p>
       </div>
 

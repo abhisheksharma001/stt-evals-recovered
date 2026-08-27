@@ -9,15 +9,27 @@ import type { AgentFlag } from './agentFlag';
 import type { AgentScanCandidate } from './agentScanCandidate';
 import type { AgentScanSourceLabel } from './agentScanSourceLabel';
 import type { AgentScanStatus } from './agentScanStatus';
+import type { HybridFlagSummary } from './hybridFlagSummary';
 
+/**
+ * 2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel/sourceTranscript are best-effort context (Vapi's own draft), not an analysis input anymore.
+ */
 export interface AgentScan {
   id: string;
   callId: string;
+  /**
+     * "gold" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce "draft" or null.
+     * @nullable
+     */
   sourceLabel: AgentScanSourceLabel;
-  /** Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged. */
-  sourceTranscript: string;
+  /**
+     * Vapi's own draft transcript at scan time, for context only -- null if the call has no draft on file.
+     * @nullable
+     */
+  sourceTranscript: string | null;
   status: AgentScanStatus;
   flags: AgentFlag[];
+  hybridFlags?: HybridFlagSummary | null;
   /** @nullable */
   runId?: string | null;
   candidates: AgentScanCandidate[];

@@ -7,9 +7,15 @@
  */
 
 export interface Score {
-  /** @nullable */
+  /**
+     * 2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change.
+     * @nullable
+     */
   wer: number | null;
-  /** @nullable */
+  /**
+     * Same as wer -- permanently null going forward, kept for historical runs.
+     * @nullable
+     */
   entityAccuracy: number | null;
   /** @nullable */
   alphanumericAccuracy: number | null;
@@ -21,4 +27,14 @@ export interface Score {
   costPerMinute: number | null;
   /** @nullable */
   diarizationScore: number | null;
+  /**
+     * 2026-08-27: gold-free hybrid flag count, averaged across this provider's cells in the group. Lower is better. This (plus cost/latency) is what Rankings now sorts by.
+     * @nullable
+     */
+  avgFlagCount: number | null;
+  /**
+     * severityRank() averaged across cells: 0=none .. 3=high.
+     * @nullable
+     */
+  avgFlagSeverityScore: number | null;
 }

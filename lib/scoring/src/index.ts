@@ -1,3 +1,7 @@
+// 2026-08-27, per Abhishek: gold-transcript-free hybrid quality flagging --
+// see hybrid.ts's own header for the full rationale.
+export * from "./hybrid";
+
 // Scoring version. Bump this whenever normalization or metric behavior
 // changes -- every stored Score row references the version that produced
 // it, so a re-score run can tell whether it reproduced the original

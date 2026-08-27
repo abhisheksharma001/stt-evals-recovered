@@ -5,6 +5,8 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { HybridFlagDetail } from './hybridFlagDetail';
+import type { ScoreDetailFlagSeverity } from './scoreDetailFlagSeverity';
 import type { WordDiffOp } from './wordDiffOp';
 
 export interface ScoreDetail {
@@ -22,4 +24,12 @@ export interface ScoreDetail {
   /** @nullable */
   diarizationScore?: number | null;
   wordDiff?: WordDiffOp[];
+  /**
+     * 2026-08-27: gold-free hybrid flag count for this cell (cross-provider disagreement + confidence + entity mismatches).
+     * @nullable
+     */
+  flagCount?: number | null;
+  /** @nullable */
+  flagSeverity?: ScoreDetailFlagSeverity;
+  hybridFlags?: HybridFlagDetail;
 }

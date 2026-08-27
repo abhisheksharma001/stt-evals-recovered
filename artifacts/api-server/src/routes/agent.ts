@@ -1,8 +1,13 @@
-// The transcript-quality agent (requested by Abhishek 2026-08-25). See
-// lib/agent.ts for the two OpenAI calls (flag, judge) and
-// benchmark-agent-scans.ts for why this table's pick is a suggestion, never
-// a direct write to goldTranscript.
-import { desc, eq } from "drizzle-orm";
+// The transcript-quality agent (requested by Abhishek 2026-08-25, reworked
+// 2026-08-27: "we don't need a gold transcript any more ... make agent
+// system better ... use a hybrid system"). A scan now runs the same
+// gold-free hybrid pipeline every bundle run gets automatically
+// (hybrid-flagging.ts / lib/scoring/src/hybrid.ts: cross-provider
+// disagreement + provider confidence + entity cross-check), reusing
+// whichever candidate transcripts the call already has instead of always
+// paying to re-transcribe. An LLM explanation only runs when the hybrid
+// pass actually found something -- see lib/agent.ts's judgeCandidates.
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   APP_SETTINGS_ID,
@@ -13,7 +18,9 @@ import {
   benchmarkProvidersTable,
   benchmarkRunsTable,
   db,
+  type BenchmarkAgentFlag,
   type BenchmarkAgentScanRow,
+  type BenchmarkHybridFlagSummary,
 } from "@workspace/db";
 import {
   ApproveAgentScanBody,
@@ -27,7 +34,8 @@ import {
   RejectAgentScanParams,
   RejectAgentScanResponse,
 } from "@workspace/api-zod";
-import { AgentConfigError, AgentRequestError, flagTranscript, judgeCandidates } from "../lib/agent";
+import { AgentConfigError, AgentRequestError, judgeCandidates } from "../lib/agent";
+import { computeHybridFlagsForCandidates } from "../lib/hybrid-flagging";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { syncProviderReadiness } from "./benchmark";
@@ -35,48 +43,58 @@ import { syncProviderReadiness } from "./benchmark";
 const router: IRouter = Router();
 
 async function serializeScan(scan: BenchmarkAgentScanRow) {
-  let candidates: {
-    providerId: string;
-    providerName: string;
-    status: "pending" | "ok" | "failed";
-    transcript: string | null;
-  }[] = [];
-  let agentPickProviderId: string | null = null;
+  // 2026-08-27: candidates are keyed by CALL, not by scan.runId -- most
+  // scans now reuse a call's existing results instead of spawning a fresh
+  // run (see POST .../scans), so runId is routinely null even for a
+  // perfectly real, fully-candidated scan. Looking up by callId (latest ok
+  // result per provider, same query the scan route itself uses) works
+  // whether or not this particular scan spawned a run. Found live: the
+  // runId-only version silently returned zero candidates for every reused
+  // scan despite the flags/hybridFlags being real.
+  const rows = await db
+    .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
+    .from(benchmarkProviderCallResultsTable)
+    .innerJoin(
+      benchmarkProvidersTable,
+      eq(benchmarkProvidersTable.id, benchmarkProviderCallResultsTable.providerId),
+    )
+    .where(
+      and(
+        eq(benchmarkProviderCallResultsTable.callId, scan.callId),
+        // skipped_pending_review/cancelled are bookkeeping placeholders for
+        // cells never actually attempted -- not real candidates, and not a
+        // status AgentScanCandidate's schema even allows (found live: this
+        // 400'd the whole scans list once a call had any bulk-shard history).
+        inArray(benchmarkProviderCallResultsTable.status, ["ok", "failed", "pending"]),
+      ),
+    )
+    .orderBy(desc(benchmarkProviderCallResultsTable.createdAt));
 
-  if (scan.runId) {
-    const rows = await db
-      .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
-      .from(benchmarkProviderCallResultsTable)
-      .innerJoin(
-        benchmarkProvidersTable,
-        eq(benchmarkProvidersTable.id, benchmarkProviderCallResultsTable.providerId),
-      )
-      .where(eq(benchmarkProviderCallResultsTable.runId, scan.runId));
-
-    candidates = rows.map(({ result, provider }) => ({
-      providerId: provider.id,
-      providerName: provider.name,
-      status: result.status as "pending" | "ok" | "failed",
-      transcript: result.hypothesisTranscript,
-    }));
-
-    if (scan.agentPickResultId) {
-      agentPickProviderId =
-        rows.find((r) => r.result.id === scan.agentPickResultId)?.provider.id ?? null;
-    }
+  const latestByProvider = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (!latestByProvider.has(row.provider.id)) latestByProvider.set(row.provider.id, row);
   }
+  const candidateRows = [...latestByProvider.values()];
+
+  const candidates = candidateRows.map(({ result, provider }) => ({
+    providerId: provider.id,
+    providerName: provider.name,
+    status: result.status as "pending" | "ok" | "failed",
+    transcript: result.hypothesisTranscript,
+  }));
+
+  const agentPickProviderId = scan.agentPickResultId
+    ? (candidateRows.find((r) => r.result.id === scan.agentPickResultId)?.provider.id ?? null)
+    : null;
 
   return {
     id: scan.id,
     callId: scan.callId,
-    sourceLabel: scan.sourceLabel as "gold" | "draft",
-    // 2026-08-26, per Abhishek: the Agent page should show a word-level
-    // diff between the real transcript and each candidate, not just the
-    // raw candidate text. This column already existed (verbatim copy at
-    // scan time, for reproducibility) but was never returned over the API.
+    sourceLabel: scan.sourceLabel as "draft" | "gold" | null,
     sourceTranscript: scan.sourceTranscript,
     status: scan.status as "scanning" | "clean" | "flagged" | "error" | "approved" | "rejected",
     flags: scan.flags,
+    hybridFlags: scan.hybridFlags,
     runId: scan.runId,
     candidates,
     agentPickProviderId,
@@ -110,6 +128,47 @@ router.get("/benchmark/agent/scans", async (req, res): Promise<void> => {
   res.json(ListAgentScansResponse.parse(await Promise.all(rows.map(serializeScan))));
 });
 
+/** Human-readable {text, reason} restatements of the hybrid flags, for the
+ * legacy `flags` column the UI already knows how to render. Kept separate
+ * from the structured `hybridFlags` (the real data) so a caller that only
+ * understands the old shape still gets something useful. */
+function deriveFlagTexts(
+  candidatesByProvider: Map<string, { providerName: string; transcript: string }>,
+  hybridByProvider: ReturnType<typeof computeHybridFlagsForCandidates>,
+): BenchmarkAgentFlag[] {
+  const flags: BenchmarkAgentFlag[] = [];
+  const seenEntityMismatches = new Set<string>();
+
+  for (const [providerId, result] of hybridByProvider) {
+    const name = candidatesByProvider.get(providerId)?.providerName ?? providerId;
+    if (result.crossProviderDisagreement && result.crossProviderDisagreement.disagreementRate > 0.15) {
+      flags.push({
+        text: name,
+        reason: `Disagrees with the other candidate(s) on ${Math.round(result.crossProviderDisagreement.disagreementRate * 100)}% of its words.`,
+      });
+    }
+    for (const span of result.lowConfidenceSpans) {
+      flags.push({
+        text: span.words.join(" "),
+        reason: `${name} reported low confidence here (avg ${(span.avgConfidence * 100).toFixed(0)}%).`,
+      });
+    }
+    for (const mismatch of result.entityMismatches) {
+      const key = `${mismatch.type}:${JSON.stringify(mismatch.valuesByProvider)}`;
+      if (seenEntityMismatches.has(key)) continue;
+      seenEntityMismatches.add(key);
+      const byProviderText = Object.entries(mismatch.valuesByProvider)
+        .map(([pid, values]) => `${candidatesByProvider.get(pid)?.providerName ?? pid}: ${values.join(", ")}`)
+        .join(" vs. ");
+      flags.push({
+        text: mismatch.type.replace(/_/g, " "),
+        reason: `Candidates disagree on the ${mismatch.type.replace(/_/g, " ")} itself -- ${byProviderText}.`,
+      });
+    }
+  }
+  return flags;
+}
+
 router.post("/benchmark/agent/scans", async (req, res): Promise<void> => {
   const parsed = CreateAgentScanBody.safeParse(req.body);
   if (!parsed.success) {
@@ -127,61 +186,114 @@ router.post("/benchmark/agent/scans", async (req, res): Promise<void> => {
     return;
   }
 
-  // Prefer the reviewed gold transcript when it exists; fall back to the
-  // provider draft for a call still mid-review -- either way, record which
-  // one was actually read (sourceLabel) so the scan stays reproducible.
-  const sourceLabel = call.goldTranscript?.trim() ? "gold" : "draft";
-  const sourceTranscript = call.goldTranscript?.trim() || call.draftTranscript?.trim() || null;
-  if (!sourceTranscript) {
-    res.status(409).json({ error: "This call has no gold or draft transcript to scan yet." });
-    return;
-  }
-
   const actorLabel = actorFromRequest(req);
   const [scan] = await db
     .insert(benchmarkAgentScansTable)
     .values({
       callId: call.id,
-      sourceLabel,
-      sourceTranscript,
+      sourceLabel: call.draftTranscript?.trim() ? "draft" : null,
+      sourceTranscript: call.draftTranscript?.trim() || null,
       status: "scanning",
       requestedByLabel: actorLabel,
     })
     .returning();
 
   try {
-    const flags = await flagTranscript(sourceTranscript, call.vertical);
+    // 2026-08-27: reuse whatever this call has already been transcribed by
+    // (its most recent successful run per provider) instead of always
+    // paying to re-transcribe -- with bundles as the primary pipeline now, a
+    // call almost always already has candidates by the time someone scans
+    // it here.
+    const existingOkResults = await db
+      .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
+      .from(benchmarkProviderCallResultsTable)
+      .innerJoin(
+        benchmarkProvidersTable,
+        eq(benchmarkProvidersTable.id, benchmarkProviderCallResultsTable.providerId),
+      )
+      .where(
+        eq(benchmarkProviderCallResultsTable.callId, call.id),
+      )
+      .orderBy(desc(benchmarkProviderCallResultsTable.createdAt));
 
-    if (flags.length === 0) {
-      const [clean] = await db
-        .update(benchmarkAgentScansTable)
-        .set({ status: "clean", flags: [] })
-        .where(eq(benchmarkAgentScansTable.id, scan.id))
-        .returning();
-      res.status(201).json(CreateAgentScanResponse.parse(await serializeScan(clean)));
-      return;
+    const latestOkByProvider = new Map<string, (typeof existingOkResults)[number]>();
+    for (const row of existingOkResults) {
+      if (row.result.status !== "ok" || !row.result.hypothesisTranscript) continue;
+      if (!latestOkByProvider.has(row.provider.id)) latestOkByProvider.set(row.provider.id, row);
     }
 
-    await syncProviderReadiness();
-    const readyProviders = await db
-      .select()
-      .from(benchmarkProvidersTable)
-      .where(eq(benchmarkProvidersTable.status, "ready"));
-    // Best-effort: don't ask the provider that already produced the
-    // transcript being flagged to "confirm itself" -- see
-    // sourceTranscriberProvider's own comment in benchmark-calls.ts for why
-    // this field is best-effort, not guaranteed populated.
-    const candidateProviders = readyProviders.filter(
-      (p) => p.id !== call.sourceTranscriberProvider,
-    );
+    let scanRunId: string | null = null;
+    let candidateRows = [...latestOkByProvider.values()];
 
-    if (candidateProviders.length === 0) {
+    if (candidateRows.length < 2) {
+      // Not enough existing candidates to compare -- spawn a bounded,
+      // single-call run against every ready provider, same as before.
+      await syncProviderReadiness();
+      const readyProviders = await db
+        .select()
+        .from(benchmarkProvidersTable)
+        .where(eq(benchmarkProvidersTable.status, "ready"));
+
+      if (readyProviders.length === 0) {
+        const [errored] = await db
+          .update(benchmarkAgentScansTable)
+          .set({
+            status: "error",
+            errorMessage: "No configured providers are available to transcribe this call against.",
+          })
+          .where(eq(benchmarkAgentScansTable.id, scan.id))
+          .returning();
+        res.status(201).json(CreateAgentScanResponse.parse(await serializeScan(errored)));
+        return;
+      }
+
+      const [run] = await db
+        .insert(benchmarkRunsTable)
+        .values({
+          status: "queued",
+          purpose: "agent_scan",
+          providerIds: readyProviders.map((p) => p.id),
+          callIds: [call.id],
+          callCount: 1,
+          notes: `Spawned by agent scan ${scan.id} for call ${call.id}.`,
+        })
+        .returning();
+      scanRunId = run.id;
+
+      await db
+        .update(benchmarkAgentScansTable)
+        .set({ runId: run.id })
+        .where(eq(benchmarkAgentScansTable.id, scan.id));
+
+      // Awaited, not fire-and-forget: this is bounded to one call across a
+      // handful of providers, and "scan this call" is a deliberate on-demand
+      // click a human is waiting on.
+      await executeBenchmarkRun(run.id, actorLabel);
+
+      const freshResults = await db
+        .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
+        .from(benchmarkProviderCallResultsTable)
+        .innerJoin(
+          benchmarkProvidersTable,
+          eq(benchmarkProvidersTable.id, benchmarkProviderCallResultsTable.providerId),
+        )
+        .where(eq(benchmarkProviderCallResultsTable.runId, run.id));
+      const merged = new Map(latestOkByProvider);
+      for (const row of freshResults) {
+        if (row.result.status === "ok" && row.result.hypothesisTranscript) {
+          merged.set(row.provider.id, row);
+        }
+      }
+      candidateRows = [...merged.values()];
+    }
+
+    if (candidateRows.length === 0) {
       const [errored] = await db
         .update(benchmarkAgentScansTable)
         .set({
           status: "error",
-          flags,
-          errorMessage: "No configured providers are available to re-transcribe this call against.",
+          errorMessage: "No provider has ever successfully transcribed this call -- nothing to compare.",
+          runId: scanRunId,
         })
         .where(eq(benchmarkAgentScansTable.id, scan.id))
         .returning();
@@ -189,64 +301,80 @@ router.post("/benchmark/agent/scans", async (req, res): Promise<void> => {
       return;
     }
 
-    const [run] = await db
-      .insert(benchmarkRunsTable)
-      .values({
-        status: "queued",
-        purpose: "agent_scan",
-        providerIds: candidateProviders.map((p) => p.id),
-        callIds: [call.id],
-        callCount: 1,
-        notes: `Spawned by agent scan ${scan.id} for call ${call.id}.`,
-      })
-      .returning();
+    const candidatesByProvider = new Map(
+      candidateRows.map((r) => [r.provider.id, { providerName: r.provider.name, transcript: r.result.hypothesisTranscript! }]),
+    );
+    const hybridByProvider = computeHybridFlagsForCandidates(
+      candidateRows.map((r) => ({
+        providerId: r.provider.id,
+        transcript: r.result.hypothesisTranscript!,
+        rawOutputJson: r.result.rawOutput,
+      })),
+    );
 
-    await db
-      .update(benchmarkAgentScansTable)
-      .set({ flags, runId: run.id })
-      .where(eq(benchmarkAgentScansTable.id, scan.id));
+    const totalFlagCount = [...hybridByProvider.values()].reduce((sum, r) => sum + r.flagCount, 0);
+    const maxSeverity = [...hybridByProvider.values()].reduce<"none" | "low" | "medium" | "high">(
+      (max, r) => ({ none: 0, low: 1, medium: 2, high: 3 }[r.flagSeverity] > { none: 0, low: 1, medium: 2, high: 3 }[max] ? r.flagSeverity : max),
+      "none",
+    );
 
-    // Awaited, not fire-and-forget: unlike a batch run this is bounded to
-    // one call across a handful of providers, and "scan this call" is a
-    // deliberate on-demand click a human is waiting on -- see lib/agent.ts's
-    // header comment for why this is a v1 tradeoff, not the batch pattern.
-    await executeBenchmarkRun(run.id, actorLabel);
+    const hybridFlagsSummary: BenchmarkHybridFlagSummary = {
+      flagCount: totalFlagCount,
+      flagSeverity: maxSeverity,
+      crossProviderDisagreements: [...hybridByProvider.values()]
+        .filter((r) => r.crossProviderDisagreement)
+        .map((r) => ({ providerId: r.providerId, disagreementRate: r.crossProviderDisagreement!.disagreementRate })),
+      lowConfidenceSpans: Object.fromEntries(
+        [...hybridByProvider.entries()].map(([providerId, r]) => [
+          providerId,
+          r.lowConfidenceSpans.map((s) => ({ words: s.words, avgConfidence: s.avgConfidence, severity: s.severity })),
+        ]),
+      ),
+      entityMismatches: [...hybridByProvider.values()]
+        .flatMap((r) => r.entityMismatches)
+        .filter((m, i, arr) => arr.findIndex((o) => JSON.stringify(o) === JSON.stringify(m)) === i)
+        .map((m) => ({ type: m.type, valuesByProvider: m.valuesByProvider })),
+    };
 
-    const resultRows = await db
-      .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
-      .from(benchmarkProviderCallResultsTable)
-      .innerJoin(
-        benchmarkProvidersTable,
-        eq(benchmarkProvidersTable.id, benchmarkProviderCallResultsTable.providerId),
-      )
-      .where(eq(benchmarkProviderCallResultsTable.runId, run.id));
+    if (totalFlagCount === 0) {
+      const [clean] = await db
+        .update(benchmarkAgentScansTable)
+        .set({ status: "clean", flags: [], hybridFlags: hybridFlagsSummary, runId: scanRunId })
+        .where(eq(benchmarkAgentScansTable.id, scan.id))
+        .returning();
+      res.status(201).json(CreateAgentScanResponse.parse(await serializeScan(clean)));
+      return;
+    }
 
-    const okCandidates = resultRows.filter((r) => r.result.status === "ok" && r.result.hypothesisTranscript);
-    // 2026-08-26: system-wide, changeable judge model (falls back to
-    // lib/agent.ts's own JUDGE_MODEL constant when unset).
+    const flags = deriveFlagTexts(candidatesByProvider, hybridByProvider);
+
+    // 2026-08-26: system-wide, changeable judge model.
     const [settings] = await db
       .select({ agentModel: appSettingsTable.agentModel })
       .from(appSettingsTable)
       .where(eq(appSettingsTable.id, APP_SETTINGS_ID))
       .limit(1);
     const judgeResult = await judgeCandidates({
-      originalTranscript: sourceTranscript,
+      originalTranscript: call.draftTranscript?.trim() || "(no draft transcript on file)",
       flags,
-      candidates: okCandidates.map((r) => ({
+      candidates: candidateRows.map((r) => ({
         providerId: r.provider.id,
         providerName: r.provider.name,
-        transcript: r.result.hypothesisTranscript as string,
+        transcript: r.result.hypothesisTranscript!,
       })),
       model: settings?.agentModel,
     });
 
     const pickedResultId =
-      okCandidates.find((r) => r.provider.id === judgeResult.pickedProviderId)?.result.id ?? null;
+      candidateRows.find((r) => r.provider.id === judgeResult.pickedProviderId)?.result.id ?? null;
 
     const [flagged] = await db
       .update(benchmarkAgentScansTable)
       .set({
         status: "flagged",
+        flags,
+        hybridFlags: hybridFlagsSummary,
+        runId: scanRunId,
         agentPickResultId: pickedResultId,
         agentPickReasoning: judgeResult.reasoning,
       })
@@ -258,7 +386,7 @@ router.post("/benchmark/agent/scans", async (req, res): Promise<void> => {
       entityId: scan.id,
       actorLabel,
       action: "flagged",
-      afterState: { callId: call.id, flagCount: flags.length, pickedResultId },
+      afterState: { callId: call.id, flagCount: totalFlagCount, pickedResultId },
     });
 
     res.status(201).json(CreateAgentScanResponse.parse(await serializeScan(flagged)));
@@ -296,46 +424,16 @@ router.post("/benchmark/agent/scans/:scanId/approve", async (req, res): Promise<
     res.status(404).json({ error: "Agent scan not found" });
     return;
   }
-  if (scan.status !== "flagged" || !scan.agentPickResultId) {
-    res.status(409).json({ error: "This scan has no pick to approve, or is not awaiting a decision." });
-    return;
-  }
-
-  const [pickedResult] = await db
-    .select()
-    .from(benchmarkProviderCallResultsTable)
-    .where(eq(benchmarkProviderCallResultsTable.id, scan.agentPickResultId))
-    .limit(1);
-  if (!pickedResult?.hypothesisTranscript) {
-    res.status(409).json({ error: "The picked result no longer has a usable transcript." });
-    return;
-  }
-
-  const [call] = await db
-    .select()
-    .from(benchmarkCallsTable)
-    .where(eq(benchmarkCallsTable.id, scan.callId))
-    .limit(1);
-  if (!call) {
-    res.status(404).json({ error: "Benchmark call not found" });
+  if (scan.status !== "flagged") {
+    res.status(409).json({ error: "This scan is not awaiting a decision." });
     return;
   }
 
   const approver = body.data.approverLabel.trim();
-  // Same rule as PATCH /benchmark/calls: only advance status to
-  // ready_to_run if de-id is already cleared -- approving an agent's pick
-  // never bypasses that gate, it only ever sets goldTranscript.
-  const canAdvanceStatus = Boolean(call.deIdAttestedByLabel && call.deIdSecondApproverLabel);
-  const [updatedCall] = await db
-    .update(benchmarkCallsTable)
-    .set({
-      goldTranscript: pickedResult.hypothesisTranscript,
-      status: canAdvanceStatus ? "ready_to_run" : call.status,
-      updatedAt: new Date(),
-    })
-    .where(eq(benchmarkCallsTable.id, call.id))
-    .returning();
-
+  // 2026-08-27: gold-free -- there is nothing left to write. Approve is now
+  // purely an audit-trail acknowledgment that a human looked at the flags
+  // and the agent's pick and agreed with it (or at least isn't disputing
+  // it) -- it no longer touches benchmarkCallsTable at all.
   const [approved] = await db
     .update(benchmarkAgentScansTable)
     .set({ status: "approved", decidedByLabel: approver, decidedAt: new Date() })
@@ -343,12 +441,11 @@ router.post("/benchmark/agent/scans/:scanId/approve", async (req, res): Promise<
     .returning();
 
   await writeAudit({
-    entityType: "call",
-    entityId: call.id,
+    entityType: "agent_scan",
+    entityId: scan.id,
     actorLabel: approver,
-    action: "agent_pick_approved",
-    beforeState: { goldTranscript: call.goldTranscript },
-    afterState: { goldTranscript: updatedCall.goldTranscript, scanId: scan.id },
+    action: "approved",
+    afterState: { callId: scan.callId, agentPickResultId: scan.agentPickResultId },
   });
 
   res.json(ApproveAgentScanResponse.parse(await serializeScan(approved)));

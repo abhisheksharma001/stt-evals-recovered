@@ -313,9 +313,15 @@ export interface BenchmarkRunInput {
 }
 
 export interface Score {
-  /** @nullable */
+  /**
+     * 2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change.
+     * @nullable
+     */
   wer: number | null;
-  /** @nullable */
+  /**
+     * Same as wer -- permanently null going forward, kept for historical runs.
+     * @nullable
+     */
   entityAccuracy: number | null;
   /** @nullable */
   alphanumericAccuracy: number | null;
@@ -327,6 +333,16 @@ export interface Score {
   costPerMinute: number | null;
   /** @nullable */
   diarizationScore: number | null;
+  /**
+     * 2026-08-27: gold-free hybrid flag count, averaged across this provider's cells in the group. Lower is better. This (plus cost/latency) is what Rankings now sorts by.
+     * @nullable
+     */
+  avgFlagCount: number | null;
+  /**
+     * severityRank() averaged across cells: 0=none .. 3=high.
+     * @nullable
+     */
+  avgFlagSeverityScore: number | null;
 }
 
 export type ProviderCallResultStatus = typeof ProviderCallResultStatus[keyof typeof ProviderCallResultStatus];
@@ -358,6 +374,61 @@ export interface WordDiffOp {
   hyp: string | null;
 }
 
+/**
+ * @nullable
+ */
+export type ScoreDetailFlagSeverity = typeof ScoreDetailFlagSeverity[keyof typeof ScoreDetailFlagSeverity] | null;
+
+
+export const ScoreDetailFlagSeverity = {
+  none: 'none',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export type HybridFlagDetailLowConfidenceSpansItemSeverity = typeof HybridFlagDetailLowConfidenceSpansItemSeverity[keyof typeof HybridFlagDetailLowConfidenceSpansItemSeverity];
+
+
+export const HybridFlagDetailLowConfidenceSpansItemSeverity = {
+  none: 'none',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+/**
+ * @nullable
+ */
+export type HybridFlagDetailCrossProviderDisagreement = {
+  disagreementRate?: number;
+  mismatchWords?: number;
+  comparedWords?: number;
+} | null;
+
+export type HybridFlagDetailLowConfidenceSpansItem = {
+  words?: string[];
+  avgConfidence?: number;
+  severity?: HybridFlagDetailLowConfidenceSpansItemSeverity;
+};
+
+export type HybridFlagDetailEntityMismatchesItemValuesByProvider = {[key: string]: string[]};
+
+export type HybridFlagDetailEntityMismatchesItem = {
+  type?: string;
+  valuesByProvider?: HybridFlagDetailEntityMismatchesItemValuesByProvider;
+};
+
+/**
+ * The structured breakdown behind flagCount/flagSeverity -- what a reviewer actually sees when they expand a flagged cell.
+ */
+export interface HybridFlagDetail {
+  /** @nullable */
+  crossProviderDisagreement?: HybridFlagDetailCrossProviderDisagreement;
+  lowConfidenceSpans?: HybridFlagDetailLowConfidenceSpansItem[];
+  entityMismatches?: HybridFlagDetailEntityMismatchesItem[];
+}
+
 export interface ScoreDetail {
   scoringVersion: string;
   /** @nullable */
@@ -373,6 +444,14 @@ export interface ScoreDetail {
   /** @nullable */
   diarizationScore?: number | null;
   wordDiff?: WordDiffOp[];
+  /**
+     * 2026-08-27: gold-free hybrid flag count for this cell (cross-provider disagreement + confidence + entity mismatches).
+     * @nullable
+     */
+  flagCount?: number | null;
+  /** @nullable */
+  flagSeverity?: ScoreDetailFlagSeverity;
+  hybridFlags?: HybridFlagDetail;
 }
 
 export interface ProviderCallResult {
@@ -432,12 +511,16 @@ export interface ResultFailureAnalysis {
   suggestedFix: string;
 }
 
-export type AgentScanSourceLabel = typeof AgentScanSourceLabel[keyof typeof AgentScanSourceLabel];
+/**
+ * "gold" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce "draft" or null.
+ * @nullable
+ */
+export type AgentScanSourceLabel = typeof AgentScanSourceLabel[keyof typeof AgentScanSourceLabel] | null;
 
 
 export const AgentScanSourceLabel = {
-  gold: 'gold',
   draft: 'draft',
+  gold: 'gold',
 } as const;
 
 export type AgentScanStatus = typeof AgentScanStatus[keyof typeof AgentScanStatus];
@@ -452,14 +535,63 @@ export const AgentScanStatus = {
   rejected: 'rejected',
 } as const;
 
+export type HybridFlagSummaryFlagSeverity = typeof HybridFlagSummaryFlagSeverity[keyof typeof HybridFlagSummaryFlagSeverity];
+
+
+export const HybridFlagSummaryFlagSeverity = {
+  none: 'none',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export type HybridFlagSummaryCrossProviderDisagreementsItem = {
+  providerId?: string;
+  disagreementRate?: number;
+};
+
+export type HybridFlagSummaryLowConfidenceSpansItem = {
+  words?: string[];
+  avgConfidence?: number;
+  severity?: string;
+};
+
+export type HybridFlagSummaryLowConfidenceSpans = {[key: string]: HybridFlagSummaryLowConfidenceSpansItem[]};
+
+export type HybridFlagSummaryEntityMismatchesItemValuesByProvider = {[key: string]: string[]};
+
+export type HybridFlagSummaryEntityMismatchesItem = {
+  type?: string;
+  valuesByProvider?: HybridFlagSummaryEntityMismatchesItemValuesByProvider;
+};
+
+export interface HybridFlagSummary {
+  flagCount: number;
+  flagSeverity: HybridFlagSummaryFlagSeverity;
+  crossProviderDisagreements: HybridFlagSummaryCrossProviderDisagreementsItem[];
+  lowConfidenceSpans: HybridFlagSummaryLowConfidenceSpans;
+  entityMismatches: HybridFlagSummaryEntityMismatchesItem[];
+}
+
+/**
+ * 2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel/sourceTranscript are best-effort context (Vapi's own draft), not an analysis input anymore.
+ */
 export interface AgentScan {
   id: string;
   callId: string;
+  /**
+     * "gold" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce "draft" or null.
+     * @nullable
+     */
   sourceLabel: AgentScanSourceLabel;
-  /** Verbatim copy of the transcript actually scanned (2026-08-26) -- lets the UI diff each candidate against the real text that was flagged. */
-  sourceTranscript: string;
+  /**
+     * Vapi's own draft transcript at scan time, for context only -- null if the call has no draft on file.
+     * @nullable
+     */
+  sourceTranscript: string | null;
   status: AgentScanStatus;
   flags: AgentFlag[];
+  hybridFlags?: HybridFlagSummary | null;
   /** @nullable */
   runId?: string | null;
   candidates: AgentScanCandidate[];
@@ -516,10 +648,12 @@ export interface VerticalRanking {
   recommendation: string;
 }
 
+/**
+ * 2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.
+ */
 export interface BenchmarkDashboard {
   corpusCount: number;
   readyToRunCount: number;
-  goldReadyCount: number;
   configuredProviderCount: number;
   totalProviderCount: number;
   latestRunStatus: RunStatus;

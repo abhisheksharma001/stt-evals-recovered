@@ -237,6 +237,71 @@ export function WordDiffView({ wordDiff }: { wordDiff: Array<{ op: string; ref: 
   )
 }
 
+// 2026-08-27: the gold-free replacement for WordDiffView above -- shows
+// exactly why a cell was flagged (cross-provider disagreement, low-
+// confidence words per that provider, entity mismatches it took part in)
+// instead of an aggregate flag count alone.
+export type HybridFlagDetail = {
+  crossProviderDisagreement?: { disagreementRate?: number; mismatchWords?: number; comparedWords?: number } | null
+  lowConfidenceSpans?: Array<{ words?: string[]; avgConfidence?: number; severity?: string }>
+  entityMismatches?: Array<{ type?: string; valuesByProvider?: Record<string, string[]> }>
+}
+
+export function HybridFlagView({ detail }: { detail: HybridFlagDetail }) {
+  const disagreement = detail.crossProviderDisagreement
+  const confidenceSpans = detail.lowConfidenceSpans ?? []
+  const entityMismatches = detail.entityMismatches ?? []
+  const nothing = !disagreement?.disagreementRate && confidenceSpans.length === 0 && entityMismatches.length === 0
+
+  if (nothing) return <p className="text-xs text-muted-foreground">No hybrid flags for this cell.</p>
+
+  return (
+    <div className="space-y-2.5 text-sm">
+      {disagreement && disagreement.disagreementRate != null && disagreement.disagreementRate > 0.15 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cross-provider disagreement:</span>
+          <span className="font-mono text-warning">{Math.round(disagreement.disagreementRate * 100)}%</span>
+          <span className="text-xs text-muted-foreground">of its words don't match its peers ({disagreement.mismatchWords}/{disagreement.comparedWords} word-comparisons).</span>
+        </div>
+      )}
+      {confidenceSpans.length > 0 && (
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Low-confidence spans:</span>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {confidenceSpans.map((span, i) => (
+              <span
+                key={i}
+                className="rounded border border-destructive/25 bg-destructive/10 px-1.5 py-0.5 font-mono text-xs text-destructive"
+                title={`avg confidence ${((span.avgConfidence ?? 0) * 100).toFixed(0)}%`}
+              >
+                {(span.words ?? []).join(" ")}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {entityMismatches.length > 0 && (
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Entity mismatches:</span>
+          <div className="mt-1 space-y-1">
+            {entityMismatches.map((m, i) => (
+              <div key={i} className="text-xs">
+                <span className="font-mono font-semibold text-destructive uppercase">{(m.type ?? "").replace(/_/g, " ")}</span>{": "}
+                {Object.entries(m.valuesByProvider ?? {}).map(([pid, values], j) => (
+                  <span key={pid} className="text-muted-foreground">
+                    {j > 0 && " vs. "}
+                    <span className="font-mono">{pid}</span>: {values.join(", ")}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 2026-08-26, per Abhishek: a raw errorMessage wasn't enough to act on for
 // the many cells that were failing. On-demand, per cell (real OpenAI cost) --
 // generates a plain-English diagnosis + suggested fix and persists it on the
@@ -359,7 +424,10 @@ function ResultsDialog({ runId }: { runId: string }) {
 
   const renderRow = (r: NonNullable<typeof results>[number]) => {
     const hasDiff = !!r.score?.wordDiff?.length
-    const hasExpandable = hasDiff || r.status === 'failed'
+    const flagCount = r.score?.flagCount ?? null
+    const flagSeverity = r.score?.flagSeverity ?? null
+    const hasHybridFlags = flagCount != null && flagCount > 0
+    const hasExpandable = hasDiff || hasHybridFlags || r.status === 'failed'
     const isExpanded = expandedId === r.id
     return (
       <React.Fragment key={r.id}>
@@ -376,25 +444,40 @@ function ResultsDialog({ runId }: { runId: string }) {
               {r.status.replaceAll('_', ' ')}
             </Badge>
           </TableCell>
-          {/* Percent format matches Rankings/Review -- the same
-              score used to read 0.123 here and 12.3% there
-              (terminology review 2026-08-25). */}
-          <TableCell className="font-mono text-xs">{r.score?.wer != null ? `${(r.score.wer * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}</TableCell>
-          <TableCell className="font-mono text-xs">{r.score?.entityAccuracy != null ? `${(r.score.entityAccuracy * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}</TableCell>
+          {/* 2026-08-27: gold-free hybrid flag count + severity, replaces
+              WER/Entity Acc. (no gold transcript to score against). */}
+          <TableCell className="font-mono text-xs">
+            {flagCount == null ? (
+              <span title="Not measured for this cell">—</span>
+            ) : flagCount === 0 ? (
+              <span className="text-success">0</span>
+            ) : (
+              <span className={flagSeverity === 'high' ? 'text-destructive font-semibold' : flagSeverity === 'medium' ? 'text-warning' : 'text-muted-foreground'}>
+                {flagCount} ({flagSeverity})
+              </span>
+            )}
+          </TableCell>
           <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={r.errorMessage ?? undefined}>
             {r.failureDiagnosis ? "Diagnosis available" : r.errorMessage ?? '—'}
           </TableCell>
         </TableRow>
-        {isExpanded && hasDiff && r.score?.wordDiff && (
+        {isExpanded && hasHybridFlags && (
           <TableRow>
-            <TableCell colSpan={6} className="bg-muted/30">
+            <TableCell colSpan={5} className="bg-muted/30">
+              <HybridFlagView detail={(r.score?.hybridFlags ?? {}) as HybridFlagDetail} />
+            </TableCell>
+          </TableRow>
+        )}
+        {isExpanded && !hasHybridFlags && hasDiff && r.score?.wordDiff && (
+          <TableRow>
+            <TableCell colSpan={5} className="bg-muted/30">
               <WordDiffView wordDiff={r.score.wordDiff} />
             </TableCell>
           </TableRow>
         )}
         {isExpanded && r.status === 'failed' && (
           <TableRow>
-            <TableCell colSpan={6} className="bg-muted/30">
+            <TableCell colSpan={5} className="bg-muted/30">
               <FailureAnalysisPanel
                 runId={runId}
                 resultId={r.id}
@@ -425,31 +508,34 @@ function ResultsDialog({ runId }: { runId: string }) {
                 <TableHead className="w-6"></TableHead>
                 <TableHead>Provider</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>WER</TableHead>
-                <TableHead>Entity Acc.</TableHead>
+                {/* 2026-08-27: WER/Entity Acc. columns retired -- no gold
+                    transcript to score against any more. Flags is the
+                    gold-free hybrid signal (cross-provider disagreement +
+                    confidence + entity mismatch) that replaces them. */}
+                <TableHead>Flags</TableHead>
                 <TableHead>Note</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isError ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-destructive text-sm">
+                  <TableCell colSpan={5} className="h-24 text-center text-destructive text-sm">
                     Failed to load results: {error instanceof Error ? error.message : String(error)}{" "}
                     <Button variant="outline" size="sm" className="ml-2" onClick={() => void refetch()}>Retry</Button>
                   </TableCell>
                 </TableRow>
               ) : isLoading ? (
-                <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Loading...</TableCell></TableRow>
               ) : !results?.length ? (
-                <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No cells executed yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No cells executed yet.</TableCell></TableRow>
               ) : (
                 <>
                   {attemptedGroups.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No cells were attempted yet -- see skipped below.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No cells were attempted yet -- see skipped below.</TableCell></TableRow>
                   ) : attemptedGroups.map(({ callId, rows }) => (
                     <React.Fragment key={callId}>
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
-                        <TableCell colSpan={6} className="py-1.5">
+                        <TableCell colSpan={5} className="py-1.5">
                           <span className="text-xs font-semibold">{callLabelById.get(callId) ?? callId.slice(0, 8)}</span>
                           <span className="ml-2 font-mono text-[10px] text-muted-foreground">{callId.slice(0, 8)}</span>
                           <span className="ml-2 text-[10px] text-muted-foreground">· {rows.length} provider{rows.length === 1 ? '' : 's'}</span>
@@ -467,14 +553,14 @@ function ResultsDialog({ runId }: { runId: string }) {
                         <TableCell className="w-6">
                           {showSkipped ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
                         </TableCell>
-                        <TableCell colSpan={5} className="text-xs text-muted-foreground">
+                        <TableCell colSpan={4} className="text-xs text-muted-foreground">
                           {skippedResults.length} cell{skippedResults.length === 1 ? '' : 's'} skipped — matching calls haven't cleared review yet
                         </TableCell>
                       </TableRow>
                       {showSkipped && skippedGroups.map(({ callId, rows }) => (
                         <React.Fragment key={callId}>
                           <TableRow className="bg-muted/10 hover:bg-muted/10">
-                            <TableCell colSpan={6} className="py-1.5">
+                            <TableCell colSpan={5} className="py-1.5">
                               <span className="text-xs font-semibold">{callLabelById.get(callId) ?? callId.slice(0, 8)}</span>
                               <span className="ml-2 font-mono text-[10px] text-muted-foreground">{callId.slice(0, 8)}</span>
                               <span className="ml-2 text-[10px] text-muted-foreground">· {rows.length} provider{rows.length === 1 ? '' : 's'}</span>
