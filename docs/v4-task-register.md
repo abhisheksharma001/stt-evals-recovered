@@ -149,6 +149,8 @@ either on a date. Start it when its trigger fires.
 |---|---|---|
 | T-34 | `agentCallsJudged` counts `status === "flagged" && judgeCostMicrocents !== null`. A scan judged with a model that has no published rate has a null cost and therefore does not count as judged — even though it *was* judged. Count on the pick/reasoning being present, not on the cost. | T-01 self-review |
 | T-35 | The agent-cost estimator's fallback changed from "assume 1c per judge call" to 0.5c (5,000µ¢) in T-01, because 0.4905c is the real observed figure. Once real judged scans exist the fallback stops being used at all — check the estimate against actuals after the first post-T-01 bulk and delete the fallback if history is sufficient. | T-01 self-review |
+| T-36 | The last-resort log in `verifyCallWithAgent` (both inserts failed) writes the judge's full reasoning text to the log so the paid-for answer stays recoverable. That reasoning quotes transcript spans and can therefore carry caller names. Logs are local-only today, so this is safe now — but if logs ever ship anywhere, this line needs redaction or a gate. | T-02 self-review |
+| T-37 | `writeAudit` after a successful scan write is not itself wrapped. If the audit insert fails, the throw reaches `runAutoAgentVerificationForRun`'s catch and is logged as "auto agent verification crashed for a call" — wrong text, since the scan actually landed. Cheap fix, but it is a third failure meaning and belongs in its own task. | T-02 self-review |
 
 ## Findings log
 
