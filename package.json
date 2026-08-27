@@ -13,6 +13,8 @@
     "@replit/connectors-sdk": "^0.4.1"
   },
   "devDependencies": {
+    "@esbuild/darwin-arm64": "0.27.3",
+    "@rollup/rollup-darwin-arm64": "4.62.3",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }
