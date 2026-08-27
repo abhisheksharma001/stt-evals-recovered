@@ -8,8 +8,9 @@
 
 export interface BulkActualCost {
   sttCostMicrocents: number;
-  agentCostMicrocents: number;
+  agentCostMicrocents: number | null;
   agentCallsChecked: number;
   agentCallsFlagged: number;
+  agentCallsErrored: number;
   agentCallsJudged: number;
 }

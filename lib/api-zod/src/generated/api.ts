@@ -799,9 +799,10 @@ export const GetBulkResponse = zod.object({
 })),
   "actualCost": zod.object({
   "sttCostMicrocents": zod.number(),
-  "agentCostMicrocents": zod.number(),
+  "agentCostMicrocents": zod.number().nullable(),
   "agentCallsChecked": zod.number(),
   "agentCallsFlagged": zod.number(),
+  "agentCallsErrored": zod.number(),
   "agentCallsJudged": zod.number()
 })
 }))

@@ -1388,7 +1388,7 @@ components:
             actualCost: { $ref: "#/components/schemas/BulkActualCost" }
     BulkActualCost:
       type: object
-      required: [sttCostMicrocents, agentCostMicrocents, agentCallsChecked, agentCallsFlagged, agentCallsJudged]
+      required: [sttCostMicrocents, agentCostMicrocents, agentCallsChecked, agentCallsFlagged, agentCallsErrored, agentCallsJudged]
       properties:
         # Real spend, summed from benchmark_scores.cost_microcents /
         # benchmark_agent_scans.judge_cost_microcents for this bulk's calls --
@@ -1402,14 +1402,24 @@ components:
         # STT cell (~0.92c) to 1c. Divide by 10,000 to display; never render
         # a rounded 0 as if it were a measured 0.
         sttCostMicrocents: { type: number }
-        agentCostMicrocents: { type: number }
+        # T-03 (2026-08-28): NULLABLE, and null is not zero. null means judge
+        # calls ran but no cost survived to be stored -- OpenAI was paid and
+        # we cannot say how much; render "not recorded", never "$0.00". A
+        # literal 0 is only sent when nothing was flagged or errored, so no
+        # judge call was ever made.
+        agentCostMicrocents: { type: number, nullable: true }
         # Coverage evidence that the auto-verification pass actually ran,
         # not just claimed to: how many calls got a scan, how many were
         # flagged by the free hybrid pass, how many of those got a real
         # OpenAI judge call (judged can be < flagged if the judge call
         # itself errored -- see benchmark_agent_scans.status "error").
+        # T-03 (2026-08-28): flagged and errored are separate counts and must
+        # never be added together. flagged = the check ran and found
+        # something. errored = the check did not complete, so nothing is
+        # known about that call. checked = flagged + errored + clean.
         agentCallsChecked: { type: number }
         agentCallsFlagged: { type: number }
+        agentCallsErrored: { type: number }
         agentCallsJudged: { type: number }
     BulkTemplate:
       type: object

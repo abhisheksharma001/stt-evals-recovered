@@ -45,7 +45,7 @@ pays for.
 |---|---|---|---|
 | T-01 | ✅ **done** (PR #4). **Judge cost precision.** `judge_cost_cents` is `integer`; the value is fractional (`0.4905`), so every judged insert fails. Replace with integer micro-cents (`judge_cost_microcents`, 1¢ = 10,000µ¢). Apply the same treatment to `benchmark_scores.cost_cents`, where `Math.round(x*100)` currently loses ~8%. | `lib/db/src/schema/benchmark-agent-scans.ts`, `benchmark-scores.ts`, `lib/agent.ts`, `lib/agent-verify.ts`, `lib/run-executor.ts`, `routes/bulks.ts`, `openapi.yaml` | A judged scan row reads back with a non-null cost, and a bulk's `agentCostCents` is > 0 |
 | T-02 | ✅ **done** (PR #5). **Never discard a good judge payload.** Split the single `try` in `verifyCallWithAgent` so the OpenAI call and the DB write are caught separately, with distinct error prefixes (`judge_failed:` / `scan_write_failed:`). If the full insert fails, retry once without the cost columns. | `lib/agent-verify.ts` | Forcing a write error still persists the reasoning and the pick; the error names the write, not the judge |
-| T-03 | **Stop conflating "flagged" with "the AI crashed."** `agentCallsFlagged` counts `flagged \|\| error`. Split into `agentCallsFlagged` and `agentCallsErrored`, expose both, and render a destructive strip when errored > 0. Cost renders "not recorded", never `$0.00`, when null or when errors exist. | `routes/bulks.ts`, `openapi.yaml`, `Rankings.tsx`, `Bulks.tsx` | Forcing one scan to error shows the strip; the ranking table is visibly unaffected |
+| T-03 | ✅ **done** (PR #6). **Stop conflating "flagged" with "the AI crashed."** `agentCallsFlagged` counted `flagged \|\| error`. Split into `agentCallsFlagged` and `agentCallsErrored`, both exposed; a destructive strip renders when errored > 0, on both the bulk detail and the per-bulk Rankings header. `agentCostMicrocents` is now nullable and distinguishes three states: a real total, a real zero (nothing flagged, so no judge call was ever made), and null = "not recorded" (judge calls ran, no cost survived). | `routes/bulks.ts`, `openapi.yaml`, `Rankings.tsx`, `Bulks.tsx`, `lib/utils.ts` | Forcing one scan to error shows the strip; the ranking table is visibly unaffected |
 | T-04 | **Build identity in `/api/healthz`.** Return `commitSha`, `builtAt`, `startedAt`, and `providersConfigured` (**names only — never a key or part of one**), injected at build time via esbuild `define`. | `build.mjs`, `routes/health.ts`, `api-zod`, `openapi.yaml` | `curl /api/healthz` shows the SHA of the running build |
 | T-05 | **Build badge in the UI footer.** Quiet, monospaced, from T-04. | `components/layout.tsx` | Rebuild + restart changes the SHA on screen |
 | T-06 | **Classify cell failures.** Add `failureClass` enum (`retention_expired \| audio_url_forbidden \| provider_timeout \| provider_5xx \| rate_limited \| audio_decode \| unknown`), set at the throw site — never by regexing a message afterwards. | `lib/db/src/schema/benchmark-results.ts`, `lib/run-executor.ts`, `openapi.yaml` | Last bulk's 45 failures classify as 42/2/1; `unknown` stays visible |
@@ -151,6 +151,7 @@ either on a date. Start it when its trigger fires.
 | T-35 | The agent-cost estimator's fallback changed from "assume 1c per judge call" to 0.5c (5,000µ¢) in T-01, because 0.4905c is the real observed figure. Once real judged scans exist the fallback stops being used at all — check the estimate against actuals after the first post-T-01 bulk and delete the fallback if history is sufficient. | T-01 self-review |
 | T-36 | The last-resort log in `verifyCallWithAgent` (both inserts failed) writes the judge's full reasoning text to the log so the paid-for answer stays recoverable. That reasoning quotes transcript spans and can therefore carry caller names. Logs are local-only today, so this is safe now — but if logs ever ship anywhere, this line needs redaction or a gate. | T-02 self-review |
 | T-37 | `writeAudit` after a successful scan write is not itself wrapped. If the audit insert fails, the throw reaches `runAutoAgentVerificationForRun`'s catch and is logged as "auto agent verification crashed for a call" — wrong text, since the scan actually landed. Cheap fix, but it is a third failure meaning and belongs in its own task. | T-02 self-review |
+| T-38 | A scan whose finding a human has already resolved carries `status: "approved"`, so it counts in `agentCallsChecked` but in neither `agentCallsFlagged` nor `agentCallsErrored`. That was true before T-03 too, so nothing regressed — but the coverage line now reads "63 checked, 0 flagged, 0 errored" for a bulk whose findings were all resolved, which understates the work done. Needs a third count or a "resolved" state, decided deliberately. | T-03 self-review |
 
 ## Findings log
 
@@ -173,6 +174,19 @@ Append anything learned mid-task here rather than losing it to a compaction.
   bogus model: `status: error`, `errorMessage` reading `judge_failed: The model ... does
   not exist`. The pick lookup is now best-effort on its own — losing it costs the link
   to a result row, never the answer.
+
+- **2026-08-28 (T-03):** the split was proved against the real database through the
+  real HTTP route (a second server instance on port 8188, so the running one was left
+  alone). Bulk `7d2585da` is the exact case the task was written for: the old build
+  reported `agentCallsFlagged: 63` for a bulk where **nothing was flagged and the judge
+  crashed 63 times** — the T-01 casualty, read back as 63 findings. New build on the
+  same untouched data: `agentCallsFlagged: 0`, `agentCallsErrored: 63`,
+  `agentCostMicrocents: null`. Flipping 3 of those rows to `flagged` with a real cost
+  (4,905µ¢ each) then gave `flagged: 3, errored: 60, judged: 3, cost: 14,715µ¢`, and
+  restoring them returned every number to the original — verified, 0 rows left holding
+  the probe cost. `GET /benchmark/rankings` contains no reference to
+  `benchmark_agent_scans` at all, so "the ranking table is unaffected" is structural,
+  not just observed.
 
 - **2026-08-28:** measured per-provider latency (bulk `7d2585da`): Cartesia 128.8s,
   Gladia 15.3s, AssemblyAI 13.0s, Deepgram 3.5s, OpenAI 3.1s. **Cartesia is 79% of

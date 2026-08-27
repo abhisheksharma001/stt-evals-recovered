@@ -255,10 +255,32 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         .from(benchmarkAgentScansTable)
         .where(inArray(benchmarkAgentScansTable.runId, runs.map((run) => run.id)))
     : [];
-  const agentCostMicrocents = agentScanRows.reduce((sum, r) => sum + (r.judgeCostMicrocents ?? 0), 0);
+  // T-03 (2026-08-28): "flagged" and "error" are different facts and must
+  // never be added together. "flagged" means the verification ran and found
+  // something worth a human's attention -- a real result. "error" means the
+  // verification did not run to completion, so we know nothing about that
+  // call either way. Summing them produced a single number that read as
+  // "the AI found 63 problems" when the truth was "the AI crashed 63 times"
+  // (bulk 7d2585da, the T-01 post-mortem).
   const agentCallsChecked = agentScanRows.length;
-  const agentCallsFlagged = agentScanRows.filter((r) => r.status === "flagged" || r.status === "error").length;
-  const agentCallsJudged = agentScanRows.filter((r) => r.status === "flagged" && r.judgeCostMicrocents !== null).length;
+  const agentCallsFlagged = agentScanRows.filter((r) => r.status === "flagged").length;
+  const agentCallsErrored = agentScanRows.filter((r) => r.status === "error").length;
+  const agentCostRows = agentScanRows.filter((r) => r.judgeCostMicrocents !== null);
+  const agentCallsJudged = agentCostRows.filter((r) => r.status === "flagged").length;
+
+  // Three distinguishable cost states, because "$0.00" is a claim about
+  // money and must only be made when it is true:
+  //   - a real total, when at least one scan recorded what it cost;
+  //   - a real zero, when nothing was flagged or errored, so no judge call
+  //     was ever made and nothing could have been spent;
+  //   - null ("not recorded"), when judge calls did happen but no cost
+  //     survived -- OpenAI was paid and we cannot say how much.
+  const agentCostMicrocents =
+    agentCostRows.length > 0
+      ? agentCostRows.reduce((sum, r) => sum + (r.judgeCostMicrocents ?? 0), 0)
+      : agentCallsFlagged + agentCallsErrored === 0
+        ? 0
+        : null;
 
   res.json(
     GetBulkResponse.parse({
@@ -268,6 +290,7 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         agentCostMicrocents,
         agentCallsChecked,
         agentCallsFlagged,
+        agentCallsErrored,
         agentCallsJudged,
       },
       progress: {
