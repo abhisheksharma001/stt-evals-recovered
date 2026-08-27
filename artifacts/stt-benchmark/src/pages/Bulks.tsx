@@ -628,7 +628,7 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
           )}
 
           {current.notes && (
-            <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-sm text-warning">
+            <div className="whitespace-pre-line rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-sm text-warning">
               {current.notes}
             </div>
           )}

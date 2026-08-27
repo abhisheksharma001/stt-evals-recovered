@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 import {
   benchmarkAgentScansTable,
@@ -13,8 +14,16 @@ import {
 } from "@workspace/db";
 import { buildRunManifest } from "./manifest";
 import { drainWithConcurrency, envInt, executeBenchmarkRun, requestRunCancellation } from "./run-executor";
+import { audioCachePathFor } from "./audio-cache";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";
+
+// 2026-08-27, per Abhishek ("let's not take the calls which are 14 days
+// back, so we never encounter this problem again"): matches the warning
+// threshold already shown in Corpus's RetentionWarning UI and the
+// "retention window" known-cause text in lib/agent.ts's matchKnownFailure --
+// one number, not three independent guesses at the same Vapi plan limit.
+const VAPI_RETENTION_WINDOW_DAYS = 14;
 
 // T-6 fix (2026-08-27, base-solidity review): launchBulk used to fire EVERY
 // shard run at once (`void executeBenchmarkRun(...)` in a plain loop). A
@@ -73,11 +82,24 @@ export function resolveDateWindow(
  * ALREADY-IMPORTED corpus (benchmark_calls) -- a bulk never talks to Vapi
  * directly; importing is the Import page's job (COR-01).
  */
+export type ResolvedCriteriaCallIds = {
+  callIds: string[];
+  // 2026-08-27, per Abhishek: calls this old only cost real provider money
+  // to fail identically on every provider (Vapi can never re-issue a URL
+  // past its retention window, confirmed live: 45 failed cells on one bulk,
+  // all "retention window" or the known archive-bucket 403, zero of them
+  // provider-specific). Excluded from selection rather than left to fail --
+  // UNLESS a run already cached this call's audio to local disk before it
+  // aged out (audio-cache.ts), in which case Vapi's retention window
+  // doesn't matter any more and the call is still perfectly runnable.
+  excludedRetentionExpiredCount: number;
+};
+
 export async function resolveCriteriaCallIds(
   criteria: BulkSelectionCriteria,
   minDurationSeconds: number,
   now: Date = new Date(),
-): Promise<string[]> {
+): Promise<ResolvedCriteriaCallIds> {
   // Explicit-picks-only criteria select exactly those calls. The filter query
   // below always carries the min-duration condition (FR-SEL-7), so running it
   // unconditionally would union in the whole corpus under a callIds-only
@@ -128,7 +150,34 @@ export async function resolveCriteriaCallIds(
       .where(inArray(benchmarkCallsTable.id, criteria.callIds));
     for (const row of explicit) ids.add(row.id);
   }
-  return [...ids];
+
+  if (ids.size === 0) return { callIds: [], excludedRetentionExpiredCount: 0 };
+
+  const retentionCutoff = new Date(now.getTime() - VAPI_RETENTION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const candidates = await db
+    .select({ id: benchmarkCallsTable.id, sourceStartedAt: benchmarkCallsTable.sourceStartedAt })
+    .from(benchmarkCallsTable)
+    .where(inArray(benchmarkCallsTable.id, [...ids]));
+
+  const callIds: string[] = [];
+  let excludedRetentionExpiredCount = 0;
+  await Promise.all(
+    candidates.map(async (c) => {
+      const expired = c.sourceStartedAt !== null && c.sourceStartedAt < retentionCutoff;
+      if (!expired) {
+        callIds.push(c.id);
+        return;
+      }
+      try {
+        await fs.access(audioCachePathFor(c.id));
+        callIds.push(c.id); // aged out, but already cached -- still runnable
+      } catch {
+        excludedRetentionExpiredCount += 1;
+      }
+    }),
+  );
+
+  return { callIds, excludedRetentionExpiredCount };
 }
 
 /** Pre-flight cost estimate in cents: total audio minutes x summed per-minute rates. */
@@ -220,10 +269,12 @@ export async function createBulkFromCriteria(input: {
     );
   }
 
-  const callIds = await resolveCriteriaCallIds(input.criteria, minDuration, now);
+  const { callIds, excludedRetentionExpiredCount } = await resolveCriteriaCallIds(input.criteria, minDuration, now);
   if (callIds.length === 0) {
     throw new BulkSelectionEmptyError(
-      "selection criteria matched no corpus calls",
+      excludedRetentionExpiredCount > 0
+        ? `selection criteria matched no corpus calls (${excludedRetentionExpiredCount} matched but were excluded -- past Vapi's ${VAPI_RETENTION_WINDOW_DAYS}-day retention window and never cached)`
+        : "selection criteria matched no corpus calls",
     );
   }
 
@@ -248,6 +299,18 @@ export async function createBulkFromCriteria(input: {
   const estimatedCostCents = estimatedSttCostCents + estimatedAgentCostCents;
   const overThreshold = estimatedCostCents > BULK_COST_THRESHOLD_CENTS;
   const name = input.name ?? now.toISOString().slice(0, 10); // FR-BLK-2
+
+  const notesLines: string[] = [];
+  if (overThreshold && !input.confirm) {
+    notesLines.push(
+      `Estimated cost $${(estimatedCostCents / 100).toFixed(2)} (STT $${(estimatedSttCostCents / 100).toFixed(2)} + agent verification $${(estimatedAgentCostCents / 100).toFixed(2)}) exceeds the $${(BULK_COST_THRESHOLD_CENTS / 100).toFixed(2)} threshold -- confirm to launch (FR-BLK-5).`,
+    );
+  }
+  if (excludedRetentionExpiredCount > 0) {
+    notesLines.push(
+      `${excludedRetentionExpiredCount} matched call(s) excluded -- past Vapi's ${VAPI_RETENTION_WINDOW_DAYS}-day retention window and never cached, so every provider would fail identically on them.`,
+    );
+  }
 
   const { bulk, evictedBulkId } = await db.transaction(async (tx) => {
     // FR-BLK-10: at the cap, evict the oldest in the same transaction.
@@ -298,10 +361,7 @@ export async function createBulkFromCriteria(input: {
           estimatedSttCostCents,
           estimatedAgentCostCents,
           launchedByLabel: input.actorLabel,
-          notes:
-            overThreshold && !input.confirm
-              ? `Estimated cost $${(estimatedCostCents / 100).toFixed(2)} (STT $${(estimatedSttCostCents / 100).toFixed(2)} + agent verification $${(estimatedAgentCostCents / 100).toFixed(2)}) exceeds the $${(BULK_COST_THRESHOLD_CENTS / 100).toFixed(2)} threshold -- confirm to launch (FR-BLK-5).`
-              : null,
+          notes: notesLines.length > 0 ? notesLines.join("\n") : null,
         })
         .returning();
     } catch (err) {
@@ -322,6 +382,7 @@ export async function createBulkFromCriteria(input: {
       name: bulk.name,
       status: bulk.status,
       callCount: callIds.length,
+      excludedRetentionExpiredCount,
       estimatedCostCents,
       estimatedSttCostCents,
       estimatedAgentCostCents,
