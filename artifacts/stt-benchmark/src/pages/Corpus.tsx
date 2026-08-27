@@ -6,6 +6,7 @@ import {
   useCreateBenchmarkCall,
   useUpdateBenchmarkCall,
   useAttestBenchmarkCallDeid,
+  useListBenchmarkProviders,
   getListBenchmarkCallsQueryKey,
   CallStatus,
   Vertical,
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 
 export default function Corpus() {
@@ -320,6 +322,94 @@ function CreateCallDialog() {
 // stays available here too since bulk attestation from this table doesn't
 // exist yet and forcing every single-call approval through Review would be
 // a detour for a curator just clearing a backlog of easy ones.
+/**
+ * 2026-08-27, per Abhishek: "fix the call which stt model it used so we can
+ * show the comparison in the call details."
+ *
+ * The data was already being captured on import (sourceTranscriberProvider /
+ * sourceTranscriberModel) and then displayed precisely nowhere, which is why
+ * it looked missing. It matters more than a stray field: across this corpus
+ * production ran deepgram/flux-general-en on most calls, so a benchmark that
+ * only tests nova-3 is ranking candidates against a baseline nobody is
+ * measuring. Surfacing it here makes that visible per call.
+ */
+function ProductionTranscriberPanel({ call }: { call: any }) {
+  const { data: providers } = useListBenchmarkProviders()
+  const vendor: string | null = call.sourceTranscriberProvider ?? null
+  const model: string | null = call.sourceTranscriberModel ?? null
+
+  if (!vendor && !model) {
+    return (
+      <DetailSection title="Transcribed in production by">
+        <p className="text-xs text-muted-foreground">
+          Not recorded. Calls imported before per-call transcriber capture don&rsquo;t carry this, so
+          there&rsquo;s nothing to compare against for this one.
+        </p>
+      </DetailSection>
+    )
+  }
+
+  // Vendor/model strings come from Vapi in the vendor's own casing
+  // ("flux-general-en"), while provider rows use display casing ("Flux
+  // General EN"). Compare on alphanumerics only so the two forms match.
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
+  const benchmarked = (providers ?? []).find(
+    (p) =>
+      norm(p.name) === norm(vendor ?? "") && (model ? norm(p.model) === norm(model) : false),
+  )
+  const isEnabled = benchmarked?.status === "ready"
+
+  return (
+    <DetailSection title="Transcribed in production by">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-sm">
+          {vendor ?? "unknown"}
+          {model ? ` / ${model}` : ""}
+        </span>
+        {benchmarked ? (
+          <Badge variant={isEnabled ? "default" : "secondary"} className="text-[10px] uppercase">
+            {isEnabled ? "benchmarked" : "in catalog, disabled"}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px] uppercase">not benchmarked</Badge>
+        )}
+      </div>
+      {!benchmarked && (
+        <p className="text-xs text-warning">
+          No enabled provider matches this model, so every candidate is being compared against a
+          baseline this benchmark never measures. Add or enable it on the Providers page to make the
+          comparison meaningful.
+        </p>
+      )}
+      {benchmarked && !isEnabled && (
+        <p className="text-xs text-muted-foreground">
+          This model exists as a provider but is disabled, so it isn&rsquo;t being run.
+        </p>
+      )}
+    </DetailSection>
+  )
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        {title}
+      </h4>
+      <div className="space-y-2">{children}</div>
+    </section>
+  )
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-3 text-sm">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className={`text-right break-all ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+    </div>
+  )
+}
+
 function CallDetailsDialog({ call }: { call: any }) {
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<CallStatus>(call.status)
@@ -359,12 +449,42 @@ function CallDetailsDialog({ call }: { call: any }) {
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm"><Settings2 className="w-4 h-4" /></Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{call.label}</DialogTitle>
         </DialogHeader>
 
-        <DeidAttestationPanel call={call} />
+        {/* Grouped into labelled sections rather than one undifferentiated
+            stack: identity, recording, what transcribed it in production,
+            de-identification, then the one editable control. */}
+        <div className="space-y-5">
+          <DetailSection title="Identity">
+            <DetailRow label="Vapi call id" value={call.sourceCallId ?? "--"} mono />
+            <DetailRow label="Corpus id" value={call.id} mono />
+            <DetailRow label="Assistant" value={call.sourceAssistantId ?? "--"} mono />
+            <DetailRow label="Vapi account" value={call.sourceAccountLabel || "--"} />
+            <DetailRow label="Vertical" value={call.vertical ?? "--"} />
+          </DetailSection>
+
+          <DetailSection title="Recording">
+            <DetailRow
+              label="Started"
+              value={call.sourceStartedAt ? new Date(call.sourceStartedAt).toLocaleString() : "not recorded"}
+            />
+            <DetailRow
+              label="Duration"
+              value={call.durationSeconds ? `${call.durationSeconds}s` : "--"}
+              mono
+            />
+            <DetailRow label="Audio cached" value={call.audioObjectPath ? "yes" : "no"} />
+          </DetailSection>
+
+          <ProductionTranscriberPanel call={call} />
+
+          <DetailSection title="De-identification">
+            <DeidAttestationPanel call={call} />
+          </DetailSection>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-2">

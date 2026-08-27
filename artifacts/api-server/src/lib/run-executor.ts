@@ -24,6 +24,7 @@ import {
 import {
   ProviderConfigError,
   getProviderAdapter,
+  getProviderApiModel,
   type ProviderTranscribeResult,
 } from "@workspace/stt-providers";
 import { logger } from "./logger";
@@ -664,6 +665,11 @@ async function runCell(
         callId: call.id,
         audioBytes,
         diarize: true,
+        // One adapter serves every model that vendor exposes; the catalog
+        // says which model string this provider row means. Undefined for
+        // rows the catalog doesn't cover, where the adapter keeps using its
+        // own historical default -- so existing rows are unaffected.
+        model: getProviderApiModel(provider.id),
         // T-8: lets the async-poll adapters scale their timeout to this
         // call's actual length instead of a fixed 120s.
         audioDurationSeconds: call.durationSeconds,

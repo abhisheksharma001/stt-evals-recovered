@@ -11,7 +11,7 @@ import {
   getListBenchmarkCallsQueryKey,
   type AgentScan,
 } from "@workspace/api-client-react"
-import { Bot, ChevronDown, ChevronRight, Check, X, Sparkles, AlertTriangle } from "lucide-react"
+import { Bot, ChevronDown, ChevronRight, Check, X, Sparkles, AlertTriangle, Layers } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -120,6 +120,56 @@ function TriggerScanCard() {
     return () => clearInterval(t)
   }, [scanStartedAt])
 
+  /**
+   * 2026-08-27, per Abhishek: "the bulk eval option should be there in the
+   * agent section as well." Scanning one call at a time is fine for a spot
+   * check and useless for a corpus -- 121 calls meant 121 clicks.
+   *
+   * Runs strictly one at a time. A scan is not cheap (it can spawn a fresh
+   * transcription pass across every configured provider), so firing them in
+   * parallel would multiply real provider spend and hammer rate limits for
+   * no gain. Sequential also means Stop actually stops -- at most the
+   * in-flight scan finishes.
+   */
+  const [bulkState, setBulkState] = React.useState<{
+    running: boolean
+    done: number
+    total: number
+    failed: number
+  } | null>(null)
+  const stopRequested = React.useRef(false)
+
+  const runBulkScan = async () => {
+    const targets = filteredCalls
+    if (targets.length === 0 || bulkState?.running) return
+    stopRequested.current = false
+    setBulkState({ running: true, done: 0, total: targets.length, failed: 0 })
+
+    let done = 0
+    let failed = 0
+    for (const call of targets) {
+      if (stopRequested.current) break
+      try {
+        await createScan.mutateAsync({ data: { callId: call.id } })
+      } catch {
+        failed += 1
+      }
+      done += 1
+      setBulkState({ running: true, done, total: targets.length, failed })
+      // Show each result as it lands rather than only at the end.
+      queryClient.invalidateQueries({ queryKey: getListAgentScansQueryKey() })
+    }
+
+    setBulkState({ running: false, done, total: targets.length, failed })
+    toast({
+      title: stopRequested.current ? "Bulk scan stopped" : "Bulk scan complete",
+      description: `${done - failed} scanned${failed > 0 ? `, ${failed} failed` : ""}${
+        stopRequested.current ? ` of ${targets.length}` : ""
+      }.`,
+      variant: failed > 0 ? "destructive" : undefined,
+    })
+  }
+
   const handleScan = () => {
     if (!callId) return
     setScanStartedAt(Date.now())
@@ -213,11 +263,57 @@ function TriggerScanCard() {
                   )}
                 </SelectContent>
               </Select>
-              <Button onClick={handleScan} disabled={!callId || createScan.isPending || scanInFlight}>
+              <Button
+                onClick={handleScan}
+                disabled={!callId || createScan.isPending || scanInFlight || bulkState?.running}
+              >
                 <Sparkles className={`w-3.5 h-3.5 mr-1.5 ${createScan.isPending ? "animate-pulse" : ""}`} />
                 {createScan.isPending || scanInFlight ? `Scanning… ${elapsedSeconds}s` : "Scan"}
               </Button>
+              {bulkState?.running ? (
+                <Button variant="destructive" onClick={() => { stopRequested.current = true }}>
+                  Stop after current
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => void runBulkScan()}
+                  disabled={filteredCalls.length === 0 || createScan.isPending}
+                  title={
+                    assistantFilter
+                      ? "Scan every call for the selected assistant"
+                      : "Scan every call with audio"
+                  }
+                >
+                  <Layers className="w-3.5 h-3.5 mr-1.5" />
+                  Scan all {filteredCalls.length}
+                </Button>
+              )}
             </div>
+            {bulkState && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className={bulkState.running ? "" : "text-muted-foreground"}>
+                    {bulkState.running ? "Scanning" : "Finished"} {bulkState.done} of {bulkState.total}
+                    {bulkState.failed > 0 && ` -- ${bulkState.failed} failed`}
+                  </span>
+                  <span className="font-mono tabular-nums text-muted-foreground">
+                    {Math.round((bulkState.done / Math.max(bulkState.total, 1)) * 100)}%
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${(bulkState.done / Math.max(bulkState.total, 1)) * 100}%` }}
+                  />
+                </div>
+                {bulkState.running && (
+                  <p className="text-xs text-muted-foreground">
+                    One call at a time so this can&rsquo;t multiply provider spend. Keep this tab open.
+                  </p>
+                )}
+              </div>
+            )}
             {createScan.isPending && (
               <p className="text-xs text-muted-foreground">
                 This can take a minute or two if this call needs a fresh transcription pass. Keep

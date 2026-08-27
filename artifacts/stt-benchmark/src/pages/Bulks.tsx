@@ -14,6 +14,7 @@ import {
   useListBenchmarkProviders,
   useListVapiAssistants,
   useListVapiAccounts,
+  useListBenchmarkCalls,
   getListBulksQueryKey,
   getGetBulkQueryKey,
   getListBulkTemplatesQueryKey,
@@ -25,7 +26,7 @@ import {
   type Provider,
   type VapiAssistant,
 } from "@workspace/api-client-react"
-import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server } from "lucide-react"
+import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,6 +36,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { Link } from "wouter"
 import { useToast } from "@/hooks/use-toast"
 
 function BulkStatusBadge({ status }: { status: BulkStatus }) {
@@ -52,6 +54,115 @@ function BulkStatusBadge({ status }: { status: BulkStatus }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-widest border ${styles[status]}`}>
       {status.replaceAll("_", " ")}
     </span>
+  )
+}
+
+/**
+ * Bug found live 2026-08-27 (Abhishek): three bulks in a row were created,
+ * launched, and reported COMPLETE while running exactly nothing -- all 280
+ * cells came back skipped_pending_review. The gate itself was right
+ * (FR-BLK-11: only ready_to_run calls execute), but nothing in the creation
+ * flow told anyone that ZERO of the 56 matched calls were eligible, so the
+ * mistake was invisible and repeatable.
+ *
+ * This mirrors the server's own matcher (resolveCriteriaCallIds +
+ * resolveDateWindow in api-server/src/lib/bulks.ts) against the corpus the
+ * page has already fetched, so the count shown here is the count that will
+ * actually run. Keep the two in sync if either changes.
+ */
+type CriteriaDraft = {
+  assistantIds: string[]
+  accountLabel: string
+  lastNDays: string
+  minDurationSeconds: string
+}
+
+type Eligibility = {
+  matched: number
+  ready: number
+  pending: number
+  /** ready_to_run calls excluded purely because they carry no start date. */
+  readyWithoutStartDate: number
+  loading: boolean
+}
+
+function useCriteriaEligibility(criteria: CriteriaDraft): Eligibility {
+  const { data: calls, isLoading } = useListBenchmarkCalls()
+
+  return React.useMemo(() => {
+    const all = calls ?? []
+    const minDuration = Number.parseInt(criteria.minDurationSeconds, 10) || 0
+    const days = Number.parseInt(criteria.lastNDays, 10)
+    const from =
+      Number.isFinite(days) && days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : undefined
+
+    const matchesNonDate = (c: (typeof all)[number]) => {
+      if (criteria.assistantIds.length > 0 && !criteria.assistantIds.includes(c.sourceAssistantId ?? "")) return false
+      if (criteria.accountLabel && c.sourceAccountLabel !== criteria.accountLabel) return false
+      if ((c.durationSeconds ?? 0) < minDuration) return false
+      return true
+    }
+    const matchesDate = (c: (typeof all)[number]) => {
+      if (from === undefined) return true
+      const started = c.sourceStartedAt ? Date.parse(c.sourceStartedAt) : NaN
+      // The server compares sourceStartedAt with gte/lte; a NULL start date
+      // never satisfies either, so such calls are silently excluded. Mirror
+      // that exactly -- and count them, because that exclusion is the
+      // non-obvious half of why a bulk can come back empty.
+      return Number.isFinite(started) && started >= from
+    }
+
+    const matched = all.filter((c) => matchesNonDate(c) && matchesDate(c))
+    const ready = matched.filter((c) => c.status === "ready_to_run")
+    const readyWithoutStartDate = all.filter(
+      (c) => c.status === "ready_to_run" && matchesNonDate(c) && !matchesDate(c) && !c.sourceStartedAt,
+    )
+
+    return {
+      matched: matched.length,
+      ready: ready.length,
+      pending: matched.length - ready.length,
+      readyWithoutStartDate: readyWithoutStartDate.length,
+      loading: isLoading,
+    }
+  }, [calls, isLoading, criteria])
+}
+
+function EligibilityNotice({ eligibility }: { eligibility: Eligibility }) {
+  const { matched, ready, pending, readyWithoutStartDate, loading } = eligibility
+  if (loading) return null
+
+  const blocked = ready === 0
+  return (
+    <div
+      className={`rounded-lg border px-3 py-2 text-xs space-y-1 ${
+        blocked ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border bg-secondary/40"
+      }`}
+    >
+      <div className="flex items-center gap-2 font-medium">
+        {blocked && <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+        <span>
+          {matched} call{matched === 1 ? "" : "s"} match &mdash; {ready} ready to run
+          {pending > 0 && `, ${pending} pending de-identification review`}
+        </span>
+      </div>
+      {blocked && (
+        <p>
+          Launching now would run nothing and every cell would be recorded as skipped.{" "}
+          <Link href="/review" className="underline font-medium">
+            Attest de-identification
+          </Link>{" "}
+          on these calls first &mdash; each one needs two different approvers.
+        </p>
+      )}
+      {readyWithoutStartDate > 0 && (
+        <p className={blocked ? "" : "text-warning"}>
+          {readyWithoutStartDate} ready-to-run call{readyWithoutStartDate === 1 ? " is" : "s are"} excluded by the
+          date filter because {readyWithoutStartDate === 1 ? "it has" : "they have"} no start date on record. Clear
+          &ldquo;last N days&rdquo; to include {readyWithoutStartDate === 1 ? "it" : "them"}.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -262,6 +373,7 @@ function CreateBulkDialog() {
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
+  const eligibility = useCriteriaEligibility(criteria)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -323,6 +435,7 @@ function CreateBulkDialog() {
             shardSize={shardSize}
             setShardSize={setShardSize}
           />
+          <EligibilityNotice eligibility={eligibility} />
           <p className="text-xs text-muted-foreground">
             Only <span className="font-mono">ready_to_run</span> calls execute; the rest are recorded as
             skipped pending review (FR-BLK-11). Creating a 4th bulk evicts the oldest (FR-BLK-10).
@@ -330,7 +443,10 @@ function CreateBulkDialog() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={providerIds.length === 0 || createBulk.isPending}>
+          <Button
+            onClick={submit}
+            disabled={providerIds.length === 0 || createBulk.isPending || eligibility.ready === 0}
+          >
             {createBulk.isPending ? "Creating..." : "Create & launch"}
           </Button>
         </DialogFooter>
@@ -346,6 +462,7 @@ function CreateTemplateDialog() {
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
+  const eligibility = useCriteriaEligibility(criteria)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -385,6 +502,7 @@ function CreateTemplateDialog() {
             shardSize={shardSize}
             setShardSize={setShardSize}
           />
+          <EligibilityNotice eligibility={eligibility} />
           <p className="text-xs text-muted-foreground">
             Criteria stay unfrozen: "last N days" re-resolves against launch time every launch.
           </p>
@@ -504,6 +622,23 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
           {current.notes && (
             <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-sm text-warning">
               {current.notes}
+            </div>
+          )}
+
+          {/* Three bulks in a row showed a green COMPLETE while running
+              nothing (2026-08-27). A finished bulk whose cells were ALL
+              skipped is not a success -- say so where the numbers are. */}
+          {p && p.cellsTotal > 0 && p.cellsSkippedPendingReview === p.cellsTotal && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Nothing ran. All {p.cellsTotal} cells were skipped because none of these {p.callsTotal} calls had
+                two-person de-identification sign-off (FR-BLK-11). No provider was billed.{" "}
+                <Link href="/review" className="underline font-medium">
+                  Attest the calls
+                </Link>{" "}
+                and create a new bulk &mdash; this one&rsquo;s selection is frozen.
+              </span>
             </div>
           )}
 

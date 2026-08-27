@@ -22,12 +22,20 @@ export type ProviderTranscribeInput = {
   audioBytes: Buffer;
   keywordBoosts?: string[];
   diarize?: boolean;
-  // T-8 fix (2026-08-27, base-solidity review): lets the async-poll
-  // adapters (AssemblyAI, Gladia, Speechmatics) scale their poll timeout to
-  // the actual call length instead of a fixed 120s -- see
-  // scaledPollTimeoutMs in ../poll.ts. Optional: batch/URL adapters that
-  // don't poll ignore it entirely, and omitting it keeps the old fixed
-  // timeout behavior.
+  /**
+   * 2026-08-27, per Abhishek: a vendor is not a model. Every adapter used to
+   * hardcode exactly one model string, so "Deepgram" could only ever mean
+   * nova-3 -- while the live Vapi corpus showed production actually running
+   * flux-general-en on 86 of 121 calls and nova-2 on 2 more. The benchmark
+   * was therefore scoring candidates against a baseline it never measured.
+   *
+   * The API model string now comes from the provider catalog
+   * (registry.ts's providerCatalog) so one adapter serves every model that
+   * vendor exposes. Adapters must fall back to their own historical default
+   * when this is absent, so existing provider rows behave exactly as before.
+   */
+  model?: string;
+  /** Real audio length, used to scale async poll deadlines (see poll.ts). */
   audioDurationSeconds?: number;
 };
 
