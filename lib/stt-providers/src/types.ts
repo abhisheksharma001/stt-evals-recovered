@@ -22,6 +22,13 @@ export type ProviderTranscribeInput = {
   audioBytes: Buffer;
   keywordBoosts?: string[];
   diarize?: boolean;
+  // T-8 fix (2026-08-27, base-solidity review): lets the async-poll
+  // adapters (AssemblyAI, Gladia, Speechmatics) scale their poll timeout to
+  // the actual call length instead of a fixed 120s -- see
+  // scaledPollTimeoutMs in ../poll.ts. Optional: batch/URL adapters that
+  // don't poll ignore it entirely, and omitting it keeps the old fixed
+  // timeout behavior.
+  audioDurationSeconds?: number;
 };
 
 export type ProviderTranscribeResult = {

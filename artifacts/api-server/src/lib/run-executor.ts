@@ -664,6 +664,9 @@ async function runCell(
         callId: call.id,
         audioBytes,
         diarize: true,
+        // T-8: lets the async-poll adapters scale their timeout to this
+        // call's actual length instead of a fixed 120s.
+        audioDurationSeconds: call.durationSeconds,
       });
       if (candidate.status === "ok" || !isRetryableOutcome(candidate.httpStatus, candidate.errorMessage)) {
         result = candidate;
