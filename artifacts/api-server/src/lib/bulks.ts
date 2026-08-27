@@ -11,9 +11,18 @@ import {
   type BulkSelectionCriteria,
 } from "@workspace/db";
 import { buildRunManifest } from "./manifest";
-import { executeBenchmarkRun, requestRunCancellation } from "./run-executor";
+import { drainWithConcurrency, envInt, executeBenchmarkRun, requestRunCancellation } from "./run-executor";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";
+
+// T-6 fix (2026-08-27, base-solidity review): launchBulk used to fire EVERY
+// shard run at once (`void executeBenchmarkRun(...)` in a plain loop). A
+// 1,000-call bulk at the default shardSize 50 is 20 shards -- 20 concurrent
+// executeBenchmarkRunInner calls, each independently hitting the (now
+// module-level singleton, see run-executor.ts) per-provider semaphores.
+// Capping how many SHARDS run at once bounds how much of the corpus is
+// simultaneously in flight, on top of the per-provider vendor cap.
+const BULK_SHARD_CONCURRENCY = envInt("BULK_SHARD_CONCURRENCY", 3, 8);
 
 // FR-BLK-10: hard cap on live bulks. The oldest bulk is evicted (its runs,
 // results, scores, rankings go with it -- all regenerable); the corpus itself
@@ -218,6 +227,11 @@ export async function createBulkFromCriteria(input: {
       .orderBy(asc(benchmarkBulksTable.createdAt));
     if (existing.length >= MAX_LIVE_BULKS) {
       const oldest = existing[0];
+      // T-1: bulk-scoped ranking rows (computeRankingsForBulk in
+      // run-executor.ts) carry bulkId directly now -- delete by that
+      // primarily. Also still delete by the runId subquery for any rows
+      // written before this change (bulkId null, only runId set).
+      await tx.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.bulkId, oldest.id));
       await tx.delete(benchmarkRankingsTable).where(
         inArray(
           benchmarkRankingsTable.runId,
@@ -321,6 +335,10 @@ export async function launchBulk(
     .set({ status: "estimating", updatedAt: new Date() })
     .where(eq(benchmarkBulksTable.id, bulkId));
 
+  // Create every shard's run ROW up front (fast: DB inserts only) so the
+  // bulk's full shard list exists immediately -- the Bulks/Runs UI can see
+  // all N shards as "queued" right away, same as before.
+  const runs: (typeof benchmarkRunsTable.$inferSelect)[] = [];
   for (let shardIndex = 0; shardIndex < shards.length; shardIndex++) {
     const shardCallIds = shards[shardIndex];
     const manifest = await buildRunManifest(shardCallIds, bulk.providerIds);
@@ -338,11 +356,18 @@ export async function launchBulk(
         notes: `Shard ${shardIndex + 1}/${shards.length} of bulk "${bulk.name}".`,
       })
       .returning();
+    runs.push(run);
+  }
 
-    void executeBenchmarkRun(run.id, actorLabel).catch((err) => {
+  // T-6 fix: EXECUTION is throttled to BULK_SHARD_CONCURRENCY shards at
+  // once, not fired all together -- this whole drain is itself fire-and-
+  // forget (launchBulk must return quickly; a 1,000-call bulk can take a
+  // long time to fully execute), so it does not block the caller.
+  void drainWithConcurrency(runs, BULK_SHARD_CONCURRENCY, async (run) => {
+    await executeBenchmarkRun(run.id, actorLabel).catch((err) => {
       logger.error({ err, runId: run.id, bulkId }, "bulk shard run crashed");
     });
-  }
+  });
 
   await db
     .update(benchmarkBulksTable)
@@ -375,7 +400,7 @@ export async function retryBulkFailedCells(
     .where(eq(benchmarkRunsTable.bulkId, bulkId))
     .orderBy(asc(benchmarkRunsTable.shardIndex));
 
-  const retriedRunIds: string[] = [];
+  const toRetry: (typeof runs)[number][] = [];
   for (const run of runs) {
     if (run.status === "cancelled") continue;
     const remaining = await db
@@ -392,11 +417,16 @@ export async function retryBulkFailedCells(
       )
       .limit(1);
     if (remaining.length === 0 && run.status === "complete") continue;
-    retriedRunIds.push(run.id);
-    void executeBenchmarkRun(run.id, actorLabel).catch((err) => {
+    toRetry.push(run);
+  }
+  const retriedRunIds = toRetry.map((r) => r.id);
+  // T-6 fix: same shard-concurrency cap as launchBulk -- a full-bulk retry
+  // must not re-fire every shard at once either.
+  void drainWithConcurrency(toRetry, BULK_SHARD_CONCURRENCY, async (run) => {
+    await executeBenchmarkRun(run.id, actorLabel).catch((err) => {
       logger.error({ err, runId: run.id, bulkId }, "bulk retry run crashed");
     });
-  }
+  });
 
   if (retriedRunIds.length > 0) {
     await db

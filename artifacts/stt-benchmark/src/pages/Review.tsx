@@ -17,6 +17,15 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { apiBase } from "@/lib/api-base"
 import { useToast } from "@/hooks/use-toast"
 
@@ -128,16 +137,32 @@ export default function Review() {
     setSelectedId(next.id)
   }
 
-  const attest = () => {
+  // Bug found live 2026-08-27 (Abhishek): window.prompt() is not supported
+  // in this preview sandbox at all ("prompt() is not supported" runtime
+  // error) -- it silently blocked the ONE thing this page exists to do.
+  // Replaced with an in-app dialog, same pattern as Bulks.tsx's create
+  // dialogs, so approver name entry works in every environment this app
+  // actually runs in.
+  const [attestDialogOpen, setAttestDialogOpen] = React.useState(false)
+  const [approverInput, setApproverInput] = React.useState("")
+  const attestInputRef = React.useRef<HTMLInputElement>(null)
+
+  const openAttestDialog = () => {
     if (!selected) return
-    const approver = window.prompt("Attest de-identification as (name or email):")?.trim()
-    if (!approver) return
+    setApproverInput("")
+    setAttestDialogOpen(true)
+  }
+
+  const submitAttest = () => {
+    const approver = approverInput.trim()
+    if (!selected || !approver) return
     attestDeid.mutate(
       { callId: selected.id, data: { approverLabel: approver } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
           toast({ title: "Attestation recorded", description: approver })
+          setAttestDialogOpen(false)
         },
         onError: (err) =>
           toast({
@@ -433,7 +458,7 @@ export default function Review() {
           </div>
 
           <button
-            onClick={attest}
+            onClick={openAttestDialog}
             disabled={complete || attestDeid.isPending}
             className="flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 transition-colors hover:bg-secondary disabled:opacity-40"
           >
@@ -458,6 +483,45 @@ export default function Review() {
           )}
         </div>
       </div>
+
+      <Dialog open={attestDialogOpen} onOpenChange={setAttestDialogOpen}>
+        <DialogContent
+          onOpenAutoFocus={(e) => {
+            // Autofocus the input, not the dialog's own close button.
+            e.preventDefault()
+            attestInputRef.current?.focus()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Attest de-identification</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="approver-name">Name or email</Label>
+            <Input
+              id="approver-name"
+              ref={attestInputRef}
+              value={approverInput}
+              onChange={(e) => setApproverInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && approverInput.trim()) submitAttest()
+              }}
+              placeholder="e.g. abhishek@ellavox.ai"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Two DIFFERENT people must attest before this call can enter a bundle.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAttestDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitAttest} disabled={!approverInput.trim() || attestDeid.isPending}>
+              Attest
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

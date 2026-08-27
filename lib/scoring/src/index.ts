@@ -6,7 +6,12 @@ export * from "./hybrid";
 // changes -- every stored Score row references the version that produced
 // it, so a re-score run can tell whether it reproduced the original
 // (NFR-6, FR-S7, FR-REP3).
-export const SCORING_VERSION = "v1";
+// v2 (2026-08-27, T-5 base-solidity fix): normalizeTranscript now folds
+// spelled-out spoken digits ("five five five") to match formatted digit
+// strings ("555") -- see normalizeNumberWords/splitDigitRuns below. Old
+// (v1) scored rows are untouched; they just aren't directly comparable to
+// new ones on word-diff-derived metrics.
+export const SCORING_VERSION = "v2";
 
 export type EntityType =
   | "ro_number"
@@ -88,8 +93,72 @@ const entitySeparators = /[\s\-().,/\\]+/g;
 const quoteFold = /[\u2018\u2019\u201B\u02BC]/gu;
 const dashFold = /[\u2013\u2014\u2015\u2212]/gu;
 
+// T-5 fix (2026-08-27, base-solidity review): providers disagree on
+// formatting, not just words -- Deepgram runs with smart_format (turns
+// spoken digits into "555-1212"), other adapters spell them out. Left
+// unhandled, that scored as pure format noise: several word-level
+// substitutions for identically-spoken digits, inflating both WER-style
+// diffs and cross-provider disagreement for every provider, and it made
+// PHONE_RE/REFERENCE_RE (hybrid.ts) unable to match a provider that spells
+// numbers out at all -- which meant that provider could never produce a
+// phone/reference entity, so it could never be flagged for getting one
+// wrong (T-3 interaction). Deliberately narrow: single spoken digit words
+// only (the way phone/reference numbers are actually read aloud), not full
+// cardinal-number parsing ("nine hundred" stays a quantity, not folded).
+const SPOKEN_DIGIT_WORD: Record<string, string> = {
+  zero: "0",
+  oh: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+};
+const SPOKEN_DIGIT_RE = /\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi;
+
+/** Word-array form: converts each spoken single-digit word to its digit
+ * character, one-for-one (array length unchanged) -- used inside
+ * normalizeTranscript so a diff/consensus alignment sees digits either way
+ * a provider chose to write them. */
+export function normalizeNumberWords(words: string[]): string[] {
+  return words.map((w) => SPOKEN_DIGIT_WORD[w] ?? w);
+}
+
+/** Splits any token that's entirely digits (with embedded -, ., already
+ * digit-only after normalizeNumberWords) into individual digit-character
+ * tokens -- "555-1212" and a digit-by-digit spelled "five five five one
+ * two one two" (after normalizeNumberWords) both become the same run of
+ * single-digit tokens instead of scoring as 7 substitutions of pure
+ * formatting noise. */
+export function splitDigitRuns(words: string[]): string[] {
+  const out: string[] = [];
+  for (const w of words) {
+    if (/^[\d.-]+$/.test(w) && /\d/.test(w)) {
+      out.push(...w.replace(/[^\d]/g, "").split(""));
+    } else {
+      out.push(w);
+    }
+  }
+  return out;
+}
+
+/** Raw-text form (used by extractEntities in hybrid.ts, which runs regexes
+ * against untokenized text): substitutes spoken digit words in place, then
+ * collapses a run of space-separated single digits into one contiguous
+ * digit string -- "unit four four seven one" -> "unit 4471" -- so a
+ * provider that spells numbers out can still match PHONE_RE/REFERENCE_RE,
+ * which expect a contiguous digit run the way a formatted number reads. */
+export function digitizeSpokenDigits(text: string): string {
+  const withDigits = text.replace(SPOKEN_DIGIT_RE, (m) => SPOKEN_DIGIT_WORD[m.toLowerCase()] ?? m);
+  return withDigits.replace(/\d(?:\s+\d)+/g, (run) => run.replace(/\s+/g, ""));
+}
+
 export function normalizeTranscript(value: string): string {
-  return value
+  const base = value
     .normalize("NFKC")
     .replace(quoteFold, "'")
     .replace(dashFold, "-")
@@ -97,6 +166,8 @@ export function normalizeTranscript(value: string): string {
     .replace(punctuation, " ")
     .replace(/\s+/g, " ")
     .trim();
+  if (!base) return base;
+  return splitDigitRuns(normalizeNumberWords(base.split(" "))).join(" ");
 }
 
 export function normalizeEntity(value: string): string {

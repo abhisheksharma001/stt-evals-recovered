@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   benchmarkBulksTable,
   benchmarkCallsTable,
@@ -15,6 +15,7 @@ import {
 } from "@workspace/db";
 import {
   score,
+  scoreEntities,
   SCORING_VERSION,
   severityRank,
   hybridCompositeScore,
@@ -28,7 +29,7 @@ import {
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
-import { getOrCacheAudioBytes } from "./audio-cache";
+import { getOrCacheAudioBytes, readCachedAudioBytes } from "./audio-cache";
 import { computeHybridFlagsForRun } from "./hybrid-flagging";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
@@ -58,7 +59,7 @@ export function requestRunCancellation(runId: string): void {
 // two-level gate: RUN_CONCURRENCY caps cells in flight overall,
 // PROVIDER_CONCURRENCY caps cells in flight per vendor (a 429 storm helps
 // nobody's latency ranking). See ox-alpha/scalability-design.md.
-function envInt(name: string, fallback: number, max: number): number {
+export function envInt(name: string, fallback: number, max: number): number {
   const raw = process.env[name];
   const parsed = raw ? Number.parseInt(raw, 10) : NaN;
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -106,6 +107,82 @@ class Semaphore {
       this.slots += 1;
     }
   }
+  // T-6 fix: capacity can shrink/grow at runtime (429 back-pressure) without
+  // disturbing in-flight holders. shrinkBy may take `slots` negative --
+  // that's intentional, it just means that many additional release() calls
+  // must land before a new acquire() can proceed; nothing is lost or
+  // double-counted as long as every acquire is eventually released.
+  shrinkBy(n: number): void {
+    this.slots -= n;
+  }
+  growBy(n: number): void {
+    for (let i = 0; i < n; i += 1) {
+      const next = this.waiters.shift();
+      if (next) next();
+      else this.slots += 1;
+    }
+  }
+}
+
+// T-6 fix (2026-08-27, base-solidity review): this registry used to be
+// created FRESH inside executeBenchmarkRunInner, so every shard run of a
+// bulk got its own independent set of per-provider semaphores. A 1,000-call
+// bulk sharded into 20 runs (default shardSize 50) meant 20x the configured
+// PROVIDER_CONCURRENCY hitting each vendor simultaneously -- a self-
+// inflicted 429 storm against the exact gate meant to prevent one, and
+// since latency feeds the ranking composite, a self-inflicted storm doesn't
+// just slow the bulk down, it corrupts the ranking it's producing.
+// Module-level singleton: every run in this process shares the same
+// per-provider slot pool, no matter how many shards are in flight.
+const providerSlots = new Map<string, Semaphore>();
+
+// Suggested starting points per vendor shape (sync REST vs async-poll vs
+// WebSocket-streaming) -- not yet tuned against real 429s (see
+// docs/PRD-v3-technical.md T-6). Any provider not listed falls back to the
+// PROVIDER_CONCURRENCY env default below.
+const PROVIDER_CONCURRENCY_OVERRIDES: Record<string, number> = {
+  "deepgram-nova-3": 8,
+  "assemblyai-universal": 6,
+  "openai-gpt-4o-transcribe": 4,
+  "elevenlabs-scribe": 4,
+  "gladia-solaria": 4,
+  speechmatics: 4,
+  "cartesia-ink-whisper": 2,
+};
+
+function baseConcurrencyFor(providerId: string): number {
+  return PROVIDER_CONCURRENCY_OVERRIDES[providerId] ?? PROVIDER_CONCURRENCY;
+}
+
+function slotsFor(providerId: string): Semaphore {
+  let s = providerSlots.get(providerId);
+  if (!s) {
+    s = new Semaphore(baseConcurrencyFor(providerId));
+    providerSlots.set(providerId, s);
+  }
+  return s;
+}
+
+// T-6 fix: on a 429, halve the offending provider's live concurrency for 60s
+// then restore it -- one transition logged, not one line per cell, and
+// idempotent while the back-off window is already active so a burst of 429s
+// doesn't compound into starving the provider entirely.
+const backPressureActive = new Set<string>();
+
+function applyBackPressure(providerId: string): void {
+  if (backPressureActive.has(providerId)) return;
+  backPressureActive.add(providerId);
+  const sem = slotsFor(providerId);
+  const current = baseConcurrencyFor(providerId);
+  const reduced = Math.max(1, Math.floor(current / 2));
+  const delta = current - reduced;
+  if (delta > 0) sem.shrinkBy(delta);
+  logger.warn({ providerId, from: current, to: reduced }, "429 received -- halving provider concurrency for 60s");
+  setTimeout(() => {
+    if (delta > 0) sem.growBy(delta);
+    backPressureActive.delete(providerId);
+    logger.info({ providerId, restoredTo: current }, "429 back-off window elapsed -- provider concurrency restored");
+  }, 60_000).unref();
 }
 
 // Fixed-size worker pool over a materialized item list: exactly `limit`
@@ -320,39 +397,55 @@ async function executeBenchmarkRunInner(
   let configBlockedCells = 0;
   let okCells = alreadyOk.size;
 
-  // Resolve/cache audio bytes concurrently, but with a small cap -- a cache
-  // miss is a Vapi API round trip plus a full audio download per call, and
-  // politeness matters more than parallelism here. Resolved once per CALL,
-  // not once per (call, provider): every provider for a call gets the same
-  // bytes, and a stale/broken recording only costs one resolution, not one
-  // per provider. (technical-fixes FIX-2: this is a local disk cache --
-  // once a call's bytes are cached here, Vapi's live API and its 14-day
-  // retention window are never consulted again for that call.)
-  const audioByCallId = new Map<string, { bytes: Buffer | null; error: string | null }>();
+  // T-7 fix (2026-08-27, base-solidity review): this used to keep every
+  // resolved call's audio Buffer in `audioByCallId` for the ENTIRE shard
+  // (a 50-call shard held ~200MB of buffers at once; a full, uncapped bulk
+  // held gigabytes), even though the bytes are durably on local disk the
+  // moment they're resolved. This pre-pass now only warms the disk cache
+  // and records ok/error per call -- resolved once per CALL, not once per
+  // (call, provider), so a stale/broken recording still only costs one
+  // resolution. The actual bytes are read back per-cell, right before that
+  // cell's provider call, so at most RUN_CONCURRENCY cells' worth of audio
+  // is ever held in memory at once, not the whole shard's.
+  const audioStatusByCallId = new Map<string, { ok: boolean; error: string | null }>();
   await drainWithConcurrency(runnableCalls, Math.min(RUN_CONCURRENCY, 8), async (call) => {
     if (!call.audioObjectPath) {
-      audioByCallId.set(call.id, { bytes: null, error: "Call has no audioObjectPath to send to a provider." });
+      audioStatusByCallId.set(call.id, { ok: false, error: "Call has no audioObjectPath to send to a provider." });
       return;
     }
     try {
-      audioByCallId.set(call.id, { bytes: await audioResolver(call), error: null });
+      await audioResolver(call); // warms the disk cache; bytes discarded here on purpose
+      audioStatusByCallId.set(call.id, { ok: true, error: null });
     } catch (err) {
-      audioByCallId.set(call.id, {
-        bytes: null,
+      audioStatusByCallId.set(call.id, {
+        ok: false,
         error: `Could not get this call's audio: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });
 
+  /** Reads one cell's audio bytes right before it's needed -- disk cache
+   * first (cheap; warmed by the pre-pass above for the production
+   * getOrCacheAudioBytes resolver), falling back to audioResolver(call)
+   * directly so a test/rehearsal's substitute resolver (which may not write
+   * to the standard disk cache at all) still works unchanged. */
+  async function readCellAudio(call: BenchmarkCallRow): Promise<Buffer> {
+    try {
+      return await readCachedAudioBytes(call.id);
+    } catch {
+      return audioResolver(call);
+    }
+  }
+
   // Materialize the full cell list up front so progress logging has a real
   // denominator and the worker pool drains a flat queue instead of a nested
   // loop. Cells whose audio never resolved are failed immediately without
   // occupying a provider slot.
-  const cells: Array<{ call: BenchmarkCallRow; provider: BenchmarkProviderRow; audioBytes: Buffer }> = [];
+  const cells: Array<{ call: BenchmarkCallRow; provider: BenchmarkProviderRow }> = [];
   for (const call of runnableCalls) {
-    const audio = audioByCallId.get(call.id) ?? { bytes: null, error: "Audio resolution skipped." };
+    const status = audioStatusByCallId.get(call.id) ?? { ok: false, error: "Audio resolution skipped." };
     for (const provider of providers.filter((p) => !alreadyOk.has(`${p.id}::${call.id}`))) {
-      if (!audio.bytes) {
+      if (!status.ok) {
         await insertResult(runId, call.id, provider.id, {
           status: "failed",
           submittedAt: new Date(),
@@ -360,30 +453,22 @@ async function executeBenchmarkRunInner(
           httpStatus: null,
           hypothesisTranscript: null,
           rawOutput: null,
-          errorMessage: audio.error,
+          errorMessage: status.error,
         });
         failedCells += 1;
         continue;
       }
-      cells.push({ call, provider, audioBytes: audio.bytes });
+      cells.push({ call, provider });
     }
   }
 
-  // Drain cells through the global worker pool; each vendor additionally gets
-  // its own semaphore so one slow/polling provider can't crowd out the rest.
-  const providerSlots = new Map<string, Semaphore>();
-  const slotsFor = (providerId: string) => {
-    let s = providerSlots.get(providerId);
-    if (!s) {
-      s = new Semaphore(PROVIDER_CONCURRENCY);
-      providerSlots.set(providerId, s);
-    }
-    return s;
-  };
-
+  // Drain cells through the global worker pool; each vendor additionally
+  // gets its own semaphore (module-level singleton, T-6 above) so one slow/
+  // polling provider can't crowd out the rest, and so concurrent shard runs
+  // of the same bulk share one real cap instead of multiplying it.
   let completedCells = 0;
   let cancelledCells = 0;
-  await drainWithConcurrency(cells, RUN_CONCURRENCY, async ({ call, provider, audioBytes }) => {
+  await drainWithConcurrency(cells, RUN_CONCURRENCY, async ({ call, provider }) => {
     // FR-BLK-7: never START a cell after cancellation. Cells already inside
     // adapter.transcribe() are not interrupted -- they complete and persist.
     if (cancelRequestedRuns.has(runId)) {
@@ -407,10 +492,28 @@ async function executeBenchmarkRunInner(
     const slot = slotsFor(provider.id);
     await slot.acquire();
     try {
+      // T-7: read this cell's bytes only once it actually has a provider
+      // slot -- a cell queued waiting for a slot holds no buffer at all.
+      const audioBytes = await readCellAudio(call);
       const outcome = await runCell(runId, call, provider, audioBytes);
       if (outcome === "ok") okCells += 1;
       else if (outcome === "config_blocked") configBlockedCells += 1;
       else failedCells += 1;
+    } catch (err) {
+      try {
+        await insertResult(runId, call.id, provider.id, {
+          status: "failed",
+          submittedAt: new Date(),
+          finalAt: new Date(),
+          httpStatus: null,
+          hypothesisTranscript: null,
+          rawOutput: null,
+          errorMessage: `Could not read this call's audio for this cell: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      } catch (insertErr) {
+        logger.error({ insertErr, runId, providerId: provider.id, callId: call.id }, "failed to persist cell audio-read failure");
+      }
+      failedCells += 1;
     } finally {
       slot.release();
       completedCells += 1;
@@ -435,13 +538,20 @@ async function executeBenchmarkRunInner(
   }
 
   try {
-    await computeRankingsForRun(runId, run.callIds, run.providerIds);
+    // T-1 fix: a bulk shard run computes rankings at BULK scope (every
+    // shard's evidence together), not just its own ~50 calls -- an ad-hoc
+    // (non-bulk) run keeps the unchanged per-run behavior.
+    if (run.bulkId) {
+      await computeRankingsForBulk(run.bulkId);
+    } else {
+      await computeRankingsForRun(runId, run.callIds, run.providerIds);
+    }
   } catch (err) {
     // Ranking is a derived aggregate -- if it fails, the run must still be
     // finalized so it doesn't get stuck in "running" forever (the raw
     // results/scores that did land are still queryable via /results either
     // way, so nothing is lost).
-    logger.error({ err, runId }, "Failed to compute rankings for run");
+    logger.error({ err, runId, bulkId: run.bulkId }, "Failed to compute rankings for run");
   }
 
   const totalCells = calls.length * providers.length;
@@ -554,6 +664,9 @@ async function runCell(
         callId: call.id,
         audioBytes,
         diarize: true,
+        // T-8: lets the async-poll adapters scale their timeout to this
+        // call's actual length instead of a fixed 120s.
+        audioDurationSeconds: call.durationSeconds,
       });
       if (candidate.status === "ok" || !isRetryableOutcome(candidate.httpStatus, candidate.errorMessage)) {
         result = candidate;
@@ -561,8 +674,10 @@ async function runCell(
       }
       // Terminal-shaped body but a retryable status (429/5xx): remember and
       // back off.
+      if (candidate.httpStatus === 429) applyBackPressure(provider.id);
       lastTransient = { result: candidate };
     } catch (err) {
+      if ((err as { httpStatus?: unknown }).httpStatus === 429) applyBackPressure(provider.id);
       if (!isRetryableError(err)) {
         lastTransient = { error: err };
         break;
@@ -652,30 +767,65 @@ async function runCell(
     const latencyFirstPartialMs =
       firstPartialAt && submittedAt ? firstPartialAt.getTime() - submittedAt.getTime() : null;
 
-    const scored = score({
-      callId: call.id,
-      vertical: call.vertical as "rush" | "property_management" | "trucking",
-      providerId: provider.id,
-      goldTranscript: call.goldTranscript ?? "",
-      hypothesisTranscript: result.hypothesisTranscript,
-      entities: call.entityReferences,
-      latencyFinalMs,
-      latencyFirstPartialMs,
-      costPerMinute: (provider.costPerMinute * call.durationSeconds) / 60,
-      diarizationScore: result.diarizationScore,
-    });
+    // T-10 fix (2026-08-27, base-solidity review): with gold retired,
+    // call.goldTranscript is empty for every call. score()'s word-alignment
+    // against an empty reference produces one "ins" op PER WORD of the
+    // hypothesis -- a second, bulkier copy of the transcript stored as
+    // wordDiff, for data that's meaningless by construction (wer itself
+    // already comes back null since referenceWords===0). Skip straight to
+    // entity scoring (gold-independent -- it just checks whether the
+    // call's known entities appear in the hypothesis) when there's no gold,
+    // and don't touch alignWords/wordDiff/edits at all.
+    const hasGold = !!call.goldTranscript?.trim();
+    const costForThisCell = (provider.costPerMinute * call.durationSeconds) / 60;
+    let wer: number | null;
+    let entityAccuracy: number | null;
+    let alphanumericAccuracy: number | null;
+    let detail: Record<string, unknown>;
+    if (hasGold) {
+      const scored = score({
+        callId: call.id,
+        vertical: call.vertical as "rush" | "property_management" | "trucking",
+        providerId: provider.id,
+        goldTranscript: call.goldTranscript ?? "",
+        hypothesisTranscript: result.hypothesisTranscript,
+        entities: call.entityReferences,
+        latencyFinalMs,
+        latencyFirstPartialMs,
+        costPerMinute: costForThisCell,
+        diarizationScore: result.diarizationScore,
+      });
+      wer = scored.wer;
+      entityAccuracy = scored.entityAccuracy;
+      alphanumericAccuracy = scored.alphanumericAccuracy;
+      detail = { edits: scored.edits, entityResults: scored.entityResults, wordDiff: scored.wordDiff };
+    } else {
+      const entity = scoreEntities(call.entityReferences, result.hypothesisTranscript);
+      wer = null;
+      entityAccuracy = entity.accuracy;
+      alphanumericAccuracy = entity.alphanumericAccuracy;
+      detail = { entityResults: entity.results };
+    }
 
     await db.insert(benchmarkScoresTable).values({
       resultId: resultRow.id,
       scoringVersion: SCORING_VERSION,
-      wer: scored.wer,
-      entityAccuracy: scored.entityAccuracy,
-      alphanumericAccuracy: scored.alphanumericAccuracy,
-      latencyFirstPartialMs: scored.latencyFirstPartialMs,
-      latencyFinalMs: scored.latencyFinalMs,
-      costPerMinute: scored.costPerMinute,
-      diarizationScore: scored.diarizationScore,
-      detail: { edits: scored.edits, entityResults: scored.entityResults, wordDiff: scored.wordDiff },
+      wer,
+      entityAccuracy,
+      alphanumericAccuracy,
+      latencyFirstPartialMs,
+      latencyFinalMs,
+      costPerMinute: costForThisCell,
+      // T-11 (base-solidity review): this column is mislabeled -- it has
+      // always held the cost of THIS CELL (rate * this call's duration),
+      // not a per-minute rate, and that mislabeling now leaks into the UI
+      // and CSV export (docs/PRD-v3-uiux.md U-8 tracks the full rename).
+      // costCents is the same value, correctly named and cents-denominated,
+      // added alongside rather than replacing the column above so nothing
+      // reading costPerMinute today breaks.
+      costCents: Math.round(costForThisCell * 100),
+      diarizationScore: result.diarizationScore,
+      detail,
     });
 
     return "ok";
@@ -737,36 +887,25 @@ async function insertResult(
 // Weights are documented and unverified-by-design (PRD OD-1) -- raw metrics
 // stay attached via `detail` on the score row so the composite never hides
 // a tradeoff.
-export async function computeRankingsForRun(
-  runId: string,
-  callIds: string[],
-  providerIds: string[],
-): Promise<void> {
-  const [calls, providers] = await Promise.all([
-    db.select().from(benchmarkCallsTable).where(inArray(benchmarkCallsTable.id, callIds)),
-    db
-      .select()
-      .from(benchmarkProvidersTable)
-      .where(inArray(benchmarkProvidersTable.id, providerIds)),
-  ]);
+type RankingResultRow = {
+  result: typeof benchmarkProviderCallResultsTable.$inferSelect;
+  score: typeof benchmarkScoresTable.$inferSelect;
+};
 
-  const results = await db
-    .select({
-      result: benchmarkProviderCallResultsTable,
-      score: benchmarkScoresTable,
-    })
-    .from(benchmarkProviderCallResultsTable)
-    .innerJoin(
-      benchmarkScoresTable,
-      eq(benchmarkScoresTable.resultId, benchmarkProviderCallResultsTable.id),
-    )
-    .where(
-      and(
-        eq(benchmarkProviderCallResultsTable.runId, runId),
-        eq(benchmarkProviderCallResultsTable.status, "ok"),
-      ),
-    );
-
+// T-1 fix (2026-08-27, base-solidity review): shared aggregation core,
+// extracted so both computeRankingsForRun (ad-hoc runs) and
+// computeRankingsForBulk (below -- rankings spanning every shard of a
+// bulk) compute identically from a results/calls/providers set. Previously
+// rankings were only ever computed per RUN; a bulk sharded into 20 runs
+// (default shardSize 50) wrote 20 competing ranking sets, and GET
+// /benchmark/rankings picked whichever run's createdAt happened to be
+// newest (effectively arbitrary, since shards fire within milliseconds of
+// each other) -- showing 50 calls of evidence out of 1,000.
+function aggregateRankingRows(
+  results: RankingResultRow[],
+  calls: (typeof benchmarkCallsTable.$inferSelect)[],
+  providers: (typeof benchmarkProvidersTable.$inferSelect)[],
+): Array<Omit<typeof benchmarkRankingsTable.$inferInsert, "id" | "runId" | "bulkId">> {
   const callById = new Map(calls.map((c) => [c.id, c]));
   // 2026-08-27, per Abhishek: group by real assistant instead of vertical --
   // null (no sourceAssistantId, i.e. a manually-added call) buckets into a
@@ -778,12 +917,12 @@ export async function computeRankingsForRun(
     calls.map((c) => c.sourceAssistantId ?? NO_ASSISTANT_KEY),
   );
 
-  // All aggregation happens in memory first; the database only sees the
-  // clear-and-rewrite at the bottom, inside ONE transaction. (Found as a
+  // All aggregation happens in memory first; the write side (below, per
+  // caller) is a clear-and-rewrite inside ONE transaction. (Found as a
   // scale risk during the concurrency rework: the old delete-then-insert-
   // per-vertical loop ran as autocommit statements, so a crash mid-write
   // stranded a vertical with zero ranking rows.)
-  const rankingRows: Array<typeof benchmarkRankingsTable.$inferInsert> = [];
+  const rankingRows: Array<Omit<typeof benchmarkRankingsTable.$inferInsert, "id" | "runId" | "bulkId">> = [];
 
   for (const assistantKey of assistantKeys) {
     const assistantId = assistantKey === NO_ASSISTANT_KEY ? null : assistantKey;
@@ -814,13 +953,19 @@ export async function computeRankingsForRun(
       ...rowsForGroup.map((r) => r.score.latencyFinalMs ?? 0),
     );
     const maxCostPerMinute = Math.max(0, ...rowsForGroup.map((r) => r.score.costPerMinute ?? 0));
-    // flagBadness = avgFlagCount + avgFlagSeverityScore (severityRank 0..3) --
-    // see hybridCompositeScore's own comment for why these are blended into
-    // one number instead of weighted as two separate metrics.
+    // T-2 fix (2026-08-27, base-solidity review): flagBadness now uses
+    // peerFlagCount/peerFlagSeverity (cross-provider disagreement + entity
+    // mismatch, available for every provider), NOT flagCount/flagSeverity
+    // (which include confidence spans -- available for only 3 of 7
+    // providers, so folding them in here punished a provider for the
+    // honesty of reporting its own uncertainty). flagBadness = avgPeerFlag-
+    // Count + avgPeerFlagSeverityScore (severityRank 0..3) -- see
+    // hybridCompositeScore's own comment for why these are blended into one
+    // number instead of weighted as two separate metrics.
     const flagBadnessOf = (r: (typeof rowsForGroup)[number]): number | null =>
-      r.score.flagCount === null && r.score.flagSeverity === null
+      r.score.peerFlagCount === null && r.score.peerFlagSeverity === null
         ? null
-        : (r.score.flagCount ?? 0) + severityRank((r.score.flagSeverity as HybridSeverity | null) ?? "none");
+        : (r.score.peerFlagCount ?? 0) + severityRank((r.score.peerFlagSeverity as HybridSeverity | null) ?? "none");
     const maxFlagBadness = Math.max(0, ...rowsForGroup.map((r) => flagBadnessOf(r) ?? 0));
 
     const providerAggregates = [...byProvider.entries()].map(([providerId, rows]) => {
@@ -840,9 +985,16 @@ export async function computeRankingsForRun(
       const latencyFinalMs = avg(rows.map((r) => r.score.latencyFinalMs));
       const costPerMinute = avg(rows.map((r) => r.score.costPerMinute));
       const diarizationScore = avg(rows.map((r) => r.score.diarizationScore));
+      // avgFlagCount/avgFlagSeverityScore stay the FULL picture (confidence
+      // included) for display; avgPeerFlagCount/avgPeerFlagSeverityScore
+      // (T-2) are the confidence-free numbers the composite below reads.
       const avgFlagCount = avg(rows.map((r) => r.score.flagCount));
       const avgFlagSeverityScore = avg(
         rows.map((r) => (r.score.flagSeverity === null ? null : severityRank(r.score.flagSeverity as HybridSeverity))),
+      );
+      const avgPeerFlagCount = avg(rows.map((r) => r.score.peerFlagCount));
+      const avgPeerFlagSeverityScore = avg(
+        rows.map((r) => (r.score.peerFlagSeverity === null ? null : severityRank(r.score.peerFlagSeverity as HybridSeverity))),
       );
       const flagBadness = avg(rows.map(flagBadnessOf));
 
@@ -867,6 +1019,8 @@ export async function computeRankingsForRun(
         diarizationScore,
         avgFlagCount,
         avgFlagSeverityScore,
+        avgPeerFlagCount,
+        avgPeerFlagSeverityScore,
         composite,
         sampleSize: rows.length,
       };
@@ -891,8 +1045,6 @@ export async function computeRankingsForRun(
 
     rankingRows.push(
       ...providerAggregates.map((agg, index) => ({
-        id: randomUUID(),
-        runId,
         vertical,
         assistantId,
         providerId: agg.providerId,
@@ -916,6 +1068,13 @@ export async function computeRankingsForRun(
         diarizationScore: agg.diarizationScore,
         avgFlagCount: agg.avgFlagCount,
         avgFlagSeverityScore: agg.avgFlagSeverityScore,
+        avgPeerFlagCount: agg.avgPeerFlagCount,
+        avgPeerFlagSeverityScore: agg.avgPeerFlagSeverityScore,
+        // T-1: real evidence size behind this row -- distinct providers'
+        // sampleSize can differ within a group, so this is the group's own
+        // scored-call count (rowsForGroup, deduped by call), not any one
+        // provider's sampleSize.
+        callsScored: new Set(rowsForGroup.map((r) => r.result.callId)).size,
         recommendation:
           agg.composite === null
             ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
@@ -926,12 +1085,116 @@ export async function computeRankingsForRun(
     );
   }
 
+  return rankingRows;
+}
+
+// RANK-01/FR-S8: aggregate one ad-hoc run's own scores into per-assistant
+// rankings, keyed by runId. Unchanged in behavior from before the T-1
+// refactor above -- ad-hoc (non-bulk) runs from the Runs page were never
+// the part that was wrong; a bulk shard run never calls this (see
+// computeRankingsForBulk below).
+export async function computeRankingsForRun(
+  runId: string,
+  callIds: string[],
+  providerIds: string[],
+): Promise<void> {
+  const [calls, providers] = await Promise.all([
+    db.select().from(benchmarkCallsTable).where(inArray(benchmarkCallsTable.id, callIds)),
+    db
+      .select()
+      .from(benchmarkProvidersTable)
+      .where(inArray(benchmarkProvidersTable.id, providerIds)),
+  ]);
+  const results = await db
+    .select({ result: benchmarkProviderCallResultsTable, score: benchmarkScoresTable })
+    .from(benchmarkProviderCallResultsTable)
+    .innerJoin(benchmarkScoresTable, eq(benchmarkScoresTable.resultId, benchmarkProviderCallResultsTable.id))
+    .where(
+      and(
+        eq(benchmarkProviderCallResultsTable.runId, runId),
+        eq(benchmarkProviderCallResultsTable.status, "ok"),
+      ),
+    );
+
+  const rows = aggregateRankingRows(results, calls, providers);
+
   await db.transaction(async (tx) => {
     await tx.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, runId));
-    if (rankingRows.length > 0) {
-      await tx.insert(benchmarkRankingsTable).values(rankingRows);
+    if (rows.length > 0) {
+      await tx.insert(benchmarkRankingsTable).values(
+        rows.map((row) => ({ ...row, id: randomUUID(), runId, bulkId: null })),
+      );
     }
   });
+}
+
+// T-1 fix (2026-08-27, base-solidity review): rankings for a BULK, spanning
+// every one of its shard runs -- not one shard's ~50 calls. Called instead
+// of computeRankingsForRun whenever a finishing run has a bulkId (see
+// executeBenchmarkRunInner below). Recomputes from scratch every time any
+// shard finishes (idempotent, cheap relative to the provider calls that
+// produced the underlying scores), so the LAST shard to finish always
+// leaves the complete, correct picture -- serialized per-bulk by an
+// advisory lock so two shards finishing at the same instant can't
+// interleave the delete/insert.
+export async function computeRankingsForBulk(bulkId: string): Promise<void> {
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query("SELECT pg_advisory_lock(hashtext($1))", [`bulk-rankings:${bulkId}`]);
+
+    const bulkRuns = await db
+      .select({ id: benchmarkRunsTable.id, callIds: benchmarkRunsTable.callIds, providerIds: benchmarkRunsTable.providerIds })
+      .from(benchmarkRunsTable)
+      .where(eq(benchmarkRunsTable.bulkId, bulkId));
+    if (bulkRuns.length === 0) return;
+
+    const runIds = bulkRuns.map((r) => r.id);
+    // The most recently CREATED shard run stands in for `runId` on the
+    // written rows -- the API response schema requires a run id string, and
+    // nothing meaningful reads it as "the one run that produced this" any
+    // more (bulkId is the real scope now); it's kept purely so existing
+    // consumers (e.g. the CSV filename slicing runId.slice(0,8)) keep
+    // working unchanged.
+    const [latestRun] = await db
+      .select({ id: benchmarkRunsTable.id })
+      .from(benchmarkRunsTable)
+      .where(inArray(benchmarkRunsTable.id, runIds))
+      .orderBy(desc(benchmarkRunsTable.createdAt))
+      .limit(1);
+    const representativeRunId = latestRun?.id ?? runIds[0]!;
+
+    const allCallIds = [...new Set(bulkRuns.flatMap((r) => r.callIds))];
+    const allProviderIds = [...new Set(bulkRuns.flatMap((r) => r.providerIds))];
+
+    const [calls, providers] = await Promise.all([
+      db.select().from(benchmarkCallsTable).where(inArray(benchmarkCallsTable.id, allCallIds)),
+      db.select().from(benchmarkProvidersTable).where(inArray(benchmarkProvidersTable.id, allProviderIds)),
+    ]);
+    const results = await db
+      .select({ result: benchmarkProviderCallResultsTable, score: benchmarkScoresTable })
+      .from(benchmarkProviderCallResultsTable)
+      .innerJoin(benchmarkScoresTable, eq(benchmarkScoresTable.resultId, benchmarkProviderCallResultsTable.id))
+      .where(
+        and(
+          inArray(benchmarkProviderCallResultsTable.runId, runIds),
+          eq(benchmarkProviderCallResultsTable.status, "ok"),
+        ),
+      );
+
+    const rows = aggregateRankingRows(results, calls, providers);
+
+    await db.transaction(async (tx) => {
+      await tx.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.bulkId, bulkId));
+      if (rows.length > 0) {
+        await tx.insert(benchmarkRankingsTable).values(
+          rows.map((row) => ({ ...row, id: randomUUID(), runId: representativeRunId, bulkId })),
+        );
+      }
+    });
+  } finally {
+    await lockClient.query("SELECT pg_advisory_unlock(hashtext($1))", [`bulk-rankings:${bulkId}`]);
+    lockClient.release();
+  }
 }
 
 // Boot recovery for the async job states: the executor is still in-process

@@ -1,4 +1,4 @@
-import { pollUntil } from "../poll";
+import { pollUntil, scaledPollTimeoutMs } from "../poll";
 import {
   ProviderConfigError,
   type ProviderAdapter,
@@ -126,7 +126,7 @@ export const gladiaAdapter: ProviderAdapter = {
         const body = (await pollRes.json()) as GladiaResultResponse;
         if (body.status === "done" || body.status === "error") return body;
         return null;
-      });
+      }, { timeoutMs: scaledPollTimeoutMs(input.audioDurationSeconds) });
 
       const parsed = parseGladiaResponse(finalBody);
       return {

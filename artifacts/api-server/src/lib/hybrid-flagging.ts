@@ -117,7 +117,15 @@ export function computeHybridFlagsForCandidates(
   const mismatchesByProvider = new Map<string, EntityMismatch[]>();
   for (const c of candidates) mismatchesByProvider.set(c.providerId, []);
   for (const mismatch of entityMismatches) {
-    for (const providerId of Object.keys(mismatch.valuesByProvider)) {
+    // T-3 fix: a provider that's MISSING a consensus entity must be
+    // charged for it same as one that conflicts -- the old code only ever
+    // looked at Object.keys(valuesByProvider), which by construction can
+    // never include a provider that produced nothing of that type.
+    const affected = new Set([
+      ...Object.keys(mismatch.valuesByProvider),
+      ...mismatch.missingProviderIds,
+    ]);
+    for (const providerId of affected) {
       mismatchesByProvider.get(providerId)?.push(mismatch);
     }
   }
@@ -129,6 +137,10 @@ export function computeHybridFlagsForCandidates(
     const combined = combineHybridFlags({
       disagreement: disagreementByProvider.get(c.providerId) ?? null,
       confidenceSpans,
+      // T-2: whether THIS provider's raw output ever exposed confidence at
+      // all -- null (not an empty array) from extractProviderConfidenceWords
+      // means "not reported," distinct from "reported and clean."
+      confidenceAvailable: confidenceWords !== null,
       entityMismatches: mismatchesByProvider.get(c.providerId) ?? [],
     });
     results.set(c.providerId, { ...combined, providerId: c.providerId });
@@ -179,11 +191,16 @@ export async function computeHybridFlagsForRun(runId: string): Promise<void> {
             .set({
               flagCount: flags.flagCount,
               flagSeverity: flags.flagSeverity,
+              // T-2: the ranking composite reads these two, never the
+              // confidence-inclusive columns above.
+              peerFlagCount: flags.peerFlagCount,
+              peerFlagSeverity: flags.peerFlagSeverity,
               detail: {
                 ...(row.score.detail ?? {}),
                 hybridFlags: {
                   crossProviderDisagreement: flags.crossProviderDisagreement,
                   lowConfidenceSpans: flags.lowConfidenceSpans,
+                  confidenceAvailable: flags.confidenceAvailable,
                   entityMismatches: flags.entityMismatches,
                 },
               },

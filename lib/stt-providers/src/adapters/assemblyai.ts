@@ -1,4 +1,4 @@
-import { pollUntil } from "../poll";
+import { pollUntil, scaledPollTimeoutMs } from "../poll";
 import {
   ProviderConfigError,
   type ProviderAdapter,
@@ -115,7 +115,7 @@ export const assemblyAiAdapter: ProviderAdapter = {
         const body = (await pollRes.json()) as AssemblyAiResponse;
         if (body.status === "completed" || body.status === "error") return body;
         return null;
-      });
+      }, { timeoutMs: scaledPollTimeoutMs(input.audioDurationSeconds) });
 
       const parsed = parseAssemblyAiResponse(finalBody);
       const finalAt = new Date().toISOString();

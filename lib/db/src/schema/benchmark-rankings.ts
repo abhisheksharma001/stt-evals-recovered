@@ -12,6 +12,16 @@ import { z } from "zod/v4";
 export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   id: uuid("id").primaryKey().defaultRandom(),
   runId: uuid("run_id"),
+  // T-1 fix (2026-08-27, base-solidity review): a bulk shards its call set
+  // into many runs (default 50 calls/shard), and rankings were previously
+  // computed and stored PER RUN -- a 1,000-call bulk wrote 20 competing
+  // ranking sets, and GET /benchmark/rankings picked whichever run happened
+  // to have the newest createdAt (effectively arbitrary, since all 20 shards
+  // fire within milliseconds of each other), showing 50 calls of evidence
+  // out of 1,000. bulkId is populated (and runId left null) for rankings
+  // computed at bulk scope by computeRankingsForBulk() in run-executor.ts;
+  // runId stays populated for ad-hoc (non-bulk) run rankings, unchanged.
+  bulkId: uuid("bulk_id"),
   vertical: text("vertical").notNull(),
   // 2026-08-27, per Abhishek: rankings now group by real Vapi assistant
   // instead of vertical (same reasoning as the Bulks picker -- vertical was
@@ -45,6 +55,15 @@ export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   // is categorical per cell.
   avgFlagCount: real("avg_flag_count"),
   avgFlagSeverityScore: real("avg_flag_severity_score"),
+  // T-2 fix: the composite ranking score must be built from PEER-only
+  // badness (confidence spans excluded -- see benchmark-scores.ts's
+  // peerFlagCount comment). avgFlagCount/avgFlagSeverityScore above stay as
+  // the full picture for display; these two feed hybridCompositeScore.
+  avgPeerFlagCount: real("avg_peer_flag_count"),
+  avgPeerFlagSeverityScore: real("avg_peer_flag_severity_score"),
+  // T-1: how many distinct calls actually scored ok and fed this row --
+  // lets the UI show real evidence size instead of just a rank.
+  callsScored: integer("calls_scored"),
   recommendation: text("recommendation").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

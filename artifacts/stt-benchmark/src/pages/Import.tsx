@@ -177,7 +177,7 @@ export default function Import() {
           queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
           toast({
             title: `Imported ${result.importedCount} call${result.importedCount === 1 ? "" : "s"}`,
-            description: "They are in the corpus as needs_review -- gold transcript and de-id are still required.",
+            description: "They are in the corpus as needs_review -- two de-identification approvals are still required.",
           })
         },
         onError: (err) => {
@@ -435,7 +435,7 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
             <StepHeading
               step={3}
               title="Tag and import"
-              hint="Every imported call lands in needs_review. It still needs a human gold transcript and two de-id approvals before it can be run."
+              hint="Every imported call lands in needs_review. It needs two de-identification approvals before it can be run -- no transcript work required."
             />
           </CardHeader>
           <CardContent className="space-y-4">
@@ -506,10 +506,10 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
             )}
             <div className="flex items-center gap-3 border-t pt-4">
               <Button variant="outline" onClick={() => navigate("/corpus")}>
-                Go to Corpus &amp; Gold Data <ArrowRight className="ml-2 h-4 w-4" />
+                Go to Corpus <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
               <span className="text-xs text-muted-foreground">
-                Next step: correct each draft into a gold transcript and get two de-id approvals.
+                Next step: get two de-identification approvals on each call.
               </span>
             </div>
           </CardContent>
@@ -520,7 +520,7 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
         <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
           <Play className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            Import &rarr; gold transcript &amp; de-id (Corpus) &rarr; queue a run (Runs) &rarr;
+            Import &rarr; de-id (Corpus) &rarr; queue a run (Runs) &rarr;
             compare providers (Rankings). Each stage blocks the next until its prerequisites exist.
           </p>
         </CardContent>

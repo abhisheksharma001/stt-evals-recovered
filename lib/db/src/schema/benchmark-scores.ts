@@ -19,7 +19,16 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   alphanumericAccuracy: real("alphanumeric_accuracy"),
   latencyFirstPartialMs: integer("latency_first_partial_ms"),
   latencyFinalMs: integer("latency_final_ms"),
+  // T-11 fix (2026-08-27, base-solidity review): costPerMinute above is
+  // mislabeled -- it has always held the cost of THIS ONE CELL (provider
+  // rate * this call's duration), not a per-minute rate, and that leaked
+  // into the Rankings UI and CSV export under a "Cost/Min" header. costCents
+  // is the same underlying number, correctly named and cents-denominated
+  // (an integer, no float-cents rounding surprises). Added alongside rather
+  // than replacing costPerMinute so nothing reading it today breaks --
+  // full UI rename tracked in docs/PRD-v3-uiux.md U-8.
   costPerMinute: real("cost_per_minute"),
+  costCents: integer("cost_cents"),
   diarizationScore: real("diarization_score"),
   // 2026-08-27, per Abhishek: gold-transcript-free hybrid flagging (see
   // lib/scoring/src/hybrid.ts). wer/entityAccuracy above go permanently null
@@ -30,6 +39,17 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   // lives in `detail.hybridFlags` below, same pattern as wordDiff already did.
   flagCount: integer("flag_count"),
   flagSeverity: text("flag_severity"),
+  // T-2 fix (2026-08-27, base-solidity review): only 3 of 7 providers
+  // report per-word confidence at all, so folding confidence spans into
+  // flagCount/flagSeverity above punished the providers honest enough to
+  // expose their own uncertainty. peerFlagCount/peerFlagSeverity are the
+  // confidence-free subset (cross-provider disagreement + entity mismatch,
+  // both available for every provider) -- the RANKING composite in
+  // run-executor.ts's computeRankingsForRun must read these, not the
+  // columns above. flagCount/flagSeverity stay the full picture for
+  // per-cell human review (see lib/scoring/src/hybrid.ts combineHybridFlags).
+  peerFlagCount: integer("peer_flag_count"),
+  peerFlagSeverity: text("peer_flag_severity"),
   detail: jsonb("detail").$type<Record<string, unknown>>(),
   scoredAt: timestamp("scored_at", { withTimezone: true })
     .notNull()

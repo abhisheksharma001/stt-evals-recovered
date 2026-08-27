@@ -1,4 +1,4 @@
-import { pollUntil } from "../poll";
+import { pollUntil, scaledPollTimeoutMs } from "../poll";
 import {
   ProviderConfigError,
   type ProviderAdapter,
@@ -113,7 +113,7 @@ export const speechmaticsAdapter: ProviderAdapter = {
           throw new Error("Speechmatics job was rejected");
         }
         return null;
-      });
+      }, { timeoutMs: scaledPollTimeoutMs(input.audioDurationSeconds) });
 
       const transcriptRes = await fetch(
         `https://asr.api.speechmatics.com/v2/jobs/${jobId}/transcript?format=json-v2`,

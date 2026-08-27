@@ -6,6 +6,7 @@ import {
   useCreateAgentScan,
   useApproveAgentScan,
   useRejectAgentScan,
+  useListVapiAssistants,
   getListAgentScansQueryKey,
   getListBenchmarkCallsQueryKey,
   type AgentScan,
@@ -15,7 +16,24 @@ import { formatDistanceToNow } from "date-fns"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  SelectGroup,
+  SelectLabel,
+} from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 
 // 2026-08-27, per Abhishek: "we don't need a gold transcript any more ...
@@ -50,9 +68,41 @@ function useScannableCalls() {
   return React.useMemo(() => (calls ?? []).filter((c) => c.audioObjectPath), [calls])
 }
 
+const NO_ASSISTANT_KEY = "__no_assistant__"
+
 function TriggerScanCard() {
   const scannableCalls = useScannableCalls()
+  // 2026-08-27, per Abhishek: the call picker was a flat, unfiltered list --
+  // fine at a handful of calls, useless once a corpus has hundreds spread
+  // across a dozen assistants. Same source (useListVapiAssistants) and same
+  // grouping convention Bulks/Rankings already use, so "assistant" means the
+  // same thing everywhere in this app.
+  const { data: assistants } = useListVapiAssistants()
+  const assistantNameById = React.useMemo(
+    () => new Map((assistants ?? []).map((a) => [a.id, a.name])),
+    [assistants],
+  )
+  const assistantOptions = React.useMemo(() => {
+    const ids = new Set(scannableCalls.map((c) => c.sourceAssistantId ?? NO_ASSISTANT_KEY))
+    return [...ids]
+      .map((id) => ({ id, label: id === NO_ASSISTANT_KEY ? "No assistant on file" : (assistantNameById.get(id) ?? id) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [scannableCalls, assistantNameById])
+  const [assistantFilter, setAssistantFilter] = React.useState<string>("")
   const [callId, setCallId] = React.useState<string>("")
+  const filteredCalls = React.useMemo(
+    () =>
+      assistantFilter
+        ? scannableCalls.filter((c) => (c.sourceAssistantId ?? NO_ASSISTANT_KEY) === assistantFilter)
+        : scannableCalls,
+    [scannableCalls, assistantFilter],
+  )
+  // The selected call can be narrowed out from under itself when the
+  // assistant filter changes -- clear it rather than leave a stale
+  // selection the visible list no longer shows.
+  React.useEffect(() => {
+    if (callId && !filteredCalls.some((c) => c.id === callId)) setCallId("")
+  }, [filteredCalls, callId])
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const createScan = useCreateAgentScan()
@@ -117,16 +167,50 @@ function TriggerScanCard() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={assistantFilter || "__all__"}
+                onValueChange={(v) => setAssistantFilter(v === "__all__" ? "" : v)}
+                disabled={createScan.isPending}
+              >
+                <SelectTrigger className="w-full max-w-[260px]">
+                  <SelectValue placeholder="All assistants" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All assistants</SelectItem>
+                  {assistantOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={callId} onValueChange={setCallId} disabled={createScan.isPending}>
                 <SelectTrigger className="w-full max-w-[420px]">
                   <SelectValue placeholder={scannableCalls.length === 0 ? "No calls with audio yet -- import first" : "Select a call to scan..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {scannableCalls.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.label} -- {c.vertical}
-                    </SelectItem>
-                  ))}
+                  {assistantFilter ? (
+                    filteredCalls.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.label} -- {c.vertical}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    assistantOptions.map((opt) => {
+                      const callsForOpt = scannableCalls.filter(
+                        (c) => (c.sourceAssistantId ?? NO_ASSISTANT_KEY) === opt.id,
+                      )
+                      if (callsForOpt.length === 0) return null
+                      return (
+                        <SelectGroup key={opt.id}>
+                          <SelectLabel>{opt.label}</SelectLabel>
+                          {callsForOpt.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.label} -- {c.vertical}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )
+                    })
+                  )}
                 </SelectContent>
               </Select>
               <Button onClick={handleScan} disabled={!callId || createScan.isPending || scanInFlight}>
@@ -176,40 +260,50 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
     queryClient.invalidateQueries({ queryKey: getListAgentScansQueryKey() })
     queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
   }
-  const promptApprover = (verb: string): string | null => {
-    const approver = window.prompt(`${verb} (name or email):`)?.trim() ?? ""
-    if (!approver) return null
-    return approver
+  // Bug found live 2026-08-27 (Abhishek): window.prompt() is not supported
+  // in this preview sandbox at all ("prompt() is not supported" runtime
+  // error) -- same fix as Review.tsx's de-id attestation, an in-app dialog
+  // instead of the browser-native prompt.
+  const [actorDialog, setActorDialog] = React.useState<"approve" | "reject" | null>(null)
+  const [actorInput, setActorInput] = React.useState("")
+  const actorInputRef = React.useRef<HTMLInputElement>(null)
+
+  const openActorDialog = (action: "approve" | "reject") => {
+    setActorInput("")
+    setActorDialog(action)
   }
 
-  const handleApprove = () => {
-    const approver = promptApprover("Acknowledge these flags as reviewed, from")
-    if (!approver) return
-    approve.mutate(
-      { scanId: scan.id, data: { approverLabel: approver } },
-      {
-        onSuccess: () => {
-          invalidate()
-          toast({ title: "Acknowledged", description: "Recorded in the audit log -- no transcript was changed." })
+  const submitActor = () => {
+    const approver = actorInput.trim()
+    if (!approver || !actorDialog) return
+    if (actorDialog === "approve") {
+      approve.mutate(
+        { scanId: scan.id, data: { approverLabel: approver } },
+        {
+          onSuccess: () => {
+            invalidate()
+            toast({ title: "Acknowledged", description: "Recorded in the audit log -- no transcript was changed." })
+            setActorDialog(null)
+          },
+          onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed.", variant: "destructive" }),
         },
-        onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed.", variant: "destructive" }),
-      },
-    )
-  }
-  const handleReject = () => {
-    const approver = promptApprover("Dismiss this scan, from")
-    if (!approver) return
-    reject.mutate(
-      { scanId: scan.id, data: { approverLabel: approver } },
-      {
-        onSuccess: () => {
-          invalidate()
-          toast({ title: "Dismissed" })
+      )
+    } else {
+      reject.mutate(
+        { scanId: scan.id, data: { approverLabel: approver } },
+        {
+          onSuccess: () => {
+            invalidate()
+            toast({ title: "Dismissed" })
+            setActorDialog(null)
+          },
+          onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed.", variant: "destructive" }),
         },
-        onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Failed.", variant: "destructive" }),
-      },
-    )
+      )
+    }
   }
+  const handleApprove = () => openActorDialog("approve")
+  const handleReject = () => openActorDialog("reject")
 
   const hybrid = scan.hybridFlags
   const disagreementByProvider = new Map((hybrid?.crossProviderDisagreements ?? []).map((d) => [d.providerId, d.disagreementRate]))
@@ -386,6 +480,46 @@ function ScanRow({ scan, callLabel }: { scan: AgentScan; callLabel: string }) {
           )}
         </div>
       )}
+
+      <Dialog open={actorDialog !== null} onOpenChange={(open) => !open && setActorDialog(null)}>
+        <DialogContent
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            actorInputRef.current?.focus()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {actorDialog === "approve" ? "Acknowledge these flags as reviewed" : "Dismiss this scan"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor={`actor-name-${scan.id}`}>Name or email</Label>
+            <Input
+              id={`actor-name-${scan.id}`}
+              ref={actorInputRef}
+              value={actorInput}
+              onChange={(e) => setActorInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && actorInput.trim()) submitActor()
+              }}
+              placeholder="e.g. abhishek@ellavox.ai"
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setActorDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submitActor}
+              disabled={!actorInput.trim() || approve.isPending || reject.isPending}
+            >
+              {actorDialog === "approve" ? "Acknowledge" : "Dismiss"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

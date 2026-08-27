@@ -94,7 +94,10 @@ import { actorFromRequest, writeAudit } from "../lib/audit";
 import { AgentConfigError, AgentRequestError, analyzeFailure, matchKnownFailure } from "../lib/agent";
 import { logger } from "../lib/logger";
 import { drainWithConcurrency, executeBenchmarkRun } from "../lib/run-executor";
+import { audioCachePathFor } from "../lib/audio-cache";
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { stat as fsStat } from "node:fs/promises";
 
 const router: IRouter = Router();
 
@@ -525,6 +528,42 @@ router.get("/benchmark/calls/:callId/audio", async (req, res): Promise<void> => 
   if (!call) {
     res.status(404).json({ error: "Benchmark call not found" });
     return;
+  }
+
+  // T-9 fix (2026-08-27, base-solidity review): FIX-2 moved the run
+  // executor off Vapi's 14-day retention clock by caching audio bytes to
+  // local disk (lib/audio-cache.ts) -- this playback route never moved
+  // with it, so a call whose audio is sitting on disk, already
+  // successfully transcribed, still couldn't be PLAYED once its source
+  // recording crossed 14 days old -- exactly the call a reviewer most
+  // needs to listen to when checking a flagged span. Serve cached bytes
+  // first, with Range support so the <audio> element's scrubber works;
+  // only fall through to the Vapi redirect below on a genuine cache miss.
+  const cachePath = audioCachePathFor(callId);
+  try {
+    const stat = await fsStat(cachePath);
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Content-Type", "audio/wav");
+    const range = req.headers.range;
+    const match = typeof range === "string" ? /^bytes=(\d+)-(\d*)$/.exec(range) : null;
+    if (match) {
+      const start = Number.parseInt(match[1]!, 10);
+      const end = match[2] ? Number.parseInt(match[2], 10) : stat.size - 1;
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || end >= stat.size) {
+        res.status(416).setHeader("Content-Range", `bytes */${stat.size}`).end();
+        return;
+      }
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${stat.size}`);
+      res.setHeader("Content-Length", String(end - start + 1));
+      createReadStream(cachePath, { start, end }).pipe(res);
+    } else {
+      res.setHeader("Content-Length", String(stat.size));
+      createReadStream(cachePath).pipe(res);
+    }
+    return;
+  } catch {
+    // Not cached (or unreadable) -- fall through to the live Vapi redirect.
   }
 
   try {
@@ -1098,7 +1137,11 @@ router.post("/benchmark/runs", async (req, res): Promise<void> => {
     blockers.push("one or more providers do not exist");
   }
   if (selectedCalls.some((call) => call.status !== "ready_to_run")) {
-    blockers.push("every selected call must have an approved gold transcript");
+    // F-2 fix (2026-08-27, base-solidity review): gold transcripts were
+    // retired -- ready_to_run is now gated on de-id alone (see the PATCH
+    // /benchmark/calls/:callId handler). This message still said "gold
+    // transcript," which no longer exists anywhere in the app.
+    blockers.push("every selected call needs two de-identification approvals first (POST /benchmark/calls/:callId/attest-deid)");
   }
   if (selectedProviders.some((provider) => provider.status !== "ready")) {
     blockers.push("provider credentials and models must be configured");
@@ -1379,14 +1422,18 @@ router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
 });
 
 router.get("/benchmark/rankings", async (_req, res): Promise<void> => {
-  // computeRankingsForRun inserts a fresh snapshot every time a run
-  // executes and never deletes older ones, so this table accumulates every
-  // run's rankings forever. Previously returned all of them unfiltered --
-  // a reviewer would see the same group/provider pair listed 2+ times with
-  // different numbers from different runs, no way to tell which was
-  // current (found 2026-08-24). Each group can have its own "latest run
-  // that scored it" (not every run necessarily covers every group), so
-  // pick that per group rather than assuming one global latest run.
+  // computeRankingsForRun/computeRankingsForBulk (run-executor.ts) each
+  // insert a fresh snapshot on every recompute and never delete older ones,
+  // so this table accumulates every past snapshot forever. Previously
+  // returned all of them unfiltered -- a reviewer would see the same group/
+  // provider pair listed 2+ times with different numbers, no way to tell
+  // which was current (found 2026-08-24). Each group can have its own
+  // "latest snapshot that scored it" (not every recompute necessarily
+  // covers every group), so pick that per group rather than assuming one
+  // global latest. T-1 (2026-08-27): a bulk-scoped snapshot's rows all
+  // share one representative runId (the bulk's most-recently-created shard
+  // run -- see computeRankingsForBulk), so this join/pick-latest logic
+  // needed no change to keep working correctly across the bulk-scope fix.
   // "batch" only -- the agent's single-call scoped runs (purpose
   // "agent_scan", see routes/agent.ts) compute rankings too since they
   // reuse the same executor, but a 1-call snapshot has no place deciding
