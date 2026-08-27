@@ -32,6 +32,13 @@ function cachePathFor(callId: string): string {
   return path.join(CACHE_DIR, `${callId}.audio`);
 }
 
+/** T-9: public accessor so routes/benchmark.ts's audio-playback route can
+ * stat/stream the cached file directly (with Range support) instead of
+ * only this module reading whole buffers into memory. */
+export function audioCachePathFor(callId: string): string {
+  return cachePathFor(callId);
+}
+
 /**
  * Returns a call's audio bytes, from the local cache if present, or by
  * resolving a fresh Vapi URL and fetching+caching it if not. Once this
@@ -75,4 +82,15 @@ export async function isAudioCached(callId: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** T-7 fix (2026-08-27, base-solidity review): a plain disk read, no Vapi
+ * fallback -- used by the run executor to read one cell's audio bytes right
+ * before transcribing it, instead of holding every call's bytes in memory
+ * for the whole shard (a 50-call shard was ~200MB of buffers held at once
+ * for no reason; the bytes are already durably on disk from the pre-pass).
+ * Rejects if the call isn't cached yet -- callers should fall back to
+ * getOrCacheAudioBytes (or a test's substitute resolver) on a miss. */
+export async function readCachedAudioBytes(callId: string): Promise<Buffer> {
+  return fs.readFile(cachePathFor(callId));
 }

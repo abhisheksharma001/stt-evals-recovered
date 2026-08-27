@@ -19,7 +19,16 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   alphanumericAccuracy: real("alphanumeric_accuracy"),
   latencyFirstPartialMs: integer("latency_first_partial_ms"),
   latencyFinalMs: integer("latency_final_ms"),
+  // T-11 fix (2026-08-27, base-solidity review): costPerMinute above is
+  // mislabeled -- it has always held the cost of THIS ONE CELL (provider
+  // rate * this call's duration), not a per-minute rate, and that leaked
+  // into the Rankings UI and CSV export under a "Cost/Min" header. costCents
+  // is the same underlying number, correctly named and cents-denominated
+  // (an integer, no float-cents rounding surprises). Added alongside rather
+  // than replacing costPerMinute so nothing reading it today breaks --
+  // full UI rename tracked in docs/PRD-v3-uiux.md U-8.
   costPerMinute: real("cost_per_minute"),
+  costCents: integer("cost_cents"),
   diarizationScore: real("diarization_score"),
   // 2026-08-27, per Abhishek: gold-transcript-free hybrid flagging (see
   // lib/scoring/src/hybrid.ts). wer/entityAccuracy above go permanently null
