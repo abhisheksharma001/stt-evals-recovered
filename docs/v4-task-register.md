@@ -47,7 +47,7 @@ pays for.
 | T-02 | ✅ **done** (PR #5). **Never discard a good judge payload.** Split the single `try` in `verifyCallWithAgent` so the OpenAI call and the DB write are caught separately, with distinct error prefixes (`judge_failed:` / `scan_write_failed:`). If the full insert fails, retry once without the cost columns. | `lib/agent-verify.ts` | Forcing a write error still persists the reasoning and the pick; the error names the write, not the judge |
 | T-03 | ✅ **done** (PR #6). **Stop conflating "flagged" with "the AI crashed."** `agentCallsFlagged` counted `flagged \|\| error`. Split into `agentCallsFlagged` and `agentCallsErrored`, both exposed; a destructive strip renders when errored > 0, on both the bulk detail and the per-bulk Rankings header. `agentCostMicrocents` is now nullable and distinguishes three states: a real total, a real zero (nothing flagged, so no judge call was ever made), and null = "not recorded" (judge calls ran, no cost survived). | `routes/bulks.ts`, `openapi.yaml`, `Rankings.tsx`, `Bulks.tsx`, `lib/utils.ts` | Forcing one scan to error shows the strip; the ranking table is visibly unaffected |
 | T-04 | ✅ **done** (PR #7). **Build identity in `/api/healthz`.** Returns `commitSha`, `builtAt`, `startedAt`, `providersConfigured` (**names only**). SHA and build time are frozen into the bundle by esbuild `define` at build time, so they describe the bundle rather than the working tree at start. A dirty tree at build time stamps a `-dirty` suffix; running from source (tsx) reports `commitSha: "dev"`, `builtAt: null` — never a fabricated commit. No database work in the handler: a liveness probe must answer when the database is what is down. | `build.mjs`, `src/lib/build-info.ts`, `routes/health.ts`, `api-zod`, `openapi.yaml` | `curl /api/healthz` shows the SHA of the running build |
-| T-05 | **Build badge in the UI footer.** Quiet, monospaced, from T-04. | `components/layout.tsx` | Rebuild + restart changes the SHA on screen |
+| T-05 | ✅ **done** (PR #8). **Build badge in the UI footer.** Quiet, monospaced, from T-04. | `components/layout.tsx` | Rebuild + restart changes the SHA on screen |
 | T-06 | **Classify cell failures.** Add `failureClass` enum (`retention_expired \| audio_url_forbidden \| provider_timeout \| provider_5xx \| rate_limited \| audio_decode \| unknown`), set at the throw site — never by regexing a message afterwards. | `lib/db/src/schema/benchmark-results.ts`, `lib/run-executor.ts`, `openapi.yaml` | Last bulk's 45 failures classify as 42/2/1; `unknown` stays visible |
 | T-07 | **Group failures in the UI; retry only what's retryable.** Replace the bare count with a grouped breakdown. The retry button carries the *retryable* count and is disabled (with a reason) at zero. | `Bulks.tsx` | Bulk `7d2585da` renders 42/2/1 and a button reading "Retry 1 retryable cell" |
 
@@ -152,6 +152,7 @@ either on a date. Start it when its trigger fires.
 | T-36 | The last-resort log in `verifyCallWithAgent` (both inserts failed) writes the judge's full reasoning text to the log so the paid-for answer stays recoverable. That reasoning quotes transcript spans and can therefore carry caller names. Logs are local-only today, so this is safe now — but if logs ever ship anywhere, this line needs redaction or a gate. | T-02 self-review |
 | T-37 | `writeAudit` after a successful scan write is not itself wrapped. If the audit insert fails, the throw reaches `runAutoAgentVerificationForRun`'s catch and is logged as "auto agent verification crashed for a call" — wrong text, since the scan actually landed. Cheap fix, but it is a third failure meaning and belongs in its own task. | T-02 self-review |
 | T-38 | A scan whose finding a human has already resolved carries `status: "approved"`, so it counts in `agentCallsChecked` but in neither `agentCallsFlagged` nor `agentCallsErrored`. That was true before T-03 too, so nothing regressed — but the coverage line now reads "63 checked, 0 flagged, 0 errored" for a bulk whose findings were all resolved, which understates the work done. Needs a third count or a "resolved" state, decided deliberately. | T-03 self-review |
+| T-39 | The badge reports the **API** bundle's commit. The UI itself is a separate Vite build and can be served stale from a browser cache with no signal at all — a second, real version of the same failure this task exists to kill. Stamping the UI build (Vite `define`) and showing both, or showing one only when they disagree, is a deliberate design call, not a drive-by. | T-05 self-review |
 
 ## Findings log
 
@@ -203,3 +204,19 @@ Append anything learned mid-task here rather than losing it to a compaction.
   Gladia 15.3s, AssemblyAI 13.0s, Deepgram 3.5s, OpenAI 3.1s. **Cartesia is 79% of
   all vendor wait.** Own code is ~0.1% of runtime — which is why no language rewrite
   is on this register.
+
+- **2026-08-28 (T-05):** badge verified live in the browser against the real dev
+  server, in all three states. Clean: `API bc481f0f4194`, muted grey, green dot.
+  Rebuilt the API from a dirty tree and restarted it — the badge changed on screen to
+  `API bc481f0f4194-dirty` in the warning colour, which is the task's done-when
+  condition met directly. Killed the API: `API unreachable`, 885ms after mount.
+  **Two react-query behaviours found the hard way, both about a hidden tab:**
+  (1) `refetchInterval` does not run while the tab is hidden, so the badge updates on
+  the poll only when someone is actually looking at it — which is the moment that
+  matters, and `refetchOnWindowFocus: true` covers the return from the terminal;
+  (2) retries are *paused* while the tab is hidden, so with the app-wide `retry: 2`
+  the badge sat on `checking...` for 30s+ with the API already dead instead of ever
+  reaching the error state. Fixed by setting `retry: 0` on this query only — for a
+  liveness badge the next poll is the retry, and a badge that retries is a badge that
+  lies. The Vite dev proxy itself is not the cause: with the API down it returns 500
+  in 13ms.
