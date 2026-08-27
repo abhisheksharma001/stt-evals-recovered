@@ -422,17 +422,33 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
         <>
           {/* The one real LLM call in this whole panel -- everything else
               on this page is deterministic. Said plainly so it's never
-              mistaken for more AI than it is. */}
-          <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
-            <div className="flex items-center gap-1.5 text-sm">
-              <Trophy className="h-3.5 w-3.5 text-primary" />
-              <span className="font-semibold text-foreground">
-                {sorted[0]?.providerName ?? "No pick"}
-              </span>
-              <Badge variant="outline" className="text-[9px] uppercase">OpenAI pick</Badge>
+              mistaken for more AI than it is. B-107 (found live 2026-08-27,
+              screenshot review): when agentPickProviderId is genuinely null
+              (a scan that predates the pick-matching fallback fix), `sorted`
+              still orders by fewest-flags as a display fallback -- that
+              used to get the SAME "OpenAI pick" trophy badge as a real
+              pick, mislabeling a flag-count sort as an AI decision it never
+              made. Only ever show the trophy/badge when there's an actual
+              agentPickProviderId; otherwise say plainly that OpenAI didn't
+              return a usable pick for this one. */}
+          {scan.agentPickProviderId ? (
+            <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
+              <div className="flex items-center gap-1.5 text-sm">
+                <Trophy className="h-3.5 w-3.5 text-primary" />
+                <span className="font-semibold text-foreground">
+                  {candidates.find((c) => c.providerId === scan.agentPickProviderId)?.providerName ?? scan.agentPickProviderId}
+                </span>
+                <Badge variant="outline" className="text-[9px] uppercase">OpenAI pick</Badge>
+              </div>
+              {oneLiner && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{oneLiner}</p>}
             </div>
-            {oneLiner && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{oneLiner}</p>}
-          </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+              OpenAI didn't return a usable pick for this call -- providers below are ordered by fewest flags
+              instead, not an AI decision.
+              {oneLiner && <p className="mt-1 leading-relaxed">{oneLiner}</p>}
+            </div>
+          )}
 
           {(flags?.entityMismatches ?? []).length > 0 && (
             <div className="space-y-1 rounded-md border border-warning/25 bg-warning/5 p-2.5 text-xs">
