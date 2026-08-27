@@ -13,7 +13,9 @@ import { useLocation } from "wouter"
 import {
   AlertCircle,
   ArrowRight,
+  Check,
   CloudDownload,
+  Copy,
   KeyRound,
   ListChecks,
   Play,
@@ -64,6 +66,42 @@ function StepHeading({ step, title, hint }: { step: number; title: string; hint:
         <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p>
       </div>
     </div>
+  )
+}
+
+/**
+ * Full identifier with click-to-copy. Ids here are the join key back to
+ * Vapi's own dashboard, so they have to be complete and copyable, not
+ * decorative.
+ */
+function CopyableId({ value, label, muted }: { value: string; label?: string; muted?: boolean }) {
+  const [copied, setCopied] = React.useState(false)
+  const copy = () => {
+    void navigator.clipboard?.writeText(value).then(
+      () => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1200)
+      },
+      () => setCopied(false),
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={`Click to copy ${value}`}
+      className={`group flex items-center gap-1 font-mono text-[11px] break-all text-left hover:text-foreground ${
+        muted ? "text-muted-foreground" : ""
+      }`}
+    >
+      {label && <span className="shrink-0">{label}</span>}
+      <span>{value}</span>
+      {copied ? (
+        <Check className="h-3 w-3 shrink-0 text-success" />
+      ) : (
+        <Copy className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
+      )}
+    </button>
   )
 }
 
@@ -387,12 +425,15 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
                             aria-label={`Select call ${call.vapiCallId}`}
                           />
                         </TableCell>
+                        {/* 2026-08-27, per Abhishek: show the call id, not a
+                            truncated stub. An 8-character prefix can't be
+                            pasted into Vapi's dashboard or matched against a
+                            support thread, which is the whole reason to look
+                            at it here. */}
                         <TableCell>
-                          <div className="font-mono text-xs">{call.vapiCallId.slice(0, 8)}</div>
+                          <CopyableId value={call.vapiCallId} />
                           {call.assistantId && (
-                            <div className="font-mono text-xs text-muted-foreground">
-                              assistant {call.assistantId.slice(0, 8)}
-                            </div>
+                            <CopyableId value={call.assistantId} label="assistant" muted />
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
