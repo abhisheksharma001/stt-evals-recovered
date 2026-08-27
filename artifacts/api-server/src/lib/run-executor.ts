@@ -22,7 +22,7 @@ import {
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
-import { resolveFreshRecordingUrl } from "./vapi";
+import { getOrCacheAudioBytes } from "./audio-cache";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
 // documented race (see the comment on the run.status check below) --
@@ -163,7 +163,7 @@ function isRetryableError(err: unknown): boolean {
 export async function executeBenchmarkRun(
   runId: string,
   actorLabel: string,
-  opts: { audioResolver?: (call: BenchmarkCallRow) => Promise<string> } = {},
+  opts: { audioResolver?: (call: BenchmarkCallRow) => Promise<Buffer> } = {},
 ): Promise<void> {
   if (runningRuns.has(runId)) {
     logger.warn({ runId }, "executeBenchmarkRun called while already running for this runId -- ignored");
@@ -196,7 +196,7 @@ export async function executeBenchmarkRun(
 async function executeBenchmarkRunInner(
   runId: string,
   actorLabel: string,
-  audioResolver: (call: BenchmarkCallRow) => Promise<string> = resolveFreshRecordingUrl,
+  audioResolver: (call: BenchmarkCallRow) => Promise<Buffer> = getOrCacheAudioBytes,
 ): Promise<void> {
   const [run] = await db
     .select()
@@ -313,23 +313,26 @@ async function executeBenchmarkRunInner(
   let configBlockedCells = 0;
   let okCells = alreadyOk.size;
 
-  // Resolve fresh recording URLs concurrently, but with a small cap -- this
-  // is a Vapi API round trip per call and politeness matters more than
-  // parallelism here. Resolved once per CALL, not once per (call, provider):
-  // every provider for a call gets the same live URL, and a stale/broken
-  // recording link only costs one Vapi trip, not one per provider.
-  const audioByCallId = new Map<string, { url: string | null; error: string | null }>();
+  // Resolve/cache audio bytes concurrently, but with a small cap -- a cache
+  // miss is a Vapi API round trip plus a full audio download per call, and
+  // politeness matters more than parallelism here. Resolved once per CALL,
+  // not once per (call, provider): every provider for a call gets the same
+  // bytes, and a stale/broken recording only costs one resolution, not one
+  // per provider. (technical-fixes FIX-2: this is a local disk cache --
+  // once a call's bytes are cached here, Vapi's live API and its 14-day
+  // retention window are never consulted again for that call.)
+  const audioByCallId = new Map<string, { bytes: Buffer | null; error: string | null }>();
   await drainWithConcurrency(runnableCalls, Math.min(RUN_CONCURRENCY, 8), async (call) => {
     if (!call.audioObjectPath) {
-      audioByCallId.set(call.id, { url: null, error: "Call has no audioObjectPath to send to a provider." });
+      audioByCallId.set(call.id, { bytes: null, error: "Call has no audioObjectPath to send to a provider." });
       return;
     }
     try {
-      audioByCallId.set(call.id, { url: await audioResolver(call), error: null });
+      audioByCallId.set(call.id, { bytes: await audioResolver(call), error: null });
     } catch (err) {
       audioByCallId.set(call.id, {
-        url: null,
-        error: `Could not get a live recording URL: ${err instanceof Error ? err.message : String(err)}`,
+        bytes: null,
+        error: `Could not get this call's audio: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });
@@ -338,11 +341,11 @@ async function executeBenchmarkRunInner(
   // denominator and the worker pool drains a flat queue instead of a nested
   // loop. Cells whose audio never resolved are failed immediately without
   // occupying a provider slot.
-  const cells: Array<{ call: BenchmarkCallRow; provider: BenchmarkProviderRow; audioUrl: string }> = [];
+  const cells: Array<{ call: BenchmarkCallRow; provider: BenchmarkProviderRow; audioBytes: Buffer }> = [];
   for (const call of runnableCalls) {
-    const audio = audioByCallId.get(call.id) ?? { url: null, error: "Audio resolution skipped." };
+    const audio = audioByCallId.get(call.id) ?? { bytes: null, error: "Audio resolution skipped." };
     for (const provider of providers.filter((p) => !alreadyOk.has(`${p.id}::${call.id}`))) {
-      if (!audio.url) {
+      if (!audio.bytes) {
         await insertResult(runId, call.id, provider.id, {
           status: "failed",
           submittedAt: new Date(),
@@ -355,7 +358,7 @@ async function executeBenchmarkRunInner(
         failedCells += 1;
         continue;
       }
-      cells.push({ call, provider, audioUrl: audio.url });
+      cells.push({ call, provider, audioBytes: audio.bytes });
     }
   }
 
@@ -373,7 +376,7 @@ async function executeBenchmarkRunInner(
 
   let completedCells = 0;
   let cancelledCells = 0;
-  await drainWithConcurrency(cells, RUN_CONCURRENCY, async ({ call, provider, audioUrl }) => {
+  await drainWithConcurrency(cells, RUN_CONCURRENCY, async ({ call, provider, audioBytes }) => {
     // FR-BLK-7: never START a cell after cancellation. Cells already inside
     // adapter.transcribe() are not interrupted -- they complete and persist.
     if (cancelRequestedRuns.has(runId)) {
@@ -397,7 +400,7 @@ async function executeBenchmarkRunInner(
     const slot = slotsFor(provider.id);
     await slot.acquire();
     try {
-      const outcome = await runCell(runId, call, provider, audioUrl);
+      const outcome = await runCell(runId, call, provider, audioBytes);
       if (outcome === "ok") okCells += 1;
       else if (outcome === "config_blocked") configBlockedCells += 1;
       else failedCells += 1;
@@ -507,7 +510,7 @@ async function runCell(
   runId: string,
   call: BenchmarkCallRow,
   provider: BenchmarkProviderRow,
-  audioUrl: string,
+  audioBytes: Buffer,
 ): Promise<"ok" | "failed" | "config_blocked"> {
   const adapter = getProviderAdapter(provider.id);
   if (!adapter) {
@@ -531,7 +534,7 @@ async function runCell(
     try {
       const candidate = await adapter.transcribe({
         callId: call.id,
-        audioUrl,
+        audioBytes,
         diarize: true,
       });
       if (candidate.status === "ok" || !isRetryableOutcome(candidate.httpStatus, candidate.errorMessage)) {

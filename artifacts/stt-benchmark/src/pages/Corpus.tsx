@@ -10,12 +10,14 @@ import {
   CallStatus,
   Vertical,
 } from "@workspace/api-client-react"
-import { Plus, Search, AlertCircle, ExternalLink, Settings2, ShieldCheck, AudioLines } from "lucide-react"
+import { Plus, Search, AlertCircle, ExternalLink, Settings2, ShieldCheck, AudioLines, TimerReset } from "lucide-react"
+import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 
 export default function Corpus() {
@@ -53,27 +55,23 @@ export default function Corpus() {
               className="pl-9"
             />
           </div>
-          <select
-            aria-label="Filter by status"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          >
-            <option value="all">All statuses</option>
-            <option value="needs_review">Needs review</option>
-            <option value="ready_to_run">Ready to run</option>
-          </select>
-          <select
-            aria-label="Filter by vertical"
-            value={verticalFilter}
-            onChange={(e) => setVerticalFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm capitalize"
-          >
-            <option value="all">All verticals</option>
-            <option value="rush">Rush</option>
-            <option value="property_management">Property management</option>
-            <option value="trucking">Trucking</option>
-          </select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger aria-label="Filter by status" className="h-9 w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="needs_review">Needs review</SelectItem>
+              <SelectItem value="ready_to_run">Ready to run</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={verticalFilter} onValueChange={setVerticalFilter}>
+            <SelectTrigger aria-label="Filter by vertical" className="h-9 w-48 capitalize"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All verticals</SelectItem>
+              <SelectItem value="rush">Rush</SelectItem>
+              <SelectItem value="property_management">Property management</SelectItem>
+              <SelectItem value="trucking">Trucking</SelectItem>
+            </SelectContent>
+          </Select>
           <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
             {filteredCalls.length}{calls ? ` / ${calls.length}` : ""}
           </span>
@@ -126,7 +124,10 @@ export default function Corpus() {
                       <span className="font-mono text-sm tabular-nums">{Math.floor(call.durationSeconds / 60)}:{(call.durationSeconds % 60).toString().padStart(2, '0')}</span>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={call.status} />
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge status={call.status} />
+                        <RetentionWarning sourceStartedAt={call.sourceStartedAt} />
+                      </div>
                     </TableCell>
                     <TableCell>
                       <DeidBadge call={call} />
@@ -180,6 +181,43 @@ function StatusBadge({ status }: { status: CallStatus }) {
       {status.replace(/_/g, ' ')}
     </span>
   )
+}
+
+// ux-fixes UX-9: Vapi's plan only retains a call's recording for 14 days --
+// past that, no provider can ever get a fresh copy of the audio again (see
+// docs/PRD-technical-fixes.md FIX-2). Once a run has successfully cached a
+// call's bytes, that call is no longer actually at risk -- but this page
+// doesn't know per-call cache state, so this warns from age alone. That
+// means a cached call can still show a stale warning after day 14 --
+// conservative false positive, not a false "all clear," which is the
+// direction that's safe to be wrong in for a review-effort warning.
+const RETENTION_WINDOW_DAYS = 14
+const RETENTION_WARNING_DAYS = 10
+
+function RetentionWarning({ sourceStartedAt }: { sourceStartedAt?: string | null }) {
+  if (!sourceStartedAt) return null
+  const age = differenceInCalendarDays(new Date(), new Date(sourceStartedAt))
+  if (age >= RETENTION_WINDOW_DAYS) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-destructive"
+        title={`This call's recording is ${age} days old -- past Vapi's 14-day retention window. If it hasn't already been successfully run, its audio may be permanently unfetchable now.`}
+      >
+        <TimerReset className="h-2.5 w-2.5" /> expired?
+      </span>
+    )
+  }
+  if (age >= RETENTION_WARNING_DAYS) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-md border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-warning"
+        title={`This call's recording is ${age} days old. Vapi stops serving it after day 14 -- review and run it soon if it hasn't been run yet.`}
+      >
+        <TimerReset className="h-2.5 w-2.5" /> {RETENTION_WINDOW_DAYS - age}d left
+      </span>
+    )
+  }
+  return null
 }
 
 function DeidBadge({ call }: { call: { deIdAttestedByLabel?: string | null; deIdSecondApproverLabel?: string | null } }) {

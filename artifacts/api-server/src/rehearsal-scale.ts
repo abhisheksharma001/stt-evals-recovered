@@ -181,10 +181,10 @@ console.log(
 const startedAt = Date.now();
 await Promise.all([
   executeBenchmarkRun(run.id, "rehearsal-primary", {
-    audioResolver: async () => "https://rehearsal.invalid/audio.wav",
+    audioResolver: async () => Buffer.alloc(0),
   }),
   executeBenchmarkRun(run.id, "rehearsal-racer", {
-    audioResolver: async () => "https://rehearsal.invalid/audio.wav",
+    audioResolver: async () => Buffer.alloc(0),
   }),
 ]);
 const wallMs = Date.now() - startedAt;

@@ -91,7 +91,7 @@ import {
   type VapiCall,
 } from "../lib/vapi";
 import { actorFromRequest, writeAudit } from "../lib/audit";
-import { AgentConfigError, AgentRequestError, analyzeFailure } from "../lib/agent";
+import { AgentConfigError, AgentRequestError, analyzeFailure, matchKnownFailure } from "../lib/agent";
 import { logger } from "../lib/logger";
 import { drainWithConcurrency, executeBenchmarkRun } from "../lib/run-executor";
 import { createHash, randomUUID } from "node:crypto";
@@ -1218,7 +1218,15 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
 
   res.json(
     ListBenchmarkRunResultsResponse.parse(
-      rows.map(({ result, score }) => ({
+      rows.map(({ result, score }) => {
+        // 2026-08-27 (technical-fixes FIX-5/UX-7): a known, deterministic
+        // failure cause (Vapi's retention window, the Supabase archive-bucket
+        // 403) is surfaced here for free, with no click and no stored
+        // failureDiagnosis needed -- computed from errorMessage on every
+        // read. An operator's own "AI analysis" click (which DOES persist to
+        // failureDiagnosis) always takes priority once it exists.
+        const known = result.errorMessage ? matchKnownFailure(result.errorMessage) : null;
+        return {
         id: result.id,
         runId: result.runId,
         providerId: result.providerId,
@@ -1229,8 +1237,8 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         httpStatus: result.httpStatus,
         hypothesisTranscript: result.hypothesisTranscript,
         errorMessage: result.errorMessage,
-        failureDiagnosis: result.failureDiagnosis,
-        failureSuggestedFix: result.failureSuggestedFix,
+        failureDiagnosis: result.failureDiagnosis ?? known?.diagnosis ?? null,
+        failureSuggestedFix: result.failureSuggestedFix ?? known?.suggestedFix ?? null,
         rawOutputHash: result.rawOutputHash,
         createdAt: result.createdAt.toISOString(),
         score: score
@@ -1248,7 +1256,8 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
                   | undefined,
             }
           : null,
-      })),
+        };
+      }),
     ),
   );
 });

@@ -6,9 +6,15 @@ import {
   type ProviderTranscribeResult,
 } from "../types";
 
-// Speechmatics batch: POST /v2/jobs (multipart `config` part with fetch_url,
-// no audio upload needed), then poll GET /v2/jobs/{id} for status "done",
-// then GET /v2/jobs/{id}/transcript?format=json-v2.
+// Speechmatics batch: POST /v2/jobs (multipart `config` part plus a
+// `data_file` part with the raw audio), then poll GET /v2/jobs/{id} for
+// status "done", then GET /v2/jobs/{id}/transcript?format=json-v2.
+//
+// 2026-08-27 (technical-fixes FIX-2): previously used `fetch_url` so
+// Speechmatics' servers fetched Vapi's own recording URL themselves -- broke
+// permanently for any call past Vapi's 14-day retention window. `data_file`
+// is the documented alternative for uploading bytes directly instead of
+// pointing at a remote URL, which removes that dependency entirely.
 // Docs: https://docs.speechmatics.com/api-ref/batch-async
 
 export type SpeechmaticsSubmitResponse = { id?: string };
@@ -55,11 +61,11 @@ export const speechmaticsAdapter: ProviderAdapter = {
         diarization: (input.diarize ?? true) ? "speaker" : "none",
         additional_vocab: input.keywordBoosts?.map((content) => ({ content })),
       },
-      fetch_url: { url: input.audioUrl },
     };
 
     const form = new FormData();
     form.append("config", JSON.stringify(config));
+    form.append("data_file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
 
     const submitRes = await fetch("https://asr.api.speechmatics.com/v2/jobs", {
       method: "POST",
@@ -76,7 +82,7 @@ export const speechmaticsAdapter: ProviderAdapter = {
         httpStatus: submitRes.status,
         hypothesisTranscript: null,
         rawOutput,
-        errorMessage: `Speechmatics submit returned HTTP ${submitRes.status}`,
+        errorMessage: `Speechmatics submit returned HTTP ${submitRes.status}: ${(rawOutput as { detail?: string } | null)?.detail ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
       };
     }

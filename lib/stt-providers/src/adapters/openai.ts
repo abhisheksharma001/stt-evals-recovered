@@ -1,14 +1,13 @@
 import {
   ProviderConfigError,
-  fetchAudioBytes,
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
 
 // OpenAI gpt-4o-transcribe / whisper: POST /v1/audio/transcriptions.
-// Unlike the other five providers this endpoint takes uploaded bytes, not a
-// remote URL, so we fetch the corpus audio first and re-upload it.
+// Takes uploaded bytes directly -- the executor already hands us the cached
+// corpus audio, so we just re-upload it.
 // Docs: https://platform.openai.com/docs/api-reference/audio/createTranscription
 
 export type OpenAiResponse = {
@@ -37,24 +36,8 @@ export const openAiAdapter: ProviderAdapter = {
 
     const submittedAt = new Date().toISOString();
 
-    let audioBytes: Buffer;
-    try {
-      audioBytes = await fetchAudioBytes(input.audioUrl);
-    } catch (err) {
-      return {
-        status: "failed",
-        submittedAt,
-        finalAt: new Date().toISOString(),
-        httpStatus: null,
-        hypothesisTranscript: null,
-        rawOutput: null,
-        errorMessage: err instanceof Error ? err.message : String(err),
-        diarizationScore: null,
-      };
-    }
-
     const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(audioBytes)]), "audio.wav");
+    form.append("file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
     form.append("model", MODEL);
     form.append("response_format", "json");
 
@@ -75,7 +58,7 @@ export const openAiAdapter: ProviderAdapter = {
         httpStatus: res.status,
         hypothesisTranscript: null,
         rawOutput,
-        errorMessage: `OpenAI returned HTTP ${res.status}`,
+        errorMessage: `OpenAI returned HTTP ${res.status}: ${rawOutput?.error?.message ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
       };
     }

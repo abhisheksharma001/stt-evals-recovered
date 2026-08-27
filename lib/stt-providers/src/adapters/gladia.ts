@@ -6,9 +6,17 @@ import {
   type ProviderTranscribeResult,
 } from "../types";
 
-// Gladia: POST /v2/transcription (JSON, remote url) -> {id, result_url},
-// then poll result_url until status "done".
-// Docs: https://docs.gladia.io/api-reference/v2/pre-recorded/init
+// Gladia: upload bytes first (POST /v2/upload -- returns a URL on Gladia's
+// own storage), submit a transcription job against that URL
+// (POST /v2/transcription -> {id, result_url}), then poll result_url until
+// status "done".
+//
+// 2026-08-27 (technical-fixes FIX-2): previously sent Vapi's own recording
+// URL as `audio_url` directly, which meant Gladia's servers had to fetch it
+// themselves -- broke permanently for any call past Vapi's 14-day retention
+// window. Uploading our own (cached) bytes first removes that dependency.
+// Docs: https://docs.gladia.io/api-reference/v2/pre-recorded/init,
+// https://docs.gladia.io/api-reference/v2/upload/upload
 
 export type GladiaSubmitResponse = { id?: string; result_url?: string };
 export type GladiaResultResponse = {
@@ -50,11 +58,33 @@ export const gladiaAdapter: ProviderAdapter = {
     if (!apiKey) throw new ProviderConfigError(PROVIDER_ID, API_KEY_ENV_VAR);
 
     const submittedAt = new Date().toISOString();
+
+    const uploadForm = new FormData();
+    uploadForm.append("audio", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
+    const uploadRes = await fetch("https://api.gladia.io/v2/upload", {
+      method: "POST",
+      headers: { "x-gladia-key": apiKey },
+      body: uploadForm,
+    });
+    const uploadBody = (await uploadRes.json().catch(() => null)) as { audio_url?: string } | null;
+    if (!uploadRes.ok || !uploadBody?.audio_url) {
+      return {
+        status: "failed",
+        submittedAt,
+        finalAt: new Date().toISOString(),
+        httpStatus: uploadRes.status,
+        hypothesisTranscript: null,
+        rawOutput: uploadBody,
+        errorMessage: `Gladia upload returned HTTP ${uploadRes.status}: ${JSON.stringify(uploadBody) ?? "no body"}`,
+        diarizationScore: null,
+      };
+    }
+
     const submitRes = await fetch("https://api.gladia.io/v2/transcription", {
       method: "POST",
       headers: { "x-gladia-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
-        audio_url: input.audioUrl,
+        audio_url: uploadBody.audio_url,
         diarization: input.diarize ?? true,
         custom_vocabulary: input.keywordBoosts?.length ? input.keywordBoosts : undefined,
       }),
@@ -69,7 +99,7 @@ export const gladiaAdapter: ProviderAdapter = {
         httpStatus: submitRes.status,
         hypothesisTranscript: null,
         rawOutput,
-        errorMessage: `Gladia submit returned HTTP ${submitRes.status}`,
+        errorMessage: `Gladia submit returned HTTP ${submitRes.status}: ${(rawOutput as { message?: string } | null)?.message ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
       };
     }

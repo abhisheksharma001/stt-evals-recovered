@@ -1,6 +1,5 @@
 import {
   ProviderConfigError,
-  fetchAudioBytes,
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
@@ -179,27 +178,10 @@ export const cartesiaAdapter: ProviderAdapter = {
     const submittedAt = new Date().toISOString();
     const submittedAtMs = Date.now();
 
-    let audioBytes: Buffer;
-    try {
-      audioBytes = await fetchAudioBytes(input.audioUrl);
-    } catch (err) {
-      return {
-        status: "failed",
-        submittedAt,
-        finalAt: new Date().toISOString(),
-        firstPartialAt: null,
-        httpStatus: null,
-        hypothesisTranscript: null,
-        rawOutput: null,
-        errorMessage: err instanceof Error ? err.message : String(err),
-        diarizationScore: null,
-      };
-    }
-
     let wav: WavPcmInfo;
     let encoding: "pcm_s16le" | "pcm_s32le";
     try {
-      wav = parseWavPcm(audioBytes);
+      wav = parseWavPcm(input.audioBytes);
       encoding = cartesiaEncodingForBitDepth(wav.bitsPerSample);
     } catch (err) {
       return {
@@ -215,7 +197,7 @@ export const cartesiaAdapter: ProviderAdapter = {
       };
     }
 
-    const pcm = audioBytes.subarray(wav.dataOffset, wav.dataOffset + wav.dataLength);
+    const pcm = input.audioBytes.subarray(wav.dataOffset, wav.dataOffset + wav.dataLength);
 
     // access_token (query param), not X-API-Key (header): the global Node
     // WebSocket client can't set custom request headers, and Cartesia's

@@ -5,8 +5,14 @@ import {
   type ProviderTranscribeResult,
 } from "../types";
 
-// Deepgram Nova-3 prerecorded (batch) transcription: POST /v1/listen with a
-// remote URL body, no audio upload required.
+// Deepgram Nova-3 prerecorded (batch) transcription: POST /v1/listen with the
+// raw audio bytes as the request body (audio/wav), not a remote URL.
+//
+// 2026-08-27 (technical-fixes FIX-2): previously sent `{"url": audioUrl}` --
+// Deepgram's own servers fetched it, which broke permanently for any call
+// past Vapi's 14-day retention window. The same endpoint also accepts raw
+// bytes directly (documented alternative), which removes that dependency
+// entirely -- Deepgram never needs to reach back out to Vapi at all.
 // Docs: https://developers.deepgram.com/reference/speech-to-text-api/listen
 
 export type DeepgramResponse = {
@@ -62,9 +68,9 @@ export const deepgramAdapter: ProviderAdapter = {
       method: "POST",
       headers: {
         Authorization: `Token ${apiKey}`,
-        "Content-Type": "application/json",
+        "Content-Type": "audio/wav",
       },
-      body: JSON.stringify({ url: input.audioUrl }),
+      body: new Uint8Array(input.audioBytes),
     });
 
     const rawOutput = await res.json().catch(() => null);
@@ -78,7 +84,7 @@ export const deepgramAdapter: ProviderAdapter = {
         httpStatus: res.status,
         hypothesisTranscript: null,
         rawOutput,
-        errorMessage: `Deepgram returned HTTP ${res.status}`,
+        errorMessage: `Deepgram returned HTTP ${res.status}: ${(rawOutput as { err_msg?: string } | null)?.err_msg ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
       };
     }

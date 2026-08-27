@@ -3,7 +3,6 @@ import { Link } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBenchmarkRuns,
-  useCreateBenchmarkRun,
   useExecuteBenchmarkRun,
   useListBenchmarkRunResults,
   useListBenchmarkProviders,
@@ -14,8 +13,8 @@ import {
   getGetBenchmarkDashboardQueryKey,
   RunStatus
 } from "@workspace/api-client-react"
-import { Play, Activity, Clock, Server, Database, RotateCw, ListChecks, ArrowUpRight, ChevronDown, ChevronRight, Sparkles } from "lucide-react"
-import { format, formatDistanceToNow } from "date-fns"
+import { Rocket, Activity, Server, Database, RotateCw, ListChecks, ArrowUpRight, ChevronDown, ChevronRight, Sparkles } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -46,9 +45,21 @@ export default function Runs() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Benchmark Runs</h1>
-          <p className="text-muted-foreground mt-1">Queue and monitor comparable execution jobs.</p>
+          <p className="text-muted-foreground mt-1">Monitor execution jobs launched from Bulks.</p>
         </div>
-        <QueueRunDialog />
+        {/* technical-fixes FIX-6 / ux-fixes UX-4: this page used to have its
+            own "Queue Run" dialog (always the whole ready-to-run corpus, no
+            assistant/date scoping) alongside Bulks' separate, more capable
+            launch flow -- two independent ways to start a run with no
+            relationship to each other. Folded into one launch surface:
+            Bulks already supports "whole corpus" when its filters are left
+            empty, so nothing is lost, and every run (bulk-scoped or not)
+            still shows up in this list either way. */}
+        <Link href="/bulks">
+          <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
+            <Rocket className="w-4 h-4 mr-2" /> Launch a run in Bulks
+          </Button>
+        </Link>
       </div>
 
       <Card>
@@ -152,151 +163,6 @@ function RunStatusBadge({ status }: { status: RunStatus }) {
   )
 }
 
-function QueueRunDialog() {
-  const [open, setOpen] = React.useState(false)
-  const { data: providers, isLoading: providersLoading } = useListBenchmarkProviders()
-  const { data: calls, isLoading: callsLoading } = useListBenchmarkCalls()
-  const [selectedProviders, setSelectedProviders] = React.useState<string[]>([])
-
-  const readyCalls = calls?.filter(c => c.status === 'ready_to_run') || []
-  const readyProviders = providers?.filter(p => p.status === 'ready') || []
-  const scopeLoading = providersLoading || callsLoading
-
-  // UX review 2026-08-25: launching was blind spend. Everything needed for
-  // an exact estimate is already loaded -- cells = providers x calls, cost
-  // = sum(durationSeconds/60 * costPerMinute) across the selection.
-  const cellCount = selectedProviders.length * readyCalls.length
-  const estimatedCost = React.useMemo(() => {
-    if (selectedProviders.length === 0) return 0
-    const selected = new Set(selectedProviders)
-    let total = 0
-    for (const c of readyCalls) {
-      for (const p of readyProviders) {
-        if (selected.has(p.id)) total += (c.durationSeconds / 60) * p.costPerMinute
-      }
-    }
-    return total
-  }, [selectedProviders, readyCalls, readyProviders])
-
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-  const createRun = useCreateBenchmarkRun()
-
-  const toggleProvider = (id: string) => {
-    setSelectedProviders(prev => 
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    )
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (selectedProviders.length === 0 || readyCalls.length === 0) return
-
-    createRun.mutate({
-      data: {
-        // B-27: the selection could reference a provider disabled after the
-        // dialog opened — the server blocks such runs with status "blocked"
-        // and a reason in notes. Intersect with what is still ready so the
-        // operator never launches a dead scope.
-        providerIds: selectedProviders.filter((id) => readyProviders.some((p) => p.id === id)),
-        callIds: readyCalls.map(c => c.id)
-      }
-    }, {
-      onSuccess: (data) => {
-        queryClient.invalidateQueries({ queryKey: getListBenchmarkRunsQueryKey() })
-        // B-32: Overview derives its CTA from the dashboard aggregate —
-        // without this invalidation it kept saying "Queue a run" with
-        // pre-launch numbers for up to 30s, inviting a duplicate launch.
-        queryClient.invalidateQueries({ queryKey: getGetBenchmarkDashboardQueryKey() })
-        if (data.status === "blocked") {
-          // Blocked runs never execute; the toast must not claim they did.
-          toast({
-            title: "Run blocked",
-            description: data.notes ?? "Prerequisites are missing — check the Runs page.",
-            variant: "destructive",
-          })
-        } else {
-          setOpen(false)
-          setSelectedProviders([])
-          toast({ title: "Run started", description: "Provider calls are being made now — monitor progress on the Runs page." })
-        }
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to queue run.", variant: "destructive" })
-      }
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="bg-accent text-accent-foreground hover:bg-accent/90"><Play className="w-4 h-4 mr-2" /> Queue Run</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Queue Benchmark Run</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-6 pt-4">
-          <div className="bg-muted p-4 rounded-md border text-sm space-y-1">
-            <div className="flex justify-between items-center">
-              <div>
-                <div className="font-semibold text-foreground">Target Scope</div>
-                <div className="text-muted-foreground">Will execute against all ready calls.</div>
-              </div>
-              <div className="text-2xl font-mono font-bold">
-                {selectedProviders.length} × {readyCalls.length}
-                <span className="text-sm font-sans text-muted-foreground font-normal"> = {cellCount} transcriptions</span>
-              </div>
-            </div>
-            {/* NFR-8 pre-flight (UX review 2026-08-25): launch starts billed
-                provider calls immediately -- the operator sees the size and
-                price of that before clicking. */}
-            {cellCount > 0 && (
-              <div className="text-right font-mono text-sm text-foreground">
-                Estimated cost: ≈ ${estimatedCost.toFixed(2)}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <label className="text-sm font-medium">Select Target Providers</label>
-            {scopeLoading ? (
-              <div className="text-sm text-muted-foreground">Loading providers and calls…</div>
-            ) : readyProviders.length === 0 ? (
-              <div className="text-sm text-destructive">No providers ready. Configure providers first.</div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {readyProviders.map(p => (
-                  <div 
-                    key={p.id} 
-                    className={`border p-3 rounded-md cursor-pointer transition-colors ${selectedProviders.includes(p.id) ? 'bg-primary/10 border-primary' : 'hover:bg-muted/50'}`}
-                    onClick={() => toggleProvider(p.id)}
-                  >
-                    <div className="font-medium text-sm">{p.name}</div>
-                    <div className="text-xs text-muted-foreground font-mono mt-1">{p.model}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter className="flex-col items-stretch gap-2 sm:items-stretch">
-            <p className="text-xs text-muted-foreground text-center sm:text-left">
-              Starts paid provider API calls immediately. A run cannot be cancelled once started;
-              failed cells can be retried afterwards.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={createRun.isPending || selectedProviders.length === 0 || readyCalls.length === 0}>
-                {createRun.isPending ? 'Queuing...' : 'Launch Benchmark'}
-              </Button>
-            </div>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // FR-E4: a queued run that never started, or a run left "failed" after a
 // partial outage, can be (re)executed here -- only the cells without a
@@ -429,9 +295,17 @@ function FailureAnalysisPanel({
   )
 }
 
+// ux-fixes UX-3: this used to be named/labeled "Results," the same word the
+// Rankings page's title uses for a completely different thing (the
+// aggregate recommendation). Renamed to "Cell detail" throughout -- this
+// dialog is the raw per-(call, provider) drill-down; "Results" now means
+// only the Rankings page.
 function ResultsDialog({ runId }: { runId: string }) {
   const [open, setOpen] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
+  // ux-fixes UX-1: skipped_pending_review cells are collapsed by default --
+  // see the split below.
+  const [showSkipped, setShowSkipped] = React.useState(false)
   const { data: results, isLoading, isError, error, refetch } = useListBenchmarkRunResults(runId, {
     // UX review 2026-08-25: the drill-down used to freeze on "No cells
     // executed yet." for a run still in flight -- poll while open; closing
@@ -455,24 +329,94 @@ function ResultsDialog({ runId }: { runId: string }) {
     () => new Map((calls ?? []).map((c) => [c.id, c.label])),
     [calls],
   )
-  const callGroups = React.useMemo(() => {
+  // ux-fixes UX-1: "a lot of them are getting failed and skipped" traced to
+  // skipped_pending_review cells (a call matched a bulk's filters but hasn't
+  // cleared review yet -- FR-BLK-11, not a failure) rendering as full rows
+  // with the same visual weight as a real ok/failed attempt. Confirmed live:
+  // these are routinely the majority of a bulk run's cells. Split them out
+  // so the attempted cells (what actually ran) are what's visible by
+  // default, and the skipped count reads as a single clear line instead of
+  // a wall of identical rows.
+  const attemptedResults = React.useMemo(
+    () => (results ?? []).filter((r) => r.status !== 'skipped_pending_review'),
+    [results],
+  )
+  const skippedResults = React.useMemo(
+    () => (results ?? []).filter((r) => r.status === 'skipped_pending_review'),
+    [results],
+  )
+  const groupByCall = (rows: typeof results) => {
     const order: string[] = []
     const byCallId = new Map<string, typeof results>()
-    for (const r of results ?? []) {
+    for (const r of rows ?? []) {
       if (!byCallId.has(r.callId)) { order.push(r.callId); byCallId.set(r.callId, []) }
       byCallId.get(r.callId)!.push(r)
     }
     return order.map((callId) => ({ callId, rows: byCallId.get(callId)! }))
-  }, [results])
+  }
+  const attemptedGroups = React.useMemo(() => groupByCall(attemptedResults), [attemptedResults])
+  const skippedGroups = React.useMemo(() => groupByCall(skippedResults), [skippedResults])
+
+  const renderRow = (r: NonNullable<typeof results>[number]) => {
+    const hasDiff = !!r.score?.wordDiff?.length
+    const hasExpandable = hasDiff || r.status === 'failed'
+    const isExpanded = expandedId === r.id
+    return (
+      <React.Fragment key={r.id}>
+        <TableRow
+          className={hasExpandable ? "cursor-pointer" : undefined}
+          onClick={() => hasExpandable && setExpandedId(isExpanded ? null : r.id)}
+        >
+          <TableCell className="w-6">
+            {hasExpandable && (isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />)}
+          </TableCell>
+          <TableCell className="text-xs">{providerNameOf(r.providerId)}</TableCell>
+          <TableCell>
+            <Badge variant={r.status === 'ok' ? 'default' : r.status === 'failed' ? 'destructive' : 'secondary'} className="uppercase text-[10px]">
+              {r.status.replaceAll('_', ' ')}
+            </Badge>
+          </TableCell>
+          {/* Percent format matches Rankings/Review -- the same
+              score used to read 0.123 here and 12.3% there
+              (terminology review 2026-08-25). */}
+          <TableCell className="font-mono text-xs">{r.score?.wer != null ? `${(r.score.wer * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}</TableCell>
+          <TableCell className="font-mono text-xs">{r.score?.entityAccuracy != null ? `${(r.score.entityAccuracy * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}</TableCell>
+          <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={r.errorMessage ?? undefined}>
+            {r.failureDiagnosis ? "Diagnosis available" : r.errorMessage ?? '—'}
+          </TableCell>
+        </TableRow>
+        {isExpanded && hasDiff && r.score?.wordDiff && (
+          <TableRow>
+            <TableCell colSpan={6} className="bg-muted/30">
+              <WordDiffView wordDiff={r.score.wordDiff} />
+            </TableCell>
+          </TableRow>
+        )}
+        {isExpanded && r.status === 'failed' && (
+          <TableRow>
+            <TableCell colSpan={6} className="bg-muted/30">
+              <FailureAnalysisPanel
+                runId={runId}
+                resultId={r.id}
+                errorMessage={r.errorMessage ?? null}
+                failureDiagnosis={r.failureDiagnosis ?? null}
+                failureSuggestedFix={r.failureSuggestedFix ?? null}
+              />
+            </TableCell>
+          </TableRow>
+        )}
+      </React.Fragment>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm"><ListChecks className="w-3.5 h-3.5 mr-1.5" /> Results</Button>
+        <Button variant="ghost" size="sm"><ListChecks className="w-3.5 h-3.5 mr-1.5" /> Cell detail</Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Per-cell results</DialogTitle>
+          <DialogTitle>Cell detail</DialogTitle>
         </DialogHeader>
         <div className="max-h-[55vh] overflow-y-auto">
           <Table>
@@ -498,78 +442,61 @@ function ResultsDialog({ runId }: { runId: string }) {
                 <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">Loading...</TableCell></TableRow>
               ) : !results?.length ? (
                 <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No cells executed yet.</TableCell></TableRow>
-              ) : callGroups.map(({ callId, rows }) => (
-                <React.Fragment key={callId}>
-                  <TableRow className="bg-muted/20 hover:bg-muted/20">
-                    <TableCell colSpan={6} className="py-1.5">
-                      <span className="text-xs font-semibold">{callLabelById.get(callId) ?? callId.slice(0, 8)}</span>
-                      <span className="ml-2 font-mono text-[10px] text-muted-foreground">{callId.slice(0, 8)}</span>
-                      <span className="ml-2 text-[10px] text-muted-foreground">· {rows.length} provider{rows.length === 1 ? '' : 's'}</span>
-                    </TableCell>
-                  </TableRow>
-                  {rows.map(r => {
-                    const hasDiff = !!r.score?.wordDiff?.length
-                    const hasExpandable = hasDiff || r.status === 'failed'
-                    const isExpanded = expandedId === r.id
-                    return (
-                    <React.Fragment key={r.id}>
-                      <TableRow
-                        className={hasExpandable ? "cursor-pointer" : undefined}
-                        onClick={() => hasExpandable && setExpandedId(isExpanded ? null : r.id)}
-                      >
-                        <TableCell className="w-6">
-                          {hasExpandable && (isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />)}
-                        </TableCell>
-                        <TableCell className="text-xs">{providerNameOf(r.providerId)}</TableCell>
-                        <TableCell>
-                          <Badge variant={r.status === 'ok' ? 'default' : r.status === 'failed' ? 'destructive' : 'secondary'} className="uppercase text-[10px]">
-                            {r.status}
-                          </Badge>
-                        </TableCell>
-                        {/* Percent format matches Rankings/Review -- the same
-                            score used to read 0.123 here and 12.3% there
-                            (terminology review 2026-08-25). */}
-                        <TableCell className="font-mono text-xs">{r.score?.wer != null ? `${(r.score.wer * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}</TableCell>
-                        <TableCell className="font-mono text-xs">{r.score?.entityAccuracy != null ? `${(r.score.entityAccuracy * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={r.errorMessage ?? undefined}>
-                          {r.failureDiagnosis ? "AI analysis available" : r.errorMessage ?? '—'}
+              ) : (
+                <>
+                  {attemptedGroups.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No cells were attempted yet -- see skipped below.</TableCell></TableRow>
+                  ) : attemptedGroups.map(({ callId, rows }) => (
+                    <React.Fragment key={callId}>
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
+                        <TableCell colSpan={6} className="py-1.5">
+                          <span className="text-xs font-semibold">{callLabelById.get(callId) ?? callId.slice(0, 8)}</span>
+                          <span className="ml-2 font-mono text-[10px] text-muted-foreground">{callId.slice(0, 8)}</span>
+                          <span className="ml-2 text-[10px] text-muted-foreground">· {rows.length} provider{rows.length === 1 ? '' : 's'}</span>
                         </TableCell>
                       </TableRow>
-                      {isExpanded && hasDiff && r.score?.wordDiff && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/30">
-                            <WordDiffView wordDiff={r.score.wordDiff} />
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {isExpanded && r.status === 'failed' && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/30">
-                            <FailureAnalysisPanel
-                              runId={runId}
-                              resultId={r.id}
-                              errorMessage={r.errorMessage ?? null}
-                              failureDiagnosis={r.failureDiagnosis ?? null}
-                              failureSuggestedFix={r.failureSuggestedFix ?? null}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )}
+                      {rows.map(renderRow)}
                     </React.Fragment>
-                    )
-                  })}
-                </React.Fragment>
-              ))}
+                  ))}
+                  {skippedResults.length > 0 && (
+                    <>
+                      <TableRow
+                        className="cursor-pointer bg-secondary/40 hover:bg-secondary/60"
+                        onClick={() => setShowSkipped((v) => !v)}
+                      >
+                        <TableCell className="w-6">
+                          {showSkipped ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+                        </TableCell>
+                        <TableCell colSpan={5} className="text-xs text-muted-foreground">
+                          {skippedResults.length} cell{skippedResults.length === 1 ? '' : 's'} skipped — matching calls haven't cleared review yet
+                        </TableCell>
+                      </TableRow>
+                      {showSkipped && skippedGroups.map(({ callId, rows }) => (
+                        <React.Fragment key={callId}>
+                          <TableRow className="bg-muted/10 hover:bg-muted/10">
+                            <TableCell colSpan={6} className="py-1.5">
+                              <span className="text-xs font-semibold">{callLabelById.get(callId) ?? callId.slice(0, 8)}</span>
+                              <span className="ml-2 font-mono text-[10px] text-muted-foreground">{callId.slice(0, 8)}</span>
+                              <span className="ml-2 text-[10px] text-muted-foreground">· {rows.length} provider{rows.length === 1 ? '' : 's'}</span>
+                            </TableCell>
+                          </TableRow>
+                          {rows.map(renderRow)}
+                        </React.Fragment>
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
             </TableBody>
           </Table>
         </div>
         <DialogFooter className="border-t border-border pt-3 sm:justify-between">
           <span className="text-xs text-muted-foreground">
-            This is the raw drill-down for this run. Rankings and the keep/switch recommendation live in Results.
+            This is the raw drill-down for this run. Rankings and the keep/switch recommendation live in Rankings.
           </span>
           <Link href="/results" onClick={() => setOpen(false)}>
             <Button variant="outline" size="sm">
-              View in Results <ArrowUpRight className="w-3.5 h-3.5 ml-1.5" />
+              View in Rankings <ArrowUpRight className="w-3.5 h-3.5 ml-1.5" />
             </Button>
           </Link>
         </DialogFooter>

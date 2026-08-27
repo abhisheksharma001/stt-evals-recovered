@@ -1,6 +1,6 @@
 import * as React from "react"
-import { useListBenchmarkRankings, type VerticalRanking } from "@workspace/api-client-react"
-import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download } from "lucide-react"
+import { useListBenchmarkRankings, useGetAppSettings, type VerticalRanking } from "@workspace/api-client-react"
+import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -89,6 +89,13 @@ function downloadCsv(filename: string, csv: string): void {
 
 export default function Rankings() {
   const { data: rankings, isLoading, isError, error, refetch } = useListBenchmarkRankings()
+  // technical-fixes FIX-4 / ux-fixes UX-6: "active provider" (Providers ->
+  // System settings) previously fed nothing downstream -- an operator could
+  // set it and never see it do anything. This is the decision-support use:
+  // highlight that provider's row and show every other row's delta against
+  // it, so setting it actually changes what the page tells you.
+  const { data: settings } = useGetAppSettings()
+  const activeProviderId = settings?.activeProviderId ?? null
   const [sortKey, setSortKey] = React.useState<SortKey>("rank")
   // Direction starts at each metric's sensible default (lower-is-better for
   // WER/cost/latency, higher for accuracy) and clicking the active column
@@ -147,9 +154,9 @@ export default function Rankings() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Rankings & Results</h1>
         <p className="text-muted-foreground mt-1">
-          Provider scores and recommendations by assistant (2026-08-27 -- was by vertical; vertical
-          still shows as a tag per card). Click a column to sort by that metric; rank badges always
-          show the official composite order.
+          Provider scores and recommendations grouped by assistant; each assistant's vertical shows
+          as a tag on its card. Click a column to sort by that metric; rank badges always show the
+          official composite order.
         </p>
       </div>
 
@@ -173,6 +180,10 @@ export default function Rankings() {
           // this is defensive (2026-08-27) -- shows every distinct vertical
           // actually present in the group rather than assuming.
           const verticalsInGroup = [...new Set(ranks.map((r) => r.vertical))]
+          // FIX-4/UX-6: the active provider might not have been benchmarked
+          // in this particular group (e.g. it errored out entirely) -- undefined
+          // is handled the same as "no active provider set" below.
+          const activeRow = activeProviderId ? ranks.find((r) => r.providerId === activeProviderId) : undefined
           return (
           <Card key={groupKey} className="overflow-hidden border-t-4 border-t-primary shadow-sm">
             <CardHeader className="bg-muted/10 pb-4 border-b">
@@ -235,7 +246,14 @@ export default function Rankings() {
                         {r.rank === 1 ? <span className="text-primary flex items-center justify-center gap-1 text-lg font-bold"><Trophy className="w-4 h-4" /> 1</span> : r.rank}
                       </TableCell>
                       <TableCell title={r.recommendation ?? undefined}>
-                        <div className="font-semibold text-foreground">{r.providerName}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-foreground">{r.providerName}</span>
+                          {r.providerId === activeProviderId && (
+                            <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set as the active production provider in Providers -> System settings">
+                              <Star className="h-2.5 w-2.5" /> Active
+                            </Badge>
+                          )}
+                        </div>
                         {r.rank === 1 && (
                           <div className="text-xs text-primary font-medium mt-1 flex items-center">
                             <CheckCircle2 className="w-3 h-3 mr-1" /> Recommended
@@ -244,9 +262,22 @@ export default function Rankings() {
                       </TableCell>
                       {/* Null "—" means "not measured in this run" (spec:
                           distinct from a true zero) -- title says so instead
-                          of leaving the dash ambiguous (UX review). */}
+                          of leaving the dash ambiguous (UX review). FIX-4/UX-6:
+                          a non-active row with a measured WER shows its delta
+                          against the active provider's WER right underneath --
+                          lower is better, so a negative (green) delta means
+                          this candidate beats the active provider. */}
                       <TableCell className="text-right font-mono font-medium" title={r.recommendation ?? undefined}>
                         {r.score.wer != null ? `${(r.score.wer * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
+                        {activeRow && r.providerId !== activeProviderId && r.score.wer != null && activeRow.score.wer != null && (() => {
+                          const deltaPp = (r.score.wer! - activeRow.score.wer!) * 100
+                          const better = deltaPp < 0
+                          return (
+                            <div className={`text-[10px] font-normal ${better ? "text-success" : deltaPp > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                              {better ? "" : "+"}{deltaPp.toFixed(1)}pp vs active
+                            </div>
+                          )
+                        })()}
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {r.score.entityAccuracy != null ? `${(r.score.entityAccuracy * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}

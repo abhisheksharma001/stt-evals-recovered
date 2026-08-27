@@ -1,6 +1,5 @@
 import {
   ProviderConfigError,
-  fetchAudioBytes,
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
@@ -44,24 +43,8 @@ export const elevenLabsAdapter: ProviderAdapter = {
 
     const submittedAt = new Date().toISOString();
 
-    let audioBytes: Buffer;
-    try {
-      audioBytes = await fetchAudioBytes(input.audioUrl);
-    } catch (err) {
-      return {
-        status: "failed",
-        submittedAt,
-        finalAt: new Date().toISOString(),
-        httpStatus: null,
-        hypothesisTranscript: null,
-        rawOutput: null,
-        errorMessage: err instanceof Error ? err.message : String(err),
-        diarizationScore: null,
-      };
-    }
-
     const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(audioBytes)]), "audio.wav");
+    form.append("file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
     form.append("model_id", "scribe_v1");
     form.append("diarize", String(input.diarize ?? true));
 
@@ -82,7 +65,7 @@ export const elevenLabsAdapter: ProviderAdapter = {
         httpStatus: res.status,
         hypothesisTranscript: null,
         rawOutput,
-        errorMessage: `ElevenLabs returned HTTP ${res.status}`,
+        errorMessage: `ElevenLabs returned HTTP ${res.status}: ${(typeof rawOutput?.detail === "string" ? rawOutput.detail : rawOutput?.detail?.message) ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
       };
     }

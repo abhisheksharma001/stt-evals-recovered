@@ -75,7 +75,7 @@ providerRegistry["e2e-flaky"] = {
         diarizationScore: null,
       };
     }
-    return providerRegistry["e2e-ok"].transcribe({ callId, audioUrl: "", diarize: false });
+    return providerRegistry["e2e-ok"].transcribe({ callId, audioBytes: Buffer.alloc(0), diarize: false });
   },
 };
 providerRegistry["e2e-slow"] = {

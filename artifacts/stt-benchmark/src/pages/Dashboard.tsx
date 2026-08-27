@@ -126,7 +126,9 @@ export default function Dashboard() {
           ? { text: `${needsDeid} call${needsDeid === 1 ? "" : "s"} have a gold transcript but are missing de-identification sign-off.`, href: "/corpus", label: "Attest de-ID", icon: ShieldCheck }
           : data.configuredProviderCount === 0
             ? { text: "No provider has an API key configured yet.", href: "/providers", label: "Configure providers", icon: Check }
-            : { text: `${data.readyToRunCount} calls are ready. Queue a run against ${data.configuredProviderCount} configured provider${data.configuredProviderCount === 1 ? "" : "s"}.`, href: "/runs", label: "Queue a run", icon: GitMerge }
+            // technical-fixes FIX-6 / ux-fixes UX-4: Runs no longer launches
+            // anything itself -- launching lives in Bulks now, one surface.
+            : { text: `${data.readyToRunCount} calls are ready. Launch a run against ${data.configuredProviderCount} configured provider${data.configuredProviderCount === 1 ? "" : "s"}.`, href: "/bulks", label: "Launch a run", icon: GitMerge }
 
   return (
     <div className="space-y-7">
@@ -171,7 +173,7 @@ export default function Dashboard() {
           label="Decide"
           tone={data.latestRunStatus === "complete" ? "current" : "pending"}
           value={data.latestRunStatus === "complete" ? "Ready" : "—"}
-          detail="keep, switch, or split by vertical"
+          detail="keep, switch, or split by assistant"
         />
       </div>
 

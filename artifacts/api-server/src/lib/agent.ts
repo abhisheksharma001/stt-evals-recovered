@@ -188,11 +188,52 @@ export async function judgeCandidates(params: {
 // flag/judge pass above. Cheap model: this is a short classification task
 // over a single error string, not the harder "which transcript reads best"
 // judgment call.
+// 2026-08-27 (technical-fixes FIX-5): two known, deterministic failure causes
+// currently account for over half of all live failures (Vapi's 14-day
+// retention window, and the Supabase archive-bucket 403 -- see
+// docs/backlog/good-to-have.md and docs/PRD-technical-fixes.md). Neither
+// needs an LLM call to diagnose; the error text itself already says exactly
+// what's wrong, every time. Matched before analyzeFailure ever runs, so a
+// known cause is free and instant instead of a paid, repeated OpenAI call
+// re-discovering the same fact on every cell that hits it.
+export function matchKnownFailure(
+  errorMessage: string,
+): { diagnosis: string; suggestedFix: string } | null {
+  if (errorMessage.includes("retention window")) {
+    return {
+      diagnosis:
+        "This call's recording is older than Vapi's plan retains (14 days), so Vapi can no longer " +
+        "issue a fresh download link for it -- this is permanent, not a transient failure, and every " +
+        "provider hits it identically for this call.",
+      suggestedFix:
+        "Not retryable. Either upgrade the Vapi plan's retention window before this happens again, or " +
+        "accept this call as permanently excluded from future runs. If it was ever transcribed " +
+        "successfully before, that cached audio is reusable -- newly-imported calls won't be if left " +
+        "unrun past day 14.",
+    };
+  }
+  if (errorMessage.includes("storage.supabase.co") || errorMessage.includes("archive/")) {
+    return {
+      diagnosis:
+        "This call's recording lives in the older Supabase \"archive\" storage bucket, and the link " +
+        "Vapi hands back for it was never actually signed -- every provider gets an HTTP 403 straight " +
+        "from Supabase. Confirmed as a bucket-level split, not a per-call or per-provider flake.",
+      suggestedFix:
+        "Not fixable from this app. Needs either Vapi support to fix the signing for this bucket, or " +
+        "direct read access to the Supabase archive bucket as a workaround.",
+    };
+  }
+  return null;
+}
+
 export async function analyzeFailure(params: {
   providerName: string;
   errorMessage: string;
   httpStatus: number | null;
 }): Promise<{ diagnosis: string; suggestedFix: string }> {
+  const known = matchKnownFailure(params.errorMessage);
+  if (known) return known;
+
   const result = await callOpenAi({
     model: FLAG_MODEL,
     system:
