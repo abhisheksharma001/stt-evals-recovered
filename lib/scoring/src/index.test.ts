@@ -29,6 +29,17 @@ describe("normalizeTranscript", () => {
   it("4. handles empty string", () => {
     expect(normalizeTranscript("")).toBe("");
   });
+
+  // T-5 (base-solidity fix): a spelled-out digit-by-digit phone number and
+  // a formatted one must normalize to the identical token stream --
+  // otherwise providers are penalized for a formatting choice, not a
+  // transcription error.
+  it("5b. folds spoken digits and a formatted number to the same tokens", () => {
+    const spelled = normalizeTranscript("call five five five one two three one two one two");
+    const formatted = normalizeTranscript("call 555-123-1212");
+    expect(spelled).toBe(formatted);
+    expect(spelled).toBe("call 5 5 5 1 2 3 1 2 1 2");
+  });
 });
 
 describe("editCounts (WER building block)", () => {

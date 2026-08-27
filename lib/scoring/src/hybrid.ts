@@ -15,7 +15,7 @@
 // first, expensive judgment only where the deterministic layer already
 // found something worth explaining.
 
-import { diffWords, normalizeTranscript } from "./index";
+import { diffWords, digitizeSpokenDigits, normalizeTranscript } from "./index";
 
 export type HybridSeverity = "none" | "low" | "medium" | "high";
 
@@ -41,9 +41,29 @@ export type CrossProviderDisagreement = {
   providerId: string;
   mismatchWords: number;
   comparedWords: number;
-  disagreementRate: number; // 0..1, higher = more of an outlier vs its peers
+  disagreementRate: number; // 0..1, higher = more of an outlier vs consensus
+  consensusProviderCount: number; // how many candidates the consensus was built from
 };
 
+// T-4 fix (2026-08-27, base-solidity review): the original scheme diffed
+// every unordered PAIR and blamed both sides equally for any mismatch. That
+// meant a perfect provider absorbed up to 1/(n-1) of an outlier's badness
+// just by sharing a run with it, and the SAME provider on the SAME audio
+// scored differently depending on who else happened to be in the run --
+// breaking comparability across bulks with different provider sets.
+//
+// Below, disagreement is measured against a plurality CONSENSUS instead:
+// align every candidate to one anchor (the median-length candidate --
+// length only, not correctness, so an outlier being unusually short/long
+// doesn't get picked purely by chance), vote on the majority word at each
+// anchor position, then score each candidate against that vote. A provider
+// that agrees with the majority scores 0 regardless of who else ran; only
+// genuine outliers accrue disagreement. Ties (no majority at a position)
+// are excluded from both numerator and denominator for everyone, not
+// counted as "everyone was wrong."
+//
+// With exactly 2 candidates a plurality is meaningless (every mismatch is a
+// 1-1 tie), so that case keeps the original direct pairwise comparison.
 export function computeCrossProviderDisagreement(
   candidates: { providerId: string; transcript: string }[],
 ): CrossProviderDisagreement[] {
@@ -58,37 +78,84 @@ export function computeCrossProviderDisagreement(
       mismatchWords: 0,
       comparedWords: 0,
       disagreementRate: 0,
+      consensusProviderCount: tokenized.length,
     }));
   }
 
-  const tally = new Map<string, { mismatchWords: number; comparedWords: number }>();
-  for (const t of tokenized) tally.set(t.providerId, { mismatchWords: 0, comparedWords: 0 });
+  if (tokenized.length === 2) {
+    const [a, b] = tokenized as [(typeof tokenized)[number], (typeof tokenized)[number]];
+    const diff = diffWords(a.words, b.words);
+    const mismatches = diff.filter((op) => op.op !== "ok").length;
+    return tokenized.map((t) => ({
+      providerId: t.providerId,
+      mismatchWords: mismatches,
+      comparedWords: diff.length,
+      disagreementRate: diff.length === 0 ? 0 : mismatches / diff.length,
+      consensusProviderCount: 2,
+    }));
+  }
 
-  // Every unordered pair once. Direction of the alignment (which side is
-  // "reference") shifts sub/del/ins classification slightly but not the
-  // total non-"ok" count in any way that matters here -- both sides of a
-  // pair are blamed equally for whatever doesn't match, since there's no
-  // ground truth to say which one is wrong.
-  for (let i = 0; i < tokenized.length; i += 1) {
-    for (let j = i + 1; j < tokenized.length; j += 1) {
-      const a = tokenized[i]!;
-      const b = tokenized[j]!;
-      const diff = diffWords(a.words, b.words);
-      const mismatches = diff.filter((op) => op.op !== "ok").length;
-      tally.get(a.providerId)!.mismatchWords += mismatches;
-      tally.get(a.providerId)!.comparedWords += diff.length;
-      tally.get(b.providerId)!.mismatchWords += mismatches;
-      tally.get(b.providerId)!.comparedWords += diff.length;
+  const byLength = [...tokenized].sort((a, b) => a.words.length - b.words.length);
+  const anchor = byLength[Math.floor(byLength.length / 2)]!;
+
+  // Per candidate, per anchor-word-position: the word it aligned to there
+  // (null = this candidate is missing a word the anchor has). A candidate's
+  // extra words (inserted, not anchored to any position) have no slot to
+  // vote in -- tallied directly as mismatches below instead.
+  const positionValues = new Map<string, Array<string | null>>();
+  const insertionCounts = new Map<string, number>();
+
+  for (const t of tokenized) {
+    const ops = diffWords(anchor.words, t.words);
+    const values: Array<string | null> = [];
+    let insertions = 0;
+    for (const op of ops) {
+      if (op.op === "ok" || op.op === "sub") values.push(op.hyp);
+      else if (op.op === "del") values.push(null);
+      else insertions += 1; // "ins": extra word, no anchor slot to compare
     }
+    positionValues.set(t.providerId, values);
+    insertionCounts.set(t.providerId, insertions);
+  }
+
+  const positionCount = anchor.words.length;
+  const consensus: Array<string | null> = [];
+  for (let p = 0; p < positionCount; p += 1) {
+    const votes = new Map<string, number>();
+    for (const t of tokenized) {
+      const v = positionValues.get(t.providerId)![p];
+      if (v !== null) votes.set(v, (votes.get(v) ?? 0) + 1);
+    }
+    let best: string | null = null;
+    let bestCount = 0;
+    let tie = false;
+    for (const [value, count] of votes) {
+      if (count > bestCount) {
+        best = value;
+        bestCount = count;
+        tie = false;
+      } else if (count === bestCount) {
+        tie = true;
+      }
+    }
+    consensus.push(tie || best === null ? null : best); // null = excluded position
   }
 
   return tokenized.map((t) => {
-    const stat = tally.get(t.providerId)!;
+    const values = positionValues.get(t.providerId)!;
+    let mismatchWords = insertionCounts.get(t.providerId)!;
+    let comparedWords = insertionCounts.get(t.providerId)!;
+    for (let p = 0; p < positionCount; p += 1) {
+      if (consensus[p] === null) continue; // excluded -- no consensus to compare against
+      comparedWords += 1;
+      if (values[p] !== consensus[p]) mismatchWords += 1;
+    }
     return {
       providerId: t.providerId,
-      mismatchWords: stat.mismatchWords,
-      comparedWords: stat.comparedWords,
-      disagreementRate: stat.comparedWords === 0 ? 0 : stat.mismatchWords / stat.comparedWords,
+      mismatchWords,
+      comparedWords,
+      disagreementRate: comparedWords === 0 ? 0 : mismatchWords / comparedWords,
+      consensusProviderCount: tokenized.length,
     };
   });
 }
@@ -174,8 +241,16 @@ const VIN_RE = /\b([A-HJ-NPR-Z0-9]{17})\b/gi;
 const REFERENCE_RE = /\b(?:ro|unit|work\s*order|load(?:\s*number)?|order)[\s#:-]*([a-z0-9-]{2,12})\b/gi;
 
 export function extractEntities(transcript: string): ExtractedEntity[] {
+  // T-5 fix (2026-08-27): a provider that spells numbers out ("four four
+  // seven one") could never match these digit-expecting regexes at all, so
+  // it could never be flagged for getting a reference/phone number wrong --
+  // stacking with T-3 into "spell your numbers out and you win." Digitize
+  // spoken digits before matching; VIN_RE is left on the raw transcript
+  // since VINs mix letters and digits and are conventionally read
+  // character-by-character already.
+  const digitized = digitizeSpokenDigits(transcript);
   const entities: ExtractedEntity[] = [];
-  for (const m of transcript.matchAll(PHONE_RE)) {
+  for (const m of digitized.matchAll(PHONE_RE)) {
     entities.push({ type: "phone_number", value: m[1]!.replace(/[-.\s]/g, ""), raw: m[1]! });
   }
   for (const m of transcript.matchAll(VIN_RE)) {
@@ -184,7 +259,7 @@ export function extractEntities(transcript: string): ExtractedEntity[] {
       entities.push({ type: "vin", value, raw: m[1]! });
     }
   }
-  for (const m of transcript.matchAll(REFERENCE_RE)) {
+  for (const m of digitized.matchAll(REFERENCE_RE)) {
     entities.push({ type: "reference_number", value: m[1]!.toUpperCase(), raw: m[0] });
   }
   return entities;
@@ -193,13 +268,28 @@ export function extractEntities(transcript: string): ExtractedEntity[] {
 export type EntityMismatch = {
   type: ExtractedEntityType;
   valuesByProvider: Record<string, string[]>;
+  // T-3 fix (2026-08-27, base-solidity review): the old check only ever
+  // compared providers that BOTH mentioned an entity of this type -- a
+  // provider that dropped the RO number entirely never appeared here at
+  // all, so silently omitting it scored better than a near-miss. Populated
+  // only when a real majority exists to be missing from: >=3 providers ran
+  // the call (2 providers "agreeing" isn't corroboration, it's just the
+  // only other opinion) and one value is produced by >=50% of the
+  // providers that produced ANY entity of this type.
+  missingProviderIds: string[];
 };
 
-/** Only returns actual disagreements -- providers that agree, or that never
- * mentioned an entity of that type at all, produce nothing here. */
+const ENTITY_CONSENSUS_MIN_SHARE = 0.5;
+const ENTITY_CONSENSUS_MIN_PROVIDERS = 3;
+
+/** Returns entries for every entity type where at least one provider is
+ * either in conflict with its peers or missing a value the majority agreed
+ * on. A type where every provider agrees (or where too few providers ran to
+ * call anything a majority) produces nothing here. */
 export function computeEntityMismatches(
   candidates: { providerId: string; transcript: string }[],
 ): EntityMismatch[] {
+  const allProviderIds = candidates.map((c) => c.providerId);
   const byType = new Map<ExtractedEntityType, Map<string, Set<string>>>();
   for (const c of candidates) {
     for (const entity of extractEntities(c.transcript)) {
@@ -212,7 +302,7 @@ export function computeEntityMismatches(
 
   const mismatches: EntityMismatch[] = [];
   for (const [type, perProvider] of byType) {
-    if (perProvider.size < 2) continue; // need 2+ providers to even compare
+    if (perProvider.size < 2) continue; // need 2+ producers to even compare
     const valuesByProvider: Record<string, string[]> = {};
     const signatures = new Set<string>();
     for (const [providerId, values] of perProvider) {
@@ -220,7 +310,24 @@ export function computeEntityMismatches(
       valuesByProvider[providerId] = sorted;
       signatures.add(sorted.join("|"));
     }
-    if (signatures.size > 1) mismatches.push({ type, valuesByProvider });
+    const conflicting = signatures.size > 1;
+
+    let missingProviderIds: string[] = [];
+    if (allProviderIds.length >= ENTITY_CONSENSUS_MIN_PROVIDERS) {
+      const valueCounts = new Map<string, number>();
+      for (const values of perProvider.values()) {
+        for (const v of values) valueCounts.set(v, (valueCounts.get(v) ?? 0) + 1);
+      }
+      const hasMajorityValue = [...valueCounts.values()].some(
+        (count) => count / perProvider.size >= ENTITY_CONSENSUS_MIN_SHARE,
+      );
+      if (hasMajorityValue) {
+        missingProviderIds = allProviderIds.filter((id) => !perProvider.has(id));
+      }
+    }
+
+    if (!conflicting && missingProviderIds.length === 0) continue;
+    mismatches.push({ type, valuesByProvider, missingProviderIds });
   }
   return mismatches;
 }
@@ -228,10 +335,28 @@ export function computeEntityMismatches(
 // --- Combine into one per-provider result --------------------------------
 
 export type HybridFlagResult = {
+  // Total across every signal -- what a human reviewing one cell wants to
+  // see (includes confidence spans, which ARE real signal for a human
+  // deciding whether to trust one transcript).
   flagCount: number;
   flagSeverity: HybridSeverity;
+  // T-2 fix (2026-08-27, base-solidity review): only 3 of 7 providers
+  // (AssemblyAI, Deepgram, Gladia) expose per-word confidence at all -- the
+  // other 4 structurally produce zero confidence flags, always. Folding
+  // confidence into the RANKING signal punished a provider for the honesty
+  // of reporting its own uncertainty. peerFlagCount/peerFlagSeverity are
+  // the confidence-free subset (cross-provider disagreement + entity
+  // mismatches, both available for every provider) -- this is what the
+  // ranking composite must use. flagCount/flagSeverity above stay the
+  // full picture for per-cell review.
+  peerFlagCount: number;
+  peerFlagSeverity: HybridSeverity;
   crossProviderDisagreement: CrossProviderDisagreement | null;
   lowConfidenceSpans: ConfidenceSpan[];
+  // Whether this provider's raw output exposes per-word confidence at all --
+  // lets a caller show "not reported by this provider" instead of a
+  // misleading clean 0.
+  confidenceAvailable: boolean;
   entityMismatches: EntityMismatch[];
 };
 
@@ -244,32 +369,43 @@ const DISAGREEMENT_HIGH_THRESHOLD = 0.35;
 export function combineHybridFlags(params: {
   disagreement: CrossProviderDisagreement | null;
   confidenceSpans: ConfidenceSpan[];
+  confidenceAvailable: boolean;
   entityMismatches: EntityMismatch[]; // pre-filtered to ones this provider participated in
 }): HybridFlagResult {
-  let flagCount = 0;
+  let peerFlagCount = 0;
+  let confidenceFlagCount = 0;
+  let peerFlagSeverity: HybridSeverity = "none";
   let flagSeverity: HybridSeverity = "none";
 
   if (params.disagreement && params.disagreement.disagreementRate > DISAGREEMENT_FLAG_THRESHOLD) {
-    flagCount += 1;
-    flagSeverity = maxSeverity(
-      flagSeverity,
-      params.disagreement.disagreementRate > DISAGREEMENT_HIGH_THRESHOLD ? "high" : "medium",
-    );
+    peerFlagCount += 1;
+    const severity = params.disagreement.disagreementRate > DISAGREEMENT_HIGH_THRESHOLD ? "high" : "medium";
+    peerFlagSeverity = maxSeverity(peerFlagSeverity, severity);
+    flagSeverity = maxSeverity(flagSeverity, severity);
   }
 
-  flagCount += params.confidenceSpans.length;
+  // Confidence spans feed flagCount/flagSeverity (per-cell review) only --
+  // deliberately excluded from peerFlagCount/peerFlagSeverity (T-2).
+  confidenceFlagCount += params.confidenceSpans.length;
   for (const span of params.confidenceSpans) flagSeverity = maxSeverity(flagSeverity, span.severity);
 
-  flagCount += params.entityMismatches.length;
-  // A wrong VIN/phone/RO number is always high-stakes for this tool's
-  // actual purpose (PRD G2) regardless of how small it looks as "one word."
-  if (params.entityMismatches.length > 0) flagSeverity = maxSeverity(flagSeverity, "high");
+  // A wrong/missing VIN/phone/RO number is always high-stakes for this
+  // tool's actual purpose (PRD G2) regardless of how small it looks as "one
+  // word" -- and available for every provider, so it belongs in both.
+  peerFlagCount += params.entityMismatches.length;
+  if (params.entityMismatches.length > 0) {
+    peerFlagSeverity = maxSeverity(peerFlagSeverity, "high");
+    flagSeverity = maxSeverity(flagSeverity, "high");
+  }
 
   return {
-    flagCount,
+    flagCount: peerFlagCount + confidenceFlagCount,
     flagSeverity,
+    peerFlagCount,
+    peerFlagSeverity,
     crossProviderDisagreement: params.disagreement,
     lowConfidenceSpans: params.confidenceSpans,
+    confidenceAvailable: params.confidenceAvailable,
     entityMismatches: params.entityMismatches,
   };
 }

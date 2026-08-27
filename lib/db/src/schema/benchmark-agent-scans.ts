@@ -28,7 +28,10 @@ export type BenchmarkHybridFlagSummary = {
   flagSeverity: "none" | "low" | "medium" | "high";
   crossProviderDisagreements: Array<{ providerId: string; disagreementRate: number }>;
   lowConfidenceSpans: Record<string, Array<{ words: string[]; avgConfidence: number; severity: string }>>;
-  entityMismatches: Array<{ type: string; valuesByProvider: Record<string, string[]> }>;
+  // T-3 (base-solidity fix): missingProviderIds carries which candidates
+  // said NOTHING of this entity type while the others agreed on a value --
+  // a distinct failure mode from valuesByProvider's conflicting values.
+  entityMismatches: Array<{ type: string; valuesByProvider: Record<string, string[]>; missingProviderIds: string[] }>;
 };
 
 // An "agent scan" is a per-call quality check -- requested by Abhishek

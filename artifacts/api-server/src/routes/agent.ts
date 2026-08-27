@@ -154,15 +154,21 @@ function deriveFlagTexts(
       });
     }
     for (const mismatch of result.entityMismatches) {
-      const key = `${mismatch.type}:${JSON.stringify(mismatch.valuesByProvider)}`;
+      const key = `${mismatch.type}:${JSON.stringify(mismatch.valuesByProvider)}:${mismatch.missingProviderIds.join(",")}`;
       if (seenEntityMismatches.has(key)) continue;
       seenEntityMismatches.add(key);
       const byProviderText = Object.entries(mismatch.valuesByProvider)
         .map(([pid, values]) => `${candidatesByProvider.get(pid)?.providerName ?? pid}: ${values.join(", ")}`)
         .join(" vs. ");
+      // T-3: a provider that said nothing at all is a distinct failure mode
+      // from two providers actively disagreeing -- state it as such rather
+      // than always saying "disagree," which implies everyone said something.
+      const missingText = mismatch.missingProviderIds.length
+        ? ` -- ${mismatch.missingProviderIds.map((pid) => candidatesByProvider.get(pid)?.providerName ?? pid).join(", ")} mentioned nothing of this type at all.`
+        : "";
       flags.push({
         text: mismatch.type.replace(/_/g, " "),
-        reason: `Candidates disagree on the ${mismatch.type.replace(/_/g, " ")} itself -- ${byProviderText}.`,
+        reason: `Candidates disagree on the ${mismatch.type.replace(/_/g, " ")} itself -- ${byProviderText}.${missingText}`,
       });
     }
   }
@@ -333,7 +339,7 @@ router.post("/benchmark/agent/scans", async (req, res): Promise<void> => {
       entityMismatches: [...hybridByProvider.values()]
         .flatMap((r) => r.entityMismatches)
         .filter((m, i, arr) => arr.findIndex((o) => JSON.stringify(o) === JSON.stringify(m)) === i)
-        .map((m) => ({ type: m.type, valuesByProvider: m.valuesByProvider })),
+        .map((m) => ({ type: m.type, valuesByProvider: m.valuesByProvider, missingProviderIds: m.missingProviderIds })),
     };
 
     if (totalFlagCount === 0) {

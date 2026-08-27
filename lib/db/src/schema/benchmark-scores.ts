@@ -30,6 +30,17 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   // lives in `detail.hybridFlags` below, same pattern as wordDiff already did.
   flagCount: integer("flag_count"),
   flagSeverity: text("flag_severity"),
+  // T-2 fix (2026-08-27, base-solidity review): only 3 of 7 providers
+  // report per-word confidence at all, so folding confidence spans into
+  // flagCount/flagSeverity above punished the providers honest enough to
+  // expose their own uncertainty. peerFlagCount/peerFlagSeverity are the
+  // confidence-free subset (cross-provider disagreement + entity mismatch,
+  // both available for every provider) -- the RANKING composite in
+  // run-executor.ts's computeRankingsForRun must read these, not the
+  // columns above. flagCount/flagSeverity stay the full picture for
+  // per-cell human review (see lib/scoring/src/hybrid.ts combineHybridFlags).
+  peerFlagCount: integer("peer_flag_count"),
+  peerFlagSeverity: text("peer_flag_severity"),
   detail: jsonb("detail").$type<Record<string, unknown>>(),
   scoredAt: timestamp("scored_at", { withTimezone: true })
     .notNull()
