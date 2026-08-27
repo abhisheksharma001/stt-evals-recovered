@@ -8,4 +8,8 @@
 
 export interface HealthStatus {
   status: string;
+  commitSha: string;
+  builtAt: string | null;
+  startedAt: string;
+  providersConfigured: string[];
 }

@@ -780,10 +780,37 @@ components:
   schemas:
     HealthStatus:
       type: object
-      required: [status]
+      required: [status, commitSha, builtAt, startedAt, providersConfigured]
       properties:
         status:
           type: string
+        # T-04 (2026-08-28): build identity, so the running process can say
+        # which code it is actually running. There is no watch mode on this
+        # server -- a source change needs a rebuild AND a restart, and
+        # without these fields nothing on screen distinguished "rebuilt but
+        # not restarted" from "running the new code".
+        #
+        # commitSha is frozen into the bundle at BUILD time (esbuild
+        # define), so it describes the bundle, not the working tree at
+        # start. "dev" means running from source (tsx); a "-dirty" suffix
+        # means the tree had uncommitted changes when it was built, so the
+        # bundle does not correspond to that commit.
+        commitSha:
+          type: string
+        # Null when running from source rather than a built bundle.
+        builtAt:
+          type: string
+          nullable: true
+        # When this process started. builtAt newer than startedAt means a
+        # rebuild has happened that this process is not running.
+        startedAt:
+          type: string
+        # NAMES ONLY -- provider ids whose API key env var is non-empty.
+        # Never a key, never a prefix, never a length. This endpoint is
+        # unauthenticated, so everything here is public by definition.
+        providersConfigured:
+          type: array
+          items: { type: string }
     Vertical:
       type: string
       enum: [rush, property_management, trucking]
