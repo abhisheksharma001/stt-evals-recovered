@@ -14,7 +14,9 @@ set -euo pipefail
 
 API="${1:-http://localhost:8177/api}"
 
-mapfile -t IDS < <(
+# `mapfile` is bash 4+, and macOS still ships bash 3.2 -- read into a
+# newline-separated string instead so this runs on a stock Mac.
+IDS=$(
   curl -fsS --max-time 30 "$API/benchmark/calls" |
     python3 -c "
 import json,sys
@@ -26,14 +28,15 @@ for c in calls:
 "
 )
 
-if [ "${#IDS[@]}" -eq 0 ]; then
+if [ -z "$IDS" ]; then
   echo "Nothing to backfill -- no calls are in needs_review."
   exit 0
 fi
 
-echo "Flipping ${#IDS[@]} call(s) to ready_to_run..."
+count=$(printf '%s\n' "$IDS" | wc -l | tr -d ' ')
+echo "Flipping $count call(s) to ready_to_run..."
 ok=0; failed=0
-for id in "${IDS[@]}"; do
+for id in $IDS; do
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
     -X PATCH "$API/benchmark/calls/$id" \
     -H 'Content-Type: application/json' \
