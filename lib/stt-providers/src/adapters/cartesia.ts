@@ -4,6 +4,7 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import { scaledPollTimeoutMs } from "../poll";
 
 // Cartesia Ink-Whisper: WebSocket streaming STT, not a batch/URL REST call
 // like the other six adapters in this package (confirmed against Cartesia's
@@ -29,7 +30,17 @@ const CARTESIA_VERSION = "2026-08-14";
 const CHUNK_BYTES = 6400; // ~200ms of 16kHz 16-bit mono PCM
 const SEND_INTERVAL_MS = 190; // stream slightly ahead of real-time, not a single dump
 const CONNECT_TIMEOUT_MS = 15_000;
-const RESPONSE_TIMEOUT_MS = 120_000;
+// T-8-style fix (2026-08-27, found live: 15 cells failed on one bulk, every
+// one of them "WebSocket timed out waiting for a final transcript" -- and
+// every failure was a long call, 93s-445s). This used to be a fixed 120s
+// RESPONSE_TIMEOUT_MS covering the ENTIRE socket lifetime (connect + stream
+// + finalize + idle-close), set once at connection start and never reset.
+// Audio is streamed at ~real-time pace (SEND_INTERVAL_MS below), so just
+// streaming a 3-minute call already takes ~3 minutes -- a fixed 120s cap
+// guaranteed a timeout on any call over roughly 100s, regardless of
+// Cartesia's own health. Scaled the same way the async-poll adapters
+// already were (poll.ts's scaledPollTimeoutMs, same 3x-realtime/60s-floor/
+// 15min-cap policy) instead of inventing a second timeout policy.
 const IDLE_CLOSE_MS = 2_000; // quiet period after "finalize" before we force-close
 
 // ---- Pure helpers (network-free, unit tested in parsers.test.ts) ----
@@ -198,6 +209,7 @@ export const cartesiaAdapter: ProviderAdapter = {
     }
 
     const pcm = input.audioBytes.subarray(wav.dataOffset, wav.dataOffset + wav.dataLength);
+    const responseTimeoutMs = scaledPollTimeoutMs(input.audioDurationSeconds);
 
     // access_token (query param), not X-API-Key (header): the global Node
     // WebSocket client can't set custom request headers, and Cartesia's
@@ -266,14 +278,16 @@ export const cartesiaAdapter: ProviderAdapter = {
       }, CONNECT_TIMEOUT_MS);
 
       const responseTimer = setTimeout(() => {
-        connectError = connectError ?? "Cartesia WebSocket timed out waiting for a final transcript.";
+        connectError =
+          connectError ??
+          `Cartesia WebSocket timed out waiting for a final transcript (${Math.round(responseTimeoutMs / 1000)}s budget for a ${input.audioDurationSeconds ?? "unknown-length"}s call).`;
         try {
           ws.close();
         } catch {
           // socket already dead
         }
         finish();
-      }, RESPONSE_TIMEOUT_MS);
+      }, responseTimeoutMs);
 
       const armIdleClose = () => {
         if (idleTimer) clearTimeout(idleTimer);

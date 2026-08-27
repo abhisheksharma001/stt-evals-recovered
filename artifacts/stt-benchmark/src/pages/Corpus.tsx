@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  Trophy,
 } from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -257,81 +258,103 @@ function ExpandedCallDetail({ call }: { call: any }) {
   const draftTurns = React.useMemo(() => parseTurns(call.draftTranscript), [call.draftTranscript])
 
   return (
-    <div className="grid grid-cols-1 gap-5 border-t border-border p-5 lg:grid-cols-[1.4fr_1fr]">
-      <div className="space-y-4">
-        <div>
-          <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Provider draft transcript
-          </h4>
-          {draftTurns.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No provider draft transcript on file for this call.</p>
-          ) : (
-            <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
-              {draftTurns.map((turn, i) => (
-                <div key={i} className="flex gap-3">
-                  {turn.speaker && (
-                    <span className="w-12 shrink-0 pt-1 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      {turn.speaker}
-                    </span>
-                  )}
-                  <p className="rounded-md bg-muted/40 p-2.5 font-serif text-sm leading-relaxed text-foreground">
-                    {turn.text}
-                  </p>
-                </div>
-              ))}
+    <div className="space-y-5 border-t border-border p-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <div className="space-y-4">
+          <div>
+            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Provider draft transcript
+            </h4>
+            {draftTurns.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No provider draft transcript on file for this call.</p>
+            ) : (
+              <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
+                {draftTurns.map((turn, i) => (
+                  <div key={i} className="flex gap-3">
+                    {turn.speaker && (
+                      <span className="w-12 shrink-0 pt-1 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {turn.speaker}
+                      </span>
+                    )}
+                    <p className="rounded-md bg-muted/40 p-2.5 font-serif text-sm leading-relaxed text-foreground">
+                      {turn.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Audio</h4>
+            {call.audioObjectPath ? (
+              <audio
+                key={call.id}
+                src={`${apiBase()}/api/benchmark/calls/${call.id}/audio`}
+                controls
+                onError={() =>
+                  toast({
+                    title: "Couldn't load audio",
+                    description: "The recording link may have expired on Vapi's side, or no Vapi account is configured on the server.",
+                    variant: "destructive",
+                  })
+                }
+                className="h-9 w-full"
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">No audio URL on this call.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <ProductionTranscriberPanel call={call} />
+          {call.entityNotes && (
+            <div className="rounded-lg border border-card-border bg-card p-3">
+              <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Curator notes
+              </h4>
+              <p className="font-serif text-sm leading-relaxed text-muted-foreground">{call.entityNotes}</p>
             </div>
           )}
         </div>
-
-        <div>
-          <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Audio</h4>
-          {call.audioObjectPath ? (
-            <audio
-              key={call.id}
-              src={`${apiBase()}/api/benchmark/calls/${call.id}/audio`}
-              controls
-              onError={() =>
-                toast({
-                  title: "Couldn't load audio",
-                  description: "The recording link may have expired on Vapi's side, or no Vapi account is configured on the server.",
-                  variant: "destructive",
-                })
-              }
-              className="h-9 w-full"
-            />
-          ) : (
-            <p className="text-xs text-muted-foreground">No audio URL on this call.</p>
-          )}
-        </div>
       </div>
 
-      <div className="space-y-4">
-        <ProductionTranscriberPanel call={call} />
-        <AgentVerificationPanel scan={latestScan} />
-        {call.entityNotes && (
-          <div className="rounded-lg border border-card-border bg-card p-3">
-            <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Curator notes
-            </h4>
-            <p className="font-serif text-sm leading-relaxed text-muted-foreground">{call.entityNotes}</p>
-          </div>
-        )}
-      </div>
+      {/* Full-width: needs room for several transcripts side by side --
+          2026-08-27, per Abhishek: "get all the comparisons, like a normal
+          transcript, from the different providers ... which one is the
+          perfect one and why in a one-liner, and which are the low-
+          confidence ones." Reuses the exact same scan data the narrow
+          panel used to show (no new storage -- candidates/transcripts and
+          the hybrid-flag detail were already being persisted per call). */}
+      <ProviderComparisonPanel scan={latestScan} />
     </div>
   )
 }
 
 /**
- * 2026-08-27, per Abhishek ("bulk calls will also do the agent system
- * working"): every bulk/run now auto-verifies its own calls (run-executor.ts
- * -> lib/agent-verify.ts) -- this shows the latest result inline instead of
- * needing a separate Agent page to look it up. `scan === null` means the
- * call has never been through a run yet, not that verification failed.
+ * 2026-08-27, per Abhishek ("get all the comparisons, like a normal
+ * transcript, from the different providers, below show what the changes
+ * are, which one is the perfect one and why in a one-liner, and which are
+ * the other low-confidence ones"): every bulk/run now auto-verifies its own
+ * calls (run-executor.ts -> lib/agent-verify.ts), so this reads straight
+ * from what was already computed and stored -- no new storage, no separate
+ * page. `scan === null` means the call has never been through a run yet,
+ * not that verification failed.
+ *
+ * Transparency note (also per Abhishek, "I'm hoping this whole decision is
+ * coming through the AI"): only the winner pick + its one-liner come from a
+ * real LLM call (OpenAI, only spent when the free check below actually
+ * found something). The free check itself -- cross-provider disagreement,
+ * per-word confidence, entity mismatches -- is deterministic text
+ * comparison, not an LLM guess. Both are real signal; neither is hidden.
  */
-function AgentVerificationPanel({ scan }: { scan: any | null }) {
+function ProviderComparisonPanel({ scan }: { scan: any | null }) {
+  const [expandedProviderId, setExpandedProviderId] = React.useState<string | null>(null)
+
   if (!scan) {
     return (
-      <DetailSection title="Agent verification">
+      <DetailSection title="Provider comparison">
         <p className="text-xs text-muted-foreground">
           Not checked yet -- runs automatically the next time this call is included in a run or bulk.
         </p>
@@ -339,37 +362,155 @@ function AgentVerificationPanel({ scan }: { scan: any | null }) {
     )
   }
 
-  const statusMeta: Record<string, { icon: React.ElementType; className: string; label: string }> = {
-    clean: { icon: CheckCircle2, className: "text-success", label: "Clean" },
-    flagged: { icon: AlertTriangle, className: "text-warning", label: "Flagged" },
-    approved: { icon: CheckCircle2, className: "text-success", label: "Flagged, reviewed" },
-    rejected: { icon: AlertTriangle, className: "text-muted-foreground", label: "Flagged, disputed" },
-    error: { icon: AlertTriangle, className: "text-destructive", label: "Check failed" },
-    scanning: { icon: Loader2, className: "text-muted-foreground", label: "Checking..." },
+  if (scan.status === "scanning" || scan.status === "error") {
+    const statusMeta: Record<string, { icon: React.ElementType; className: string; label: string }> = {
+      scanning: { icon: Loader2, className: "text-muted-foreground", label: "Checking..." },
+      error: { icon: AlertTriangle, className: "text-destructive", label: "Check failed" },
+    }
+    const meta = statusMeta[scan.status]
+    const Icon = meta.icon
+    return (
+      <DetailSection title="Provider comparison">
+        <div className={`flex items-center gap-1.5 text-sm ${meta.className}`}>
+          <Icon className="h-3.5 w-3.5" />
+          <span className="font-medium">{meta.label}</span>
+        </div>
+        {scan.errorMessage && <p className="text-xs text-destructive">{scan.errorMessage}</p>}
+      </DetailSection>
+    )
   }
-  const meta = statusMeta[scan.status] ?? statusMeta.error
-  const Icon = meta.icon
+
+  const candidates: Array<{ providerId: string; providerName: string; status: string; transcript: string | null }> =
+    scan.candidates ?? []
+  const flags = scan.hybridFlags
+  const lowConfByProvider: Record<string, Array<{ words: string[]; avgConfidence: number; severity: string }>> =
+    flags?.lowConfidenceSpans ?? {}
+  const disagreementByProvider = new Map<string, number>(
+    (flags?.crossProviderDisagreements ?? []).map((d: any) => [d.providerId, d.disagreementRate]),
+  )
+  const entityMismatchCountByProvider = new Map<string, number>()
+  for (const m of flags?.entityMismatches ?? []) {
+    for (const pid of [...Object.keys(m.valuesByProvider ?? {}), ...(m.missingProviderIds ?? [])]) {
+      entityMismatchCountByProvider.set(pid, (entityMismatchCountByProvider.get(pid) ?? 0) + 1)
+    }
+  }
+
+  const flagScoreOf = (providerId: string): number =>
+    (lowConfByProvider[providerId]?.length ?? 0) + (entityMismatchCountByProvider.get(providerId) ?? 0)
+
+  const sorted = [...candidates]
+    .filter((c) => c.status === "ok" && c.transcript)
+    .sort((a, b) => {
+      if (a.providerId === scan.agentPickProviderId) return -1
+      if (b.providerId === scan.agentPickProviderId) return 1
+      return flagScoreOf(a.providerId) - flagScoreOf(b.providerId)
+    })
+
+  const oneLiner = scan.agentPickReasoning ? scan.agentPickReasoning.split(/(?<=[.!?])\s/)[0] : null
 
   return (
-    <DetailSection title="Agent verification">
-      <div className={`flex items-center gap-1.5 text-sm ${meta.className}`}>
-        <Icon className="h-3.5 w-3.5" />
-        <span className="font-medium">{meta.label}</span>
-        {scan.hybridFlags?.flagCount != null && scan.hybridFlags.flagCount > 0 && (
+    <DetailSection title="Provider comparison">
+      {scan.status === "clean" ? (
+        <div className="flex items-center gap-1.5 text-sm text-success">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          <span className="font-medium">Clean</span>
           <span className="text-xs text-muted-foreground">
-            ({scan.hybridFlags.flagCount} flag{scan.hybridFlags.flagCount === 1 ? "" : "s"}, {scan.hybridFlags.flagSeverity} severity)
+            -- {candidates.length} provider{candidates.length === 1 ? "" : "s"} compared, no disagreement, low-confidence span, or entity mismatch found.
           </span>
-        )}
+        </div>
+      ) : (
+        <>
+          {/* The one real LLM call in this whole panel -- everything else
+              on this page is deterministic. Said plainly so it's never
+              mistaken for more AI than it is. */}
+          <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
+            <div className="flex items-center gap-1.5 text-sm">
+              <Trophy className="h-3.5 w-3.5 text-primary" />
+              <span className="font-semibold text-foreground">
+                {sorted[0]?.providerName ?? "No pick"}
+              </span>
+              <Badge variant="outline" className="text-[9px] uppercase">OpenAI pick</Badge>
+            </div>
+            {oneLiner && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{oneLiner}</p>}
+          </div>
+
+          {(flags?.entityMismatches ?? []).length > 0 && (
+            <div className="space-y-1 rounded-md border border-warning/25 bg-warning/5 p-2.5 text-xs">
+              <span className="font-medium uppercase tracking-wide text-warning">Entities disagree</span>
+              {flags.entityMismatches.map((m: any, i: number) => (
+                <p key={i} className="text-muted-foreground">
+                  <span className="font-medium text-foreground">{m.type.replace(/_/g, " ")}: </span>
+                  {Object.entries(m.valuesByProvider ?? {})
+                    .map(([pid, vals]) => `${candidates.find((c) => c.providerId === pid)?.providerName ?? pid}: ${(vals as string[]).join(", ")}`)
+                    .join(" vs. ")}
+                  {m.missingProviderIds?.length > 0 &&
+                    ` -- ${m.missingProviderIds.map((pid: string) => candidates.find((c) => c.providerId === pid)?.providerName ?? pid).join(", ")} said nothing.`}
+                </p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Every candidate's real transcript, winner first -- click a row to
+          read it in full alongside exactly which spans it was flagged for. */}
+      <div className="overflow-hidden rounded-md border border-border">
+        {sorted.map((c) => {
+          const isPicked = c.providerId === scan.agentPickProviderId
+          const spans = lowConfByProvider[c.providerId] ?? []
+          const disagreement = disagreementByProvider.get(c.providerId)
+          const entityCount = entityMismatchCountByProvider.get(c.providerId) ?? 0
+          const expanded = expandedProviderId === c.providerId
+          return (
+            <div key={c.providerId} className="border-b border-border last:border-b-0">
+              <button
+                onClick={() => setExpandedProviderId(expanded ? null : c.providerId)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
+              >
+                {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                <span className="text-sm font-medium">{c.providerName}</span>
+                {isPicked && (
+                  <Badge className="text-[9px] uppercase">
+                    <Trophy className="mr-1 h-2.5 w-2.5" /> Picked
+                  </Badge>
+                )}
+                <span className="ml-auto flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
+                  {spans.length > 0 && <span title="Low-confidence spans">{spans.length} low-conf</span>}
+                  {disagreement != null && disagreement > 0.15 && (
+                    <span className="text-warning" title="Disagrees with the other candidates on this share of words">
+                      {Math.round(disagreement * 100)}% disagree
+                    </span>
+                  )}
+                  {entityCount > 0 && <span className="text-warning">{entityCount} entity mismatch</span>}
+                  {spans.length === 0 && (disagreement == null || disagreement <= 0.15) && entityCount === 0 && (
+                    <span className="text-success">clean</span>
+                  )}
+                </span>
+              </button>
+              {expanded && (
+                <div className="space-y-2 border-t border-border bg-muted/20 p-3">
+                  <p className="whitespace-pre-wrap font-serif text-sm leading-relaxed text-foreground">
+                    {c.transcript}
+                  </p>
+                  {spans.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {spans.map((s, i) => (
+                        <span
+                          key={i}
+                          className="rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 font-mono text-[10px] text-warning"
+                          title={`Avg confidence ${(s.avgConfidence * 100).toFixed(0)}%`}
+                        >
+                          "{s.words.join(" ")}" ({(s.avgConfidence * 100).toFixed(0)}%)
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
-      {scan.agentPickReasoning && (
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          <span className="font-medium text-foreground">Agent's read: </span>
-          {scan.agentPickReasoning}
-        </p>
-      )}
-      {scan.errorMessage && (
-        <p className="text-xs text-destructive">{scan.errorMessage}</p>
-      )}
     </DetailSection>
   )
 }

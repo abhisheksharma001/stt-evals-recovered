@@ -1073,7 +1073,15 @@ function aggregateRankingRows(
           agg.composite === null
             ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
             : index === 0
-              ? `Leading candidate for ${assistantId ? `this assistant's calls (${vertical})` : `calls with no assistant on file (${vertical})`} -- fewest/least-severe hybrid flags among ready providers. ${confidenceNoteFor(agg.sampleSize)}`
+              // 2026-08-27, per Abhishek ("remove the property management
+              // term ... it's in the decision logic"): the raw vertical enum
+              // (e.g. "property_management") used to be embedded in this
+              // sentence -- an internal code name leaking into what's meant
+              // to read as a clean, market-standard recommendation, and
+              // redundant with the assistant name already shown above it.
+              // Dropped entirely rather than reformatted; vertical stays
+              // available in the CSV export for anyone who needs it.
+              ? `Leading candidate for ${assistantId ? "this assistant's calls" : "calls with no assistant on file"} -- fewest/least-severe hybrid flags among ready providers. ${confidenceNoteFor(agg.sampleSize)}`
               : `Behind rank 1 on hybrid flag composite (more or more-severe cross-provider/confidence/entity flags). ${confidenceNoteFor(agg.sampleSize)}`,
       })),
     );

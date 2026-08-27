@@ -172,15 +172,46 @@ export async function judgeCandidates(params: {
     },
   });
 
-  const pickedProviderId = typeof result.pickedProviderId === "string" ? result.pickedProviderId : null;
+  const rawPick = typeof result.pickedProviderId === "string" ? result.pickedProviderId : null;
   const reasoning = typeof result.reasoning === "string" ? result.reasoning : "";
+  // 2026-08-27, found live: every historical flagged scan in the corpus
+  // (10/10, spanning several days) has a null pick despite `reasoning`
+  // plainly naming a provider ("The AssemblyAI transcript provides the
+  // most...") -- the strict-schema enum match below was never once
+  // succeeding in practice, for reasons not reproducible without spending
+  // real OpenAI calls to isolate. Rather than ship the "why this one" UI
+  // on top of a field that silently comes back empty, fall back to
+  // matching the provider NAME the model actually wrote in its prose --
+  // cheap, no extra API call, and the reasoning text is real model output
+  // either way so this isn't inventing an answer, just reading the one
+  // already given in a second, more forgiving way.
+  const pickedProviderId = candidateIds.includes(rawPick ?? "")
+    ? rawPick
+    : inferPickFromReasoning(reasoning, params.candidates);
   return {
     promptTokens: usage.promptTokens,
     completionTokens: usage.completionTokens,
     costCents: usage.costCents,
-    pickedProviderId: candidateIds.includes(pickedProviderId ?? "") ? pickedProviderId : null,
+    pickedProviderId,
     reasoning,
   };
+}
+
+/** Fallback for when the model's structured `pickedProviderId` doesn't
+ * match any candidate (see the caller's comment) -- finds whichever
+ * candidate's provider name is mentioned earliest in the reasoning text,
+ * which in every observed case is the one the reasoning is actually about. */
+function inferPickFromReasoning(
+  reasoning: string,
+  candidates: { providerId: string; providerName: string }[],
+): string | null {
+  let best: { providerId: string; index: number } | null = null;
+  for (const c of candidates) {
+    const idx = reasoning.toLowerCase().indexOf(c.providerName.toLowerCase());
+    if (idx === -1) continue;
+    if (!best || idx < best.index) best = { providerId: c.providerId, index: idx };
+  }
+  return best?.providerId ?? null;
 }
 
 // 2026-08-26, per Abhishek: a raw errorMessage (an HTTP status, a vendor
