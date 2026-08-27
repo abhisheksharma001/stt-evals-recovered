@@ -109,7 +109,7 @@ function BuildBadge() {
 
   if (isPending) {
     return (
-      <BuildBadgeShell tone="quiet" title="Asking the API which build it is running.">
+      <BuildBadgeShell tone="pending" title="Asking the API which build it is running.">
         checking…
       </BuildBadgeShell>
     )
@@ -136,7 +136,7 @@ function BuildBadge() {
     `commit  ${sha}`,
     `built   ${data.builtAt ?? "not a bundle (running from source)"}`,
     `started ${data.startedAt}`,
-    `keys    ${data.providersConfigured.length} provider(s) configured`,
+    `keyed   ${data.providersConfigured.length} provider(s) have a key set`,
     data.providersConfigured.join(", "),
   ].join("\n")
 
@@ -152,7 +152,7 @@ function BuildBadgeShell({
   title,
   children,
 }: {
-  tone: "quiet" | "provisional" | "down"
+  tone: "pending" | "quiet" | "provisional" | "down"
   title: string
   children: React.ReactNode
 }) {
@@ -168,7 +168,11 @@ function BuildBadgeShell({
             ? "bg-destructive"
             : tone === "provisional"
               ? "bg-warning"
-              : "bg-chart-2",
+              // Green only once the API has actually answered -- a green dot
+              // beside "checking..." would be a health claim nothing has made.
+              : tone === "pending"
+                ? "bg-muted-foreground/40"
+                : "bg-chart-2",
         )}
       />
       <span className="uppercase tracking-[0.09em] text-muted-foreground">api</span>
