@@ -362,37 +362,16 @@ async function executeBenchmarkRunInner(
       .where(inArray(benchmarkProviderCallResultsTable.id, staleResultIds));
   }
 
-  // FR-BLK-11 (bulk runs only): the all-or-nothing ready_to_run gate on
-  // POST /benchmark/runs deliberately does NOT apply to bulk shard runs --
-  // at 50-1000 calls, waiting for 100% human review defeats the point. The
-  // not-ready subset is recorded as skipped_pending_review (a new outcome
-  // class, not a failure: nothing was attempted, no cost spent) and the
-  // ready subset executes. Ad-hoc Runs-page runs keep the strict gate.
-  const isBulkShard = run.bulkId !== null;
-  const skippedCalls = isBulkShard
-    ? calls.filter((call) => call.status !== "ready_to_run")
-    : [];
-  const runnableCalls = isBulkShard
-    ? calls.filter((call) => call.status === "ready_to_run")
-    : calls;
-
-  let skippedCells = 0;
-  for (const call of skippedCalls) {
-    for (const provider of providers.filter(
-      (p) => !alreadyOk.has(`${p.id}::${call.id}`),
-    )) {
-      await insertResult(runId, call.id, provider.id, {
-        status: "skipped_pending_review",
-        submittedAt: null,
-        finalAt: null,
-        httpStatus: null,
-        hypothesisTranscript: null,
-        rawOutput: null,
-        errorMessage: `Call status is "${call.status}" -- bulk runs only execute ready_to_run calls (FR-BLK-11). Re-review, then retry-failed picks it up.`,
-      });
-      skippedCells += 1;
-    }
-  }
+  // 2026-08-27, per Abhishek's explicit decision: the de-identification gate
+  // is removed. A bulk shard used to skip every call that wasn't
+  // ready_to_run and record it as skipped_pending_review; with the gate gone
+  // there is nothing to skip, so every selected call runs.
+  //
+  // skipped_pending_review remains a valid result status so historical rows
+  // (and the manifest/progress code that reads them) still make sense -- it
+  // is simply never written any more.
+  const runnableCalls = calls;
+  const skippedCells: number = 0;
 
   let failedCells = 0;
   let configBlockedCells = 0;
@@ -566,11 +545,6 @@ async function executeBenchmarkRunInner(
   }
   if (failedCells > 0) {
     notes.push(`${failedCells} cell(s) failed transiently and can be retried by re-executing this run.`);
-  }
-  if (skippedCells > 0) {
-    notes.push(
-      `${skippedCells} cell(s) skipped pending review (FR-BLK-11): call not ready_to_run; no provider call was attempted or billed.`,
-    );
   }
   if (cancelledCells > 0) {
     notes.push(`${cancelledCells} cell(s) cancelled before starting (FR-BLK-7).`);

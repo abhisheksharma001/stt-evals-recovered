@@ -5,7 +5,6 @@ import {
   useListBenchmarkCalls,
   useCreateBenchmarkCall,
   useUpdateBenchmarkCall,
-  useAttestBenchmarkCallDeid,
   useListBenchmarkProviders,
   getListBenchmarkCallsQueryKey,
   CallStatus,
@@ -132,7 +131,6 @@ export default function Corpus() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <DeidBadge call={call} />
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
@@ -220,18 +218,6 @@ function RetentionWarning({ sourceStartedAt }: { sourceStartedAt?: string | null
     )
   }
   return null
-}
-
-function DeidBadge({ call }: { call: { deIdAttestedByLabel?: string | null; deIdSecondApproverLabel?: string | null } }) {
-  const complete = Boolean(call.deIdAttestedByLabel && call.deIdSecondApproverLabel)
-  const started = Boolean(call.deIdAttestedByLabel)
-  if (complete) {
-    return <span className="text-xs font-mono text-success">2 / 2</span>
-  }
-  if (started) {
-    return <span className="text-xs font-mono text-warning">1 / 2</span>
-  }
-  return <span className="text-xs font-mono text-muted-foreground">0 / 2</span>
 }
 
 function CreateCallDialog() {
@@ -425,7 +411,6 @@ function CallDetailsDialog({ call }: { call: any }) {
   const { toast } = useToast()
   const updateCall = useUpdateBenchmarkCall()
 
-  const deidComplete = Boolean(call.deIdAttestedByLabel && call.deIdSecondApproverLabel)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -481,9 +466,6 @@ function CallDetailsDialog({ call }: { call: any }) {
 
           <ProductionTranscriberPanel call={call} />
 
-          <DetailSection title="De-identification">
-            <DeidAttestationPanel call={call} />
-          </DetailSection>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
@@ -504,19 +486,10 @@ function CallDetailsDialog({ call }: { call: any }) {
               <option value="ready_to_run">Ready to Run</option>
               <option value="archived">Archived</option>
             </select>
-            {status === 'ready_to_run' && !deidComplete && (
-              <p className="text-xs text-warning flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Needs two distinct de-id approvals first (above).</p>
-            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            {/* UX review 2026-08-25: this combination is a guaranteed 409 --
-                disable up front instead of letting the operator burn the
-                action and read an error toast. */}
-            <Button
-              type="submit"
-              disabled={updateCall.isPending || (status === 'ready_to_run' && !deidComplete)}
-            >
+            <Button type="submit" disabled={updateCall.isPending}>
               {updateCall.isPending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
@@ -526,57 +499,3 @@ function CallDetailsDialog({ call }: { call: any }) {
   )
 }
 
-// FR-C3 two-person de-id gate. Same approver cannot provide both
-// attestations (enforced server-side too, HTTP 409).
-function DeidAttestationPanel({ call }: { call: any }) {
-  const [approver, setApprover] = React.useState("")
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-  const attest = useAttestBenchmarkCallDeid()
-
-  const attested1 = Boolean(call.deIdAttestedByLabel)
-  const attested2 = Boolean(call.deIdSecondApproverLabel)
-
-  const submit = () => {
-    if (!approver.trim()) return
-    attest.mutate({ callId: call.id, data: { approverLabel: approver.trim() } }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
-        setApprover("")
-        toast({ title: "Attestation recorded" })
-      },
-      onError: (err: any) => {
-        toast({ title: "Cannot record attestation", description: err?.message ?? "Same approver cannot attest twice.", variant: "destructive" })
-      }
-    })
-  }
-
-  return (
-    <div className="border border-border rounded-lg p-3 bg-muted/30 space-y-2">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-        <ShieldCheck className="w-3.5 h-3.5" /> De-identification approvals (two required)
-      </div>
-      <div className="flex flex-col gap-1 text-xs font-mono">
-        <span className={attested1 ? "text-success" : "text-muted-foreground"}>
-          1st: {attested1 ? call.deIdAttestedByLabel : "not yet approved"}
-        </span>
-        <span className={attested2 ? "text-success" : "text-muted-foreground"}>
-          2nd: {attested2 ? call.deIdSecondApproverLabel : "not yet approved"}
-        </span>
-      </div>
-      {!attested2 && (
-        <div className="flex gap-2 pt-1">
-          <Input
-            value={approver}
-            onChange={e => setApprover(e.target.value)}
-            placeholder="your name or email"
-            className="h-8 text-xs"
-          />
-          <Button type="button" size="sm" className="h-8" disabled={attest.isPending || !approver.trim()} onClick={submit}>
-            Attest
-          </Button>
-        </div>
-      )}
-    </div>
-  )
-}

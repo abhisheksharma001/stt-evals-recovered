@@ -36,7 +36,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { Link } from "wouter"
 import { useToast } from "@/hooks/use-toast"
 
 function BulkStatusBadge({ status }: { status: BulkStatus }) {
@@ -58,17 +57,20 @@ function BulkStatusBadge({ status }: { status: BulkStatus }) {
 }
 
 /**
- * Bug found live 2026-08-27 (Abhishek): three bulks in a row were created,
- * launched, and reported COMPLETE while running exactly nothing -- all 280
- * cells came back skipped_pending_review. The gate itself was right
- * (FR-BLK-11: only ready_to_run calls execute), but nothing in the creation
- * flow told anyone that ZERO of the 56 matched calls were eligible, so the
- * mistake was invisible and repeatable.
+ * Three bulks in a row were created, launched, and reported a green COMPLETE
+ * while running exactly nothing -- all 280 cells came back
+ * skipped_pending_review because none of the 56 frozen calls had cleared the
+ * de-identification gate, and nothing in the creation flow said so.
  *
- * This mirrors the server's own matcher (resolveCriteriaCallIds +
- * resolveDateWindow in api-server/src/lib/bulks.ts) against the corpus the
- * page has already fetched, so the count shown here is the count that will
- * actually run. Keep the two in sync if either changes.
+ * That gate is gone (2026-08-27, per Abhishek), so every matched call now
+ * runs. The count stays, because the other half of that bug is still live:
+ * a bulk can match zero calls and still launch. It also still calls out
+ * calls excluded purely because they carry no sourceStartedAt -- a NULL
+ * start date never satisfies the server's gte/lte window, which is the
+ * non-obvious reason a date-filtered bulk comes back empty.
+ *
+ * Mirrors the server's own matcher (resolveCriteriaCallIds +
+ * resolveDateWindow in api-server/src/lib/bulks.ts). Keep the two in sync.
  */
 type CriteriaDraft = {
   assistantIds: string[]
@@ -79,10 +81,8 @@ type CriteriaDraft = {
 
 type Eligibility = {
   matched: number
-  ready: number
-  pending: number
-  /** ready_to_run calls excluded purely because they carry no start date. */
-  readyWithoutStartDate: number
+  /** Calls excluded from a date window purely for having no start date. */
+  excludedForNoStartDate: number
   loading: boolean
 }
 
@@ -105,34 +105,27 @@ function useCriteriaEligibility(criteria: CriteriaDraft): Eligibility {
     const matchesDate = (c: (typeof all)[number]) => {
       if (from === undefined) return true
       const started = c.sourceStartedAt ? Date.parse(c.sourceStartedAt) : NaN
-      // The server compares sourceStartedAt with gte/lte; a NULL start date
-      // never satisfies either, so such calls are silently excluded. Mirror
-      // that exactly -- and count them, because that exclusion is the
-      // non-obvious half of why a bulk can come back empty.
       return Number.isFinite(started) && started >= from
     }
 
     const matched = all.filter((c) => matchesNonDate(c) && matchesDate(c))
-    const ready = matched.filter((c) => c.status === "ready_to_run")
-    const readyWithoutStartDate = all.filter(
-      (c) => c.status === "ready_to_run" && matchesNonDate(c) && !matchesDate(c) && !c.sourceStartedAt,
+    const excludedForNoStartDate = all.filter(
+      (c) => matchesNonDate(c) && !matchesDate(c) && !c.sourceStartedAt,
     )
 
     return {
       matched: matched.length,
-      ready: ready.length,
-      pending: matched.length - ready.length,
-      readyWithoutStartDate: readyWithoutStartDate.length,
+      excludedForNoStartDate: excludedForNoStartDate.length,
       loading: isLoading,
     }
   }, [calls, isLoading, criteria])
 }
 
 function EligibilityNotice({ eligibility }: { eligibility: Eligibility }) {
-  const { matched, ready, pending, readyWithoutStartDate, loading } = eligibility
+  const { matched, excludedForNoStartDate, loading } = eligibility
   if (loading) return null
 
-  const blocked = ready === 0
+  const blocked = matched === 0
   return (
     <div
       className={`rounded-lg border px-3 py-2 text-xs space-y-1 ${
@@ -142,24 +135,15 @@ function EligibilityNotice({ eligibility }: { eligibility: Eligibility }) {
       <div className="flex items-center gap-2 font-medium">
         {blocked && <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
         <span>
-          {matched} call{matched === 1 ? "" : "s"} match &mdash; {ready} ready to run
-          {pending > 0 && `, ${pending} pending de-identification review`}
+          {matched} call{matched === 1 ? "" : "s"} match and will run
         </span>
       </div>
-      {blocked && (
-        <p>
-          Launching now would run nothing and every cell would be recorded as skipped.{" "}
-          <Link href="/review" className="underline font-medium">
-            Attest de-identification
-          </Link>{" "}
-          on these calls first &mdash; each one needs two different approvers.
-        </p>
-      )}
-      {readyWithoutStartDate > 0 && (
+      {blocked && <p>Nothing matches these filters, so this bulk would run nothing.</p>}
+      {excludedForNoStartDate > 0 && (
         <p className={blocked ? "" : "text-warning"}>
-          {readyWithoutStartDate} ready-to-run call{readyWithoutStartDate === 1 ? " is" : "s are"} excluded by the
-          date filter because {readyWithoutStartDate === 1 ? "it has" : "they have"} no start date on record. Clear
-          &ldquo;last N days&rdquo; to include {readyWithoutStartDate === 1 ? "it" : "them"}.
+          {excludedForNoStartDate} call{excludedForNoStartDate === 1 ? " is" : "s are"} excluded by the
+          date filter because {excludedForNoStartDate === 1 ? "it has" : "they have"} no start date on
+          record. Clear &ldquo;last N days&rdquo; to include {excludedForNoStartDate === 1 ? "it" : "them"}.
         </p>
       )}
     </div>
@@ -437,15 +421,14 @@ function CreateBulkDialog() {
           />
           <EligibilityNotice eligibility={eligibility} />
           <p className="text-xs text-muted-foreground">
-            Only <span className="font-mono">ready_to_run</span> calls execute; the rest are recorded as
-            skipped pending review (FR-BLK-11). Creating a 4th bulk evicts the oldest (FR-BLK-10).
+            Every matched call runs. Creating a 4th bulk evicts the oldest (FR-BLK-10).
           </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
           <Button
             onClick={submit}
-            disabled={providerIds.length === 0 || createBulk.isPending || eligibility.ready === 0}
+            disabled={providerIds.length === 0 || createBulk.isPending || eligibility.matched === 0}
           >
             {createBulk.isPending ? "Creating..." : "Create & launch"}
           </Button>
@@ -625,19 +608,16 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
             </div>
           )}
 
-          {/* Three bulks in a row showed a green COMPLETE while running
-              nothing (2026-08-27). A finished bulk whose cells were ALL
-              skipped is not a success -- say so where the numbers are. */}
+          {/* A finished bulk whose cells were ALL skipped is not a success --
+              say so where the numbers are. Only historical bulks can be in
+              this state now that the de-identification gate is removed. */}
           {p && p.cellsTotal > 0 && p.cellsSkippedPendingReview === p.cellsTotal && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Nothing ran. All {p.cellsTotal} cells were skipped because none of these {p.callsTotal} calls had
-                two-person de-identification sign-off (FR-BLK-11). No provider was billed.{" "}
-                <Link href="/review" className="underline font-medium">
-                  Attest the calls
-                </Link>{" "}
-                and create a new bulk &mdash; this one&rsquo;s selection is frozen.
+                Nothing ran. All {p.cellsTotal} cells were skipped by the de-identification gate that
+                applied when this bulk was launched. No provider was billed. That gate is gone &mdash;
+                create a new bulk and these calls will run.
               </span>
             </div>
           )}

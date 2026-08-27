@@ -399,7 +399,10 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
       entityNotes: parsed.data.entityNotes,
       entityReferences: parsed.data.entityReferences ?? [],
       audioObjectPath: parsed.data.audioObjectPath,
-      status: "needs_review",
+      // De-id gate removed 2026-08-27 per Abhishek: a call is runnable the
+      // moment it exists, so it lands ready_to_run rather than waiting on a
+      // review step that no longer gates anything.
+      status: "ready_to_run",
     })
     .returning();
 
@@ -438,23 +441,11 @@ router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   }
 
   const current = existing[0];
-  // 2026-08-27, per Abhishek: "we don't need a gold transcript any more" --
-  // a call reaches ready_to_run on de-id alone now. WER/entity-accuracy
-  // scoring (which needed a gold transcript to diff against) is retired in
-  // favor of the gold-free hybrid flag pipeline (lib/scoring/src/hybrid.ts),
-  // which needs nothing from Review at all -- see run-executor.ts.
-  if (body.data.status === "ready_to_run") {
-    // FR-C3: two distinct approvers must attest de-identification before a
-    // call can be used in a run. This gate is unchanged -- de-id is a
-    // compliance requirement, independent of the (now-retired) gold gate.
-    if (!current.deIdAttestedByLabel || !current.deIdSecondApproverLabel) {
-      res.status(409).json({
-        error:
-          "Two distinct de-identification approvals are required first. POST /benchmark/calls/:callId/attest-deid.",
-      });
-      return;
-    }
-  }
+  // 2026-08-27, per Abhishek's explicit decision: the de-identification gate
+  // is removed entirely. Setting ready_to_run used to require two distinct
+  // approvers (FR-C3); it now requires nothing. The attest-deid endpoint and
+  // its columns remain so historical attestations stay readable, but nothing
+  // depends on them.
 
   const [call] = await db
     .update(benchmarkCallsTable)
@@ -617,10 +608,12 @@ router.get("/benchmark/calls/:callId/audio", async (req, res): Promise<void> => 
 //
 // These three routes are the UI-driven replacement for the CLI importer:
 // pick an account, pick a window, preview what's there, then import only the
-// calls the operator ticked. Nothing here de-identifies, approves, or writes
-// a gold transcript -- imported calls land in `needs_review` exactly like the
-// CLI path, because using a provider's own transcript as the reference would
-// bias the benchmark it feeds (GOLD-01).
+// calls the operator ticked. Imported calls land `ready_to_run` -- the
+// de-identification gate was removed 2026-08-27 per Abhishek's explicit
+// decision, so nothing stands between import and a run. Vapi's own
+// transcript still goes to draftTranscript, never treated as a reference,
+// because scoring against the provider Vapi already chose would bias the
+// benchmark it feeds (GOLD-01).
 
 const VAPI_PREVIEW_CHARS = 240;
 
@@ -878,7 +871,7 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
         // Vapi's transcript goes in draftTranscript, never goldTranscript
         // (GOLD-01): it is the reviewer's starting point, not the reference.
         draftTranscript: draft ?? null,
-        status: "needs_review",
+        status: "ready_to_run",
         sourceProvider: "vapi",
         sourceCallId: call.id,
         sourceAccountLabel: account.label,
@@ -1169,13 +1162,6 @@ router.post("/benchmark/runs", async (req, res): Promise<void> => {
   }
   if (selectedProviders.length !== parsed.data.providerIds.length) {
     blockers.push("one or more providers do not exist");
-  }
-  if (selectedCalls.some((call) => call.status !== "ready_to_run")) {
-    // F-2 fix (2026-08-27, base-solidity review): gold transcripts were
-    // retired -- ready_to_run is now gated on de-id alone (see the PATCH
-    // /benchmark/calls/:callId handler). This message still said "gold
-    // transcript," which no longer exists anywhere in the app.
-    blockers.push("every selected call needs two de-identification approvals first (POST /benchmark/calls/:callId/attest-deid)");
   }
   if (selectedProviders.some((provider) => provider.status !== "ready")) {
     blockers.push("provider credentials and models must be configured");

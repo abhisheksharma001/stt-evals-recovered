@@ -94,7 +94,7 @@ export function Sidebar() {
         <div className="flex flex-col gap-px">
           <SidebarItem href="/" icon={LayoutGrid} label="Overview" />
           <SidebarItem href="/corpus" icon={Database} label="Corpus" />
-          <SidebarItem href="/review" icon={AudioLines} label="Review" />
+          <SidebarItem href="/review" icon={AudioLines} label="Listen" />
           <SidebarItem href="/runs" icon={GitMerge} label="Runs" />
           <SidebarItem href="/bulks" icon={Layers} label="Bulks" />
           <SidebarItem href="/results" icon={BarChart3} label="Results" />
