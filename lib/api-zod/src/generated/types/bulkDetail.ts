@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Bulk } from './bulk';
+import type { BulkActualCost } from './bulkActualCost';
 import type { BulkProgress } from './bulkProgress';
 import type { BulkShardRun } from './bulkShardRun';
 
 export type BulkDetail = Bulk & {
   progress: BulkProgress;
   runs: BulkShardRun[];
+  actualCost: BulkActualCost;
 };

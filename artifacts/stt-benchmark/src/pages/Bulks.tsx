@@ -597,10 +597,35 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
           <div className="text-sm text-muted-foreground">
             {criteriaSummary(current.selectionCriteria)} · shard size {current.shardSize} ·{" "}
             {current.providerIds.length} provider(s)
-            {current.estimatedCostCents != null && (
-              <> · est. ${(current.estimatedCostCents / 100).toFixed(2)}</>
+            {/* 2026-08-27, per Abhishek: STT and OpenAI agent-verification
+                cost shown separately, not combined -- they're different
+                budgets to someone deciding whether to launch this. */}
+            {current.estimatedSttCostCents != null && (
+              <> · est. STT ${(current.estimatedSttCostCents / 100).toFixed(2)}</>
+            )}
+            {current.estimatedAgentCostCents != null && (
+              <> + agent ${(current.estimatedAgentCostCents / 100).toFixed(2)}</>
             )}
           </div>
+
+          {detail?.actualCost && (p?.cellsOk ?? 0) > 0 && (
+            <div className="grid grid-cols-3 gap-3 rounded-md border border-border bg-muted/20 px-3 py-2.5 text-sm">
+              <div>
+                <div className="text-[10px] font-mono uppercase text-muted-foreground">Actual STT cost</div>
+                <div className="font-mono font-semibold">${(detail.actualCost.sttCostCents / 100).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-mono uppercase text-muted-foreground">Actual agent cost</div>
+                <div className="font-mono font-semibold">${(detail.actualCost.agentCostCents / 100).toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-mono uppercase text-muted-foreground">Agent coverage</div>
+                <div className="font-mono font-semibold">
+                  {detail.actualCost.agentCallsChecked} checked, {detail.actualCost.agentCallsFlagged} flagged
+                </div>
+              </div>
+            </div>
+          )}
 
           {current.notes && (
             <div className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-sm text-warning">

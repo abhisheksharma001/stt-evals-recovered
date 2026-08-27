@@ -1,5 +1,6 @@
 import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 import {
+  benchmarkAgentScansTable,
   benchmarkBulksTable,
   benchmarkCallsTable,
   benchmarkProviderCallResultsTable,
@@ -153,6 +154,36 @@ export async function estimateBulkCostCents(
   return Math.ceil(totalMinutes * ratePerMinute * 100);
 }
 
+// 2026-08-27, per Abhishek ("show the openai agent cost ... separately,
+// estimated"): the agent judge call only fires for calls the free hybrid
+// pass actually flags, so callCount alone can't predict it the way STT cost
+// can -- this projects from real history (what fraction of past scans came
+// back "flagged", and what those judge calls actually cost) once any exist.
+// Falls back to a documented placeholder assumption before any real scan
+// history exists, same placeholder-and-flag-it convention as
+// costPerMinute's Nova-2 placeholder elsewhere in this codebase.
+const AGENT_COST_ESTIMATE_FALLBACK = { assumedFlagRate: 0.3, assumedCostCentsPerJudgeCall: 1 };
+
+export async function estimateBulkAgentCostCents(callCount: number): Promise<number> {
+  if (callCount === 0) return 0;
+  const scans = await db
+    .select({ status: benchmarkAgentScansTable.status, judgeCostCents: benchmarkAgentScansTable.judgeCostCents })
+    .from(benchmarkAgentScansTable);
+
+  if (scans.length === 0) {
+    return Math.ceil(callCount * AGENT_COST_ESTIMATE_FALLBACK.assumedFlagRate * AGENT_COST_ESTIMATE_FALLBACK.assumedCostCentsPerJudgeCall);
+  }
+
+  const flaggedCount = scans.filter((s) => s.status === "flagged").length;
+  const flagRate = flaggedCount / scans.length;
+  const judgeCosts = scans.map((s) => s.judgeCostCents).filter((c): c is number => c !== null);
+  const avgJudgeCostCents = judgeCosts.length
+    ? judgeCosts.reduce((sum, c) => sum + c, 0) / judgeCosts.length
+    : AGENT_COST_ESTIMATE_FALLBACK.assumedCostCentsPerJudgeCall;
+
+  return Math.ceil(callCount * flagRate * avgJudgeCostCents);
+}
+
 export type CreateBulkResult = {
   bulk: BenchmarkBulkRow;
   launched: boolean;
@@ -209,10 +240,12 @@ export async function createBulkFromCriteria(input: {
     resolvedAt: now.toISOString(),
   };
 
-  const estimatedCostCents = await estimateBulkCostCents(
+  const estimatedSttCostCents = await estimateBulkCostCents(
     callIds,
     input.providerIds,
   );
+  const estimatedAgentCostCents = await estimateBulkAgentCostCents(callIds.length);
+  const estimatedCostCents = estimatedSttCostCents + estimatedAgentCostCents;
   const overThreshold = estimatedCostCents > BULK_COST_THRESHOLD_CENTS;
   const name = input.name ?? now.toISOString().slice(0, 10); // FR-BLK-2
 
@@ -262,10 +295,12 @@ export async function createBulkFromCriteria(input: {
           shardSize,
           minDurationSeconds: minDuration,
           estimatedCostCents,
+          estimatedSttCostCents,
+          estimatedAgentCostCents,
           launchedByLabel: input.actorLabel,
           notes:
             overThreshold && !input.confirm
-              ? `Estimated cost $${(estimatedCostCents / 100).toFixed(2)} exceeds the $${(BULK_COST_THRESHOLD_CENTS / 100).toFixed(2)} threshold -- confirm to launch (FR-BLK-5).`
+              ? `Estimated cost $${(estimatedCostCents / 100).toFixed(2)} (STT $${(estimatedSttCostCents / 100).toFixed(2)} + agent verification $${(estimatedAgentCostCents / 100).toFixed(2)}) exceeds the $${(BULK_COST_THRESHOLD_CENTS / 100).toFixed(2)} threshold -- confirm to launch (FR-BLK-5).`
               : null,
         })
         .returning();
@@ -288,6 +323,8 @@ export async function createBulkFromCriteria(input: {
       status: bulk.status,
       callCount: callIds.length,
       estimatedCostCents,
+      estimatedSttCostCents,
+      estimatedAgentCostCents,
       evictedBulkId,
     },
   });

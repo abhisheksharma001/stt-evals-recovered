@@ -579,8 +579,13 @@ export const ListAuditLogResponse = zod.array(ListAuditLogResponseItem)
 
 
 /**
+ * 2026-08-27, per Abhishek ("for each run then it should show the ranking for each, and for bulk overall ranking for all the calls"): without bulkId, returns the all-time view (every bulk/run ever, unchanged from before). With bulkId, scopes strictly to that one bulk's own ranking rows (benchmark_rankings.bulk_id) -- the two are never silently mixed.
  * @summary Get provider scores and recommendations by vertical
  */
+export const ListBenchmarkRankingsQueryParams = zod.object({
+  "bulkId": zod.coerce.string().optional()
+})
+
 export const ListBenchmarkRankingsResponseItem = zod.object({
   "runId": zod.string(),
   "vertical": zod.enum(['rush', 'property_management', 'trucking']),
@@ -652,6 +657,8 @@ export const ListBulksResponseItem = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -720,6 +727,8 @@ export const CreateBulkResponse = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -760,6 +769,8 @@ export const GetBulkResponse = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -783,7 +794,14 @@ export const GetBulkResponse = zod.object({
   "callCount": zod.number(),
   "createdAt": zod.coerce.date(),
   "completedAt": zod.coerce.date().nullish()
-}))
+})),
+  "actualCost": zod.object({
+  "sttCostCents": zod.number(),
+  "agentCostCents": zod.number(),
+  "agentCallsChecked": zod.number(),
+  "agentCallsFlagged": zod.number(),
+  "agentCallsJudged": zod.number()
+})
 }))
 
 
@@ -819,6 +837,8 @@ export const LaunchBulkResponse = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -859,6 +879,8 @@ export const RetryBulkFailedResponse = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -899,6 +921,8 @@ export const CancelBulkResponse = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -1097,6 +1121,8 @@ export const LaunchBulkTemplateResponse = zod.object({
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
   "estimatedCostCents": zod.number().nullish(),
+  "estimatedSttCostCents": zod.number().nullish(),
+  "estimatedAgentCostCents": zod.number().nullish(),
   "launchedByLabel": zod.string().nullish(),
   "notes": zod.string().nullish(),
   "createdAt": zod.coerce.date(),

@@ -1,4 +1,5 @@
 import {
+  integer,
   jsonb,
   pgTable,
   text,
@@ -77,6 +78,14 @@ export const benchmarkAgentScansTable = pgTable("benchmark_agent_scans", {
     () => benchmarkProviderCallResultsTable.id,
   ),
   agentPickReasoning: text("agent_pick_reasoning"),
+  // 2026-08-27, per Abhishek: track the real OpenAI cost of the judge call
+  // (null on "clean" scans, which never call the LLM at all) so bulk/results
+  // cost breakdowns can show real agent spend, not just STT spend. Captured
+  // from the OpenAI response's own `usage` block in lib/agent.ts -- not
+  // estimated after the fact.
+  judgePromptTokens: integer("judge_prompt_tokens"),
+  judgeCompletionTokens: integer("judge_completion_tokens"),
+  judgeCostCents: integer("judge_cost_cents"),
   errorMessage: text("error_message"),
   requestedByLabel: text("requested_by_label").notNull(),
   // Set only via the approve/reject routes -- never by the scan itself.

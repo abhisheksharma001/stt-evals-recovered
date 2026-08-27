@@ -1,10 +1,20 @@
 import * as React from "react"
-import { useListBenchmarkRankings, useGetAppSettings, type VerticalRanking } from "@workspace/api-client-react"
-import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star } from "lucide-react"
+import {
+  useListBenchmarkRankings,
+  useGetAppSettings,
+  useListBulks,
+  useGetBulk,
+  getGetBulkQueryKey,
+  useListBenchmarkCalls,
+  useListBenchmarkProviders,
+  type VerticalRanking,
+} from "@workspace/api-client-react"
+import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Sortable metric keys -- "rank" keeps the composite-score ordering the run
 // computed server-side (FR-R1 adds per-metric resorting on top of it).
@@ -81,7 +91,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
 
 function downloadCsv(filename: string, csv: string): void {
   // B-31: BOM so Excel reads the UTF-8 provider names instead of mojibake.
-  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" })
+  const blob = new Blob(["﻿", csv], { type: "text/csv;charset=utf-8" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
@@ -90,8 +100,101 @@ function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url)
 }
 
+function formatCents(cents: number | null | undefined): string {
+  if (cents == null) return "—"
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+/**
+ * 2026-08-27, per Abhishek: "redesign the whole ranking and result ... with
+ * this stt its this, and its this" -- the single most useful sentence this
+ * page can say is the before/after: what production actually uses today
+ * for this assistant's calls, versus what this bulk's top candidate scores
+ * like. Reuses the same provider-name normalization Corpus's per-call panel
+ * uses, aggregated across the group instead of one call.
+ */
+function useProductionBaseline(assistantId: string | null) {
+  const { data: calls } = useListBenchmarkCalls()
+  const { data: providers } = useListBenchmarkProviders()
+  return React.useMemo(() => {
+    if (!calls) return null
+    const groupCalls = calls.filter((c) => (c.sourceAssistantId ?? null) === assistantId)
+    const counts = new Map<string, number>()
+    for (const c of groupCalls) {
+      if (!c.sourceTranscriberProvider) continue
+      const key = `${c.sourceTranscriberProvider}::${c.sourceTranscriberModel ?? ""}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
+    if (!top) return null
+    const [vendor, model] = top[0].split("::")
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "")
+    const matchedProviderId =
+      (providers ?? []).find((p) => norm(p.name) === norm(vendor) && (model ? norm(p.model) === norm(model) : false))
+        ?.id ?? null
+    return { vendor, model: model || null, matchedProviderId, coverage: top[1], total: groupCalls.length }
+  }, [calls, providers, assistantId])
+}
+
+function ProductionBaselineNote({ assistantId, ranks }: { assistantId: string | null; ranks: RankingRow[] }) {
+  const baseline = useProductionBaseline(assistantId)
+  if (!baseline) return null
+
+  const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
+  const baselineRow = baseline.matchedProviderId ? ranks.find((r) => r.providerId === baseline.matchedProviderId) : null
+
+  return (
+    <div className="flex items-start gap-2.5 border-t border-border bg-primary/5 px-4 py-3 text-sm">
+      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+      <p className="text-foreground">
+        <span className="font-semibold">Production today:</span>{" "}
+        <span className="font-mono">{baseline.vendor}{baseline.model ? ` / ${baseline.model}` : ""}</span>
+        {" "}({baseline.coverage}/{baseline.total} of this group's calls).{" "}
+        {baselineRow && winner && baselineRow.providerId !== winner.providerId ? (
+          <>
+            <span className="font-semibold">This bulk's top candidate:</span>{" "}
+            <span className="font-mono">{winner.providerName}</span>
+            {baselineRow.score.avgFlagCount != null && winner.score.avgFlagCount != null && (
+              <> -- {(baselineRow.score.avgFlagCount - winner.score.avgFlagCount).toFixed(2)} fewer flags/call</>
+            )}
+            {baselineRow.score.costPerMinute != null && winner.score.costPerMinute != null && (
+              <>, ${Math.abs(baselineRow.score.costPerMinute - winner.score.costPerMinute).toFixed(4)}/min {winner.score.costPerMinute < baselineRow.score.costPerMinute ? "cheaper" : "more expensive"}</>
+            )}
+            .
+          </>
+        ) : baselineRow && winner && baselineRow.providerId === winner.providerId ? (
+          <>Production's own provider is already this group's top candidate.</>
+        ) : (
+          <>Not benchmarked in this bulk, so no direct comparison yet.</>
+        )}
+      </p>
+    </div>
+  )
+}
+
 export default function Rankings() {
-  const { data: rankings, isLoading, isError, error, refetch } = useListBenchmarkRankings()
+  const { data: bulks } = useListBulks()
+  const [viewMode, setViewMode] = React.useState<"bulk" | "overall">("bulk")
+  const [selectedBulkId, setSelectedBulkId] = React.useState<string | null>(null)
+
+  // useListBulks returns newest-first -- default to the most recent one the
+  // first time bulks load, so there's never an empty "pick a bulk" state
+  // for the common case of "what did the run I just launched find."
+  React.useEffect(() => {
+    if (!selectedBulkId && bulks && bulks.length > 0) setSelectedBulkId(bulks[0].id)
+  }, [bulks, selectedBulkId])
+
+  const activeBulkId = viewMode === "bulk" ? selectedBulkId : undefined
+  const { data: rankings, isLoading, isError, error, refetch } = useListBenchmarkRankings(
+    activeBulkId ? { bulkId: activeBulkId } : undefined,
+  )
+  const { data: bulkDetail } = useGetBulk(selectedBulkId ?? "", {
+    query: {
+      queryKey: getGetBulkQueryKey(selectedBulkId ?? ""),
+      enabled: viewMode === "bulk" && !!selectedBulkId,
+    },
+  })
+
   // technical-fixes FIX-4 / ux-fixes UX-6: "active provider" (Providers ->
   // System settings) previously fed nothing downstream -- an operator could
   // set it and never see it do anything. This is the decision-support use:
@@ -108,8 +211,9 @@ export default function Rankings() {
 
   // 2026-08-27, per Abhishek: grouped by real assistant instead of vertical
   // (same reasoning as the Bulks picker) -- keyed by assistantId, null
-  // bucketed under "Other" rather than dropped. assistantLabel is resolved
-  // server-side from a live Vapi lookup, so it's already a real name here.
+  // bucketed under "Unassigned" rather than dropped. assistantLabel is
+  // resolved server-side from a live Vapi lookup, so it's already a real
+  // name here.
   const groupedRankings = React.useMemo(() => {
     if (!rankings) return {}
     return rankings.reduce((acc, curr) => {
@@ -141,7 +245,7 @@ export default function Rankings() {
   if (isError) {
     return (
       <div className="space-y-4">
-        <h1 className="text-3xl font-bold tracking-tight">Rankings & Results</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Results</h1>
         <div className="text-center py-24 border rounded-md border-destructive/40 text-destructive">
           Failed to load rankings: {error instanceof Error ? error.message : String(error)}
           <div className="mt-3">
@@ -153,15 +257,91 @@ export default function Rankings() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Rankings & Results</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Results</h1>
         <p className="text-muted-foreground mt-1">
-          Provider scores and recommendations grouped by assistant; each assistant's vertical shows
-          as a tag on its card. Click a column to sort by that metric; rank badges always show the
-          official composite order.
+          Provider scores and recommendations, grouped by assistant. Pick one bulk to see just that
+          run's evidence with full detail, or switch to the all-time view to see every bulk combined.
         </p>
       </div>
+
+      {/* view switcher + bulk picker -- 2026-08-27, per Abhishek: "for each
+          run then it should show the ranking for each, and for bulk overall
+          ranking for all the call" -- "run" here means one launched Bulk,
+          not the internal shard-run concept; "overall" is every bulk ever,
+          combined, same as this page's old (only) behavior. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex rounded-lg border border-border p-0.5">
+          <button
+            onClick={() => setViewMode("bulk")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === "bulk" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            One bulk
+          </button>
+          <button
+            onClick={() => setViewMode("overall")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === "overall" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            All-time combined
+          </button>
+        </div>
+        {viewMode === "bulk" && (
+          <Select value={selectedBulkId ?? undefined} onValueChange={setSelectedBulkId}>
+            <SelectTrigger className="h-9 w-[360px]"><SelectValue placeholder="Pick a bulk..." /></SelectTrigger>
+            <SelectContent>
+              {(bulks ?? []).map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name} · {b.status}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      {/* cost + coverage summary -- 2026-08-27, per Abhishek: "does the
+          estimation show cost of each run and the openai agent cost and stt
+          cost separately." Real (post-run) numbers when available, split
+          the same way estimates are: STT and agent spend are different
+          budgets, never combined into one figure. */}
+      {viewMode === "bulk" && bulkDetail && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 p-4 text-sm">
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">STT cost</div>
+              <div className="font-mono text-base font-semibold">
+                {formatCents(bulkDetail.actualCost.sttCostCents)}
+                {bulkDetail.estimatedSttCostCents != null && (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    est. {formatCents(bulkDetail.estimatedSttCostCents)}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Agent verification cost</div>
+              <div className="font-mono text-base font-semibold">
+                {formatCents(bulkDetail.actualCost.agentCostCents)}
+                {bulkDetail.estimatedAgentCostCents != null && (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    est. {formatCents(bulkDetail.estimatedAgentCostCents)}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Agent coverage</div>
+              <div className="font-mono text-base font-semibold">
+                {bulkDetail.actualCost.agentCallsChecked} checked
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                  {bulkDetail.actualCost.agentCallsFlagged} flagged, {bulkDetail.actualCost.agentCallsJudged} judged by OpenAI
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <div className="space-y-6">
@@ -171,18 +351,16 @@ export default function Rankings() {
         <div className="text-center py-24 border rounded-md border-dashed border-muted-foreground/30">
           <Trophy className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
           <h3 className="text-lg font-semibold">No rankings available</h3>
-          <p className="text-muted-foreground">Complete a benchmark run to see results.</p>
+          <p className="text-muted-foreground">
+            {viewMode === "bulk" ? "This bulk hasn't scored any calls yet." : "Complete a benchmark run to see results."}
+          </p>
         </div>
       ) : (
         Object.entries(groupedRankings).map(([groupKey, ranks]) => {
           const sorted = [...ranks].sort((a, b) => compareRows(a, b, sortKey, asc))
           const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
           const sortAria = (key: SortKey) => (sortKey === key ? (asc ? "ascending" : "descending") : "none")
-          const groupLabel = ranks[0]?.assistantLabel ?? "Other (no assistant on file)"
-          // An assistant's calls are expected to share one vertical, but
-          // this is defensive (2026-08-27) -- shows every distinct vertical
-          // actually present in the group rather than assuming.
-          const verticalsInGroup = [...new Set(ranks.map((r) => r.vertical))]
+          const groupLabel = ranks[0]?.assistantLabel ?? "Unassigned (no assistant ID captured at import)"
           // FIX-4/UX-6: the active provider might not have been benchmarked
           // in this particular group (e.g. it errored out entirely) -- undefined
           // is handled the same as "no active provider set" below.
@@ -193,9 +371,6 @@ export default function Rankings() {
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
                   {groupLabel}
-                  {verticalsInGroup.map((v) => (
-                    <Badge key={v} variant="secondary" className="font-mono text-[10px] uppercase">{v.replace('_', ' ')}</Badge>
-                  ))}
                   <Badge variant="outline" className="ml-2 font-mono">{ranks.length} Providers</Badge>
                 </CardTitle>
                 <div className="flex items-center gap-4">
@@ -308,6 +483,7 @@ export default function Rankings() {
                   <p className="text-foreground"><span className="font-semibold mr-1">Decision Logic:</span>{winner.recommendation}</p>
                 </div>
               )}
+              <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} />
             </CardContent>
           </Card>
           )

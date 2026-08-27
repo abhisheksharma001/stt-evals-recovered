@@ -420,6 +420,17 @@ paths:
       operationId: listBenchmarkRankings
       tags: [benchmark]
       summary: Get provider scores and recommendations by vertical
+      description: >-
+        2026-08-27, per Abhishek ("for each run then it should show the
+        ranking for each, and for bulk overall ranking for all the calls"):
+        without bulkId, returns the all-time view (every bulk/run ever,
+        unchanged from before). With bulkId, scopes strictly to that one
+        bulk's own ranking rows (benchmark_rankings.bulk_id) -- the two are
+        never silently mixed.
+      parameters:
+        - name: bulkId
+          in: query
+          schema: { type: string }
       responses:
         "200":
           description: Ranked provider results
@@ -1300,6 +1311,8 @@ components:
         shardSize: { type: number }
         minDurationSeconds: { type: number }
         estimatedCostCents: { type: ["number", "null"] }
+        estimatedSttCostCents: { type: ["number", "null"] }
+        estimatedAgentCostCents: { type: ["number", "null"] }
         launchedByLabel: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
@@ -1348,12 +1361,32 @@ components:
       allOf:
         - $ref: "#/components/schemas/Bulk"
         - type: object
-          required: [progress, runs]
+          required: [progress, runs, actualCost]
           properties:
             progress: { $ref: "#/components/schemas/BulkProgress" }
             runs:
               type: array
               items: { $ref: "#/components/schemas/BulkShardRun" }
+            actualCost: { $ref: "#/components/schemas/BulkActualCost" }
+    BulkActualCost:
+      type: object
+      required: [sttCostCents, agentCostCents, agentCallsChecked, agentCallsFlagged, agentCallsJudged]
+      properties:
+        # Real spend, summed from benchmark_scores.cost_cents /
+        # benchmark_agent_scans.judge_cost_cents for this bulk's calls --
+        # never combined into one number (STT and OpenAI agent spend are
+        # different budgets to a person deciding whether to keep running
+        # this).
+        sttCostCents: { type: number }
+        agentCostCents: { type: number }
+        # Coverage evidence that the auto-verification pass actually ran,
+        # not just claimed to: how many calls got a scan, how many were
+        # flagged by the free hybrid pass, how many of those got a real
+        # OpenAI judge call (judged can be < flagged if the judge call
+        # itself errored -- see benchmark_agent_scans.status "error").
+        agentCallsChecked: { type: number }
+        agentCallsFlagged: { type: number }
+        agentCallsJudged: { type: number }
     BulkTemplate:
       type: object
       required: [id, name, selectionCriteria, providerIds, shardSize, minDurationSeconds, createdAt]

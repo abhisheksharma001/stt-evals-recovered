@@ -21,6 +21,22 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const FLAG_MODEL = "gpt-4o-mini";
 const JUDGE_MODEL = "gpt-4o";
 
+// 2026-08-27, per Abhishek ("show the openai agent cost ... separately,
+// estimated"): public per-1M-token pricing as of this writing, cents per
+// 1,000 tokens. Same placeholder-and-flag-it convention as provider
+// costPerMinute elsewhere in this codebase -- verify against OpenAI's
+// current pricing page before trusting this for a real budget decision.
+const MODEL_COST_CENTS_PER_1K_TOKENS: Record<string, { prompt: number; completion: number }> = {
+  "gpt-4o-mini": { prompt: 0.0015, completion: 0.006 },
+  "gpt-4o": { prompt: 0.25, completion: 1.0 },
+};
+
+function costCentsFor(model: string, promptTokens: number, completionTokens: number): number | null {
+  const rates = MODEL_COST_CENTS_PER_1K_TOKENS[model];
+  if (!rates) return null; // unknown/custom model override -- don't guess a cost
+  return (promptTokens / 1000) * rates.prompt + (completionTokens / 1000) * rates.completion;
+}
+
 export class AgentConfigError extends Error {
   constructor() {
     super(`${API_KEY_ENV_VAR} is not configured.`);
@@ -37,13 +53,15 @@ export class AgentRequestError extends Error {
   }
 }
 
+type OpenAiUsage = { promptTokens: number; completionTokens: number; costCents: number | null };
+
 async function callOpenAi(params: {
   model: string;
   system: string;
   user: string;
   schemaName: string;
   schema: Record<string, unknown>;
-}): Promise<Record<string, unknown>> {
+}): Promise<{ data: Record<string, unknown>; usage: OpenAiUsage }> {
   const apiKey = process.env[API_KEY_ENV_VAR];
   if (!apiKey) throw new AgentConfigError();
 
@@ -73,6 +91,7 @@ async function callOpenAi(params: {
   const body = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
     error?: { message?: string };
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
 
   if (!res.ok) {
@@ -82,7 +101,16 @@ async function callOpenAi(params: {
   const content = body.choices?.[0]?.message?.content;
   if (!content) throw new AgentRequestError(res.status, "OpenAI response had no content");
 
-  return JSON.parse(content) as Record<string, unknown>;
+  const promptTokens = body.usage?.prompt_tokens ?? 0;
+  const completionTokens = body.usage?.completion_tokens ?? 0;
+  return {
+    data: JSON.parse(content) as Record<string, unknown>,
+    usage: {
+      promptTokens,
+      completionTokens,
+      costCents: costCentsFor(params.model, promptTokens, completionTokens),
+    },
+  };
 }
 
 // 2026-08-27: the blind "read one transcript, guess what sounds wrong" flag
@@ -100,13 +128,25 @@ export async function judgeCandidates(params: {
   // "ONLY the two OpenAI calls" separation). Falls back to JUDGE_MODEL when
   // omitted, empty, or the caller passed a settings row with no override set.
   model?: string | null;
-}): Promise<{ pickedProviderId: string | null; reasoning: string }> {
+}): Promise<{
+  pickedProviderId: string | null;
+  reasoning: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  costCents: number | null;
+}> {
   if (params.candidates.length === 0) {
-    return { pickedProviderId: null, reasoning: "No candidate transcripts were available to compare (every re-run provider failed)." };
+    return {
+      pickedProviderId: null,
+      reasoning: "No candidate transcripts were available to compare (every re-run provider failed).",
+      promptTokens: null,
+      completionTokens: null,
+      costCents: null,
+    };
   }
 
   const candidateIds = params.candidates.map((c) => c.providerId);
-  const result = await callOpenAi({
+  const { data: result, usage } = await callOpenAi({
     model: params.model?.trim() || JUDGE_MODEL,
     system:
       "You are comparing several speech-to-text providers' transcripts of the same call, " +
@@ -135,6 +175,9 @@ export async function judgeCandidates(params: {
   const pickedProviderId = typeof result.pickedProviderId === "string" ? result.pickedProviderId : null;
   const reasoning = typeof result.reasoning === "string" ? result.reasoning : "";
   return {
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    costCents: usage.costCents,
     pickedProviderId: candidateIds.includes(pickedProviderId ?? "") ? pickedProviderId : null,
     reasoning,
   };
@@ -193,7 +236,7 @@ export async function analyzeFailure(params: {
   const known = matchKnownFailure(params.errorMessage);
   if (known) return known;
 
-  const result = await callOpenAi({
+  const { data: result } = await callOpenAi({
     model: FLAG_MODEL,
     system:
       "You are helping an operator of a speech-to-text benchmarking tool understand why one " +

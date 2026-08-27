@@ -1,16 +1,27 @@
 import * as React from "react"
-import { Link } from "wouter"
+import { useSearch } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBenchmarkCalls,
   useCreateBenchmarkCall,
   useUpdateBenchmarkCall,
   useListBenchmarkProviders,
+  useListAgentScans,
   getListBenchmarkCallsQueryKey,
   CallStatus,
   Vertical,
 } from "@workspace/api-client-react"
-import { Plus, Search, AlertCircle, Settings2, ShieldCheck, AudioLines, TimerReset } from "lucide-react"
+import {
+  Plus,
+  Search,
+  Settings2,
+  TimerReset,
+  ChevronRight,
+  ChevronDown,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+} from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -20,24 +31,69 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
+import { apiBase } from "@/lib/api-base"
+
+// ---------------------------------------------------------------------------
+// 2026-08-27, per Abhishek: "for corpus and listen if we can merge both into
+// one, so it doesn't make confusion, just put it in layers." Corpus (browse/
+// filter/manage) and the old standalone Listen page (audio + transcript for
+// one call) were two pages for one task -- find a call, then look at it.
+// This is now one page: the table stays the browse/filter surface, and a row
+// expands in place to show everything Listen used to on its own page --
+// transcript, production-transcriber comparison, and (2026-08-27, same day:
+// "bulk calls will also do the agent system working") the automatic agent
+// verification result, plus the audio player. No second page, no navigation.
+// ---------------------------------------------------------------------------
+
+/** Speaker turns parsed out of a provider transcript ("AI: ...", "User: ..."). */
+type Turn = { speaker: string | null; text: string }
+
+function parseTurns(transcript: string | null | undefined): Turn[] {
+  if (!transcript) return []
+  return transcript
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = /^([A-Za-z][A-Za-z ]{0,14}):\s*(.*)$/.exec(line)
+      return match ? { speaker: match[1], text: match[2] } : { speaker: null, text: line }
+    })
+}
 
 export default function Corpus() {
   const { data: calls, isLoading, isError, error } = useListBenchmarkCalls()
-  const [search, setSearch] = React.useState("")
+  const search = useSearch()
+  const [expandedId, setExpandedId] = React.useState<string | null>(null)
+  const [searchText, setSearchText] = React.useState("")
   // UX review 2026-08-25: label/id substring search alone couldn't answer
   // "show me the needs_review trucking calls" on a 1000-row corpus.
   const [statusFilter, setStatusFilter] = React.useState("all")
   const [verticalFilter, setVerticalFilter] = React.useState("all")
 
+  // Deep link support (replaces the old /review?call=<id> link): "expand
+  // this call and scroll to it" from anywhere that still passes ?call=<id>.
+  const appliedDeepLink = React.useRef(false)
+  React.useEffect(() => {
+    if (appliedDeepLink.current || !calls) return
+    const requested = new URLSearchParams(search).get("call")
+    if (requested && calls.some((c) => c.id === requested)) {
+      appliedDeepLink.current = true
+      setExpandedId(requested)
+      requestAnimationFrame(() => {
+        document.getElementById(`call-row-${requested}`)?.scrollIntoView({ block: "center" })
+      })
+    }
+  }, [calls, search])
+
   const filteredCalls = React.useMemo(() => {
     if (!calls) return []
-    const q = search.toLowerCase()
+    const q = searchText.toLowerCase()
     return calls.filter(c =>
       (c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) &&
       (statusFilter === "all" || c.status === statusFilter) &&
       (verticalFilter === "all" || c.vertical === verticalFilter)
     )
-  }, [calls, search, statusFilter, verticalFilter])
+  }, [calls, searchText, statusFilter, verticalFilter])
 
   return (
     <div className="space-y-6">
@@ -51,8 +107,8 @@ export default function Corpus() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search calls..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
               className="pl-9"
             />
           </div>
@@ -85,6 +141,7 @@ export default function Corpus() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Call ID / Label</TableHead>
                 <TableHead>Vertical</TableHead>
                 <TableHead>Duration</TableHead>
@@ -96,61 +153,84 @@ export default function Corpus() {
             <TableBody>
               {isError ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-destructive text-sm">
+                  <TableCell colSpan={7} className="h-32 text-center text-destructive text-sm">
                     Failed to load corpus: {error instanceof Error ? error.message : String(error)}
                   </TableCell>
                 </TableRow>
               ) : isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
+                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
                 </TableRow>
               ) : filteredCalls.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
+                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
                 </TableRow>
               ) : (
-                filteredCalls.map(call => (
-                  <TableRow key={call.id}>
-                    <TableCell>
-                      <div className="font-medium text-foreground">{call.label}</div>
-                      <div className="text-xs font-mono text-muted-foreground">{call.id.substring(0, 8)}...</div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="capitalize text-xs font-mono px-2 py-0.5 rounded-md border border-border bg-secondary text-secondary-foreground">
-                        {call.vertical.replace('_', ' ')}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-sm tabular-nums">{Math.floor(call.durationSeconds / 60)}:{(call.durationSeconds % 60).toString().padStart(2, '0')}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <StatusBadge status={call.status} />
-                        <RetentionWarning sourceStartedAt={call.sourceStartedAt} />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1 flex-wrap">
-                        {call.hardCases.map((hc, i) => (
-                          <span key={i} className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground">
-                            {hc}
+                filteredCalls.map(call => {
+                  const expanded = call.id === expandedId
+                  return (
+                    <React.Fragment key={call.id}>
+                      <TableRow id={`call-row-${call.id}`} className={expanded ? "bg-muted/20" : undefined}>
+                        <TableCell className="pr-0">
+                          <button
+                            onClick={() => setExpandedId(expanded ? null : call.id)}
+                            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                            aria-label={expanded ? "Collapse" : "Expand"}
+                          >
+                            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </button>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-foreground">{call.label}</div>
+                          <div className="text-xs font-mono text-muted-foreground">{call.id.substring(0, 8)}...</div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="capitalize text-xs font-mono px-2 py-0.5 rounded-md border border-border bg-secondary text-secondary-foreground">
+                            {call.vertical.replace('_', ' ')}
                           </span>
-                        ))}
-                        {call.hardCases.length === 0 && <span className="text-muted-foreground text-xs">—</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <Link href={`/review?call=${call.id}`}>
-                          <Button variant="outline" size="sm">
-                            <AudioLines className="w-3.5 h-3.5 mr-1.5" /> Listen
-                          </Button>
-                        </Link>
-                        <CallDetailsDialog call={call} />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono text-sm tabular-nums">{Math.floor(call.durationSeconds / 60)}:{(call.durationSeconds % 60).toString().padStart(2, '0')}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge status={call.status} />
+                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1 flex-wrap">
+                            {call.hardCases.map((hc, i) => (
+                              <span key={i} className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground">
+                                {hc}
+                              </span>
+                            ))}
+                            {call.hardCases.length === 0 && <span className="text-muted-foreground text-xs">—</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <Button
+                              variant={expanded ? "secondary" : "outline"}
+                              size="sm"
+                              onClick={() => setExpandedId(expanded ? null : call.id)}
+                            >
+                              {expanded ? "Hide" : "Listen"}
+                            </Button>
+                            <CallDetailsDialog call={call} />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {expanded && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="bg-muted/10 p-0">
+                            <ExpandedCallDetail call={call} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  )
+                })
               )}
             </TableBody>
           </Table>
@@ -160,8 +240,142 @@ export default function Corpus() {
   )
 }
 
-// Status carries meaning through the same three semantic tokens Review's
-// progress pips use: not-started stays neutral, in-progress is the accent,
+// The expanded panel -- everything the old standalone Listen page showed for
+// one call, now inline. `useListAgentScans()` is unfiltered/shared across
+// every expanded row rather than one query per row (corpus-sized dataset,
+// cheap either way, and avoids a waterfall as rows expand).
+function ExpandedCallDetail({ call }: { call: any }) {
+  const { toast } = useToast()
+  const { data: scans } = useListAgentScans()
+  const latestScan = React.useMemo(
+    () =>
+      (scans ?? [])
+        .filter((s) => s.callId === call.id)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null,
+    [scans, call.id],
+  )
+  const draftTurns = React.useMemo(() => parseTurns(call.draftTranscript), [call.draftTranscript])
+
+  return (
+    <div className="grid grid-cols-1 gap-5 border-t border-border p-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="space-y-4">
+        <div>
+          <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Provider draft transcript
+          </h4>
+          {draftTurns.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No provider draft transcript on file for this call.</p>
+          ) : (
+            <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
+              {draftTurns.map((turn, i) => (
+                <div key={i} className="flex gap-3">
+                  {turn.speaker && (
+                    <span className="w-12 shrink-0 pt-1 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {turn.speaker}
+                    </span>
+                  )}
+                  <p className="rounded-md bg-muted/40 p-2.5 font-serif text-sm leading-relaxed text-foreground">
+                    {turn.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Audio</h4>
+          {call.audioObjectPath ? (
+            <audio
+              key={call.id}
+              src={`${apiBase()}/api/benchmark/calls/${call.id}/audio`}
+              controls
+              onError={() =>
+                toast({
+                  title: "Couldn't load audio",
+                  description: "The recording link may have expired on Vapi's side, or no Vapi account is configured on the server.",
+                  variant: "destructive",
+                })
+              }
+              className="h-9 w-full"
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground">No audio URL on this call.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <ProductionTranscriberPanel call={call} />
+        <AgentVerificationPanel scan={latestScan} />
+        {call.entityNotes && (
+          <div className="rounded-lg border border-card-border bg-card p-3">
+            <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Curator notes
+            </h4>
+            <p className="font-serif text-sm leading-relaxed text-muted-foreground">{call.entityNotes}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 2026-08-27, per Abhishek ("bulk calls will also do the agent system
+ * working"): every bulk/run now auto-verifies its own calls (run-executor.ts
+ * -> lib/agent-verify.ts) -- this shows the latest result inline instead of
+ * needing a separate Agent page to look it up. `scan === null` means the
+ * call has never been through a run yet, not that verification failed.
+ */
+function AgentVerificationPanel({ scan }: { scan: any | null }) {
+  if (!scan) {
+    return (
+      <DetailSection title="Agent verification">
+        <p className="text-xs text-muted-foreground">
+          Not checked yet -- runs automatically the next time this call is included in a run or bulk.
+        </p>
+      </DetailSection>
+    )
+  }
+
+  const statusMeta: Record<string, { icon: React.ElementType; className: string; label: string }> = {
+    clean: { icon: CheckCircle2, className: "text-success", label: "Clean" },
+    flagged: { icon: AlertTriangle, className: "text-warning", label: "Flagged" },
+    approved: { icon: CheckCircle2, className: "text-success", label: "Flagged, reviewed" },
+    rejected: { icon: AlertTriangle, className: "text-muted-foreground", label: "Flagged, disputed" },
+    error: { icon: AlertTriangle, className: "text-destructive", label: "Check failed" },
+    scanning: { icon: Loader2, className: "text-muted-foreground", label: "Checking..." },
+  }
+  const meta = statusMeta[scan.status] ?? statusMeta.error
+  const Icon = meta.icon
+
+  return (
+    <DetailSection title="Agent verification">
+      <div className={`flex items-center gap-1.5 text-sm ${meta.className}`}>
+        <Icon className="h-3.5 w-3.5" />
+        <span className="font-medium">{meta.label}</span>
+        {scan.hybridFlags?.flagCount != null && scan.hybridFlags.flagCount > 0 && (
+          <span className="text-xs text-muted-foreground">
+            ({scan.hybridFlags.flagCount} flag{scan.hybridFlags.flagCount === 1 ? "" : "s"}, {scan.hybridFlags.flagSeverity} severity)
+          </span>
+        )}
+      </div>
+      {scan.agentPickReasoning && (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">Agent's read: </span>
+          {scan.agentPickReasoning}
+        </p>
+      )}
+      {scan.errorMessage && (
+        <p className="text-xs text-destructive">{scan.errorMessage}</p>
+      )}
+    </DetailSection>
+  )
+}
+
+// Status carries meaning through the same three semantic tokens the app
+// uses elsewhere: not-started stays neutral, in-progress is the accent,
 // done is success. No raw Tailwind palette colors here -- that's what let
 // green-500/amber-500/purple-500 leak in and clash with the rest of the app.
 function StatusBadge({ status }: { status: CallStatus }) {
@@ -299,21 +513,9 @@ function CreateCallDialog() {
   )
 }
 
-// Everything content-related (entity tags) lives in Listen now -- this
-// dialog is deliberately narrow: a manual status override for edge cases
-// (e.g. archiving a bad recording). The de-id attestation controls that
-// used to live here were removed 2026-08-27 along with the gate itself.
-/**
- * 2026-08-27, per Abhishek: "fix the call which stt model it used so we can
- * show the comparison in the call details."
- *
- * The data was already being captured on import (sourceTranscriberProvider /
- * sourceTranscriberModel) and then displayed precisely nowhere, which is why
- * it looked missing. It matters more than a stray field: across this corpus
- * production ran deepgram/flux-general-en on most calls, so a benchmark that
- * only tests nova-3 is ranking candidates against a baseline nobody is
- * measuring. Surfacing it here makes that visible per call.
- */
+// Everything content-related (transcript, audio, agent verification) lives
+// inline in the expanded row now -- this dialog is deliberately narrow: a
+// manual status override for edge cases (e.g. archiving a bad recording).
 function ProductionTranscriberPanel({ call }: { call: any }) {
   const { data: providers } = useListBenchmarkProviders()
   const vendor: string | null = call.sourceTranscriberProvider ?? null
@@ -436,7 +638,7 @@ function CallDetailsDialog({ call }: { call: any }) {
 
         {/* Grouped into labelled sections rather than one undifferentiated
             stack: identity, recording, what transcribed it in production,
-            de-identification, then the one editable control. */}
+            then the one editable control. */}
         <div className="space-y-5">
           <DetailSection title="Identity">
             <DetailRow label="Vapi call id" value={call.sourceCallId ?? "--"} mono />
@@ -493,4 +695,3 @@ function CallDetailsDialog({ call }: { call: any }) {
     </Dialog>
   )
 }
-

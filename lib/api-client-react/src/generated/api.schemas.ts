@@ -714,6 +714,10 @@ export interface Bulk {
   /** @nullable */
   estimatedCostCents?: number | null;
   /** @nullable */
+  estimatedSttCostCents?: number | null;
+  /** @nullable */
+  estimatedAgentCostCents?: number | null;
+  /** @nullable */
   launchedByLabel?: string | null;
   /** @nullable */
   notes?: string | null;
@@ -760,9 +764,18 @@ export interface BulkShardRun {
   completedAt?: string | null;
 }
 
+export interface BulkActualCost {
+  sttCostCents: number;
+  agentCostCents: number;
+  agentCallsChecked: number;
+  agentCallsFlagged: number;
+  agentCallsJudged: number;
+}
+
 export type BulkDetail = Bulk & {
   progress: BulkProgress;
   runs: BulkShardRun[];
+  actualCost: BulkActualCost;
 };
 
 export interface BulkTemplate {
@@ -852,6 +865,10 @@ accountId?: string;
 export type ListAuditLogParams = {
 entityType?: string;
 entityId?: string;
+};
+
+export type ListBenchmarkRankingsParams = {
+bulkId?: string;
 };
 
 export type ListBulksParams = {

@@ -44,6 +44,7 @@ import type {
   ListAgentScansParams,
   ListAuditLogParams,
   ListBenchmarkCallsParams,
+  ListBenchmarkRankingsParams,
   ListBulksParams,
   ListVapiAssistantsParams,
   PlanTask,
@@ -1664,20 +1665,28 @@ export function useListAuditLog<TData = Awaited<ReturnType<typeof listAuditLog>>
 
 
 
-export const getListBenchmarkRankingsUrl = () => {
+export const getListBenchmarkRankingsUrl = (params?: ListBenchmarkRankingsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/benchmark/rankings`
+  return stringifiedParams.length > 0 ? `/api/benchmark/rankings?${stringifiedParams}` : `/api/benchmark/rankings`
 }
 
 /**
+ * 2026-08-27, per Abhishek ("for each run then it should show the ranking for each, and for bulk overall ranking for all the calls"): without bulkId, returns the all-time view (every bulk/run ever, unchanged from before). With bulkId, scopes strictly to that one bulk's own ranking rows (benchmark_rankings.bulk_id) -- the two are never silently mixed.
  * @summary Get provider scores and recommendations by vertical
  */
-export const listBenchmarkRankings = async ( options?: Parameters<typeof customFetch>[1]): Promise<VerticalRanking[]> => {
+export const listBenchmarkRankings = async (params?: ListBenchmarkRankingsParams, options?: Parameters<typeof customFetch>[1]): Promise<VerticalRanking[]> => {
 
-  return customFetch<VerticalRanking[]>(getListBenchmarkRankingsUrl(),
+  return customFetch<VerticalRanking[]>(getListBenchmarkRankingsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1690,23 +1699,23 @@ export const listBenchmarkRankings = async ( options?: Parameters<typeof customF
 
 
 
-export const getListBenchmarkRankingsQueryKey = () => {
+export const getListBenchmarkRankingsQueryKey = (params?: ListBenchmarkRankingsParams,) => {
     return [
-    `/api/benchmark/rankings`
+    `/api/benchmark/rankings`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListBenchmarkRankingsQueryOptions = <TData = Awaited<ReturnType<typeof listBenchmarkRankings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListBenchmarkRankingsQueryOptions = <TData = Awaited<ReturnType<typeof listBenchmarkRankings>>, TError = ErrorType<unknown>>(params?: ListBenchmarkRankingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListBenchmarkRankingsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListBenchmarkRankingsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBenchmarkRankings>>> = ({ signal }) => listBenchmarkRankings({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBenchmarkRankings>>> = ({ signal }) => listBenchmarkRankings(params, { signal, ...requestOptions });
 
 
 
@@ -1724,11 +1733,11 @@ export type ListBenchmarkRankingsQueryError = ErrorType<unknown>
  */
 
 export function useListBenchmarkRankings<TData = Awaited<ReturnType<typeof listBenchmarkRankings>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListBenchmarkRankingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRankings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListBenchmarkRankingsQueryOptions(options)
+  const queryOptions = getListBenchmarkRankingsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

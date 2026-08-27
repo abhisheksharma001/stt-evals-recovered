@@ -39,6 +39,7 @@ import {
   ListBenchmarkCallsQueryParams,
   ListBenchmarkCallsResponse,
   ListBenchmarkProvidersResponse,
+  ListBenchmarkRankingsQueryParams,
   ListBenchmarkRankingsResponse,
   ListBenchmarkRunResultsParams,
   ListBenchmarkRunResultsResponse,
@@ -1445,7 +1446,14 @@ router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
   );
 });
 
-router.get("/benchmark/rankings", async (_req, res): Promise<void> => {
+router.get("/benchmark/rankings", async (req, res): Promise<void> => {
+  const parsedQuery = ListBenchmarkRankingsQueryParams.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: parsedQuery.error.message });
+    return;
+  }
+  const bulkId = parsedQuery.data.bulkId;
+
   // computeRankingsForRun/computeRankingsForBulk (run-executor.ts) each
   // insert a fresh snapshot on every recompute and never delete older ones,
   // so this table accumulates every past snapshot forever. Previously
@@ -1469,31 +1477,48 @@ router.get("/benchmark/rankings", async (_req, res): Promise<void> => {
   // here, at read time, from a live Vapi lookup -- not stored on the
   // ranking row -- so a renamed assistant shows its current name
   // immediately instead of a name frozen at whichever run last scored it.
-  const rankings = await db
-    .select({ ranking: benchmarkRankingsTable, runCreatedAt: benchmarkRunsTable.createdAt })
-    .from(benchmarkRankingsTable)
-    .innerJoin(
-      benchmarkRunsTable,
-      and(
-        eq(benchmarkRunsTable.id, benchmarkRankingsTable.runId),
-        eq(benchmarkRunsTable.purpose, "batch"),
-      ),
-    )
-    .orderBy(benchmarkRankingsTable.rank);
+  // 2026-08-27, per Abhishek ("for each run then it should show the
+  // ranking for each, and for bulk overall ranking for all the calls"):
+  // bulkId scopes strictly to that one bulk's own snapshot -- every row
+  // computeRankingsForBulk wrote for it, no "latest per group" picking
+  // needed since a bulk has exactly one live snapshot (delete-then-insert
+  // on every recompute). Omitting bulkId keeps the original all-time
+  // behavior unchanged: newest snapshot per assistant group, across every
+  // batch run ever.
+  let latest: { ranking: typeof benchmarkRankingsTable.$inferSelect }[];
+  if (bulkId) {
+    latest = await db
+      .select({ ranking: benchmarkRankingsTable })
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.bulkId, bulkId))
+      .orderBy(benchmarkRankingsTable.rank);
+  } else {
+    const rankings = await db
+      .select({ ranking: benchmarkRankingsTable, runCreatedAt: benchmarkRunsTable.createdAt })
+      .from(benchmarkRankingsTable)
+      .innerJoin(
+        benchmarkRunsTable,
+        and(
+          eq(benchmarkRunsTable.id, benchmarkRankingsTable.runId),
+          eq(benchmarkRunsTable.purpose, "batch"),
+        ),
+      )
+      .orderBy(benchmarkRankingsTable.rank);
 
-  const groupKeyOf = (assistantId: string | null): string => assistantId ?? "__other__";
-  const latestRunIdByGroup = new Map<string, { runId: string; createdAt: Date }>();
-  for (const { ranking, runCreatedAt } of rankings) {
-    const key = groupKeyOf(ranking.assistantId);
-    const current = latestRunIdByGroup.get(key);
-    if (!current || runCreatedAt > current.createdAt) {
-      latestRunIdByGroup.set(key, { runId: ranking.runId ?? "", createdAt: runCreatedAt });
+    const groupKeyOf = (assistantId: string | null): string => assistantId ?? "__other__";
+    const latestRunIdByGroup = new Map<string, { runId: string; createdAt: Date }>();
+    for (const { ranking, runCreatedAt } of rankings) {
+      const key = groupKeyOf(ranking.assistantId);
+      const current = latestRunIdByGroup.get(key);
+      if (!current || runCreatedAt > current.createdAt) {
+        latestRunIdByGroup.set(key, { runId: ranking.runId ?? "", createdAt: runCreatedAt });
+      }
     }
-  }
 
-  const latest = rankings.filter(
-    ({ ranking }) => latestRunIdByGroup.get(groupKeyOf(ranking.assistantId))?.runId === ranking.runId,
-  );
+    latest = rankings.filter(
+      ({ ranking }) => latestRunIdByGroup.get(groupKeyOf(ranking.assistantId))?.runId === ranking.runId,
+    );
+  }
 
   let assistantNameById = new Map<string, string>();
   try {
@@ -1513,7 +1538,11 @@ router.get("/benchmark/rankings", async (_req, res): Promise<void> => {
         assistantId: ranking.assistantId,
         assistantLabel: ranking.assistantId
           ? (assistantNameById.get(ranking.assistantId) ?? ranking.assistantId)
-          : "Other (no assistant on file)",
+          // 2026-08-27, per Abhishek ("what's this Other (no assistant on
+          // file)"): say why, not just that -- these are calls imported
+          // without a Vapi assistant id captured at all (e.g. manually
+          // added via Add Call), not an error or a dropped assistant.
+          : "Unassigned (no assistant ID captured at import)",
         providerId: ranking.providerId,
         providerName: ranking.providerName,
         rank: ranking.rank,

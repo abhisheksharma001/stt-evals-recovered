@@ -60,7 +60,18 @@ export const benchmarkBulksTable = pgTable(
     providerIds: text("provider_ids").array().notNull(),
     shardSize: integer("shard_size").notNull().default(50),
     minDurationSeconds: integer("min_duration_seconds").notNull().default(5),
+    // 2026-08-27, per Abhishek ("show cost of each run and the openai agent
+    // cost and stt cost separately, estimated"): estimatedCostCents kept as
+    // the historical STT-only total (nothing reading it today breaks) --
+    // estimatedSttCostCents is the same number, correctly named, alongside
+    // the genuinely new estimatedAgentCostCents (the OpenAI judge-call cost
+    // this bulk is expected to incur once flagged calls are known). Actual
+    // (post-run) cost is computed on demand from real benchmark_scores /
+    // benchmark_agent_scans rows rather than stored here -- storing it would
+    // just go stale the moment a cell is retried.
     estimatedCostCents: integer("estimated_cost_cents"),
+    estimatedSttCostCents: integer("estimated_stt_cost_cents"),
+    estimatedAgentCostCents: integer("estimated_agent_cost_cents"),
     launchedByLabel: text("launched_by_label"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true })

@@ -19,6 +19,10 @@ export interface Bulk {
   /** @nullable */
   estimatedCostCents?: number | null;
   /** @nullable */
+  estimatedSttCostCents?: number | null;
+  /** @nullable */
+  estimatedAgentCostCents?: number | null;
+  /** @nullable */
   launchedByLabel?: string | null;
   /** @nullable */
   notes?: string | null;

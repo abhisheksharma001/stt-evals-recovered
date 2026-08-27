@@ -7,13 +7,11 @@ import { Toaster } from "@/components/ui/toaster"
 
 import Dashboard from "@/pages/Dashboard"
 import Corpus from "@/pages/Corpus"
-import Review from "@/pages/Review"
 import Sources from "@/pages/Import"
 import Providers from "@/pages/Providers"
 import Runs from "@/pages/Runs"
 import Bulks from "@/pages/Bulks"
 import Results from "@/pages/Rankings"
-import Agent from "@/pages/Agent"
 import NotFound from "@/pages/not-found"
 
 // Review finding #21: the bare QueryClient meant every query used library
@@ -41,11 +39,9 @@ const queryClient = new QueryClient({
 const KNOWN_ROUTES = new Set([
   "/",
   "/corpus",
-  "/review",
   "/runs",
   "/bulks",
   "/results",
-  "/agent",
   "/providers",
   "/sources",
 ])
@@ -62,11 +58,9 @@ export default function App() {
         <ErrorBoundary resetKey={location}>
           {path === "/" && <Dashboard />}
           {path === "/corpus" && <Corpus />}
-          {path === "/review" && <Review />}
           {path === "/runs" && <Runs />}
           {path === "/bulks" && <Bulks />}
           {path === "/results" && <Results />}
-          {path === "/agent" && <Agent />}
           {path === "/providers" && <Providers />}
           {path === "/sources" && <Sources />}
           {!KNOWN_ROUTES.has(path) && <NotFound />}

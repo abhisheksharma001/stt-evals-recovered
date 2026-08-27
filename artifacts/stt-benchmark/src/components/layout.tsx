@@ -9,7 +9,6 @@ import {
   BarChart3,
   Server,
   Radio,
-  Bot,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { runNavGuard } from "@/lib/nav-guard"
@@ -94,11 +93,9 @@ export function Sidebar() {
         <div className="flex flex-col gap-px">
           <SidebarItem href="/" icon={LayoutGrid} label="Overview" />
           <SidebarItem href="/corpus" icon={Database} label="Corpus" />
-          <SidebarItem href="/review" icon={AudioLines} label="Listen" />
           <SidebarItem href="/runs" icon={GitMerge} label="Runs" />
           <SidebarItem href="/bulks" icon={Layers} label="Bulks" />
           <SidebarItem href="/results" icon={BarChart3} label="Results" />
-          <SidebarItem href="/agent" icon={Bot} label="Agent" />
         </div>
 
         <SectionLabel>Setup</SectionLabel>
@@ -124,22 +121,15 @@ export function Sidebar() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation()
-  // The review workspace runs full-bleed: it manages its own three-column
-  // layout and needs every pixel, so the page padding is skipped there.
-  // Path-only match -- /review?call=<id> deep links used to lose the
-  // full-bleed treatment (UX review 2026-08-25).
-  const fullBleed = location.split("?")[0] === "/review"
-
+  // 2026-08-27: the full-bleed exception for the old standalone /review
+  // workspace is gone along with the page itself (merged into Corpus's
+  // expandable rows, a normal padded page) -- every route uses the same
+  // padded shell now.
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background selection:bg-primary/25">
       <Sidebar />
       <main className="relative flex-1 overflow-auto">
-        {fullBleed ? (
-          children
-        ) : (
-          <div className="mx-auto min-h-full max-w-[1400px] p-7">{children}</div>
-        )}
+        <div className="mx-auto min-h-full max-w-[1400px] p-7">{children}</div>
       </main>
     </div>
   )

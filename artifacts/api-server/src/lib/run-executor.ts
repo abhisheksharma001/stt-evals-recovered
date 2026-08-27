@@ -32,6 +32,7 @@ import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
 import { getOrCacheAudioBytes, readCachedAudioBytes } from "./audio-cache";
 import { computeHybridFlagsForRun } from "./hybrid-flagging";
+import { runAutoAgentVerificationForRun } from "./agent-verify";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
 // documented race (see the comment on the run.status check below) --
@@ -515,6 +516,19 @@ async function executeBenchmarkRunInner(
     await computeHybridFlagsForRun(runId);
   } catch (err) {
     logger.error({ err, runId }, "Failed to compute hybrid flags for run");
+  }
+
+  // 2026-08-27, per Abhishek ("bulk calls will also do the agent system
+  // working, remove the agent thing, just keep bulk which will do the
+  // work"): the OpenAI judge call that used to require a manual click on
+  // the Agent page now runs automatically here, for every call that got at
+  // least one successful cell in this run. Only fires the LLM call for
+  // calls the free hybrid pass actually flagged -- clean calls get a
+  // "clean" scan row (coverage evidence) with no OpenAI spend.
+  try {
+    await runAutoAgentVerificationForRun(runId, actorLabel);
+  } catch (err) {
+    logger.error({ err, runId }, "Failed to run automatic agent verification for run");
   }
 
   try {

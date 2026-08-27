@@ -1,9 +1,11 @@
 import { and, asc, count, countDistinct, desc, eq, inArray } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
+  benchmarkAgentScansTable,
   benchmarkBulksTable,
   benchmarkProviderCallResultsTable,
   benchmarkRunsTable,
+  benchmarkScoresTable,
   bulkTemplatesTable,
   db,
   type BenchmarkBulkRow,
@@ -83,6 +85,8 @@ function serializeBulk(bulk: BenchmarkBulkRow) {
     shardSize: bulk.shardSize,
     minDurationSeconds: bulk.minDurationSeconds,
     estimatedCostCents: bulk.estimatedCostCents ?? null,
+    estimatedSttCostCents: bulk.estimatedSttCostCents ?? null,
+    estimatedAgentCostCents: bulk.estimatedAgentCostCents ?? null,
     launchedByLabel: bulk.launchedByLabel ?? null,
     notes: bulk.notes ?? null,
     createdAt: bulk.createdAt.toISOString(),
@@ -226,9 +230,46 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         )
     : [{ calls: 0 }];
 
+  // 2026-08-27, per Abhishek ("show cost of each run ... separately"): real
+  // spend, not the pre-launch estimate. STT cost sums benchmark_scores rows
+  // for this bulk's own runs (only "ok" cells ever get a score row). Agent
+  // cost sums benchmark_agent_scans rows tagged with this bulk's runIds
+  // (set by lib/agent-verify.ts's automatic pass) -- never combined into
+  // one number, since they're different budgets to someone deciding
+  // whether to keep running this.
+  const sttCostRows = runs.length
+    ? await db
+        .select({ costCents: benchmarkScoresTable.costCents })
+        .from(benchmarkScoresTable)
+        .innerJoin(benchmarkProviderCallResultsTable, eq(benchmarkProviderCallResultsTable.id, benchmarkScoresTable.resultId))
+        .where(inArray(benchmarkProviderCallResultsTable.runId, runs.map((run) => run.id)))
+    : [];
+  const sttCostCents = sttCostRows.reduce((sum, r) => sum + (r.costCents ?? 0), 0);
+
+  const agentScanRows = runs.length
+    ? await db
+        .select({
+          status: benchmarkAgentScansTable.status,
+          judgeCostCents: benchmarkAgentScansTable.judgeCostCents,
+        })
+        .from(benchmarkAgentScansTable)
+        .where(inArray(benchmarkAgentScansTable.runId, runs.map((run) => run.id)))
+    : [];
+  const agentCostCents = agentScanRows.reduce((sum, r) => sum + (r.judgeCostCents ?? 0), 0);
+  const agentCallsChecked = agentScanRows.length;
+  const agentCallsFlagged = agentScanRows.filter((r) => r.status === "flagged" || r.status === "error").length;
+  const agentCallsJudged = agentScanRows.filter((r) => r.status === "flagged" && r.judgeCostCents !== null).length;
+
   res.json(
     GetBulkResponse.parse({
       ...serializeBulk(bulk),
+      actualCost: {
+        sttCostCents,
+        agentCostCents,
+        agentCallsChecked,
+        agentCallsFlagged,
+        agentCallsJudged,
+      },
       progress: {
         callsTotal,
         callsRun: ranCalls?.calls ?? 0,
