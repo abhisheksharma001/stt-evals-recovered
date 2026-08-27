@@ -44,7 +44,7 @@ export default function Corpus() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Corpus</h1>
-          <p className="text-muted-foreground mt-1">De-identified audio and its de-id sign-off status. No gold transcript required any more -- de-id alone gates a call into a bundle.</p>
+          <p className="text-muted-foreground mt-1">Calls pulled from Vapi, ready to run against any configured provider. No gold transcript or sign-off step required.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative w-56">
@@ -89,7 +89,6 @@ export default function Corpus() {
                 <TableHead>Vertical</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>De-ID</TableHead>
                 <TableHead>Hard Cases</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -97,17 +96,17 @@ export default function Corpus() {
             <TableBody>
               {isError ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-destructive text-sm">
+                  <TableCell colSpan={6} className="h-32 text-center text-destructive text-sm">
                     Failed to load corpus: {error instanceof Error ? error.message : String(error)}
                   </TableCell>
                 </TableRow>
               ) : isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
                 </TableRow>
               ) : filteredCalls.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
+                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
                 </TableRow>
               ) : (
                 filteredCalls.map(call => (
@@ -131,8 +130,6 @@ export default function Corpus() {
                       </div>
                     </TableCell>
                     <TableCell>
-                    </TableCell>
-                    <TableCell>
                       <div className="flex gap-1 flex-wrap">
                         {call.hardCases.map((hc, i) => (
                           <span key={i} className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground">
@@ -146,7 +143,7 @@ export default function Corpus() {
                       <div className="flex justify-end gap-1.5">
                         <Link href={`/review?call=${call.id}`}>
                           <Button variant="outline" size="sm">
-                            <AudioLines className="w-3.5 h-3.5 mr-1.5" /> De-ID
+                            <AudioLines className="w-3.5 h-3.5 mr-1.5" /> Listen
                           </Button>
                         </Link>
                         <CallDetailsDialog call={call} />
@@ -302,12 +299,10 @@ function CreateCallDialog() {
   )
 }
 
-// Everything content-related (gold transcript, entity tags) lives in Review
-// now -- this dialog is deliberately narrow: a manual status override for
-// edge cases (e.g. archiving a bad recording) plus de-id attestation, which
-// stays available here too since bulk attestation from this table doesn't
-// exist yet and forcing every single-call approval through Review would be
-// a detour for a curator just clearing a backlog of easy ones.
+// Everything content-related (entity tags) lives in Listen now -- this
+// dialog is deliberately narrow: a manual status override for edge cases
+// (e.g. archiving a bad recording). The de-id attestation controls that
+// used to live here were removed 2026-08-27 along with the gate itself.
 /**
  * 2026-08-27, per Abhishek: "fix the call which stt model it used so we can
  * show the comparison in the call details."
@@ -472,11 +467,11 @@ function CallDetailsDialog({ call }: { call: any }) {
           <div className="space-y-2">
             <label className="text-sm font-medium">Status</label>
             {/* 2026-08-27: gold-transcript statuses (ready_for_gold,
-                gold_in_review) are vestigial now that a call reaches
-                ready_to_run on de-id alone -- dropped from the picker so
-                nobody manually parks a call in a stage nothing reads
-                anymore. Still valid on old rows (schema unchanged), just
-                not offered going forward. */}
+                gold_in_review) are vestigial now that import lands a call
+                directly at ready_to_run, no gate in between -- dropped
+                from the picker so nobody manually parks a call in a stage
+                nothing reads anymore. Still valid on old rows (schema
+                unchanged), just not offered going forward. */}
             <select
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-mono uppercase text-xs"
               value={status}
