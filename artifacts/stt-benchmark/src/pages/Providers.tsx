@@ -20,6 +20,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 
+/**
+ * 2026-08-27, per Abhishek: "for each of the providers it should have
+ * multiple models we can configure." A provider row is one (vendor, model)
+ * pairing, so the flat card grid showed "Deepgram" three times with no hint
+ * that they were the same vendor. Group by vendor and list its models
+ * inside, each independently enable/disable-able -- which is what choosing
+ * "what they are using" actually means here.
+ */
+function groupByVendor(providers: Provider[]): [string, Provider[]][] {
+  const byVendor = new Map<string, Provider[]>()
+  for (const p of providers) {
+    const list = byVendor.get(p.name)
+    if (list) list.push(p)
+    else byVendor.set(p.name, [p])
+  }
+  return [...byVendor.entries()].map(
+    ([vendor, models]) =>
+      [vendor, [...models].sort((a, b) => a.model.localeCompare(b.model))] as [string, Provider[]],
+  )
+}
+
 export default function Providers() {
   const { data: providers, isLoading, isError, error } = useListBenchmarkProviders()
 
@@ -52,63 +73,74 @@ export default function Providers() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {providers?.map(provider => (
-            <Card key={provider.id} className={`border-t-4 ${provider.status === 'ready' ? 'border-t-primary' : 'border-t-muted'}`}>
+          {groupByVendor(providers ?? []).map(([vendor, models]) => (
+            <Card
+              key={vendor}
+              className={`border-t-4 ${models.some((m) => m.status === "ready") ? "border-t-primary" : "border-t-muted"}`}
+            >
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div>
-                    <CardTitle className="text-xl">{provider.name}</CardTitle>
-                    <CardDescription className="font-mono mt-1 text-xs">{provider.model}</CardDescription>
+                    <CardTitle className="text-xl">{vendor}</CardTitle>
+                    <CardDescription className="mt-1 text-xs">
+                      {models.length} model{models.length === 1 ? "" : "s"} &middot;{" "}
+                      {models.filter((m) => m.status === "ready").length} enabled
+                    </CardDescription>
                   </div>
-                  <Badge variant={provider.status === 'ready' ? 'default' : 'secondary'} className="uppercase">
-                    {provider.status.replace('_', ' ')}
-                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {!provider.apiKeyConfigured && provider.hasAdapter && (
-                  <div className="flex items-center gap-2 text-xs p-2.5 rounded-md border border-warning/25 bg-warning/10 text-warning">
-                    <KeyRound className="w-3.5 h-3.5 shrink-0" />
-                    API key not set. Add it as an env var to make this provider ready.
-                  </div>
-                )}
-                {!provider.hasAdapter && (
-                  <div className="flex items-center gap-2 text-xs p-2.5 rounded border border-destructive/20 bg-destructive/10 text-destructive">
-                    <Ban className="w-3.5 h-3.5 shrink-0" />
-                    No adapter registered for this provider id -- runs will fail this cell.
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-y-3 text-sm">
-                  <div className="text-muted-foreground">Streaming</div>
-                  <div className="flex justify-end font-medium">
-                    {provider.supportsStreaming ? <Check className="w-4 h-4 text-success" /> : <X className="w-4 h-4 text-muted-foreground" />}
-                  </div>
-                  
-                  <div className="text-muted-foreground">Diarization</div>
-                  <div className="flex justify-end font-medium">
-                    {provider.supportsDiarization ? <Check className="w-4 h-4 text-success" /> : <X className="w-4 h-4 text-muted-foreground" />}
-                  </div>
-                  
-                  <div className="text-muted-foreground">Keyword Boost</div>
-                  <div className="flex justify-end font-medium">
-                    {provider.keywordBoosting ? <Check className="w-4 h-4 text-success" /> : <X className="w-4 h-4 text-muted-foreground" />}
-                  </div>
+                {models.map((provider) => (
+                  <div key={provider.id} className="rounded-lg border border-border p-3 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-mono text-sm font-semibold">{provider.model}</div>
+                      <Badge variant={provider.status === "ready" ? "default" : "secondary"} className="uppercase text-[10px]">
+                        {provider.status.replace("_", " ")}
+                      </Badge>
+                    </div>
 
-                  <div className="text-muted-foreground">Cost / Min</div>
-                  <div className="flex justify-end font-mono text-primary font-bold">
-                    ${provider.costPerMinute.toFixed(4)}
+                    {!provider.apiKeyConfigured && provider.hasAdapter && (
+                      <div className="flex items-center gap-2 text-xs p-2.5 rounded-md border border-warning/25 bg-warning/10 text-warning">
+                        <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                        API key not set. Add it as an env var to make this model ready.
+                      </div>
+                    )}
+                    {!provider.hasAdapter && (
+                      <div className="flex items-center gap-2 text-xs p-2.5 rounded border border-destructive/20 bg-destructive/10 text-destructive">
+                        <Ban className="w-3.5 h-3.5 shrink-0" />
+                        No adapter registered for this provider id -- runs will fail this cell.
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-y-2 text-xs">
+                      <div className="text-muted-foreground">Streaming</div>
+                      <div className="flex justify-end">
+                        {provider.supportsStreaming ? <Check className="w-3.5 h-3.5 text-success" /> : <X className="w-3.5 h-3.5 text-muted-foreground" />}
+                      </div>
+                      <div className="text-muted-foreground">Diarization</div>
+                      <div className="flex justify-end">
+                        {provider.supportsDiarization ? <Check className="w-3.5 h-3.5 text-success" /> : <X className="w-3.5 h-3.5 text-muted-foreground" />}
+                      </div>
+                      <div className="text-muted-foreground">Keyword Boost</div>
+                      <div className="flex justify-end">
+                        {provider.keywordBoosting ? <Check className="w-3.5 h-3.5 text-success" /> : <X className="w-3.5 h-3.5 text-muted-foreground" />}
+                      </div>
+                      <div className="text-muted-foreground">Cost / Min</div>
+                      <div className="flex justify-end font-mono text-primary font-bold">
+                        ${provider.costPerMinute.toFixed(4)}
+                      </div>
+                    </div>
+
+                    {provider.configNote && (
+                      <div className="text-[11px] leading-relaxed p-2.5 bg-muted rounded border border-border text-muted-foreground">
+                        {provider.configNote}
+                      </div>
+                    )}
+
+                    <DisableToggle providerId={provider.id} status={provider.status} />
                   </div>
-                </div>
-                
-                {provider.configNote && (
-                  <div className="text-xs p-3 bg-muted rounded border border-border text-muted-foreground mt-4">
-                    {provider.configNote}
-                  </div>
-                )}
+                ))}
               </CardContent>
-              <CardFooter>
-                <DisableToggle providerId={provider.id} status={provider.status} />
-              </CardFooter>
             </Card>
           ))}
         </div>
