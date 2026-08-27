@@ -32,7 +32,7 @@ trigger, not a date)
 
 | ID | Task | Status |
 |---|---|---|
-| T-00 | ⛔ **Abhishek runs this.** Restart the API server on the current build. Verify ElevenLabs appears as a provider, Cartesia's long-call fix is live, and a new bulk shows the retention-exclusion note. **Blocked: the sandbox will not let Claude kill the process — Abhishek runs it.** | `blocked` |
+| T-00 | ✅ **done** 2026-08-28 03:26 (Abhishek ran it). Server up on 8177, `/api/healthz` → `{"status":"ok"}`, ElevenLabs present in the provider list alongside AssemblyAI, Cartesia, Deepgram ×3, Gladia, OpenAI, Speechmatics. **Note:** the process was started at 03:26 from the T-01 build; T-02 (built 03:36) is not in the running process. Every backend task needs its own restart until T-04/T-05 make the running build visible on screen. |
 
 ---
 
