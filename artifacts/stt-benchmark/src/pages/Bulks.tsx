@@ -623,8 +623,26 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
                 <div className="text-[10px] font-mono uppercase text-muted-foreground">Agent coverage</div>
                 <div className="font-mono font-semibold">
                   {detail.actualCost.agentCallsChecked} checked, {detail.actualCost.agentCallsFlagged} flagged
+                  {detail.actualCost.agentCallsErrored > 0 && (
+                    <span className="text-destructive">, {detail.actualCost.agentCallsErrored} errored</span>
+                  )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* T-03 (2026-08-28): an errored scan is not a finding, it is a
+              gap in what was checked. Say that out loud where the coverage
+              number is, so "N checked" is never read as "N verified". */}
+          {detail?.actualCost && detail.actualCost.agentCallsErrored > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Agent verification failed on {detail.actualCost.agentCallsErrored} of{" "}
+                {detail.actualCost.agentCallsChecked} call(s). Those calls are unchecked, not clean &mdash;
+                nothing is known about them either way. Provider scores and rankings below are unaffected;
+                they come from the transcripts, not from the agent.
+              </span>
             </div>
           )}
 

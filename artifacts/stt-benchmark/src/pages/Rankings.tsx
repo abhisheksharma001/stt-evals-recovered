@@ -9,7 +9,7 @@ import {
   useListBenchmarkProviders,
   type VerticalRanking,
 } from "@workspace/api-client-react"
-import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck } from "lucide-react"
+import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle } from "lucide-react"
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -342,8 +342,36 @@ export default function Rankings() {
                 </span>
               </div>
             </div>
+            {/* T-03 (2026-08-28): errored scans get their own cell, in
+                destructive colour, never folded into the flagged count.
+                A crash is a hole in the coverage, not a finding. */}
+            {bulkDetail.actualCost.agentCallsErrored > 0 && (
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-wide text-destructive">Agent errors</div>
+                <div className="font-mono text-base font-semibold text-destructive">
+                  {bulkDetail.actualCost.agentCallsErrored} errored
+                  <span className="ml-1.5 text-xs font-normal">unchecked, not clean</span>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
+      )}
+
+      {/* The ranking cards below are scored from transcripts, not from the
+          agent, so an agent failure cannot move them. Say that explicitly
+          rather than leaving a red number next to a table and letting the
+          reader guess whether the table is compromised. */}
+      {viewMode === "bulk" && bulkDetail && bulkDetail.actualCost.agentCallsErrored > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Agent verification failed on {bulkDetail.actualCost.agentCallsErrored} of{" "}
+            {bulkDetail.actualCost.agentCallsChecked} call(s) in this bulk. Those calls were never checked
+            &mdash; treat them as unknown, not clean. The rankings below are unchanged by this: they are
+            scored from the transcripts themselves.
+          </span>
+        </div>
       )}
 
       {isLoading ? (
