@@ -42,6 +42,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
+import { VAPI_RETENTION_WINDOW_DAYS, RETENTION_DEFAULT_REASON } from "@/lib/retention"
 
 function BulkStatusBadge({ status }: { status: BulkStatus }) {
   const styles: Record<BulkStatus, string> = {
@@ -105,7 +106,8 @@ const WORTH_BENCHMARKING_ENDED_REASONS = [
 const EMPTY_CRITERIA: CriteriaDraft = {
   assistantIds: [],
   accountLabel: "",
-  lastNDays: "",
+  // T-16: default window = Vapi's retention window; "" = all time.
+  lastNDays: String(VAPI_RETENTION_WINDOW_DAYS),
   minDurationSeconds: "60",
   maxDurationSeconds: "120",
   includeEndedReasons: [],
@@ -372,10 +374,13 @@ function CriteriaFields({
           <Input
             type="number"
             min={1}
-            placeholder="e.g. 7"
+            placeholder="all time"
             value={criteria.lastNDays}
             onChange={(e) => setCriteria({ ...criteria, lastNDays: e.target.value })}
           />
+          <p className="text-xs text-muted-foreground">
+            Default {VAPI_RETENTION_WINDOW_DAYS}: {RETENTION_DEFAULT_REASON} Raise it or clear it to reach further back.
+          </p>
         </div>
         <div className="space-y-2">
           <Label>Min call duration (s)</Label>
@@ -635,7 +640,7 @@ function CreateBulkDialog() {
 function CreateTemplateDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState<CriteriaDraft>({ ...EMPTY_CRITERIA, lastNDays: "7" })
+  const [criteria, setCriteria] = React.useState<CriteriaDraft>(EMPTY_CRITERIA)
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()

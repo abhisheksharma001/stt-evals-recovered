@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
+import { VAPI_RETENTION_WINDOW_DAYS, RETENTION_DEFAULT_REASON, defaultDateLowerBound } from "@/lib/retention"
 
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -115,7 +116,8 @@ export default function Import() {
   const importCalls = useImportVapiCalls()
 
   const [accountId, setAccountId] = React.useState("")
-  const [startDate, setStartDate] = React.useState("")
+  // T-16: defaults to today - 14 days (see lib/retention.ts); earlier stays selectable.
+  const [startDate, setStartDate] = React.useState(() => defaultDateLowerBound())
   const [endDate, setEndDate] = React.useState("")
   const [limit, setLimit] = React.useState("50")
   const [assistantId, setAssistantId] = React.useState("")
@@ -327,6 +329,9 @@ VAPI_API_KEY_CLIENT_ACME=...  # shows up as "Client Acme"`}
               <div className="space-y-2">
                 <label className="text-sm font-medium">From date</label>
                 <Input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPreviewedAccountId(null) }} />
+                <p className="text-xs text-muted-foreground">
+                  Defaults to today &minus; {VAPI_RETENTION_WINDOW_DAYS} days. {RETENTION_DEFAULT_REASON} Pick an earlier date to try anyway.
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">To date</label>
