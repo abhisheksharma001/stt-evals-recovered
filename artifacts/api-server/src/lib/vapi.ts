@@ -74,7 +74,12 @@ export class VapiRequestError extends Error {
     this.failureClass =
       httpStatus === 400 && /retention window|only covers the last \d+ days/i.test(bodyText)
         ? "retention_expired"
-        : classifyProviderHttpStatus(httpStatus);
+        : // Vapi is the call source, not an STT provider, so the "provider"
+          // in this helper's name is a stretch here -- but the mapping it
+          // makes is about a vendor's HTTP status, and Vapi is a vendor:
+          // its 429 is a rate limit and its 5xx is its own server failing,
+          // which is what those classes mean and how they should be retried.
+          classifyProviderHttpStatus(httpStatus);
   }
 }
 
