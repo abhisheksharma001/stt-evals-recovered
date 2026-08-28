@@ -32,8 +32,17 @@ function seriesColor(index: number): string {
 }
 
 const fmtRate = (v: number | null) => (v === null ? "—" : v.toFixed(2))
-const fmtDelta = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v).toFixed(2)}`
+const fmtDelta = (v: number) => (Math.abs(v) < 0.005 ? "±0.00" : `${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`)
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+/** Axis labels must be unique per bulk -- recharts keys categories by
+ * label, so two same-day bulks would collapse into one x position (and the
+ * "this bulk" marker would land on the wrong one). Add the time whenever a
+ * date repeats. */
+function axisLabels(bulks: { at: string }[]): string[] {
+  const dates = bulks.map((b) => fmtDate(b.at))
+  return bulks.map((b, i) => (dates.filter((d) => d === dates[i]).length > 1 ? `${dates[i]} ${fmtTime(b.at)}` : dates[i]!))
+}
 
 function DirectionChip({ s }: { s: TrendSeries }) {
   const base = "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
@@ -81,8 +90,9 @@ export function TrendStrip({ scope, highlightBulkId, title = "Trend across bulks
     const config: ChartConfig = Object.fromEntries(
       trend.series.map((s, i) => [s.providerId, { label: s.providerName, color: seriesColor(i) }]),
     )
+    const labels = axisLabels(trend.bulks)
     const rows = trend.bulks.map((b, bi) => {
-      const row: Record<string, string | number | null> = { bulkId: b.id, name: b.name, at: b.at, label: fmtDate(b.at) }
+      const row: Record<string, string | number | null> = { bulkId: b.id, name: b.name, at: b.at, label: labels[bi]! }
       for (const s of trend.series) {
         const p = s.points[bi]!
         row[s.providerId] = p.peerFlagsPer100Words
@@ -97,14 +107,13 @@ export function TrendStrip({ scope, highlightBulkId, title = "Trend across bulks
         <ChartContainer config={config} className={compact ? "aspect-[5/1] max-h-36 w-full" : "aspect-[4/1] max-h-56 w-full"}>
           <LineChart data={rows} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} interval={0} />
             <YAxis
               tickLine={false}
               axisLine={false}
               fontSize={11}
               width={34}
               domain={[0, "auto"]}
-              label={compact ? undefined : { value: "flags / 100 words", angle: -90, position: "insideLeft", fontSize: 10, offset: 12 }}
             />
             {highlightBulkId && rows.some((r) => r.bulkId === highlightBulkId) && (
               <ReferenceLine
