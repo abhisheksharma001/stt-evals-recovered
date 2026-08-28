@@ -36,7 +36,12 @@ import {
   RetryBulkFailedParams,
   RetryBulkFailedResponse,
 } from "@workspace/api-zod";
+import {
+  isFailureClass,
+  isRetryableFailureClass,
+} from "@workspace/stt-providers";
 import { actorFromRequest, writeAudit } from "../lib/audit";
+import { logger } from "../lib/logger";
 import {
   BulkNameConflictError,
   BulkSelectionEmptyError,
@@ -282,6 +287,70 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         ? 0
         : null;
 
+  // T-07: what `progress.cellsFailed` is actually made of. A single number
+  // says "45 cells failed" and leaves the only question that matters --
+  // "how many of those could a retry possibly fix?" -- to be answered by
+  // reading 45 error strings by eye. Grouped in SQL (one aggregate, no row
+  // dump) so this stays cheap at 10k-call bulk sizes.
+  const failureGroupRows = runs.length
+    ? await db
+        .select({
+          failureClass: benchmarkProviderCallResultsTable.failureClass,
+          cells: count(),
+        })
+        .from(benchmarkProviderCallResultsTable)
+        .where(
+          and(
+            inArray(
+              benchmarkProviderCallResultsTable.runId,
+              runs.map((run) => run.id),
+            ),
+            eq(benchmarkProviderCallResultsTable.status, "failed"),
+          ),
+        )
+        .groupBy(benchmarkProviderCallResultsTable.failureClass)
+    : [];
+
+  // The column has no CHECK constraint, so a value outside the enum is
+  // physically possible even though nothing we write can produce one. Fold
+  // any such value into the unclassified (null) bucket rather than letting
+  // it fail GetBulkResponse.parse() and take the whole detail view down --
+  // an unrecognised class is, by definition, unclassified.
+  const cellsByClass = new Map<string | null, number>();
+  for (const row of failureGroupRows) {
+    const key = isFailureClass(row.failureClass) ? row.failureClass : null;
+    if (!isFailureClass(row.failureClass) && row.failureClass !== null) {
+      logger.warn(
+        { bulkId: bulk.id, failureClass: row.failureClass },
+        "unrecognised failure_class folded into the unclassified bucket",
+      );
+    }
+    cellsByClass.set(key, (cellsByClass.get(key) ?? 0) + row.cells);
+  }
+
+  const failureBreakdown = [...cellsByClass.entries()]
+    .map(([failureClass, cells]) => ({
+      failureClass,
+      cells,
+      // Decided here, by the same function the enum ships with, so the UI
+      // never re-derives it. Null is never retryable: a row that predates
+      // classification has not been shown to be transient, and re-running
+      // it spends real provider money on a maybe.
+      retryable: isFailureClass(failureClass)
+        ? isRetryableFailureClass(failureClass)
+        : false,
+    }))
+    // Biggest bucket first. Ties break by class name, with the unclassified
+    // bucket last, so the classified answer leads and the leftovers trail
+    // it -- and so the order is stable across polls rather than whatever
+    // Postgres happened to return.
+    .sort((a, b) => {
+      if (a.cells !== b.cells) return b.cells - a.cells;
+      if (a.failureClass === null) return 1;
+      if (b.failureClass === null) return -1;
+      return a.failureClass.localeCompare(b.failureClass);
+    });
+
   res.json(
     GetBulkResponse.parse({
       ...serializeBulk(bulk),
@@ -304,6 +373,7 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         cellsSkippedPendingReview:
           byStatus.get("skipped_pending_review")?.cells ?? 0,
       },
+      failureBreakdown,
       runs: runs.map((run) => ({
         id: run.id,
         shardIndex: run.shardIndex ?? 0,

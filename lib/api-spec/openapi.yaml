@@ -1404,6 +1404,31 @@ components:
         cellsPending: { type: number }
         cellsCancelled: { type: number }
         cellsSkippedPendingReview: { type: number }
+    BulkFailureGroup:
+      type: object
+      required: [failureClass, cells, retryable]
+      properties:
+        # T-07 (2026-08-28). One row per distinct failure_class among this
+        # bulk's failed cells.
+        #
+        # `null` is a real group, not a gap: rows written before T-06 added
+        # the column carry no class and were deliberately NOT back-guessed
+        # by the T-40 migration when their stored error text named no cause.
+        # It must stay visible as its own bucket -- folding it into
+        # "unknown" would be a claim we cannot support, and "unknown" is
+        # retryable while these are not.
+        failureClass:
+          oneOf:
+            - type: string
+              enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, unknown]
+            - type: "null"
+        cells: { type: number }
+        # Decided server-side by isRetryableFailureClass() (the same function
+        # the executor would use), so the UI never re-derives the judgement
+        # and the two can never disagree. Always false for the null class:
+        # an unclassified failure has not been shown to be transient, and
+        # re-running it costs real provider money for nothing.
+        retryable: { type: boolean }
     BulkShardRun:
       type: object
       required: [id, shardIndex, status, callCount, createdAt]
@@ -1418,13 +1443,19 @@ components:
       allOf:
         - $ref: "#/components/schemas/Bulk"
         - type: object
-          required: [progress, runs, actualCost]
+          required: [progress, runs, actualCost, failureBreakdown]
           properties:
             progress: { $ref: "#/components/schemas/BulkProgress" }
             runs:
               type: array
               items: { $ref: "#/components/schemas/BulkShardRun" }
             actualCost: { $ref: "#/components/schemas/BulkActualCost" }
+            # T-07: what progress.cellsFailed is actually made of. Empty
+            # array when nothing failed; the group counts always sum to
+            # progress.cellsFailed.
+            failureBreakdown:
+              type: array
+              items: { $ref: "#/components/schemas/BulkFailureGroup" }
     BulkActualCost:
       type: object
       required: [sttCostMicrocents, agentCostMicrocents, agentCallsChecked, agentCallsFlagged, agentCallsErrored, agentCallsJudged]

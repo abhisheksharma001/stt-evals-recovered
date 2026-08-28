@@ -809,7 +809,12 @@ export const GetBulkResponse = zod.object({
   "agentCallsFlagged": zod.number(),
   "agentCallsErrored": zod.number(),
   "agentCallsJudged": zod.number()
-})
+}),
+  "failureBreakdown": zod.array(zod.object({
+  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'unknown']),zod.null()]),
+  "cells": zod.number(),
+  "retryable": zod.boolean()
+}))
 }))
 
 

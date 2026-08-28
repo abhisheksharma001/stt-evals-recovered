@@ -22,6 +22,7 @@ import {
   getListBenchmarkRunsQueryKey,
   BulkStatus,
   type Bulk,
+  type BulkFailureGroup,
   type BulkTemplate,
   type BulkSelectionCriteria,
   type Provider,
@@ -551,6 +552,112 @@ function ManifestView({ bulkId }: { bulkId: string }) {
   )
 }
 
+/**
+ * T-07: how each failure class is named and explained on screen.
+ *
+ * The wording is the whole point of the task. "45 cells failed" reads as
+ * "the tool is broken"; "30 recordings expired before we asked for them"
+ * reads as what actually happened, and stops an operator paying to retry
+ * something that can never succeed.
+ *
+ * Two entries deserve their difference spelled out, because they look
+ * interchangeable and are not:
+ *   - "unknown" is a CLASSIFIED failure whose cause was not identified. It
+ *     is retryable, because nothing has shown it to be permanent.
+ *   - null is an UNCLASSIFIED row -- written before the class column
+ *     existed, and left alone by the T-40 backfill because its stored error
+ *     text named no cause. It is not retryable: guessing that it was
+ *     transient would spend real provider money on a maybe.
+ */
+const FAILURE_CLASS_COPY: Record<string, { label: string; detail: string }> = {
+  retention_expired: {
+    label: "Recording expired",
+    detail: "Vapi keeps a recording 14 days. Past that the audio is gone for everyone, permanently.",
+  },
+  audio_url_forbidden: {
+    label: "Audio URL forbidden (403)",
+    detail: "The signed storage URL refused the download. Bucket-specific and not fixable from here.",
+  },
+  provider_timeout: {
+    label: "Provider timed out",
+    detail: "The provider took the audio and never returned a final transcript inside its deadline.",
+  },
+  provider_5xx: {
+    label: "Provider server error",
+    detail: "The provider's own side failed the request, or dropped the stream mid-transfer.",
+  },
+  rate_limited: {
+    label: "Rate limited",
+    detail: "The provider refused on quota. Worth re-running once the window clears.",
+  },
+  audio_decode: {
+    label: "Audio could not be decoded",
+    detail: "The bytes arrived but were not usable audio. The source file has to be fixed first.",
+  },
+  unknown: {
+    label: "Unknown cause",
+    detail: "Classified as a failure, but the cause was not identified. Counted as retryable until it is.",
+  },
+}
+
+const UNCLASSIFIED_COPY = {
+  label: "Unclassified (predates classification)",
+  detail:
+    "Recorded before failures carried a cause, and its stored error text names none. Not guessed, and not retried — re-running it would be paying for a maybe.",
+}
+
+/**
+ * T-07: replaces the bare "cells failed" number with what it is made of,
+ * and states in one line how much of it a retry could actually fix.
+ */
+function FailureBreakdown({
+  groups,
+  cellsFailed,
+  retryableCells,
+}: {
+  groups: BulkFailureGroup[]
+  cellsFailed: number
+  retryableCells: number
+}) {
+  return (
+    <div className="rounded-md border border-border">
+      <div className="flex items-baseline justify-between border-b border-border px-3 py-2">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Why {cellsFailed} cell(s) failed
+        </div>
+        <div className="font-mono text-xs tabular-nums text-muted-foreground">
+          {retryableCells} retryable
+        </div>
+      </div>
+      <div className="divide-y divide-border">
+        {groups.map((group) => {
+          const copy = group.failureClass ? (FAILURE_CLASS_COPY[group.failureClass] ?? UNCLASSIFIED_COPY) : UNCLASSIFIED_COPY
+          return (
+            <div key={group.failureClass ?? "__unclassified__"} className="flex items-start gap-3 px-3 py-2.5">
+              <div className="w-10 shrink-0 font-mono text-lg font-semibold tabular-nums">{group.cells}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{copy.label}</span>
+                  <span
+                    className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest ${
+                      group.retryable
+                        ? "border-warning/25 bg-warning/10 text-warning"
+                        : "border-border bg-secondary text-muted-foreground"
+                    }`}
+                  >
+                    {group.retryable ? "retryable" : "permanent"}
+                  </span>
+                </div>
+                <div className="text-xs leading-relaxed text-muted-foreground">{copy.detail}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false)
   const queryClient = useQueryClient()
@@ -583,6 +690,21 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
 
   const current = detail ?? bulk
   const p = detail?.progress
+
+  // T-07: the retry button's count comes from the server's own retryable
+  // flag (isRetryableFailureClass, the same function the enum ships with) --
+  // never re-decided here, so the button and the executor can never
+  // disagree about what is worth paying to re-run.
+  const failureBreakdown = detail?.failureBreakdown ?? []
+  const retryableCells = failureBreakdown.reduce((sum, g) => sum + (g.retryable ? g.cells : 0), 0)
+  // A retry also picks up cells that never got a verdict at all -- never
+  // written, skipped by the old de-identification gate, or cancelled
+  // mid-flight. Those carry no failure class because they never failed, so
+  // they have to be counted separately or the button would sit disabled on
+  // a bulk that still has real work left in it.
+  const unfinishedCells =
+    (p?.cellsPending ?? 0) + (p?.cellsSkippedPendingReview ?? 0) + (p?.cellsCancelled ?? 0)
+  const retryTargets = retryableCells + unfinishedCells
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -686,6 +808,14 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
             </div>
           )}
 
+          {failureBreakdown.length > 0 && (
+            <FailureBreakdown
+              groups={failureBreakdown}
+              cellsFailed={p?.cellsFailed ?? 0}
+              retryableCells={retryableCells}
+            />
+          )}
+
           {detail && detail.runs.length > 0 && (
             <div>
               <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Shard runs</div>
@@ -721,10 +851,30 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
               <Play className="mr-2 h-4 w-4" /> Confirm & launch
             </Button>
           )}
+          {/* T-07: the button says how much it would actually re-run, and
+              refuses when that is nothing. Before this it was always
+              enabled and always said "Retry failed cells" -- on bulk
+              7d2585da that meant offering to re-bill 45 cells whose audio
+              is permanently gone. The reason is stated next to the button,
+              not hidden in a tooltip. */}
           {(current.status === "complete" || current.status === "partial" || current.status === "failed") && (
-            <Button variant="outline" onClick={() => retry.mutate({ bulkId: bulk.id })} disabled={retry.isPending}>
-              <RotateCw className="mr-2 h-4 w-4" /> Retry failed cells
-            </Button>
+            <div className="flex items-center gap-3">
+              {detail && retryTargets === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {(p?.cellsFailed ?? 0) > 0
+                    ? "Nothing to retry — every failure here is permanent."
+                    : "Nothing to retry — every cell already succeeded."}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => retry.mutate({ bulkId: bulk.id })}
+                disabled={retry.isPending || !detail || retryTargets === 0}
+              >
+                <RotateCw className="mr-2 h-4 w-4" />
+                {detail ? `Retry ${retryTargets} cell(s)` : "Retry failed cells"}
+              </Button>
+            </div>
           )}
           {current.status === "running" && (
             <Button variant="destructive" onClick={() => cancel.mutate({ bulkId: bulk.id })} disabled={cancel.isPending}>
