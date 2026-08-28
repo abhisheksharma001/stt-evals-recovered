@@ -100,6 +100,11 @@ export interface DisagreementSpan {
   endMs: number;
   contextBefore: string;
   contextAfter: string;
+  /**
+     * @minItems 2
+     * @maxItems 2
+     */
+  referencePositions: number[];
   readings: SpanReading[];
   adjudication: Adjudication | null;
 }
@@ -119,6 +124,7 @@ export interface DisagreementSpansResponse {
   runId: string | null;
   /** @nullable */
   referenceProviderId: string | null;
+  referenceWords: string[];
   unavailableReason: DisagreementSpansResponseUnavailableReason;
   spans: DisagreementSpan[];
 }

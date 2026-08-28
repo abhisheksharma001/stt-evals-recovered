@@ -18,8 +18,15 @@ describe("buildDisagreementSpans", () => {
     ]);
     expect(result.unavailableReason).toBeNull();
     expect(result.referenceProviderId).toBe("a");
+    // Normalized (numbers become digits), one entry per reference token.
+    expect(result.referenceWords).toHaveLength(8);
+    expect(result.referenceWords.slice(0, 3)).toEqual(["the", "number", "is"]);
     expect(result.spans).toHaveLength(1);
     const span = result.spans[0]!;
+    // T-22: the span's positions index straight into referenceWords.
+    expect(result.referenceWords.slice(span.referencePositions[0], span.referencePositions[1] + 1).join(" ")).toBe(
+      span.readings.find((r) => r.providerId === "a")!.text,
+    );
     // "three six six eight" starts at position 3 -> 10 + 3*0.5 = 11.5s. Where
     // it ends depends on how the diff chooses to align "36 68" against
     // "3 6 6 8" (either is a valid minimum-edit alignment), so only bound it.

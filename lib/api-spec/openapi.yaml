@@ -1014,12 +1014,18 @@ components:
           items: { $ref: "#/components/schemas/JudgeAccuracyItem" }
     DisagreementSpan:
       type: object
-      required: [startMs, endMs, contextBefore, contextAfter, readings, adjudication]
+      required: [startMs, endMs, contextBefore, contextAfter, referencePositions, readings, adjudication]
       properties:
         startMs: { type: number }
         endMs: { type: number }
         contextBefore: { type: string }
         contextAfter: { type: string }
+        # T-22: inclusive [first, last] index into DisagreementSpansResponse.referenceWords.
+        referencePositions:
+          type: array
+          items: { type: number }
+          minItems: 2
+          maxItems: 2
         readings:
           type: array
           items: { $ref: "#/components/schemas/SpanReading" }
@@ -1029,12 +1035,17 @@ components:
             - type: "null"
     DisagreementSpansResponse:
       type: object
-      required: [callId, runId, referenceProviderId, unavailableReason, spans]
+      required: [callId, runId, referenceProviderId, referenceWords, unavailableReason, spans]
       properties:
         callId: { type: string }
         # null when no run has a successful cell for this call yet.
         runId: { type: ["string", "null"] }
         referenceProviderId: { type: ["string", "null"] }
+        # T-22: the reference provider's normalized words in order, so the UI can
+        # render one flowing reading with disputed spans inline. Empty when no reference.
+        referenceWords:
+          type: array
+          items: { type: string }
         unavailableReason:
           oneOf:
             - type: string
