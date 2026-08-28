@@ -4,6 +4,7 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import { classifyProviderHttpStatus } from "../failure-class";
 
 // OpenAI gpt-4o-transcribe / whisper: POST /v1/audio/transcriptions.
 // Takes uploaded bytes directly -- the executor already hands us the cached
@@ -60,6 +61,7 @@ export const openAiAdapter: ProviderAdapter = {
         rawOutput,
         errorMessage: `OpenAI returned HTTP ${res.status}: ${rawOutput?.error?.message ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(res.status),
       };
     }
 
@@ -72,6 +74,7 @@ export const openAiAdapter: ProviderAdapter = {
       hypothesisTranscript: parsed.transcript,
       rawOutput,
       errorMessage: parsed.errorMessage,
+      failureClass: parsed.errorMessage ? "unknown" : null,
       diarizationScore: null, // OpenAI transcription API does not diarize
     };
   },

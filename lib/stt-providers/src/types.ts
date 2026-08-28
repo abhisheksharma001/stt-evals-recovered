@@ -17,6 +17,8 @@
 // provider's batch API only accepts a URL it fetches itself -- uploads to
 // that provider's own short-lived upload endpoint first. Either way, nothing
 // downstream of the initial cache read depends on Vapi's URL surviving.
+import { ClassifiedError, classifyProviderHttpStatus, type FailureClass } from "./failure-class";
+
 export type ProviderTranscribeInput = {
   callId: string;
   audioBytes: Buffer;
@@ -56,6 +58,13 @@ export type ProviderTranscribeResult = {
    * executor treats a missing value as "not measured", not "instant".
    */
   firstPartialAt?: string | null;
+  /**
+   * T-06: why this failed, set by the adapter that saw the actual response.
+   * Required in spirit whenever `status === "failed"` -- an adapter that
+   * omits it is recorded as `unknown` by the executor rather than having a
+   * class inferred from its message. Always null/absent on success.
+   */
+  failureClass?: FailureClass | null;
 };
 
 export interface ProviderAdapter {
@@ -80,7 +89,19 @@ export class ProviderConfigError extends Error {
 export async function fetchAudioBytes(audioUrl: string): Promise<Buffer> {
   const res = await fetch(audioUrl);
   if (!res.ok) {
-    throw new Error(`Failed to fetch audio from ${audioUrl}: HTTP ${res.status}`);
+    // T-06: classified here, holding the real Response, rather than left for
+    // something downstream to read out of the sentence below. A 403/401 on a
+    // presigned recording link is the storage-bucket failure documented in
+    // docs/backlog/good-to-have.md -- permanent, never worth a retry.
+    const failureClass =
+      res.status === 403 || res.status === 401
+        ? "audio_url_forbidden"
+        : classifyProviderHttpStatus(res.status);
+    throw new ClassifiedError(
+      `Failed to fetch audio from ${audioUrl}: HTTP ${res.status}`,
+      failureClass,
+      { httpStatus: res.status },
+    );
   }
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);

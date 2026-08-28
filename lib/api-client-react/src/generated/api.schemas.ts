@@ -370,6 +370,19 @@ export const ProviderCallResultStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type ProviderCallResultFailureClass = typeof ProviderCallResultFailureClass[keyof typeof ProviderCallResultFailureClass] | null;
+
+
+export const ProviderCallResultFailureClass = {
+  retention_expired: 'retention_expired',
+  audio_url_forbidden: 'audio_url_forbidden',
+  provider_timeout: 'provider_timeout',
+  provider_5xx: 'provider_5xx',
+  rate_limited: 'rate_limited',
+  audio_decode: 'audio_decode',
+  unknown: 'unknown',
+} as const;
+
 export type WordDiffOpOp = typeof WordDiffOpOp[keyof typeof WordDiffOpOp];
 
 
@@ -484,6 +497,7 @@ export interface ProviderCallResult {
   hypothesisTranscript?: string | null;
   /** @nullable */
   errorMessage?: string | null;
+  failureClass?: ProviderCallResultFailureClass;
   /**
      * 2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed).
      * @nullable

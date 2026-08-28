@@ -23,8 +23,10 @@ import {
 } from "@workspace/scoring";
 import {
   ProviderConfigError,
+  failureClassOf,
   getProviderAdapter,
   getProviderApiModel,
+  type FailureClass,
   type ProviderTranscribeResult,
 } from "@workspace/stt-providers";
 import { logger } from "./logger";
@@ -388,19 +390,32 @@ async function executeBenchmarkRunInner(
   // resolution. The actual bytes are read back per-cell, right before that
   // cell's provider call, so at most RUN_CONCURRENCY cells' worth of audio
   // is ever held in memory at once, not the whole shard's.
-  const audioStatusByCallId = new Map<string, { ok: boolean; error: string | null }>();
+  const audioStatusByCallId = new Map<
+    string,
+    { ok: boolean; error: string | null; failureClass: FailureClass | null }
+  >();
   await drainWithConcurrency(runnableCalls, Math.min(RUN_CONCURRENCY, 8), async (call) => {
     if (!call.audioObjectPath) {
-      audioStatusByCallId.set(call.id, { ok: false, error: "Call has no audioObjectPath to send to a provider." });
+      audioStatusByCallId.set(call.id, {
+        ok: false,
+        error: "Call has no audioObjectPath to send to a provider.",
+        // Nothing was ever imported for this call. Not a transport failure
+        // and not retention -- left visible as unclassified.
+        failureClass: "unknown",
+      });
       return;
     }
     try {
       await audioResolver(call); // warms the disk cache; bytes discarded here on purpose
-      audioStatusByCallId.set(call.id, { ok: true, error: null });
+      audioStatusByCallId.set(call.id, { ok: true, error: null, failureClass: null });
     } catch (err) {
       audioStatusByCallId.set(call.id, {
         ok: false,
         error: `Could not get this call's audio: ${err instanceof Error ? err.message : String(err)}`,
+        // T-06: read off the error the resolver threw (VapiRequestError /
+        // VapiNoRecordingError / the audio fetch's ClassifiedError all
+        // carry one), never parsed back out of the sentence above.
+        failureClass: failureClassOf(err) ?? "unknown",
       });
     }
   });
@@ -424,7 +439,11 @@ async function executeBenchmarkRunInner(
   // occupying a provider slot.
   const cells: Array<{ call: BenchmarkCallRow; provider: BenchmarkProviderRow }> = [];
   for (const call of runnableCalls) {
-    const status = audioStatusByCallId.get(call.id) ?? { ok: false, error: "Audio resolution skipped." };
+    const status = audioStatusByCallId.get(call.id) ?? {
+      ok: false,
+      error: "Audio resolution skipped.",
+      failureClass: "unknown" as FailureClass,
+    };
     for (const provider of providers.filter((p) => !alreadyOk.has(`${p.id}::${call.id}`))) {
       if (!status.ok) {
         await insertResult(runId, call.id, provider.id, {
@@ -435,6 +454,7 @@ async function executeBenchmarkRunInner(
           hypothesisTranscript: null,
           rawOutput: null,
           errorMessage: status.error,
+          failureClass: status.failureClass ?? "unknown",
         });
         failedCells += 1;
         continue;
@@ -462,6 +482,8 @@ async function executeBenchmarkRunInner(
           hypothesisTranscript: null,
           rawOutput: null,
           errorMessage: "Bulk cancelled before this cell started (FR-BLK-7).",
+          // Cancelled is not failed -- nothing went wrong to classify.
+          failureClass: null,
         });
       } catch (insertErr) {
         logger.error({ insertErr, runId, providerId: provider.id, callId: call.id }, "failed to persist cell cancellation");
@@ -490,6 +512,7 @@ async function executeBenchmarkRunInner(
           hypothesisTranscript: null,
           rawOutput: null,
           errorMessage: `Could not read this call's audio for this cell: ${err instanceof Error ? err.message : String(err)}`,
+          failureClass: failureClassOf(err) ?? "unknown",
         });
       } catch (insertErr) {
         logger.error({ insertErr, runId, providerId: provider.id, callId: call.id }, "failed to persist cell audio-read failure");
@@ -639,6 +662,9 @@ async function runCell(
       hypothesisTranscript: null,
       rawOutput: null,
       errorMessage: `No adapter registered for provider "${provider.id}" (PRO-03 gap).`,
+      // A missing adapter is our own gap, not any of the runtime failure
+      // modes this enum names. Visible as unclassified.
+      failureClass: "unknown",
     });
     return "failed";
   }
@@ -710,6 +736,14 @@ async function runCell(
           CELL_MAX_ATTEMPTS > 1 && (lastTransient.result || lastTransient.error)
             ? `${message} (after ${CELL_MAX_ATTEMPTS} attempt(s))`
             : message,
+        // Whichever of the two produced this outcome already said what kind
+        // of failure it was: an adapter result carries `failureClass`, a
+        // thrown error carries it on the error object. Neither is re-read
+        // out of `message`.
+        failureClass:
+          failureClassOf(err) ??
+          lastTransient.result?.failureClass ??
+          "unknown",
       });
     } catch (insertErr) {
       // A failed bookkeeping insert must never take the whole run down --
@@ -749,6 +783,9 @@ async function runCell(
         rawOutput: rawOutputString,
         rawOutputHash,
         errorMessage: result.errorMessage,
+        // Straight from the adapter, which set it where the failure
+        // happened. Null when the cell succeeded.
+        failureClass: result.status === "ok" ? null : (result.failureClass ?? "unknown"),
       })
       .returning();
 
@@ -840,6 +877,9 @@ async function runCell(
         hypothesisTranscript: null,
         rawOutput: null,
         errorMessage: `Persisted transcription but failed to store/score it: ${err instanceof Error ? err.message : String(err)}`,
+        // Our own bookkeeping broke after the provider had already
+        // answered. None of the provider-side classes fit.
+        failureClass: "unknown",
       });
     } catch (insertErr) {
       logger.error({ insertErr, runId, providerId: provider.id, callId: call.id }, "failed to persist cell failure");
@@ -861,6 +901,14 @@ async function insertResult(
     hypothesisTranscript: string | null;
     rawOutput: unknown;
     errorMessage: string | null;
+    /**
+     * T-06. Required, not optional, on purpose: making this a mandatory
+     * field means a new failure path cannot be added without the author
+     * having to state what kind of failure it is. `null` is the correct
+     * value for a non-failure row, and "unknown" the correct value for a
+     * failure nobody has classified -- but both have to be chosen.
+     */
+    failureClass: FailureClass | null;
   },
 ): Promise<void> {
   const rawOutputString = fields.rawOutput === null ? null : JSON.stringify(fields.rawOutput);
@@ -878,6 +926,7 @@ async function insertResult(
       ? createHash("sha256").update(rawOutputString).digest("hex")
       : null,
     errorMessage: fields.errorMessage,
+    failureClass: fields.failureClass,
   });
 }
 

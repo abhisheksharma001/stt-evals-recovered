@@ -5,6 +5,10 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import {
+  classifyProviderHttpStatus,
+  failureClassOf,
+} from "../failure-class";
 
 // AssemblyAI Universal: upload bytes first (POST /v2/upload -- returns a
 // short-lived URL on AssemblyAI's own CDN), submit a job against that URL
@@ -65,6 +69,7 @@ export const assemblyAiAdapter: ProviderAdapter = {
         rawOutput: uploadBody,
         errorMessage: `AssemblyAI upload returned HTTP ${uploadRes.status}: ${JSON.stringify(uploadBody) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(uploadRes.status),
       };
     }
 
@@ -89,6 +94,7 @@ export const assemblyAiAdapter: ProviderAdapter = {
         rawOutput,
         errorMessage: `AssemblyAI submit returned HTTP ${submitRes.status}: ${(rawOutput as { error?: string } | null)?.error ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(submitRes.status),
       };
     }
 
@@ -104,6 +110,9 @@ export const assemblyAiAdapter: ProviderAdapter = {
         rawOutput: submitBody,
         errorMessage: "AssemblyAI did not return a job id",
         diarizationScore: null,
+        // A 2xx with no job id is a contract violation we have no bucket
+        // for. Left unclassified on purpose rather than guessed at.
+        failureClass: "unknown",
       };
     }
 
@@ -128,6 +137,10 @@ export const assemblyAiAdapter: ProviderAdapter = {
         rawOutput: finalBody,
         errorMessage: parsed.errorMessage,
         diarizationScore: null,
+        // AssemblyAI reports its own job failures inside a 200 body. We hold
+        // no status or socket state here that would name a cause, so it
+        // stays unclassified rather than being read out of the sentence.
+        failureClass: parsed.errorMessage ? "unknown" : null,
       };
     } catch (err) {
       return {
@@ -139,6 +152,7 @@ export const assemblyAiAdapter: ProviderAdapter = {
         rawOutput: { jobId },
         errorMessage: err instanceof Error ? err.message : String(err),
         diarizationScore: null,
+        failureClass: failureClassOf(err) ?? "unknown",
       };
     }
   },

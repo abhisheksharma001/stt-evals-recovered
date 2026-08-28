@@ -4,6 +4,7 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import { classifyProviderHttpStatus } from "../failure-class";
 
 // Deepgram Nova-3 prerecorded (batch) transcription: POST /v1/listen with the
 // raw audio bytes as the request body (audio/wav), not a remote URL.
@@ -88,6 +89,7 @@ export const deepgramAdapter: ProviderAdapter = {
         rawOutput,
         errorMessage: `Deepgram returned HTTP ${res.status}: ${(rawOutput as { err_msg?: string } | null)?.err_msg ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(res.status),
       };
     }
 

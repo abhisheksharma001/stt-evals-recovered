@@ -1,3 +1,4 @@
+export * from "./failure-class";
 export * from "./types";
 export * from "./registry";
 export * from "./poll";

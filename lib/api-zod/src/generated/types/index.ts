@@ -63,6 +63,7 @@ export * from './listVapiAssistantsParams';
 export * from './planTask';
 export * from './provider';
 export * from './providerCallResult';
+export * from './providerCallResultFailureClass';
 export * from './providerCallResultStatus';
 export * from './providerInput';
 export * from './providerStatus';
