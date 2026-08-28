@@ -165,20 +165,23 @@ either on a date. Start it when its trigger fires.
 
 Append anything learned mid-task here rather than losing it to a compaction.
 
-- **2026-08-28 (T-43): the skip path is NOT live-verified yet, and T-45 is why.**
-  Deployed and confirmed running (`/api/healthz` → `05bb5e6f4c95`). Exercising
-  the new skip for real means re-executing a run that has permanent failures —
-  and every run that has any (bulk `7d2585da` run `4ba80a99`, bulk `1a8e14b2`
-  runs `73c8f03b` / `89e38d36`) also has hundreds of `ok` cells, so
-  `runAutoAgentVerificationForRun` re-judges them and bills OpenAI for it
-  (T-45). There is no run in the corpus made of failed cells alone, which would
-  have been free to re-execute. **Fix T-45 first and the verification becomes
-  free** — then re-execute `73c8f03b` and check three things: no provider call
-  is made, the 15 failed rows keep their existing ids and `created_at`, and the
-  run's notes carry the new "left as they were" line instead of the "can be
-  retried" one. Not done on my own initiative because it spends Abhishek's
-  money to test a fix whose whole point is not spending it.
-
+- **2026-08-28 (T-43 / T-45 / T-46): all three live-verified on `f16133a`.**
+  Re-executed run `73c8f03b` (bulk `1a8e14b2`, 14 null-class failures, 236 ok).
+  Result: log line `T-43: skipping cells whose recorded failure a re-run cannot
+  fix` fired; the 14 failed rows kept their exact ids and `created_at`; zero new
+  result rows; audit `afterState` carries `permanentlyFailedCells: 14,
+  failedCells: 0`; run notes now read `14 cell(s) left as they were: …` (the
+  bulk-detail endpoint does not expose run notes — read from the DB). Then
+  `POST /retry-failed` on the same bulk: `retriedRunIds` empty, bulk stayed
+  `partial`, `completedAt` untouched (T-46). **One correction to the earlier
+  entry:** this run had NO scan rows at all (it predates the auto-agent path),
+  so T-45 correctly did not skip — the judge ran for the first time on all 50
+  calls (~37c OpenAI, `agentCallsJudged: 50`). Real first-time coverage, not a
+  duplicate; T-45's skip is exercised by any FUTURE re-execution of this run.
+  Also learned: the API already recovers an interrupted run by itself on boot
+  (`recovering interrupted run after restart`) — bulk `340400b2` resumed
+  without a manual Execute. **The T-40 migration is STILL not run** — the
+  classifier blocked it a third time; every failed row is still null.
 - **2026-08-28 (T-43): a cell's state is its LATEST row, not any row.**
   Duplicate rows for one `(provider, call)` pair exist in history (the
   stale-row cleanup that fixed that landed 2026-08-25, after those rows were
