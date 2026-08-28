@@ -56,6 +56,9 @@ async function buildAll() {
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
+      // T-25: BAML loads its per-platform native binding via a relative
+      // require inside the package -- bundling it breaks that path.
+      "@boundaryml/baml",
       "sharp",
       "better-sqlite3",
       "sqlite3",
