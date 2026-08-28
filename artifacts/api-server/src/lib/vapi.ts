@@ -383,6 +383,26 @@ export async function fetchVapiCalls(
 }
 
 /**
+ * T-24: one raw page of /call for an account, exactly as Vapi returns it
+ * (newest first as observed live 2026-08-29). Thin wrapper so a caller
+ * with its own paging rule (lib/volume.ts) does not have to re-implement
+ * key resolution. Nothing here filters or sorts.
+ */
+export async function fetchVapiCallPage(
+  accountId: string,
+  params: { limit: number; createdAtGe?: string; createdAtLe?: string; createdAtLt?: string },
+): Promise<VapiCall[]> {
+  const key = resolveKey(accountId);
+  const qs = new URLSearchParams();
+  qs.set("limit", String(Math.min(VAPI_MAX_LIMIT, params.limit)));
+  if (params.createdAtGe) qs.set("createdAtGe", params.createdAtGe);
+  if (params.createdAtLe) qs.set("createdAtLe", params.createdAtLe);
+  if (params.createdAtLt) qs.set("createdAtLt", params.createdAtLt);
+  const calls = await vapiGet<VapiCall[]>(`/call?${qs.toString()}`, key);
+  return Array.isArray(calls) ? calls : [];
+}
+
+/**
  * Re-fetches a single call by id at import time. The importer deliberately
  * does NOT trust a recording URL sent up by the browser -- it asks Vapi again
  * so the stored `audioObjectPath` always comes from the source of truth.

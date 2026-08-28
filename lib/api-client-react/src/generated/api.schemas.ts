@@ -1025,6 +1025,26 @@ export interface BenchmarkTrend {
   cells: BenchmarkTrendCellsItem[];
 }
 
+export type ClientVolumeAssistantsItem = {
+  /** @nullable */
+  assistantId: string | null;
+  calls: number;
+  minutes: number;
+};
+
+export interface ClientVolume {
+  accountId: string;
+  accountLabel: string;
+  windowDays: number;
+  from: string;
+  to: string;
+  calls: number;
+  minutes: number;
+  truncated: boolean;
+  assistants: ClientVolumeAssistantsItem[];
+  fetchedAt: string;
+}
+
 export type BulkVerdictsProvidersItem = {
   id: string;
   name: string;
@@ -1284,6 +1304,13 @@ entityId?: string;
 
 export type ListBenchmarkRankingsParams = {
 bulkId?: string;
+};
+
+export type GetClientVolumeParams = {
+/**
+ * @minLength 1
+ */
+accountLabel: string;
 };
 
 export type ListBulksParams = {

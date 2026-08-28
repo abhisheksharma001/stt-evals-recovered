@@ -46,7 +46,9 @@ import type {
   BulkTemplateInput,
   BulkTemplateLaunchInput,
   BulkVerdicts,
+  ClientVolume,
   DisagreementSpansResponse,
+  GetClientVolumeParams,
   HealthStatus,
   JudgeAccuracyReplayRequest,
   JudgeAccuracyReplayResponse,
@@ -2131,6 +2133,90 @@ export function useGetBenchmarkTrend<TData = Awaited<ReturnType<typeof getBenchm
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetBenchmarkTrendQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetClientVolumeUrl = (params: GetClientVolumeParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/volume?${stringifiedParams}` : `/api/benchmark/volume`
+}
+
+/**
+ * @summary T-24 -- a client's real call volume over the trailing 14 days (Vapi's retention window, verified live), read from Vapi for the account with this label (every assistant, every call), so a $/min price can be stated as $/month. Cached 15 minutes server-side.
+ */
+export const getClientVolume = async (params: GetClientVolumeParams, options?: Parameters<typeof customFetch>[1]): Promise<ClientVolume> => {
+
+  return customFetch<ClientVolume>(getGetClientVolumeUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClientVolumeQueryKey = (params?: GetClientVolumeParams,) => {
+    return [
+    `/api/benchmark/volume`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetClientVolumeQueryOptions = <TData = Awaited<ReturnType<typeof getClientVolume>>, TError = ErrorType<void>>(params: GetClientVolumeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClientVolume>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClientVolumeQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClientVolume>>> = ({ signal }) => getClientVolume(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClientVolume>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClientVolumeQueryResult = NonNullable<Awaited<ReturnType<typeof getClientVolume>>>
+export type GetClientVolumeQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-24 -- a client's real call volume over the trailing 14 days (Vapi's retention window, verified live), read from Vapi for the account with this label (every assistant, every call), so a $/min price can be stated as $/month. Cached 15 minutes server-side.
+ */
+
+export function useGetClientVolume<TData = Awaited<ReturnType<typeof getClientVolume>>, TError = ErrorType<void>>(
+ params: GetClientVolumeParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClientVolume>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClientVolumeQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

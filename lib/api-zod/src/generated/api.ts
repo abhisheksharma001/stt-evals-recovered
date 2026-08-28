@@ -789,6 +789,34 @@ export const GetBenchmarkTrendResponse = zod.object({
 
 
 /**
+ * @summary T-24 -- a client's real call volume over the trailing 14 days (Vapi's retention window, verified live), read from Vapi for the account with this label (every assistant, every call), so a $/min price can be stated as $/month. Cached 15 minutes server-side.
+ */
+
+
+
+export const GetClientVolumeQueryParams = zod.object({
+  "accountLabel": zod.coerce.string().min(1)
+})
+
+export const GetClientVolumeResponse = zod.object({
+  "accountId": zod.string(),
+  "accountLabel": zod.string(),
+  "windowDays": zod.number(),
+  "from": zod.coerce.date(),
+  "to": zod.coerce.date(),
+  "calls": zod.number(),
+  "minutes": zod.number(),
+  "truncated": zod.boolean(),
+  "assistants": zod.array(zod.object({
+  "assistantId": zod.string().nullable(),
+  "calls": zod.number(),
+  "minutes": zod.number()
+})),
+  "fetchedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Get PRD implementation plan and task dependencies
  */
 export const GetBenchmarkPlanResponseItem = zod.object({
