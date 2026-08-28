@@ -306,7 +306,25 @@ export async function verifyCallWithAgent(params: {
  * "ok" cell in THIS run. Never re-verifies work another run already covered
  * (each run's own results are the only scope), so a bulk's shards each pay
  * for their own calls exactly once. */
-export async function runAutoAgentVerificationForRun(runId: string, requestedByLabel: string): Promise<void> {
+export async function runAutoAgentVerificationForRun(
+  runId: string,
+  requestedByLabel: string,
+  options: {
+    /**
+     * T-45. Calls that gained a new ok cell during the execution that is
+     * calling us. A call NOT in this set whose scan for this run already
+     * finished is skipped: its candidate set is unchanged since that scan,
+     * so re-judging it would be a second OpenAI bill for the same answer.
+     * Before this, every re-execution -- including one that did nothing at
+     * all (T-43 makes that routine) -- re-judged every ok call in the run.
+     *
+     * A scan that ended in "error" (the judge itself failed) or is still
+     * "scanning" (crashed mid-write) does not count as finished and is
+     * redone. "clean", "flagged", "approved", "rejected" all count.
+     */
+    callIdsWithNewEvidence?: ReadonlySet<string>;
+  } = {},
+): Promise<void> {
   const rows = await db
     .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
     .from(benchmarkProviderCallResultsTable)
@@ -318,6 +336,29 @@ export async function runAutoAgentVerificationForRun(runId: string, requestedByL
     if (!row.result.hypothesisTranscript) continue;
     if (!byCallId.has(row.result.callId)) byCallId.set(row.result.callId, []);
     byCallId.get(row.result.callId)!.push(row);
+  }
+  if (byCallId.size === 0) return;
+
+  const finishedScans = await db
+    .select({ callId: benchmarkAgentScansTable.callId })
+    .from(benchmarkAgentScansTable)
+    .where(
+      and(
+        eq(benchmarkAgentScansTable.runId, runId),
+        inArray(benchmarkAgentScansTable.callId, [...byCallId.keys()]),
+        inArray(benchmarkAgentScansTable.status, ["clean", "flagged", "approved", "rejected"]),
+      ),
+    );
+  const alreadyVerified = new Set(finishedScans.map((s) => s.callId));
+  let skipped = 0;
+  for (const callId of [...byCallId.keys()]) {
+    if (alreadyVerified.has(callId) && !options.callIdsWithNewEvidence?.has(callId)) {
+      byCallId.delete(callId);
+      skipped += 1;
+    }
+  }
+  if (skipped > 0) {
+    logger.info({ runId, skipped, remaining: byCallId.size }, "T-45: skipping calls already verified for this run with unchanged evidence");
   }
   if (byCallId.size === 0) return;
 
