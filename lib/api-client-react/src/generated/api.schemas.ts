@@ -29,6 +29,72 @@ export interface Adjudication {
   adjudicatedAt: string;
 }
 
+export interface JudgeAccuracyReplayRequest {
+  /**
+     * Max spans to replay in this request; capped server-side.
+     * @nullable
+     */
+  limit?: number | null;
+}
+
+export interface JudgeAccuracyReplayResponse {
+  replayed: number;
+  /** Verdicts still not replayed after this request. */
+  remaining: number;
+  /** Verdicts whose span could not be rebuilt from stored results; marked replayed with no judge pick. */
+  spanNotFound: number;
+  /** Judge calls that errored; left pending for a later replay. */
+  judgeFailed: number;
+  costMicrocents: number;
+}
+
+export type JudgeAccuracyItemReadingsItem = {
+  providerId: string;
+  text: string;
+};
+
+export interface JudgeAccuracyItem {
+  adjudicationId: string;
+  callId: string;
+  runId: string;
+  spanStartMs: number;
+  spanEndMs: number;
+  /** @nullable */
+  humanProviderId: string | null;
+  /** @nullable */
+  judgeProviderId: string | null;
+  /** @nullable */
+  agrees: boolean | null;
+  /** @nullable */
+  judgeReasoning: string | null;
+  adjudicatedByLabel: string;
+  readings: JudgeAccuracyItemReadingsItem[];
+}
+
+export type JudgeAccuracyResponseByAdjudicatorItem = {
+  label: string;
+  comparable: number;
+  agreements: number;
+  /** @nullable */
+  agreementRate: number | null;
+};
+
+export interface JudgeAccuracyResponse {
+  totalVerdicts: number;
+  replayed: number;
+  pending: number;
+  humanSaidNone: number;
+  judgeNoPick: number;
+  comparable: number;
+  agreements: number;
+  /** @nullable */
+  agreementRate: number | null;
+  byAdjudicator: JudgeAccuracyResponseByAdjudicatorItem[];
+  replayCostMicrocents: number;
+  replayBatchLimit: number;
+  items: JudgeAccuracyItem[];
+}
+
 export interface DisagreementSpan {
   startMs: number;
   endMs: number;

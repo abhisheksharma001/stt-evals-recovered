@@ -4,6 +4,7 @@ import agentRouter from "./agent";
 import benchmarkRouter from "./benchmark";
 import bulksRouter from "./bulks";
 import healthRouter from "./health";
+import judgeAccuracyRouter from "./judge-accuracy";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(benchmarkRouter);
 router.use(bulksRouter);
 router.use(agentRouter);
 router.use(adjudicationsRouter);
+router.use(judgeAccuracyRouter);
 
 export default router;

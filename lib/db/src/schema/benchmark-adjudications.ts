@@ -50,6 +50,22 @@ export const benchmarkAdjudicationsTable = pgTable(
     readings: jsonb("readings").$type<AdjudicationReading[]>().notNull().default([]),
     adjudicatedByLabel: text("adjudicated_by_label").notNull(),
     adjudicatedAt: timestamp("adjudicated_at", { withTimezone: true }).notNull().defaultNow(),
+    // T-09: the judge's answer to the SAME question the human answered --
+    // "given only these readings and a few words of context, which one is
+    // right?" -- recorded once per verdict so the accuracy report never
+    // re-spends OpenAI money on a span it has already replayed. All null
+    // until the replay runs. `judgePickedProviderId` null after a replay
+    // means the judge could not name any of the readings.
+    judgePickedProviderId: text("judge_picked_provider_id").references(() => benchmarkProvidersTable.id),
+    judgeReasoning: text("judge_reasoning"),
+    judgeModel: text("judge_model"),
+    judgePromptTokens: integer("judge_prompt_tokens"),
+    judgeCompletionTokens: integer("judge_completion_tokens"),
+    // Micro-cents (1 cent = 10,000), same unit and reason as
+    // benchmark-agent-scans.ts (T-01: fractional cents in an integer column
+    // silently destroyed rows). Null = not recorded, never "free".
+    judgeCostMicrocents: integer("judge_cost_microcents"),
+    judgeReplayedAt: timestamp("judge_replayed_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("benchmark_adjudications_span_unique").on(

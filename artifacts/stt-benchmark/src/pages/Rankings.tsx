@@ -12,6 +12,7 @@ import {
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle } from "lucide-react"
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -205,6 +206,12 @@ export default function Rankings() {
   // it, so setting it actually changes what the page tells you.
   const { data: settings } = useGetAppSettings()
   const activeProviderId = settings?.activeProviderId ?? null
+  // T-09: provider display names for the judge-vs-human card.
+  const { data: providerList } = useListBenchmarkProviders()
+  const providerNames = React.useMemo(
+    () => Object.fromEntries((providerList ?? []).map((p) => [p.id, p.name])),
+    [providerList],
+  )
   const [sortKey, setSortKey] = React.useState<SortKey>("rank")
   // Direction starts at each metric's sensible default (lower-is-better for
   // WER/cost/latency, higher for accuracy) and clicking the active column
@@ -268,6 +275,12 @@ export default function Rankings() {
           run's evidence with full detail, or switch to the all-time view to see every bulk combined.
         </p>
       </div>
+
+      {/* T-09: the one number that says whether the judge can be trusted
+          to stand in for a listening human -- and its sample size. Sits
+          above the rankings because every "agent pick" below it is only as
+          good as this. */}
+      <JudgeAccuracyCard providerNames={providerNames} />
 
       {/* view switcher + bulk picker -- 2026-08-27, per Abhishek: "for each
           run then it should show the ranking for each, and for bulk overall
