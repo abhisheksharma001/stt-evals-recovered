@@ -23,6 +23,7 @@ import { judgeCandidates } from "./agent";
 import { computeHybridFlagsForCandidates } from "./hybrid-flagging";
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
+import { drainWithConcurrency, envInt } from "./run-executor";
 
 /** Human-readable {text, reason} restatements of the hybrid flags, for the
  * `flags` column the UI already knows how to render. Kept separate from the
@@ -368,7 +369,14 @@ export async function runAutoAgentVerificationForRun(
     .where(inArray(benchmarkCallsTable.id, [...byCallId.keys()]));
   const draftByCallId = new Map(calls.map((c) => [c.id, c.draftTranscript]));
 
-  for (const [callId, callRows] of byCallId) {
+  // T-15: the calls have no ordering constraint and each is one OpenAI
+  // round-trip, so they run through the same fixed-size worker pool the
+  // provider cells did. byCallId is a Map, so each call is one item -- no
+  // call can be picked up twice. Read lazily (not at module load): this
+  // file and run-executor.ts import each other.
+  const concurrency = envInt("AGENT_CONCURRENCY", 4, 16);
+  const started = Date.now();
+  await drainWithConcurrency([...byCallId.entries()], concurrency, async ([callId, callRows]) => {
     try {
       await verifyCallWithAgent({
         callId,
@@ -387,5 +395,9 @@ export async function runAutoAgentVerificationForRun(
       // the STT results themselves already landed regardless.
       logger.error({ err, runId, callId }, "auto agent verification crashed for a call");
     }
-  }
+  });
+  logger.info(
+    { runId, calls: byCallId.size, concurrency, wallClockMs: Date.now() - started },
+    "auto agent verification pass finished",
+  );
 }
