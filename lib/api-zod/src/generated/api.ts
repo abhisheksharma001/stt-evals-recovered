@@ -252,6 +252,61 @@ export const AdjudicateSpanResponse = zod.object({
 
 
 /**
+ * @summary T-09 -- how often the judge agrees with a human on adjudicated spans, with sample size. Free; arithmetic over stored replays.
+ */
+export const GetJudgeAccuracyResponse = zod.object({
+  "totalVerdicts": zod.number(),
+  "replayed": zod.number(),
+  "pending": zod.number(),
+  "humanSaidNone": zod.number(),
+  "judgeNoPick": zod.number(),
+  "comparable": zod.number(),
+  "agreements": zod.number(),
+  "agreementRate": zod.number().nullable(),
+  "byAdjudicator": zod.array(zod.object({
+  "label": zod.string(),
+  "comparable": zod.number(),
+  "agreements": zod.number(),
+  "agreementRate": zod.number().nullable()
+})),
+  "replayCostMicrocents": zod.number(),
+  "replayBatchLimit": zod.number(),
+  "items": zod.array(zod.object({
+  "adjudicationId": zod.string(),
+  "callId": zod.string(),
+  "runId": zod.string(),
+  "spanStartMs": zod.number(),
+  "spanEndMs": zod.number(),
+  "humanProviderId": zod.string().nullable(),
+  "judgeProviderId": zod.string().nullable(),
+  "agrees": zod.boolean().nullable(),
+  "judgeReasoning": zod.string().nullable(),
+  "adjudicatedByLabel": zod.string(),
+  "readings": zod.array(zod.object({
+  "providerId": zod.string(),
+  "text": zod.string()
+}))
+}))
+})
+
+
+/**
+ * @summary T-09 -- replay human-adjudicated spans that the judge has not yet answered. Spends OpenAI money (one short judge call per span, capped per request); each span is replayed once, ever.
+ */
+export const ReplayJudgeAccuracyBody = zod.object({
+  "limit": zod.number().nullish().describe('Max spans to replay in this request; capped server-side.')
+})
+
+export const ReplayJudgeAccuracyResponse = zod.object({
+  "replayed": zod.number(),
+  "remaining": zod.number().describe('Verdicts still not replayed after this request.'),
+  "spanNotFound": zod.number().describe('Verdicts whose span could not be rebuilt from stored results; marked replayed with no judge pick.'),
+  "judgeFailed": zod.number().describe('Judge calls that errored; left pending for a later replay.'),
+  "costMicrocents": zod.number()
+})
+
+
+/**
  * @summary Record a de-identification approval (two distinct approvers required, FR-C3)
  */
 export const AttestBenchmarkCallDeidParams = zod.object({

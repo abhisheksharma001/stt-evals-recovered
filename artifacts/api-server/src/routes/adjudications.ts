@@ -18,7 +18,6 @@ import {
   benchmarkRunsTable,
   db,
 } from "@workspace/db";
-import { buildDisagreementSpans, type SpanCandidate } from "@workspace/scoring";
 import {
   AdjudicateSpanBody,
   AdjudicateSpanParams,
@@ -27,7 +26,7 @@ import {
   ListDisagreementSpansResponse,
 } from "@workspace/api-zod";
 import { actorFromRequest, writeAudit } from "../lib/audit";
-import { extractProviderTimedWords } from "../lib/timed-words";
+import { buildSpansForCallRun } from "../lib/disagreement-spans";
 
 const router: IRouter = Router();
 
@@ -89,28 +88,7 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
     return;
   }
 
-  const results = await db
-    .select({
-      providerId: benchmarkProviderCallResultsTable.providerId,
-      hypothesisTranscript: benchmarkProviderCallResultsTable.hypothesisTranscript,
-      rawOutput: benchmarkProviderCallResultsTable.rawOutput,
-    })
-    .from(benchmarkProviderCallResultsTable)
-    .where(
-      and(
-        eq(benchmarkProviderCallResultsTable.runId, runId),
-        eq(benchmarkProviderCallResultsTable.callId, callId),
-        eq(benchmarkProviderCallResultsTable.status, "ok"),
-      ),
-    );
-
-  const candidates: SpanCandidate[] = [];
-  for (const r of results) {
-    const timedWords = extractProviderTimedWords(r.providerId, r.rawOutput);
-    if (timedWords) candidates.push({ providerId: r.providerId, timedWords });
-    else if (r.hypothesisTranscript) candidates.push({ providerId: r.providerId, transcript: r.hypothesisTranscript });
-  }
-  const built = buildDisagreementSpans(candidates);
+  const built = await buildSpansForCallRun(callId, runId);
 
   const adjudications = await db
     .select()

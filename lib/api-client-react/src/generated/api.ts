@@ -43,6 +43,9 @@ import type {
   BulkTemplateLaunchInput,
   DisagreementSpansResponse,
   HealthStatus,
+  JudgeAccuracyReplayRequest,
+  JudgeAccuracyReplayResponse,
+  JudgeAccuracyResponse,
   ListAgentScansParams,
   ListAuditLogParams,
   ListBenchmarkCallsParams,
@@ -629,6 +632,154 @@ export const useAdjudicateSpan = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAdjudicateSpanMutationOptions(options));
+    }
+
+export const getGetJudgeAccuracyUrl = () => {
+
+
+
+
+  return `/api/benchmark/judge-accuracy`
+}
+
+/**
+ * @summary T-09 -- how often the judge agrees with a human on adjudicated spans, with sample size. Free; arithmetic over stored replays.
+ */
+export const getJudgeAccuracy = async ( options?: Parameters<typeof customFetch>[1]): Promise<JudgeAccuracyResponse> => {
+
+  return customFetch<JudgeAccuracyResponse>(getGetJudgeAccuracyUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetJudgeAccuracyQueryKey = () => {
+    return [
+    `/api/benchmark/judge-accuracy`
+    ] as const;
+    }
+
+
+export const getGetJudgeAccuracyQueryOptions = <TData = Awaited<ReturnType<typeof getJudgeAccuracy>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getJudgeAccuracy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetJudgeAccuracyQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getJudgeAccuracy>>> = ({ signal }) => getJudgeAccuracy({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getJudgeAccuracy>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetJudgeAccuracyQueryResult = NonNullable<Awaited<ReturnType<typeof getJudgeAccuracy>>>
+export type GetJudgeAccuracyQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary T-09 -- how often the judge agrees with a human on adjudicated spans, with sample size. Free; arithmetic over stored replays.
+ */
+
+export function useGetJudgeAccuracy<TData = Awaited<ReturnType<typeof getJudgeAccuracy>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getJudgeAccuracy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetJudgeAccuracyQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplayJudgeAccuracyUrl = () => {
+
+
+
+
+  return `/api/benchmark/judge-accuracy/replay`
+}
+
+/**
+ * @summary T-09 -- replay human-adjudicated spans that the judge has not yet answered. Spends OpenAI money (one short judge call per span, capped per request); each span is replayed once, ever.
+ */
+export const replayJudgeAccuracy = async (judgeAccuracyReplayRequest?: JudgeAccuracyReplayRequest, options?: Parameters<typeof customFetch>[1]): Promise<JudgeAccuracyReplayResponse> => {
+
+  return customFetch<JudgeAccuracyReplayResponse>(getReplayJudgeAccuracyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(judgeAccuracyReplayRequest)
+  }
+);}
+
+
+
+
+
+export const getReplayJudgeAccuracyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replayJudgeAccuracy>>, TError,{data?: BodyType<JudgeAccuracyReplayRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replayJudgeAccuracy>>, TError,{data?: BodyType<JudgeAccuracyReplayRequest>}, TContext> => {
+
+const mutationKey = ['replayJudgeAccuracy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replayJudgeAccuracy>>, {data?: BodyType<JudgeAccuracyReplayRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  replayJudgeAccuracy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplayJudgeAccuracyMutationResult = NonNullable<Awaited<ReturnType<typeof replayJudgeAccuracy>>>
+    export type ReplayJudgeAccuracyMutationBody = BodyType<JudgeAccuracyReplayRequest> | undefined
+    export type ReplayJudgeAccuracyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary T-09 -- replay human-adjudicated spans that the judge has not yet answered. Spends OpenAI money (one short judge call per span, capped per request); each span is replayed once, ever.
+ */
+export const useReplayJudgeAccuracy = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replayJudgeAccuracy>>, TError,{data?: BodyType<JudgeAccuracyReplayRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof replayJudgeAccuracy>>,
+        TError,
+        {data?: BodyType<JudgeAccuracyReplayRequest>},
+        TContext
+      > => {
+      return useMutation(getReplayJudgeAccuracyMutationOptions(options));
     }
 
 export const getAttestBenchmarkCallDeidUrl = (callId: string,) => {

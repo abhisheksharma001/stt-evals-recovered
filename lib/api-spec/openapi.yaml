@@ -152,6 +152,36 @@ paths:
                 $ref: "#/components/schemas/Adjudication"
         "404":
           description: Call or run not found
+  /benchmark/judge-accuracy:
+    get:
+      operationId: getJudgeAccuracy
+      tags: [benchmark]
+      summary: T-09 -- how often the judge agrees with a human on adjudicated spans, with sample size. Free; arithmetic over stored replays.
+      responses:
+        "200":
+          description: Agreement report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JudgeAccuracyResponse"
+  /benchmark/judge-accuracy/replay:
+    post:
+      operationId: replayJudgeAccuracy
+      tags: [benchmark]
+      summary: T-09 -- replay human-adjudicated spans that the judge has not yet answered. Spends OpenAI money (one short judge call per span, capped per request); each span is replayed once, ever.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JudgeAccuracyReplayRequest"
+      responses:
+        "200":
+          description: What the replay did
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JudgeAccuracyReplayResponse"
   /benchmark/calls/{callId}/attest-deid:
     post:
       operationId: attestBenchmarkCallDeid
@@ -858,6 +888,70 @@ components:
               text: { type: string }
         adjudicatedByLabel: { type: string }
         adjudicatedAt: { type: string }
+    JudgeAccuracyReplayRequest:
+      type: object
+      properties:
+        limit: { type: ["number", "null"], description: "Max spans to replay in this request; capped server-side." }
+    JudgeAccuracyReplayResponse:
+      type: object
+      required: [replayed, remaining, spanNotFound, judgeFailed, costMicrocents]
+      properties:
+        replayed: { type: number }
+        remaining: { type: number, description: "Verdicts still not replayed after this request." }
+        spanNotFound: { type: number, description: "Verdicts whose span could not be rebuilt from stored results; marked replayed with no judge pick." }
+        judgeFailed: { type: number, description: "Judge calls that errored; left pending for a later replay." }
+        costMicrocents: { type: number }
+    JudgeAccuracyItem:
+      type: object
+      required: [adjudicationId, callId, runId, spanStartMs, spanEndMs, humanProviderId, judgeProviderId, agrees, judgeReasoning, adjudicatedByLabel, readings]
+      properties:
+        adjudicationId: { type: string }
+        callId: { type: string }
+        runId: { type: string }
+        spanStartMs: { type: number }
+        spanEndMs: { type: number }
+        humanProviderId: { type: ["string", "null"] }
+        judgeProviderId: { type: ["string", "null"] }
+        # null when not comparable (human said none, or judge named nothing).
+        agrees: { type: ["boolean", "null"] }
+        judgeReasoning: { type: ["string", "null"] }
+        adjudicatedByLabel: { type: string }
+        readings:
+          type: array
+          items:
+            type: object
+            required: [providerId, text]
+            properties:
+              providerId: { type: string }
+              text: { type: string }
+    JudgeAccuracyResponse:
+      type: object
+      required: [totalVerdicts, replayed, pending, humanSaidNone, judgeNoPick, comparable, agreements, agreementRate, byAdjudicator, replayCostMicrocents, replayBatchLimit, items]
+      properties:
+        totalVerdicts: { type: number }
+        replayed: { type: number }
+        pending: { type: number }
+        humanSaidNone: { type: number }
+        judgeNoPick: { type: number }
+        comparable: { type: number }
+        agreements: { type: number }
+        # null when comparable is 0 -- never a confident 0% from no sample.
+        agreementRate: { type: ["number", "null"] }
+        byAdjudicator:
+          type: array
+          items:
+            type: object
+            required: [label, comparable, agreements, agreementRate]
+            properties:
+              label: { type: string }
+              comparable: { type: number }
+              agreements: { type: number }
+              agreementRate: { type: ["number", "null"] }
+        replayCostMicrocents: { type: number }
+        replayBatchLimit: { type: number }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/JudgeAccuracyItem" }
     DisagreementSpan:
       type: object
       required: [startMs, endMs, contextBefore, contextAfter, readings, adjudication]
