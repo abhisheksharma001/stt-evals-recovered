@@ -52,6 +52,16 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
 }
 
+// T-49: who is acting. The API attributes every write (adjudications, bulk
+// launches, audit rows) to the `x-actor` header and falls back to "unknown"
+// when it is missing -- which it always was, because nothing here sent it.
+// One label, set once at app start, attached to every request.
+let _actorLabel: string | null = null;
+
+export function setActorLabel(label: string | null): void {
+  _actorLabel = label?.trim() || null;
+}
+
 function isRequest(input: RequestInfo | URL): input is Request {
   return typeof Request !== "undefined" && input instanceof Request;
 }
@@ -364,6 +374,10 @@ export async function customFetch<T = unknown>(
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
+  }
+
+  if (_actorLabel && !headers.has("x-actor")) {
+    headers.set("x-actor", _actorLabel);
   }
 
   const requestInfo = { method, url: resolveUrl(input) };

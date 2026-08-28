@@ -2,7 +2,8 @@ import { createRoot } from 'react-dom/client';
 
 import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { setBaseUrl } from '@workspace/api-client-react';
+import { setBaseUrl, setActorLabel } from '@workspace/api-client-react';
+import { actor } from '@/lib/actor';
 
 import './index.css';
 
@@ -14,6 +15,9 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 if (apiBaseUrl) {
   setBaseUrl(apiBaseUrl);
 }
+// T-49: every request carries who is acting, so the API stops recording
+// writes as "unknown". Unconditional -- it does not depend on hosting.
+setActorLabel(actor.label);
 
 createRoot(document.getElementById('root')!, {
   // Keeps caught errors off reportError(), which would raise the dev overlay.
