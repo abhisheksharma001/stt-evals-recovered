@@ -1214,6 +1214,68 @@ export const GetBulkProviderCorrelationResponse = zod.object({
 
 
 /**
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ */
+export const GetBulkVerdictsParams = zod.object({
+  "bulkId": zod.coerce.string()
+})
+
+export const getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Min = 2;
+export const getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Max = 2;
+
+
+
+export const GetBulkVerdictsResponse = zod.object({
+  "bulkId": zod.string(),
+  "providers": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+})),
+  "groups": zod.array(zod.object({
+  "assistantId": zod.string().nullable(),
+  "vertical": zod.string(),
+  "production": zod.object({
+  "vendor": zod.string(),
+  "model": zod.string().nullable(),
+  "coverage": zod.number(),
+  "total": zod.number()
+}).nullable(),
+  "verdict": zod.object({
+  "decision": zod.enum(['winner', 'too_close', 'too_few_calls', 'insufficient']),
+  "winnerProviderId": zod.string().nullable(),
+  "runnerUpProviderId": zod.string().nullable(),
+  "leaderProviderId": zod.string().nullable(),
+  "marginPct": zod.number().nullable(),
+  "vsProductionPct": zod.number().nullable(),
+  "productionProviderId": zod.string().nullable(),
+  "productionIsLeader": zod.boolean(),
+  "evidenceCalls": zod.number(),
+  "provisional": zod.boolean(),
+  "callsToSettle": zod.number().nullable(),
+  "noiseFloor": zod.object({
+  "sharedCalls": zod.number(),
+  "difference": zod.number(),
+  "ci95": zod.array(zod.number()).min(getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Min).max(getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Max),
+  "withinNoise": zod.boolean()
+}).nullable(),
+  "confidenceComparable": zod.object({
+  "reporting": zod.number(),
+  "total": zod.number()
+}),
+  "rates": zod.array(zod.object({
+  "providerId": zod.string(),
+  "flagsPer100Words": zod.number(),
+  "calls": zod.number(),
+  "totalFlags": zod.number(),
+  "totalWords": zod.number()
+})),
+  "sentence": zod.string()
+}).describe('T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.')
+}))
+})
+
+
+/**
  * @summary Immutable bulk manifest -- the composition of every shard run's frozen manifest (FR-BLK-8, FR-REP1 replay evidence)
  */
 export const GetBulkManifestParams = zod.object({

@@ -25,6 +25,8 @@ import {
   GetBulkManifestResponse,
   GetBulkParams,
   GetBulkProviderCorrelationParams,
+  GetBulkVerdictsParams,
+  GetBulkVerdictsResponse,
   GetBulkProviderCorrelationResponse,
   GetBulkResponse,
   LaunchBulkParams,
@@ -47,6 +49,7 @@ import {
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { logger } from "../lib/logger";
 import { bulkProviderCorrelation } from "../lib/provider-correlation";
+import { bulkVerdicts } from "../lib/verdict";
 import {
   BulkDurationBandError,
   BulkNameConflictError,
@@ -510,6 +513,25 @@ router.get("/benchmark/bulks/:bulkId/provider-correlation", async (req, res): Pr
     return;
   }
   res.json(GetBulkProviderCorrelationResponse.parse(await bulkProviderCorrelation(bulk.id)));
+});
+
+// T-20: the headline verdict per ranking group. Read-time, from the same ok
+// cells the rankings snapshot was built from.
+router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> => {
+  const params = GetBulkVerdictsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [bulk] = await db
+    .select({ id: benchmarkBulksTable.id })
+    .from(benchmarkBulksTable)
+    .where(eq(benchmarkBulksTable.id, params.data.bulkId));
+  if (!bulk) {
+    res.status(404).json({ error: "Bulk not found" });
+    return;
+  }
+  res.json(GetBulkVerdictsResponse.parse(await bulkVerdicts(bulk.id)));
 });
 
 router.get("/benchmark/bulks/:bulkId/manifest", async (req, res): Promise<void> => {
