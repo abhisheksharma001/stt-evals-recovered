@@ -1578,6 +1578,9 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
           // actually sorts by.
           avgPeerFlagCount: ranking.avgPeerFlagCount,
           avgPeerFlagSeverityScore: ranking.avgPeerFlagSeverityScore,
+          // T-19
+          peerFlagsPer100Words: ranking.peerFlagsPer100Words,
+          cleanCallRate: ranking.cleanCallRate,
         },
         recommendation: ranking.recommendation,
       })),

@@ -19,6 +19,7 @@ import {
   SCORING_VERSION,
   severityRank,
   hybridCompositeScore,
+  normalizeTranscript,
   type HybridSeverity,
 } from "@workspace/scoring";
 import {
@@ -1142,6 +1143,21 @@ function aggregateRankingRows(
       );
       const flagBadness = avg(rows.map(flagBadnessOf));
 
+      // T-19: rates. Only cells that actually carry a peer flag count take
+      // part (a cell scored before hybrid flagging has null there and
+      // must not read as a clean call). Word basis = this provider's own
+      // normalised transcript, the same tokenisation the flags came from.
+      const flaggedCells = rows.filter((r) => r.score.peerFlagCount !== null);
+      const totalPeerFlags = flaggedCells.reduce((sum, r) => sum + (r.score.peerFlagCount ?? 0), 0);
+      const totalWords = flaggedCells.reduce(
+        (sum, r) => sum + normalizeTranscript(r.result.hypothesisTranscript ?? "").split(" ").filter(Boolean).length,
+        0,
+      );
+      const peerFlagsPer100Words = totalWords > 0 ? (totalPeerFlags / totalWords) * 100 : null;
+      const cleanCallRate = flaggedCells.length
+        ? flaggedCells.filter((r) => r.score.peerFlagCount === 0).length / flaggedCells.length
+        : null;
+
       const composite = hybridCompositeScore({
         flagBadness,
         latencyFinalMs,
@@ -1165,6 +1181,8 @@ function aggregateRankingRows(
         avgFlagSeverityScore,
         avgPeerFlagCount,
         avgPeerFlagSeverityScore,
+        peerFlagsPer100Words,
+        cleanCallRate,
         composite,
         sampleSize: rows.length,
       };
@@ -1214,6 +1232,8 @@ function aggregateRankingRows(
         avgFlagSeverityScore: agg.avgFlagSeverityScore,
         avgPeerFlagCount: agg.avgPeerFlagCount,
         avgPeerFlagSeverityScore: agg.avgPeerFlagSeverityScore,
+        peerFlagsPer100Words: agg.peerFlagsPer100Words,
+        cleanCallRate: agg.cleanCallRate,
         // T-1: real evidence size behind this row -- distinct providers'
         // sampleSize can differ within a group, so this is the group's own
         // scored-call count (rowsForGroup, deduped by call), not any one
