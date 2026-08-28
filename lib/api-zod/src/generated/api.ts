@@ -797,6 +797,9 @@ export const ListBulksResponseItem = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(listBulksResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(listBulksResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -846,6 +849,9 @@ export const CreateBulkBody = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkBodyCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(createBulkBodyCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -877,6 +883,9 @@ export const CreateBulkResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(createBulkResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -923,6 +932,9 @@ export const GetBulkResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(getBulkResponseOneSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(getBulkResponseOneSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1001,6 +1013,9 @@ export const LaunchBulkResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(launchBulkResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(launchBulkResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1047,6 +1062,9 @@ export const RetryBulkFailedResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(retryBulkFailedResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(retryBulkFailedResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1093,6 +1111,9 @@ export const CancelBulkResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(cancelBulkResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(cancelBulkResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1140,6 +1161,9 @@ export const GetBulkManifestResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(getBulkManifestResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(getBulkManifestResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1192,6 +1216,9 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1236,6 +1263,9 @@ export const CreateBulkTemplateBody = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkTemplateBodyCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(createBulkTemplateBodyCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1265,6 +1295,9 @@ export const CreateBulkTemplateResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(createBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1314,6 +1347,9 @@ export const LaunchBulkTemplateResponse = zod.object({
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin).optional(),
   "maxDurationSeconds": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()

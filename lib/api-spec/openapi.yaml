@@ -1574,6 +1574,15 @@ components:
         minDurationSeconds: { type: number, minimum: 0 }
         # T-10: null = no upper cap.
         maxDurationSeconds: { type: ["number", "null"], minimum: 0 }
+        # T-13: outcome filters on Vapi's verbatim endedReason / successEvaluation.
+        # A call with no captured outcome (null) never passes either list.
+        includeEndedReasons:
+          type: array
+          items: { type: string }
+        excludeEndedReasons:
+          type: array
+          items: { type: string }
+        successEvaluation: { type: string }
         callIds:
           type: array
           items: { type: string }

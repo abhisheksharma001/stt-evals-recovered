@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lte, notInArray } from "drizzle-orm";
 import {
   benchmarkAgentScansTable,
   benchmarkBulksTable,
@@ -145,7 +145,10 @@ export async function resolveCriteriaCallIds(
       criteria.accountLabel ||
       criteria.lastNDays ||
       criteria.startedAtFrom ||
-      criteria.startedAtTo,
+      criteria.startedAtTo ||
+      criteria.includeEndedReasons?.length ||
+      criteria.excludeEndedReasons?.length ||
+      criteria.successEvaluation,
   );
 
   const ids = new Set<string>();
@@ -170,6 +173,22 @@ export async function resolveCriteriaCallIds(
       // T-10: upper bound of the band; null = no cap.
       maxDurationSeconds !== null
         ? lte(benchmarkCallsTable.durationSeconds, maxDurationSeconds)
+        : undefined,
+      // T-13: outcome filters. SQL `IN` already rejects NULL; for `NOT IN`
+      // it would too, but that is spelled out with isNotNull so the rule
+      // ("unknown outcome never passes an outcome filter") is visible here
+      // rather than an accident of three-valued logic.
+      criteria.includeEndedReasons?.length
+        ? inArray(benchmarkCallsTable.sourceEndedReason, criteria.includeEndedReasons)
+        : undefined,
+      criteria.excludeEndedReasons?.length
+        ? and(
+            isNotNull(benchmarkCallsTable.sourceEndedReason),
+            notInArray(benchmarkCallsTable.sourceEndedReason, criteria.excludeEndedReasons),
+          )
+        : undefined,
+      criteria.successEvaluation
+        ? eq(benchmarkCallsTable.sourceSuccessEvaluation, criteria.successEvaluation)
         : undefined,
     ].filter((c) => c !== undefined);
 

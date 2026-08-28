@@ -81,6 +81,44 @@ type CriteriaDraft = {
   minDurationSeconds: string
   // T-10: empty string = no cap.
   maxDurationSeconds: string
+  // T-13: outcome filters. Empty = no filter. A call with no captured
+  // outcome (null) never passes either list -- same rule as the server.
+  includeEndedReasons: string[]
+  excludeEndedReasons: string[]
+  // "" = any, else exact match on the stored string ("true" / "false").
+  successEvaluation: string
+}
+
+// T-13 "worth benchmarking" preset -- mirrors WORTH_BENCHMARKING_ENDED_REASONS
+// in lib/db/src/schema/benchmark-bulks.ts (the UI does not import that package).
+const WORTH_BENCHMARKING_ENDED_REASONS = [
+  "customer-ended-call",
+  "assistant-forwarded-call",
+  "assistant-ended-call",
+  "assistant-said-end-call-phrase",
+]
+
+function outcomePasses(
+  endedReason: string | null | undefined,
+  successEvaluation: string | null | undefined,
+  criteria: Pick<CriteriaDraft, "includeEndedReasons" | "excludeEndedReasons" | "successEvaluation">,
+): boolean {
+  const reason = endedReason ?? null
+  if (criteria.includeEndedReasons.length > 0 && (reason === null || !criteria.includeEndedReasons.includes(reason))) return false
+  if (criteria.excludeEndedReasons.length > 0 && (reason === null || criteria.excludeEndedReasons.includes(reason))) return false
+  if (criteria.successEvaluation && (successEvaluation ?? null) !== criteria.successEvaluation) return false
+  return true
+}
+
+const EMPTY_CRITERIA: CriteriaDraft = {
+  assistantIds: [],
+  accountLabel: "",
+  lastNDays: "",
+  minDurationSeconds: "60",
+  maxDurationSeconds: "120",
+  includeEndedReasons: [],
+  excludeEndedReasons: [],
+  successEvaluation: "",
 }
 
 type Eligibility = {
@@ -106,6 +144,7 @@ function useCriteriaEligibility(criteria: CriteriaDraft): Eligibility {
       if (criteria.accountLabel && c.sourceAccountLabel !== criteria.accountLabel) return false
       if ((c.durationSeconds ?? 0) < minDuration) return false
       if (maxDuration !== null && (c.durationSeconds ?? 0) > maxDuration) return false
+      if (!outcomePasses(c.sourceEndedReason, c.sourceSuccessEvaluation, criteria)) return false
       return true
     }
     const matchesDate = (c: (typeof all)[number]) => {
@@ -167,6 +206,9 @@ function criteriaSummary(c: BulkSelectionCriteria): string {
   if (c.minDurationSeconds || c.maxDurationSeconds) {
     parts.push(c.maxDurationSeconds ? `${c.minDurationSeconds ?? 0}–${c.maxDurationSeconds}s` : `≥${c.minDurationSeconds}s`)
   }
+  if (c.includeEndedReasons?.length) parts.push(`outcome in ${c.includeEndedReasons.join("/")}`)
+  if (c.excludeEndedReasons?.length) parts.push(`outcome not ${c.excludeEndedReasons.join("/")}`)
+  if (c.successEvaluation) parts.push(`success=${c.successEvaluation}`)
   return parts.join(" · ") || "whole corpus"
 }
 
@@ -329,6 +371,7 @@ function CriteriaFields({
           />
         </div>
       </div>
+      <OutcomeFilter criteria={criteria} setCriteria={setCriteria} />
       <div className="space-y-2">
         <Label>Providers</Label>
         <div className="grid grid-cols-2 gap-2">
@@ -357,6 +400,94 @@ function CriteriaFields({
 }
 
 /** T-10: empty/invalid max = no cap (null); the server default only applies when the field is omitted. */
+/**
+ * T-13: outcome filters. The reason list is whatever the corpus actually
+ * holds (distinct sourceEndedReason values), so the UI never offers a value
+ * Vapi has not sent. Calls with no captured outcome are listed separately so
+ * "null" is visible as its own bucket rather than quietly passing.
+ */
+function OutcomeFilter({ criteria, setCriteria }: { criteria: CriteriaDraft; setCriteria: (c: CriteriaDraft) => void }) {
+  const { data: calls } = useListBenchmarkCalls()
+  const reasons = React.useMemo(() => {
+    const counts = new Map<string, number>()
+    let unknown = 0
+    for (const c of calls ?? []) {
+      if (c.sourceEndedReason) counts.set(c.sourceEndedReason, (counts.get(c.sourceEndedReason) ?? 0) + 1)
+      else unknown += 1
+    }
+    return { list: [...counts.entries()].sort((a, b) => b[1] - a[1]), unknown }
+  }, [calls])
+  const mode: "include" | "exclude" = criteria.excludeEndedReasons.length > 0 ? "exclude" : "include"
+  const selected = mode === "include" ? criteria.includeEndedReasons : criteria.excludeEndedReasons
+  const setSelected = (next: string[], nextMode = mode) =>
+    setCriteria({
+      ...criteria,
+      includeEndedReasons: nextMode === "include" ? next : [],
+      excludeEndedReasons: nextMode === "exclude" ? next : [],
+    })
+  const isPreset =
+    mode === "include" &&
+    selected.length === WORTH_BENCHMARKING_ENDED_REASONS.length &&
+    WORTH_BENCHMARKING_ENDED_REASONS.every((r) => selected.includes(r))
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Call outcome (Vapi endedReason)</Label>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={isPreset ? "default" : "outline"}
+            onClick={() => setSelected(isPreset ? [] : [...WORTH_BENCHMARKING_ENDED_REASONS], "include")}
+            title="Only real conversations: customer-ended, forwarded, assistant-ended, end-call phrase. Drops voicemail, silence timeouts, misdials, and calls with no captured outcome."
+          >
+            Worth benchmarking
+          </Button>
+          <Select value={mode} onValueChange={(v) => setSelected(selected, v as "include" | "exclude")}>
+            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="include">Only these</SelectItem>
+              <SelectItem value="exclude">All except these</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border p-3">
+        {reasons.list.map(([reason, n]) => (
+          <label key={reason} className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={selected.includes(reason)}
+              onCheckedChange={(v) => setSelected(v ? [...selected, reason] : selected.filter((r) => r !== reason))}
+            />
+            <span className="font-mono text-xs">{reason}</span>
+            <span className="text-muted-foreground">({n})</span>
+          </label>
+        ))}
+        {reasons.list.length === 0 && <span className="text-sm text-muted-foreground">No outcomes captured yet.</span>}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {selected.length === 0
+          ? "No outcome filter."
+          : `${reasons.unknown} call${reasons.unknown === 1 ? "" : "s"} with no captured outcome never match an outcome filter.`}
+      </p>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label>Vapi success evaluation</Label>
+          <Select value={criteria.successEvaluation || "__any__"} onValueChange={(v) => setCriteria({ ...criteria, successEvaluation: v === "__any__" ? "" : v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__any__">Any</SelectItem>
+              <SelectItem value="true">true</SelectItem>
+              <SelectItem value="false">false</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function parseMaxDuration(raw: string): number | null {
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : null
@@ -371,13 +502,16 @@ function buildCriteria(input: CriteriaDraft): BulkSelectionCriteria {
   const minDuration = Number.parseInt(input.minDurationSeconds, 10)
   if (Number.isFinite(minDuration) && minDuration > 0) criteria.minDurationSeconds = minDuration
   criteria.maxDurationSeconds = parseMaxDuration(input.maxDurationSeconds)
+  if (input.includeEndedReasons.length > 0) criteria.includeEndedReasons = input.includeEndedReasons
+  if (input.excludeEndedReasons.length > 0) criteria.excludeEndedReasons = input.excludeEndedReasons
+  if (input.successEvaluation) criteria.successEvaluation = input.successEvaluation
   return criteria
 }
 
 function CreateBulkDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState<CriteriaDraft>({ assistantIds: [], accountLabel: "", lastNDays: "", minDurationSeconds: "60", maxDurationSeconds: "120" })
+  const [criteria, setCriteria] = React.useState<CriteriaDraft>(EMPTY_CRITERIA)
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
@@ -466,7 +600,7 @@ function CreateBulkDialog() {
 function CreateTemplateDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState<CriteriaDraft>({ assistantIds: [], accountLabel: "", lastNDays: "7", minDurationSeconds: "60", maxDurationSeconds: "120" })
+  const [criteria, setCriteria] = React.useState<CriteriaDraft>({ ...EMPTY_CRITERIA, lastNDays: "7" })
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
