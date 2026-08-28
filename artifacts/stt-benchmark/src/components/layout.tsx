@@ -1,3 +1,4 @@
+import { actor } from "@/lib/actor"
 import * as React from "react"
 import { Link, useLocation } from "wouter"
 import {
@@ -228,12 +229,12 @@ export function Sidebar() {
 
       <div className="flex items-center gap-2.5 border-t border-sidebar-border px-4 py-3.5">
         <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-secondary">
-          <span className="font-mono text-[10px] font-medium text-muted-foreground">AS</span>
+          <span className="font-mono text-[10px] font-medium text-muted-foreground">{actor.initials}</span>
         </div>
         <div className="flex flex-col gap-px leading-none">
-          <span className="text-xs text-sidebar-foreground">Abhishek</span>
+          <span className="text-xs text-sidebar-foreground">{actor.label}</span>
           <span className="font-mono text-[10px] uppercase tracking-[0.09em] text-muted-foreground">
-            Curator
+            {actor.role}
           </span>
         </div>
       </div>
