@@ -165,6 +165,20 @@ either on a date. Start it when its trigger fires.
 
 Append anything learned mid-task here rather than losing it to a compaction.
 
+- **2026-08-28 (T-43): the skip path is NOT live-verified yet, and T-45 is why.**
+  Deployed and confirmed running (`/api/healthz` → `05bb5e6f4c95`). Exercising
+  the new skip for real means re-executing a run that has permanent failures —
+  and every run that has any (bulk `7d2585da` run `4ba80a99`, bulk `1a8e14b2`
+  runs `73c8f03b` / `89e38d36`) also has hundreds of `ok` cells, so
+  `runAutoAgentVerificationForRun` re-judges them and bills OpenAI for it
+  (T-45). There is no run in the corpus made of failed cells alone, which would
+  have been free to re-execute. **Fix T-45 first and the verification becomes
+  free** — then re-execute `73c8f03b` and check three things: no provider call
+  is made, the 15 failed rows keep their existing ids and `created_at`, and the
+  run's notes carry the new "left as they were" line instead of the "can be
+  retried" one. Not done on my own initiative because it spends Abhishek's
+  money to test a fix whose whole point is not spending it.
+
 - **2026-08-28 (T-43): a cell's state is its LATEST row, not any row.**
   Duplicate rows for one `(provider, call)` pair exist in history (the
   stale-row cleanup that fixed that landed 2026-08-25, after those rows were
