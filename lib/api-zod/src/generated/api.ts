@@ -748,7 +748,9 @@ export const ListBenchmarkRankingsResponseItem = zod.object({
   "avgFlagCount": zod.number().nullable().describe('Gold-free hybrid flag count (disagreement + confidence + entity), averaged across this provider\'s cells. Includes self-reported low-confidence spans, so only directly comparable among the providers that report confidence at all -- NOT what Rank is computed from (see avgPeerFlagCount).'),
   "avgFlagSeverityScore": zod.number().nullable().describe('severityRank() averaged across cells: 0=none .. 3=high. Same confidence-inclusive caveat as avgFlagCount.'),
   "avgPeerFlagCount": zod.number().nullable().describe('Confidence-EXCLUDED flag count (cross-provider disagreement + entity mismatches only) -- comparable fairly across every provider regardless of whether it reports confidence. This, not avgFlagCount, is what the composite Rank actually sorts by.'),
-  "avgPeerFlagSeverityScore": zod.number().nullable().describe('severityRank() of avgPeerFlagCount\'s flags, averaged: 0=none .. 3=high.')
+  "avgPeerFlagSeverityScore": zod.number().nullable().describe('severityRank() of avgPeerFlagCount\'s flags, averaged: 0=none .. 3=high.'),
+  "peerFlagsPer100Words": zod.number().nullable().describe('Peer-only flags per 100 words this provider transcribed in the group. Same basis as the composite; comparable across call lengths.'),
+  "cleanCallRate": zod.number().nullable().describe('Share (0..1) of this provider\'s scored calls in the group that carried zero peer flags.')
 }),
   "recommendation": zod.string()
 }).describe('2026-08-27 -- grouped by real Vapi assistant now (assistantId\/assistantLabel), not vertical. `vertical` stays as a display tag per row, kept for context, not the grouping key anymore (see GET \/benchmark\/rankings).')

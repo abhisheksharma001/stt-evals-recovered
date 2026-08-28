@@ -1338,7 +1338,7 @@ components:
       # it was zero" (found 2026-08-24: alphanumericAccuracy showing 0 on
       # every ranking row because no entity in the corpus is both letters
       # and digits after normalization, so it was never actually scored).
-      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore, avgPeerFlagCount, avgPeerFlagSeverityScore]
+      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore, avgPeerFlagCount, avgPeerFlagSeverityScore, peerFlagsPer100Words, cleanCallRate]
       properties:
         wer: { type: ["number", "null"], description: "2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change." }
         entityAccuracy: { type: ["number", "null"], description: "Same as wer -- permanently null going forward, kept for historical runs." }
@@ -1359,6 +1359,10 @@ components:
         avgFlagSeverityScore: { type: ["number", "null"], description: "severityRank() averaged across cells: 0=none .. 3=high. Same confidence-inclusive caveat as avgFlagCount." }
         avgPeerFlagCount: { type: ["number", "null"], description: "Confidence-EXCLUDED flag count (cross-provider disagreement + entity mismatches only) -- comparable fairly across every provider regardless of whether it reports confidence. This, not avgFlagCount, is what the composite Rank actually sorts by." }
         avgPeerFlagSeverityScore: { type: ["number", "null"], description: "severityRank() of avgPeerFlagCount's flags, averaged: 0=none .. 3=high." }
+        # T-19: rates, computed in the API when the ranking snapshot is
+        # written (never by the component). Null = nothing scored, not 0.
+        peerFlagsPer100Words: { type: ["number", "null"], description: "Peer-only flags per 100 words this provider transcribed in the group. Same basis as the composite; comparable across call lengths." }
+        cleanCallRate: { type: ["number", "null"], description: "Share (0..1) of this provider's scored calls in the group that carried zero peer flags." }
     ProviderCallResult:
       type: object
       required: [id, runId, providerId, callId, status, createdAt]

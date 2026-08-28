@@ -61,6 +61,13 @@ export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   // the full picture for display; these two feed hybridCompositeScore.
   avgPeerFlagCount: real("avg_peer_flag_count"),
   avgPeerFlagSeverityScore: real("avg_peer_flag_severity_score"),
+  // T-19: rates, so two providers (or two bulks) with different call
+  // lengths compare. peerFlagsPer100Words = total peer flags / total words
+  // this provider transcribed in the group x 100 (peer-only, same basis as
+  // the composite). cleanCallRate = share of this provider's scored calls
+  // with zero peer flags, 0..1. Null when nothing was scored -- never 0.
+  peerFlagsPer100Words: real("peer_flags_per_100_words"),
+  cleanCallRate: real("clean_call_rate"),
   // T-1: how many distinct calls actually scored ok and fed this row --
   // lets the UI show real evidence size instead of just a rank.
   callsScored: integer("calls_scored"),

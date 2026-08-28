@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // 2026-08-27: wer/entityAccuracy retired (no gold transcript to score
 // against) -- avgFlagCount/avgFlagSeverityScore (gold-free hybrid flagging)
 // replace them as the primary ranking signal.
-type SortKey = "rank" | "avgFlagCount" | "avgFlagSeverityScore" | "latencyFinalMs" | "costPerMinute" | "diarizationScore"
+type SortKey = "rank" | "avgFlagCount" | "avgFlagSeverityScore" | "peerFlagsPer100Words" | "cleanCallRate" | "latencyFinalMs" | "costPerMinute" | "diarizationScore"
 
 // Lower-is-better metrics sort ascending by default; accuracy metrics
 // descending. Nulls always sink to the bottom regardless of direction --
@@ -33,6 +33,10 @@ const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
   rank: true,
   avgFlagCount: true,
   avgFlagSeverityScore: true,
+  // T-19: rates from the API. Flags/100 words lower-is-better; clean-call
+  // share higher-is-better.
+  peerFlagsPer100Words: true,
+  cleanCallRate: false,
   latencyFinalMs: true,
   costPerMinute: true,
   diarizationScore: false,
@@ -42,6 +46,8 @@ const SORT_LABELS: Record<SortKey, string> = {
   rank: "Composite",
   avgFlagCount: "Avg Flags",
   avgFlagSeverityScore: "Flag Severity",
+  peerFlagsPer100Words: "Flags / 100 words",
+  cleanCallRate: "Clean calls",
   latencyFinalMs: "Latency (Final)",
   costPerMinute: "Cost/Min",
   diarizationScore: "Diarization",
@@ -79,6 +85,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
     "assistant", "vertical", "rank", "provider_id", "provider_name",
     "avg_flag_count", "avg_flag_severity_score",
     "avg_peer_flag_count", "avg_peer_flag_severity_score",
+    "peer_flags_per_100_words", "clean_call_rate",
     "latency_first_partial_ms", "latency_final_ms",
     "cost_per_minute", "diarization_score", "run_id", "recommendation",
   ]
@@ -87,6 +94,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
       groupLabel, r.vertical, r.rank, r.providerId, r.providerName,
       r.score.avgFlagCount, r.score.avgFlagSeverityScore,
       r.score.avgPeerFlagCount, r.score.avgPeerFlagSeverityScore,
+      r.score.peerFlagsPer100Words, r.score.cleanCallRate,
       r.score.latencyFirstPartialMs, r.score.latencyFinalMs,
       r.score.costPerMinute, r.score.diarizationScore, r.runId, r.recommendation,
     ].map(escape).join(","),
@@ -530,6 +538,15 @@ export default function Rankings() {
                             peer: {r.score.avgPeerFlagSeverityScore.toFixed(2)}
                           </div>
                         )}
+                      </TableCell>
+                      {/* T-19: rates computed by the API when the snapshot was
+                          written. Peer-only basis, same as Rank. A snapshot
+                          from before T-19 shows "—" until recomputed. */}
+                      <TableCell className="text-right font-mono" title="Peer-only flags per 100 words this provider transcribed in this group -- comparable across call lengths">
+                        {r.score.peerFlagsPer100Words != null ? r.score.peerFlagsPer100Words.toFixed(2) : <span title="Not in this snapshot">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right font-mono" title="Share of this provider's scored calls with zero peer flags">
+                        {r.score.cleanCallRate != null ? `${(r.score.cleanCallRate * 100).toFixed(0)}%` : <span title="Not in this snapshot">—</span>}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {r.score.latencyFinalMs != null ? `${r.score.latencyFinalMs}ms` : <span title="Not measured in this run">—</span>}
