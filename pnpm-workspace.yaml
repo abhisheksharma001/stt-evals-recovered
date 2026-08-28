@@ -74,6 +74,13 @@ onlyBuiltDependencies:
   - msw
   - unrs-resolver
 
+# T-26: pnpm 11 fails `install` (ERR_PNPM_IGNORED_BUILDS) for any package
+# with a build script that is neither allowed above nor ignored here.
+# @scarf/scarf is @boundaryml/baml's install-time analytics ping (T-25
+# dep) -- deliberately never run.
+ignoredBuiltDependencies:
+  - '@scarf/scarf'
+
 overrides:
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
