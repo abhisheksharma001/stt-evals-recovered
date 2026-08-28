@@ -993,6 +993,103 @@ export interface BulkProviderCorrelation {
   correlatedExcessAgreement: number;
 }
 
+export type BulkVerdictsProvidersItem = {
+  id: string;
+  name: string;
+};
+
+/**
+ * @nullable
+ */
+export type BulkVerdictsGroupsItemProduction = {
+  vendor: string;
+  /** @nullable */
+  model: string | null;
+  coverage: number;
+  total: number;
+} | null;
+
+export type HeadlineVerdictDecision = typeof HeadlineVerdictDecision[keyof typeof HeadlineVerdictDecision];
+
+
+export const HeadlineVerdictDecision = {
+  winner: 'winner',
+  too_close: 'too_close',
+  too_few_calls: 'too_few_calls',
+  insufficient: 'insufficient',
+} as const;
+
+/**
+ * @nullable
+ */
+export type HeadlineVerdictNoiseFloor = {
+  sharedCalls: number;
+  difference: number;
+  /**
+     * @minItems 2
+     * @maxItems 2
+     */
+  ci95: number[];
+  withinNoise: boolean;
+} | null;
+
+export type HeadlineVerdictConfidenceComparable = {
+  reporting: number;
+  total: number;
+};
+
+export type HeadlineVerdictRatesItem = {
+  providerId: string;
+  flagsPer100Words: number;
+  calls: number;
+  totalFlags: number;
+  totalWords: number;
+};
+
+/**
+ * T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.
+ */
+export interface HeadlineVerdict {
+  decision: HeadlineVerdictDecision;
+  /** @nullable */
+  winnerProviderId: string | null;
+  /** @nullable */
+  runnerUpProviderId: string | null;
+  /** @nullable */
+  leaderProviderId: string | null;
+  /** @nullable */
+  marginPct: number | null;
+  /** @nullable */
+  vsProductionPct: number | null;
+  /** @nullable */
+  productionProviderId: string | null;
+  productionIsLeader: boolean;
+  evidenceCalls: number;
+  provisional: boolean;
+  /** @nullable */
+  callsToSettle: number | null;
+  /** @nullable */
+  noiseFloor: HeadlineVerdictNoiseFloor;
+  confidenceComparable: HeadlineVerdictConfidenceComparable;
+  rates: HeadlineVerdictRatesItem[];
+  sentence: string;
+}
+
+export type BulkVerdictsGroupsItem = {
+  /** @nullable */
+  assistantId: string | null;
+  vertical: string;
+  /** @nullable */
+  production: BulkVerdictsGroupsItemProduction;
+  verdict: HeadlineVerdict;
+};
+
+export interface BulkVerdicts {
+  bulkId: string;
+  providers: BulkVerdictsProvidersItem[];
+  groups: BulkVerdictsGroupsItem[];
+}
+
 export interface BulkProgress {
   callsTotal: number;
   callsRun: number;

@@ -702,6 +702,26 @@ paths:
                 $ref: "#/components/schemas/BulkProviderCorrelation"
         "404":
           description: Bulk not found
+  /benchmark/bulks/{bulkId}/verdicts:
+    get:
+      operationId: getBulkVerdicts
+      tags: [benchmark]
+      summary: T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One verdict per assistant group in the bulk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkVerdicts"
+        "404":
+          description: Bulk not found
   /benchmark/bulks/{bulkId}/manifest:
     get:
       operationId: getBulkManifest
@@ -1758,6 +1778,110 @@ components:
         # Pairs whose excessAgreement is at or above this are correlated:
         # read their agreement as one vote.
         correlatedExcessAgreement: { type: number }
+    BulkVerdicts:
+      type: object
+      required: [bulkId, providers, groups]
+      properties:
+        bulkId: { type: string }
+        providers:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [assistantId, vertical, production, verdict]
+            properties:
+              # null = calls imported without a Vapi assistant id.
+              assistantId: { type: ["string", "null"] }
+              vertical: { type: string }
+              # Vapi's live transcriber for this group's calls (most common
+              # vendor/model), null when no call recorded one.
+              production:
+                type: ["object", "null"]
+                required: [vendor, model, coverage, total]
+                properties:
+                  vendor: { type: string }
+                  model: { type: ["string", "null"] }
+                  coverage: { type: number }
+                  total: { type: number }
+              verdict:
+                $ref: "#/components/schemas/HeadlineVerdict"
+    HeadlineVerdict:
+      type: object
+      description: >-
+        T-20. Metric is peer flags per 100 words (confidence spans excluded),
+        pooled per provider; lower is better. A winner is named only when a
+        paired bootstrap (1,000 resamples of the calls the top two both
+        scored, seeded) puts zero outside the 95% interval of their rate
+        difference. Fewer than 5 shared calls: no noise floor and no winner
+        (decision too_few_calls). Every margin ships with evidenceCalls;
+        below 20 the whole verdict is provisional.
+      required:
+        [decision, winnerProviderId, runnerUpProviderId, leaderProviderId, marginPct,
+         vsProductionPct, productionProviderId, productionIsLeader, evidenceCalls,
+         provisional, callsToSettle, noiseFloor, confidenceComparable, rates, sentence]
+      properties:
+        decision:
+          type: string
+          enum: [winner, too_close, too_few_calls, insufficient]
+        winnerProviderId: { type: ["string", "null"] }
+        runnerUpProviderId: { type: ["string", "null"] }
+        # Lowest rate regardless of decision. Never render as the winner
+        # unless decision is "winner".
+        leaderProviderId: { type: ["string", "null"] }
+        # Relative improvement over the runner-up, 0..100. null unless a
+        # winner is named.
+        marginPct: { type: ["number", "null"] }
+        # Same vs the production provider; negative = production cleaner.
+        # null when production is unknown, not benchmarked here, or is the
+        # leader itself.
+        vsProductionPct: { type: ["number", "null"] }
+        productionProviderId: { type: ["string", "null"] }
+        productionIsLeader: { type: boolean }
+        # Distinct calls with at least one flagged cell in this group.
+        evidenceCalls: { type: number }
+        provisional: { type: boolean }
+        # For too_close only: rough shared-call count that would separate
+        # the pair at the current gap. null when the gap is zero.
+        callsToSettle: { type: ["number", "null"] }
+        noiseFloor:
+          type: ["object", "null"]
+          required: [sharedCalls, difference, ci95, withinNoise]
+          properties:
+            sharedCalls: { type: number }
+            # runner-up rate minus leader rate over shared calls.
+            difference: { type: number }
+            ci95:
+              type: array
+              items: { type: number }
+              minItems: 2
+              maxItems: 2
+            withinNoise: { type: boolean }
+        confidenceComparable:
+          type: object
+          required: [reporting, total]
+          properties:
+            reporting: { type: number }
+            total: { type: number }
+        rates:
+          type: array
+          items:
+            type: object
+            required: [providerId, flagsPer100Words, calls, totalFlags, totalWords]
+            properties:
+              providerId: { type: string }
+              flagsPer100Words: { type: number }
+              calls: { type: number }
+              totalFlags: { type: number }
+              totalWords: { type: number }
+        # The verdict as one sentence with its evidence count attached.
+        sentence: { type: string }
     BulkProgress:
       type: object
       required: [callsTotal, callsRun, cellsTotal, cellsOk, cellsFailed, cellsPending, cellsCancelled, cellsSkippedPendingReview]

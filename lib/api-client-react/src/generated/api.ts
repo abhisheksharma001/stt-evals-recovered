@@ -44,6 +44,7 @@ import type {
   BulkTemplate,
   BulkTemplateInput,
   BulkTemplateLaunchInput,
+  BulkVerdicts,
   DisagreementSpansResponse,
   HealthStatus,
   JudgeAccuracyReplayRequest,
@@ -2722,6 +2723,83 @@ export function useGetBulkProviderCorrelation<TData = Awaited<ReturnType<typeof 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetBulkProviderCorrelationQueryOptions(bulkId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBulkVerdictsUrl = (bulkId: string,) => {
+
+
+
+
+  return `/api/benchmark/bulks/${bulkId}/verdicts`
+}
+
+/**
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ */
+export const getBulkVerdicts = async (bulkId: string, options?: Parameters<typeof customFetch>[1]): Promise<BulkVerdicts> => {
+
+  return customFetch<BulkVerdicts>(getGetBulkVerdictsUrl(bulkId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBulkVerdictsQueryKey = (bulkId: string,) => {
+    return [
+    `/api/benchmark/bulks/${bulkId}/verdicts`
+    ] as const;
+    }
+
+
+export const getGetBulkVerdictsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkVerdictsQueryKey(bulkId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkVerdicts>>> = ({ signal }) => getBulkVerdicts(bulkId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bulkId !== null && bulkId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBulkVerdictsQueryResult = NonNullable<Awaited<ReturnType<typeof getBulkVerdicts>>>
+export type GetBulkVerdictsQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ */
+
+export function useGetBulkVerdicts<TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(
+ bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBulkVerdictsQueryOptions(bulkId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
