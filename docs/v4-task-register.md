@@ -49,7 +49,7 @@ pays for.
 | T-04 | ✅ **done** (PR #7). **Build identity in `/api/healthz`.** Returns `commitSha`, `builtAt`, `startedAt`, `providersConfigured` (**names only**). SHA and build time are frozen into the bundle by esbuild `define` at build time, so they describe the bundle rather than the working tree at start. A dirty tree at build time stamps a `-dirty` suffix; running from source (tsx) reports `commitSha: "dev"`, `builtAt: null` — never a fabricated commit. No database work in the handler: a liveness probe must answer when the database is what is down. | `build.mjs`, `src/lib/build-info.ts`, `routes/health.ts`, `api-zod`, `openapi.yaml` | `curl /api/healthz` shows the SHA of the running build |
 | T-05 | ✅ **done** (PR #8). **Build badge in the UI footer.** Quiet, monospaced, from T-04. | `components/layout.tsx` | Rebuild + restart changes the SHA on screen |
 | T-06 | ✅ **done** (PR #9). **Classify cell failures.** `failureClass` enum lives in `lib/stt-providers/src/failure-class.ts` (one list, next to the code that produces it) and is set at the throw site by whichever code held the real HTTP status / socket state / vendor body. `insertResult` takes it as a **required** field, so a new failure path cannot be added without its author stating what kind of failure it is. `unknown` is a real value with tests, not a bug. **The register's expected 42/2/1 was wrong** — see the findings log. | `lib/stt-providers/src/failure-class.ts` (new), `types.ts`, `poll.ts`, all 7 adapters, `lib/vapi.ts`, `lib/db/src/schema/benchmark-results.ts`, `lib/run-executor.ts`, `routes/benchmark.ts`, `openapi.yaml` | Real answer, measured live: 30 `retention_expired` / 15 `audio_url_forbidden` / 0 `unknown` |
-| T-07 | **Group failures in the UI; retry only what's retryable.** Replace the bare count with a grouped breakdown. The retry button carries the *retryable* count and is disabled (with a reason) at zero. `isRetryableFailureClass()` already exists (T-06) — use it, don't re-decide. **Blocked in practice on T-40**: every stored failure row predates the column and is null, so there is nothing to group until the backfill runs. | `Bulks.tsx` | Bulk `7d2585da` renders 30 retention-expired / 15 audio-URL-forbidden, and a retry button that is disabled because neither class is retryable |
+| T-07 | **Group failures in the UI; retry only what's retryable.** Replace the bare count with a grouped breakdown. The retry button carries the *retryable* count and is disabled (with a reason) at zero. `isRetryableFailureClass()` already exists (T-06) — use it, don't re-decide. **Unblocked by T-40** (PR #10): 143 of the 168 historical rows now carry a class. The remaining **25 are null on purpose** and are a real state the UI has to show — "unclassified (predates classification)" — not a bucket to hide or to fold into `unknown`; they must not be offered for retry. | `Bulks.tsx` | Bulk `7d2585da` renders 30 retention-expired / 15 audio-URL-forbidden, and a retry button that is disabled because neither class is retryable |
 
 ---
 
@@ -152,7 +152,7 @@ either on a date. Start it when its trigger fires.
 | T-36 | The last-resort log in `verifyCallWithAgent` (both inserts failed) writes the judge's full reasoning text to the log so the paid-for answer stays recoverable. That reasoning quotes transcript spans and can therefore carry caller names. Logs are local-only today, so this is safe now — but if logs ever ship anywhere, this line needs redaction or a gate. | T-02 self-review |
 | T-37 | `writeAudit` after a successful scan write is not itself wrapped. If the audit insert fails, the throw reaches `runAutoAgentVerificationForRun`'s catch and is logged as "auto agent verification crashed for a call" — wrong text, since the scan actually landed. Cheap fix, but it is a third failure meaning and belongs in its own task. | T-02 self-review |
 | T-38 | A scan whose finding a human has already resolved carries `status: "approved"`, so it counts in `agentCallsChecked` but in neither `agentCallsFlagged` nor `agentCallsErrored`. That was true before T-03 too, so nothing regressed — but the coverage line now reads "63 checked, 0 flagged, 0 errored" for a bulk whose findings were all resolved, which understates the work done. Needs a third count or a "resolved" state, decided deliberately. | T-03 self-review |
-| T-40 | **Backfill `failureClass` on the 168 pre-existing failed rows.** They were written before the column existed and are all null, so the whole corpus of past failures is invisible to any grouping (T-07 renders nothing without this). Deliberately not done inside T-06: the only way to classify a historical row is to read its stored `errorMessage`, which is exactly the technique T-06 exists to remove from the live path — mixing the two in one PR would blur the line. As its own task it is defensible: a one-time migration, scoped to `failure_class IS NULL AND status = 'failed'`, anything unmatched left null rather than guessed, count reported, and **validated against ground truth** — bulk `7d2585da`'s 45 rows have already been independently re-derived from the live Vapi/Supabase sources as 30/15/0, so the backfill's answer for those 45 must match exactly or it is wrong. | T-06 self-review |
+| T-40 | ✅ **done** (PR #10). **Backfilled `failureClass` on the 168 pre-existing failed rows.** One-time migration, `lib/db/migrations/t40-backfill-failure-class.mjs`, guarded to `status = 'failed' AND failure_class IS NULL`, single transaction, and it **asserts the T-06 ground truth for bulk `7d2585da` (30 `retention_expired` / 15 `audio_url_forbidden` / 0 anything else) inside the transaction and rolls back on disagreement** — a wrong rule cannot land. Result: **143 classified** (70 `retention_expired`, 56 `audio_url_forbidden`, 16 `provider_timeout`, 1 `unknown`), **25 deliberately left null**. Reading the stored `error_message` is exactly the technique T-06 removed from the live path, which is why this is a `migrations/` file that runs once and is then finished, not code that ships. | T-06 self-review |
 | T-41 | `matchKnownFailure(errorMessage)` in `routes/benchmark.ts` still parses error text on every read to produce the human-readable diagnosis and suggested fix shown in the UI. That is a different job from classification and was left alone. Once `failureClass` is populated everywhere (T-40), the diagnosis text should be driven off the class instead, so there is one cause of record rather than two things reading the same sentence. | T-06 self-review |
 | T-42 | A provider's own 401/403 is currently `unknown`. `ProviderConfigError` already covers a *missing* key, but a **present, wrong or revoked** key produces a 401 from the vendor and lands in `unknown` — retryable, which it is not. Needs either a `provider_auth` class or an explicit decision to leave it unclassified. | T-06 self-review |
 | T-39 | The badge reports the **API** bundle's commit. The UI itself is a separate Vite build and can be served stale from a browser cache with no signal at all — a second, real version of the same failure this task exists to kill. Stamping the UI build (Vite `define`) and showing both, or showing one only when they disagree, is a deliberate design call, not a drive-by. | T-05 self-review |
@@ -160,6 +160,32 @@ either on a date. Start it when its trigger fires.
 ## Findings log
 
 Append anything learned mid-task here rather than losing it to a compaction.
+
+- **2026-08-28 (T-40): `null` and `unknown` are different answers, and the
+  difference costs money.** `unknown` is *classified* — and per
+  `isRetryableFailureClass` it is **retryable**. `null` means "written before
+  classification existed, and the surviving text does not say why" — no claim
+  made. 25 historical rows say only `Gladia submit returned HTTP 400` (16) and
+  `Deepgram returned HTTP 400` (9). They are almost certainly the same dead
+  Supabase audio URL as their neighbours in the same runs, but the stored text
+  does not say so. Writing `unknown` on them would have marked 25
+  permanently-dead cells retryable, and T-07's retry button would then offer to
+  spend real provider money re-running calls that can never succeed. They are
+  null on purpose.
+- **2026-08-28 (T-40): a provider's own sentence can still be evidence.** 16
+  AssemblyAI rows read `Download error, got HTTP 403, Forbidden, unable to
+  download <our supabase URL>`. That is AssemblyAI's text, not ours, from
+  before adapters were handed bytes instead of a URL — but the class is
+  *documented* as covering a 403 "either to our own fetch, or to the provider's
+  fetch of a URL we handed it", and the status is stated explicitly. Classified,
+  not inferred. Contrast the bare `... returned HTTP 400` rows above, which
+  state no cause and were left alone.
+- **2026-08-28 (T-40): the whole 168-row shape, for reference.** 70
+  `retention_expired` (Vapi's 14-day sentence, in a 400), 56
+  `audio_url_forbidden` (40 our own `fetchAudioBytes` 403, 16 AssemblyAI's
+  403), 16 `provider_timeout` (Cartesia's WebSocket deadline), 1 `unknown`
+  (Cartesia closed clean and never sent a final segment — the one row in the
+  corpus that genuinely earns the class), 25 null.
 
 - **2026-08-28 (T-06): the register's expected `42/2/1` was wrong.** Measured against
   the real database: bulk `7d2585da` has **45** failed cells (that number was right)
