@@ -33,6 +33,8 @@ import {
   ListBulkTemplatesResponse,
   ListBulksQueryParams,
   ListBulksResponse,
+  PreviewBulkSelectionBody,
+  PreviewBulkSelectionResponse,
   RetryBulkFailedParams,
   RetryBulkFailedResponse,
 } from "@workspace/api-zod";
@@ -51,6 +53,7 @@ import {
   resolveDurationBand,
   isUniqueViolation,
   launchBulk,
+  previewBulkSelection,
   retryBulkFailedCells,
 } from "../lib/bulks";
 
@@ -175,6 +178,30 @@ router.post("/benchmark/bulks", async (req, res): Promise<void> => {
     }
     if (err instanceof BulkNameConflictError) {
       res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+// T-14. Registered before /:bulkId so "preview" is never read as an id.
+router.post("/benchmark/bulks/preview", async (req, res): Promise<void> => {
+  const parsed = PreviewBulkSelectionBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  try {
+    const preview = await previewBulkSelection({
+      criteria: criteriaFromBody(parsed.data.criteria),
+      providerIds: parsed.data.providerIds,
+      minDurationSeconds: parsed.data.minDurationSeconds,
+      maxDurationSeconds: parsed.data.maxDurationSeconds,
+    });
+    res.json(PreviewBulkSelectionResponse.parse(preview));
+  } catch (err) {
+    if (err instanceof BulkDurationBandError) {
+      res.status(400).json({ error: err.message });
       return;
     }
     throw err;

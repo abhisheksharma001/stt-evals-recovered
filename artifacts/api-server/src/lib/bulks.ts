@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { and, asc, eq, gte, inArray, isNotNull, lte, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   benchmarkAgentScansTable,
   benchmarkBulksTable,
@@ -43,7 +43,7 @@ export const MAX_LIVE_BULKS = 3;
 // FR-BLK-5 cost gate, env-tunable. $50 default: at planning prices a
 // 1,000-call x 2min x 7-provider bulk is ~$84, so the default gates exactly
 // the class of launch this gate exists for.
-const BULK_COST_THRESHOLD_CENTS = (() => {
+export const BULK_COST_THRESHOLD_CENTS = (() => {
   const raw = process.env.BULK_COST_THRESHOLD_CENTS;
   const parsed = raw ? Number.parseInt(raw, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
@@ -128,15 +128,93 @@ export function resolveDurationBand(input: {
   return { min, max };
 }
 
-export async function resolveCriteriaCallIds(
+/**
+ * T-14: one named bucket per reason a call in scope did NOT make it into the
+ * selection. Every call in scope lands in exactly one place -- selected, or
+ * one of these -- so `inScopeCount === callIds.length + sum(excluded.count)`
+ * always holds and nothing is dropped silently.
+ */
+export type SelectionExclusion = { bucket: string; count: number };
+
+export type ResolvedCriteriaSelection = ResolvedCriteriaCallIds & {
+  /** Calls that passed the "who" filters (vertical / assistant / account) or
+   *  were explicitly picked -- the pool the exclusions are counted against. */
+  inScopeCount: number;
+  excluded: SelectionExclusion[];
+};
+
+type CandidateRow = {
+  id: string;
+  durationSeconds: number;
+  sourceStartedAt: Date | null;
+  sourceEndedReason: string | null;
+  sourceSuccessEvaluation: string | null;
+};
+
+/**
+ * Decides, for one in-scope call, which exclusion bucket it falls into, or
+ * null when it is selected. Order matters and is the order a person reads
+ * the filters in: date window, duration band, outcome, success evaluation.
+ * A call failing several filters is counted once, under the first.
+ *
+ * This is THE matcher. resolveCriteriaCallIds (bulk creation) and the
+ * preview endpoint both go through it, so the count a person sees before
+ * launching is the count that gets frozen -- there is no second copy to
+ * drift (the UI used to carry one).
+ */
+function exclusionBucketFor(
+  c: CandidateRow,
+  criteria: BulkSelectionCriteria,
+  window: { from?: Date; to?: Date },
+  minDurationSeconds: number,
+  maxDurationSeconds: number | null,
+): string | null {
+  if (window.from || window.to) {
+    // A NULL start date never satisfies a gte/lte window -- named on its own
+    // so a date-filtered bulk that comes back small says why.
+    if (c.sourceStartedAt === null) return "no start date on record";
+    if (window.from && c.sourceStartedAt < window.from) return "outside the date window";
+    if (window.to && c.sourceStartedAt > window.to) return "outside the date window";
+  }
+  // FR-SEL-7 / T-10: the duration band.
+  if (c.durationSeconds < minDurationSeconds) return `shorter than ${minDurationSeconds}s`;
+  if (maxDurationSeconds !== null && c.durationSeconds > maxDurationSeconds) {
+    return `longer than ${maxDurationSeconds}s`;
+  }
+  // T-13: an unknown outcome never passes an outcome filter, and is its own
+  // bucket rather than hiding inside a reason it does not have.
+  const hasOutcomeFilter = Boolean(
+    criteria.includeEndedReasons?.length || criteria.excludeEndedReasons?.length,
+  );
+  if (hasOutcomeFilter && c.sourceEndedReason === null) return "no captured outcome";
+  if (
+    criteria.includeEndedReasons?.length &&
+    !criteria.includeEndedReasons.includes(c.sourceEndedReason as string)
+  ) {
+    return `outcome: ${c.sourceEndedReason}`;
+  }
+  if (
+    criteria.excludeEndedReasons?.length &&
+    criteria.excludeEndedReasons.includes(c.sourceEndedReason as string)
+  ) {
+    return `outcome: ${c.sourceEndedReason}`;
+  }
+  if (criteria.successEvaluation && c.sourceSuccessEvaluation !== criteria.successEvaluation) {
+    return c.sourceSuccessEvaluation === null
+      ? "no success evaluation"
+      : `success evaluation: ${c.sourceSuccessEvaluation}`;
+  }
+  return null;
+}
+
+export async function resolveCriteriaSelection(
   criteria: BulkSelectionCriteria,
   minDurationSeconds: number,
   maxDurationSeconds: number | null,
   now: Date = new Date(),
-): Promise<ResolvedCriteriaCallIds> {
-  // Explicit-picks-only criteria select exactly those calls. The filter query
-  // below always carries the min-duration condition (FR-SEL-7), so running it
-  // unconditionally would union in the whole corpus under a callIds-only
+): Promise<ResolvedCriteriaSelection> {
+  // Explicit-picks-only criteria select exactly those calls. The scope query
+  // below would otherwise pull the whole corpus under a callIds-only
   // selection (found by the e2e harness: a 5-call explicit bulk came back
   // with 9 calls).
   const hasFilters = Boolean(
@@ -151,75 +229,67 @@ export async function resolveCriteriaCallIds(
       criteria.successEvaluation,
   );
 
-  const ids = new Set<string>();
+  const columns = {
+    id: benchmarkCallsTable.id,
+    durationSeconds: benchmarkCallsTable.durationSeconds,
+    sourceStartedAt: benchmarkCallsTable.sourceStartedAt,
+    sourceEndedReason: benchmarkCallsTable.sourceEndedReason,
+    sourceSuccessEvaluation: benchmarkCallsTable.sourceSuccessEvaluation,
+  };
+
+  // Scope = the "who" filters. Everything after (date, band, outcome) is a
+  // named exclusion counted against this pool.
+  const inScope = new Map<string, CandidateRow>();
   if (hasFilters || !criteria.callIds?.length) {
-    const { from, to } = resolveDateWindow(criteria, now);
-    const conditions = [
-      criteria.vertical
-        ? eq(benchmarkCallsTable.vertical, criteria.vertical)
-        : undefined,
+    const scopeConditions = [
+      criteria.vertical ? eq(benchmarkCallsTable.vertical, criteria.vertical) : undefined,
       criteria.assistantIds?.length
         ? inArray(benchmarkCallsTable.sourceAssistantId, criteria.assistantIds)
         : undefined,
       criteria.accountLabel
         ? eq(benchmarkCallsTable.sourceAccountLabel, criteria.accountLabel)
         : undefined,
-      from ? gte(benchmarkCallsTable.sourceStartedAt, from) : undefined,
-      to ? lte(benchmarkCallsTable.sourceStartedAt, to) : undefined,
-      // FR-SEL-7: keep near-empty calls (voicemail beeps, misdials) out of a
-      // bulk by default -- they inflate call counts with near-meaningless WER
-      // data and eat the gold budget.
-      gte(benchmarkCallsTable.durationSeconds, minDurationSeconds),
-      // T-10: upper bound of the band; null = no cap.
-      maxDurationSeconds !== null
-        ? lte(benchmarkCallsTable.durationSeconds, maxDurationSeconds)
-        : undefined,
-      // T-13: outcome filters. SQL `IN` already rejects NULL; for `NOT IN`
-      // it would too, but that is spelled out with isNotNull so the rule
-      // ("unknown outcome never passes an outcome filter") is visible here
-      // rather than an accident of three-valued logic.
-      criteria.includeEndedReasons?.length
-        ? inArray(benchmarkCallsTable.sourceEndedReason, criteria.includeEndedReasons)
-        : undefined,
-      criteria.excludeEndedReasons?.length
-        ? and(
-            isNotNull(benchmarkCallsTable.sourceEndedReason),
-            notInArray(benchmarkCallsTable.sourceEndedReason, criteria.excludeEndedReasons),
-          )
-        : undefined,
-      criteria.successEvaluation
-        ? eq(benchmarkCallsTable.sourceSuccessEvaluation, criteria.successEvaluation)
-        : undefined,
     ].filter((c) => c !== undefined);
-
-    const matched = await db
-      .select({ id: benchmarkCallsTable.id })
+    const rows = await db
+      .select(columns)
       .from(benchmarkCallsTable)
-      .where(and(...conditions));
-    for (const row of matched) ids.add(row.id);
+      .where(scopeConditions.length ? and(...scopeConditions) : undefined);
+    for (const row of rows) inScope.set(row.id, row);
   }
 
-  // Explicit picks merge with filter matches, but only if they exist.
+  // Explicit picks merge in unfiltered, exactly as before: a hand-picked
+  // call skips the window / band / outcome checks (only the retention pass
+  // below still applies, because an uncached expired call cannot run no
+  // matter who picked it).
+  const explicitIds = new Set<string>();
   if (criteria.callIds?.length) {
     const explicit = await db
-      .select({ id: benchmarkCallsTable.id })
+      .select(columns)
       .from(benchmarkCallsTable)
       .where(inArray(benchmarkCallsTable.id, criteria.callIds));
-    for (const row of explicit) ids.add(row.id);
+    for (const row of explicit) {
+      inScope.set(row.id, row);
+      explicitIds.add(row.id);
+    }
   }
 
-  if (ids.size === 0) return { callIds: [], excludedRetentionExpiredCount: 0 };
+  const window = resolveDateWindow(criteria, now);
+  const buckets = new Map<string, number>();
+  const bump = (bucket: string) => buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+  const passing: CandidateRow[] = [];
+  for (const c of inScope.values()) {
+    const bucket = explicitIds.has(c.id)
+      ? null
+      : exclusionBucketFor(c, criteria, window, minDurationSeconds, maxDurationSeconds);
+    if (bucket === null) passing.push(c);
+    else bump(bucket);
+  }
 
   const retentionCutoff = new Date(now.getTime() - VAPI_RETENTION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const candidates = await db
-    .select({ id: benchmarkCallsTable.id, sourceStartedAt: benchmarkCallsTable.sourceStartedAt })
-    .from(benchmarkCallsTable)
-    .where(inArray(benchmarkCallsTable.id, [...ids]));
-
   const callIds: string[] = [];
   let excludedRetentionExpiredCount = 0;
   await Promise.all(
-    candidates.map(async (c) => {
+    passing.map(async (c) => {
       const expired = c.sourceStartedAt !== null && c.sourceStartedAt < retentionCutoff;
       if (!expired) {
         callIds.push(c.id);
@@ -233,7 +303,34 @@ export async function resolveCriteriaCallIds(
       }
     }),
   );
+  if (excludedRetentionExpiredCount > 0) {
+    buckets.set(
+      `past Vapi's ${VAPI_RETENTION_WINDOW_DAYS}-day retention window and never cached`,
+      excludedRetentionExpiredCount,
+    );
+  }
 
+  // Stable order: biggest bucket first, ties alphabetical, so the preview
+  // reads the same way twice for the same corpus.
+  const excluded = [...buckets.entries()]
+    .map(([bucket, count]) => ({ bucket, count }))
+    .sort((a, b) => b.count - a.count || a.bucket.localeCompare(b.bucket));
+
+  return { callIds, excludedRetentionExpiredCount, inScopeCount: inScope.size, excluded };
+}
+
+export async function resolveCriteriaCallIds(
+  criteria: BulkSelectionCriteria,
+  minDurationSeconds: number,
+  maxDurationSeconds: number | null,
+  now: Date = new Date(),
+): Promise<ResolvedCriteriaCallIds> {
+  const { callIds, excludedRetentionExpiredCount } = await resolveCriteriaSelection(
+    criteria,
+    minDurationSeconds,
+    maxDurationSeconds,
+    now,
+  );
   return { callIds, excludedRetentionExpiredCount };
 }
 
@@ -296,6 +393,55 @@ export async function estimateBulkAgentCostCents(callCount: number): Promise<num
     : AGENT_COST_ESTIMATE_FALLBACK.assumedCostMicrocentsPerJudgeCall;
 
   return toCents(flagRate * avgJudgeCostMicrocents);
+}
+
+export type BulkPreviewResult = {
+  inScopeCount: number;
+  matchedCount: number;
+  excluded: SelectionExclusion[];
+  estimate: {
+    sttCostCents: number;
+    agentCostCents: number;
+    totalCostCents: number;
+    overThreshold: boolean;
+  } | null;
+  costThresholdCents: number;
+};
+
+/**
+ * T-14: what createBulkFromCriteria would do, without doing it. Same band
+ * resolution, same matcher, same estimators, same threshold -- so the number
+ * in the dialog is the number that gets frozen. The estimate is null with no
+ * providers: the count is meaningful on its own and is shown first.
+ */
+export async function previewBulkSelection(input: {
+  criteria: BulkSelectionCriteria;
+  providerIds?: string[];
+  minDurationSeconds?: number;
+  maxDurationSeconds?: number | null;
+}): Promise<BulkPreviewResult> {
+  const { min, max } = resolveDurationBand(input);
+  const selection = await resolveCriteriaSelection(input.criteria, min, max);
+  const providerIds = input.providerIds ?? [];
+  let estimate: BulkPreviewResult["estimate"] = null;
+  if (providerIds.length > 0) {
+    const sttCostCents = await estimateBulkCostCents(selection.callIds, providerIds);
+    const agentCostCents = await estimateBulkAgentCostCents(selection.callIds.length);
+    const totalCostCents = sttCostCents + agentCostCents;
+    estimate = {
+      sttCostCents,
+      agentCostCents,
+      totalCostCents,
+      overThreshold: totalCostCents > BULK_COST_THRESHOLD_CENTS,
+    };
+  }
+  return {
+    inScopeCount: selection.inScopeCount,
+    matchedCount: selection.callIds.length,
+    excluded: selection.excluded,
+    estimate,
+    costThresholdCents: BULK_COST_THRESHOLD_CENTS,
+  };
 }
 
 export type CreateBulkResult = {
