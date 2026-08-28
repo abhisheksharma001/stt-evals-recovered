@@ -155,6 +155,15 @@ export type VapiCall = {
   id: string;
   assistantId?: string;
   status?: string;
+  // T-11: why the call ended, in Vapi's own vocabulary (e.g.
+  // "customer-ended-call", "assistant-forwarded-call", "voicemail",
+  // "silence-timed-out"). Confirmed live 2026-08-28 on call 01a03b89.
+  endedReason?: string;
+  // T-11: Vapi's post-call analysis. `summary` was present on the live
+  // probe; `successEvaluation` is absent on some calls (PRD measured 9 of
+  // 100) and is stored verbatim when present. Nothing else is read from
+  // this object until it has been seen on a real response.
+  analysis?: { successEvaluation?: string | boolean | number | null; summary?: string };
   startedAt?: string;
   endedAt?: string;
   createdAt?: string;
@@ -217,6 +226,17 @@ export function transcriberOf(
   const t = entry?.transcriber;
   if (!t || (!t.provider && !t.model)) return undefined;
   return { provider: t.provider, model: t.model };
+}
+
+/**
+ * T-11: Vapi's successEvaluation as a verbatim string, or null when absent.
+ * Booleans/numbers are stringified rather than coerced so a future wider
+ * vocabulary ("partial", a score) survives untouched.
+ */
+export function successEvaluationOf(call: VapiCall): string | null {
+  const v = call.analysis?.successEvaluation;
+  if (v === undefined || v === null) return null;
+  return typeof v === "string" ? v : String(v);
 }
 
 export function durationSecondsOf(call: VapiCall): number {
