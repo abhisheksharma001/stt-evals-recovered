@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { apiBase } from "@/lib/api-base"
 import { SpanAdjudicator } from "@/components/span-adjudicator"
+import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 
 // ---------------------------------------------------------------------------
 // 2026-08-27, per Abhishek: "for corpus and listen if we can merge both into
@@ -574,7 +575,7 @@ function StatusBadge({ status }: { status: CallStatus }) {
 // means a cached call can still show a stale warning after day 14 --
 // conservative false positive, not a false "all clear," which is the
 // direction that's safe to be wrong in for a review-effort warning.
-const RETENTION_WINDOW_DAYS = 14
+const RETENTION_WINDOW_DAYS = VAPI_RETENTION_WINDOW_DAYS // T-16: one number, shared with Import and Bulks defaults
 const RETENTION_WARNING_DAYS = 10
 
 function RetentionWarning({ sourceStartedAt }: { sourceStartedAt?: string | null }) {
