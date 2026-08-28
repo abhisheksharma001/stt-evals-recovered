@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './adjudication';
+export * from './adjudicationReadingsItem';
 export * from './agentFlag';
 export * from './agentScan';
 export * from './agentScanCandidate';
@@ -40,6 +42,9 @@ export * from './bulkTemplate';
 export * from './bulkTemplateInput';
 export * from './bulkTemplateLaunchInput';
 export * from './callStatus';
+export * from './disagreementSpan';
+export * from './disagreementSpansResponse';
+export * from './disagreementSpansResponseUnavailableReason';
 export * from './entityReference';
 export * from './entityType';
 export * from './healthStatus';
@@ -61,6 +66,7 @@ export * from './listAuditLogParams';
 export * from './listBenchmarkCallsParams';
 export * from './listBenchmarkRankingsParams';
 export * from './listBulksParams';
+export * from './listDisagreementSpansParams';
 export * from './listVapiAssistantsParams';
 export * from './planTask';
 export * from './provider';
@@ -78,6 +84,9 @@ export * from './runStatus';
 export * from './score';
 export * from './scoreDetail';
 export * from './scoreDetailFlagSeverity';
+export * from './spanAdjudicationRequest';
+export * from './spanAdjudicationRequestReadingsItem';
+export * from './spanReading';
 export * from './vapiAccount';
 export * from './vapiAssistant';
 export * from './vapiImportInput';

@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Adjudication,
   AgentScan,
   AgentScanDecision,
   AgentScanInput,
@@ -40,12 +41,14 @@ import type {
   BulkTemplate,
   BulkTemplateInput,
   BulkTemplateLaunchInput,
+  DisagreementSpansResponse,
   HealthStatus,
   ListAgentScansParams,
   ListAuditLogParams,
   ListBenchmarkCallsParams,
   ListBenchmarkRankingsParams,
   ListBulksParams,
+  ListDisagreementSpansParams,
   ListVapiAssistantsParams,
   PlanTask,
   Provider,
@@ -54,6 +57,7 @@ import type {
   ProviderUpdate,
   ResultFailureAnalysis,
   RunManifest,
+  SpanAdjudicationRequest,
   VapiAccount,
   VapiAssistant,
   VapiImportInput,
@@ -469,6 +473,162 @@ export const useUpdateBenchmarkCall = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateBenchmarkCallMutationOptions(options));
+    }
+
+export const getListDisagreementSpansUrl = (params: ListDisagreementSpansParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/disagreement-spans?${stringifiedParams}` : `/api/benchmark/disagreement-spans`
+}
+
+/**
+ * @summary T-08 -- the stretches of one call where providers heard different words, each with a start/end in the audio, every provider's reading, and any human verdict already recorded
+ */
+export const listDisagreementSpans = async (params: ListDisagreementSpansParams, options?: Parameters<typeof customFetch>[1]): Promise<DisagreementSpansResponse> => {
+
+  return customFetch<DisagreementSpansResponse>(getListDisagreementSpansUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDisagreementSpansQueryKey = (params?: ListDisagreementSpansParams,) => {
+    return [
+    `/api/benchmark/disagreement-spans`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDisagreementSpansQueryOptions = <TData = Awaited<ReturnType<typeof listDisagreementSpans>>, TError = ErrorType<void>>(params: ListDisagreementSpansParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDisagreementSpans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDisagreementSpansQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDisagreementSpans>>> = ({ signal }) => listDisagreementSpans(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDisagreementSpans>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDisagreementSpansQueryResult = NonNullable<Awaited<ReturnType<typeof listDisagreementSpans>>>
+export type ListDisagreementSpansQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-08 -- the stretches of one call where providers heard different words, each with a start/end in the audio, every provider's reading, and any human verdict already recorded
+ */
+
+export function useListDisagreementSpans<TData = Awaited<ReturnType<typeof listDisagreementSpans>>, TError = ErrorType<void>>(
+ params: ListDisagreementSpansParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDisagreementSpans>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDisagreementSpansQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdjudicateSpanUrl = (callId: string,) => {
+
+
+
+
+  return `/api/benchmark/calls/${callId}/adjudications`
+}
+
+/**
+ * @summary T-08 -- record a human verdict on one disagreement span. Re-adjudicating the same span in the same run replaces the earlier verdict; every verdict is audit-logged.
+ */
+export const adjudicateSpan = async (callId: string,
+    spanAdjudicationRequest: SpanAdjudicationRequest, options?: Parameters<typeof customFetch>[1]): Promise<Adjudication> => {
+
+  return customFetch<Adjudication>(getAdjudicateSpanUrl(callId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(spanAdjudicationRequest)
+  }
+);}
+
+
+
+
+
+export const getAdjudicateSpanMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adjudicateSpan>>, TError,{callId: string;data: BodyType<SpanAdjudicationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adjudicateSpan>>, TError,{callId: string;data: BodyType<SpanAdjudicationRequest>}, TContext> => {
+
+const mutationKey = ['adjudicateSpan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adjudicateSpan>>, {callId: string;data: BodyType<SpanAdjudicationRequest>}> = (props) => {
+          const {callId,data} = props ?? {};
+
+          return  adjudicateSpan(callId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdjudicateSpanMutationResult = NonNullable<Awaited<ReturnType<typeof adjudicateSpan>>>
+    export type AdjudicateSpanMutationBody = BodyType<SpanAdjudicationRequest>
+    export type AdjudicateSpanMutationError = ErrorType<void>
+
+    /**
+ * @summary T-08 -- record a human verdict on one disagreement span. Re-adjudicating the same span in the same run replaces the earlier verdict; every verdict is audit-logged.
+ */
+export const useAdjudicateSpan = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adjudicateSpan>>, TError,{callId: string;data: BodyType<SpanAdjudicationRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adjudicateSpan>>,
+        TError,
+        {callId: string;data: BodyType<SpanAdjudicationRequest>},
+        TContext
+      > => {
+      return useMutation(getAdjudicateSpanMutationOptions(options));
     }
 
 export const getAttestBenchmarkCallDeidUrl = (callId: string,) => {

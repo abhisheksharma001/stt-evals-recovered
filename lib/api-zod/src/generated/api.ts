@@ -177,6 +177,81 @@ export const UpdateBenchmarkCallResponse = zod.object({
 
 
 /**
+ * @summary T-08 -- the stretches of one call where providers heard different words, each with a start/end in the audio, every provider's reading, and any human verdict already recorded
+ */
+export const ListDisagreementSpansQueryParams = zod.object({
+  "callId": zod.coerce.string(),
+  "runId": zod.coerce.string().optional().describe('Which run\'s results to build spans from. Defaults to the most recent run that has a successful cell for this call.')
+})
+
+export const ListDisagreementSpansResponse = zod.object({
+  "callId": zod.string(),
+  "runId": zod.string().nullable(),
+  "referenceProviderId": zod.string().nullable(),
+  "unavailableReason": zod.union([zod.enum(['no_run', 'no_word_timings', 'fewer_than_two_candidates']),zod.null()]),
+  "spans": zod.array(zod.object({
+  "startMs": zod.number(),
+  "endMs": zod.number(),
+  "contextBefore": zod.string(),
+  "contextAfter": zod.string(),
+  "readings": zod.array(zod.object({
+  "providerId": zod.string(),
+  "text": zod.string(),
+  "agreesWithReference": zod.boolean()
+})),
+  "adjudication": zod.union([zod.object({
+  "id": zod.string(),
+  "callId": zod.string(),
+  "runId": zod.string(),
+  "spanStartMs": zod.number(),
+  "spanEndMs": zod.number(),
+  "correctProviderId": zod.string().nullable(),
+  "readings": zod.array(zod.object({
+  "providerId": zod.string(),
+  "text": zod.string()
+})),
+  "adjudicatedByLabel": zod.string(),
+  "adjudicatedAt": zod.string()
+}),zod.null()])
+}))
+})
+
+
+/**
+ * @summary T-08 -- record a human verdict on one disagreement span. Re-adjudicating the same span in the same run replaces the earlier verdict; every verdict is audit-logged.
+ */
+export const AdjudicateSpanParams = zod.object({
+  "callId": zod.coerce.string()
+})
+
+export const AdjudicateSpanBody = zod.object({
+  "runId": zod.string(),
+  "spanStartMs": zod.number(),
+  "spanEndMs": zod.number(),
+  "correctProviderId": zod.string().nullable(),
+  "readings": zod.array(zod.object({
+  "providerId": zod.string(),
+  "text": zod.string()
+}))
+})
+
+export const AdjudicateSpanResponse = zod.object({
+  "id": zod.string(),
+  "callId": zod.string(),
+  "runId": zod.string(),
+  "spanStartMs": zod.number(),
+  "spanEndMs": zod.number(),
+  "correctProviderId": zod.string().nullable(),
+  "readings": zod.array(zod.object({
+  "providerId": zod.string(),
+  "text": zod.string()
+})),
+  "adjudicatedByLabel": zod.string(),
+  "adjudicatedAt": zod.string()
+})
+
+
+/**
  * @summary Record a de-identification approval (two distinct approvers required, FR-C3)
  */
 export const AttestBenchmarkCallDeidParams = zod.object({

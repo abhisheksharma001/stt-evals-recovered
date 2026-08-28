@@ -5,6 +5,72 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+export interface SpanReading {
+  providerId: string;
+  text: string;
+  agreesWithReference: boolean;
+}
+
+export type AdjudicationReadingsItem = {
+  providerId: string;
+  text: string;
+};
+
+export interface Adjudication {
+  id: string;
+  callId: string;
+  runId: string;
+  spanStartMs: number;
+  spanEndMs: number;
+  /** @nullable */
+  correctProviderId: string | null;
+  readings: AdjudicationReadingsItem[];
+  adjudicatedByLabel: string;
+  adjudicatedAt: string;
+}
+
+export interface DisagreementSpan {
+  startMs: number;
+  endMs: number;
+  contextBefore: string;
+  contextAfter: string;
+  readings: SpanReading[];
+  adjudication: Adjudication | null;
+}
+
+export type DisagreementSpansResponseUnavailableReason = typeof DisagreementSpansResponseUnavailableReason[keyof typeof DisagreementSpansResponseUnavailableReason] | null;
+
+
+export const DisagreementSpansResponseUnavailableReason = {
+  no_run: 'no_run',
+  no_word_timings: 'no_word_timings',
+  fewer_than_two_candidates: 'fewer_than_two_candidates',
+} as const;
+
+export interface DisagreementSpansResponse {
+  callId: string;
+  /** @nullable */
+  runId: string | null;
+  /** @nullable */
+  referenceProviderId: string | null;
+  unavailableReason: DisagreementSpansResponseUnavailableReason;
+  spans: DisagreementSpan[];
+}
+
+export type SpanAdjudicationRequestReadingsItem = {
+  providerId: string;
+  text: string;
+};
+
+export interface SpanAdjudicationRequest {
+  runId: string;
+  spanStartMs: number;
+  spanEndMs: number;
+  /** @nullable */
+  correctProviderId: string | null;
+  readings: SpanAdjudicationRequestReadingsItem[];
+}
+
 export interface HealthStatus {
   status: string;
   commitSha: string;
@@ -911,6 +977,14 @@ export interface BulkManifest {
 export type ListBenchmarkCallsParams = {
 vertical?: Vertical;
 status?: CallStatus;
+};
+
+export type ListDisagreementSpansParams = {
+callId: string;
+/**
+ * Which run's results to build spans from. Defaults to the most recent run that has a successful cell for this call.
+ */
+runId?: string;
 };
 
 export type ListVapiAssistantsParams = {

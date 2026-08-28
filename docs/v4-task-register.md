@@ -62,7 +62,7 @@ whatever it gets wrong. This is the cheapest high-value work in the whole regist
 
 | ID | Task | Done when |
 |---|---|---|
-| T-08 | **Span adjudication UI.** For a disagreement span, play the 3–5 seconds of cached audio and let a human pick which provider heard it correctly (or "none of them"). Store as `adjudications(callId, spanStart, spanEnd, correctProviderId \| null, adjudicatedBy, at)`. This is the same component as the audio-anchored evidence view (UX D.3.2) — **build it once, it serves both.** | A human can adjudicate 20 spans in one sitting without leaving the page |
+| T-08 | ✅ **done** (PR #15). **Span adjudication UI shipped** — `SpanAdjudicator` under the provider comparison in the Corpus expanded row: each disagreement span is a play button (cached audio, ±0.75s context), every provider's reading beside it, 1–9 picks / 0 = none / J/K / Space, auto-advance. Stored in `benchmark_adjudications(callId, runId, spanStartMs, spanEndMs, correctProviderId | null, readings, adjudicatedByLabel, adjudicatedAt)` — `runId` and `readings` added beyond the register's sketch so T-09 replays against the exact evidence shown. Spans are a pure function (`lib/scoring/src/spans.ts`, 7 tests) of stored results: the longest provider with word timings anchors alignment and supplies the clock, never the answer. Timings verified against real captured responses: AssemblyAI (ms), Deepgram, Gladia, Cartesia; OpenAI/ElevenLabs are text-only readings. Live: call `9e28a844` run `73c8f03b` → 16 real spans. | A human can adjudicate 20 spans in one sitting without leaving the page |
 | T-09 | **Judge accuracy report.** Replay the adjudicated spans through `judgeCandidates` and report agreement rate. | A single number exists for "how often the judge agrees with a human", with its sample size |
 
 **Why this ordering matters:** if the judge scores near chance, T-17 (rank on
@@ -159,11 +159,28 @@ either on a date. Start it when its trigger fires.
 | T-44 | The retry target count adds `cellsPending + cellsSkippedPendingReview + cellsCancelled` to the retryable-failure count, because those cells have no failure class (they never failed) and omitting them would disable the button on a bulk with real work left. But `cellsPending` is derived as `plannedCells - cellsWritten`, so it also counts cells that were never planned to run — the number is a good-enough gate for enabling a button and is **not** a promise of exactly what a retry will attempt. If that count is ever shown as a cost estimate, it needs to come from a real query instead. | T-07 self-review |
 | T-45 | ✅ **done** (PR #13). **A re-execution no longer re-judges calls whose evidence did not change.** `runAutoAgentVerificationForRun` now skips a call that already has a finished scan row for this run (`clean` / `flagged` / `approved` / `rejected`) unless the calling execution gave that call a **new** ok cell — the executor tracks exactly which calls gained one and passes the set in. `error` and `scanning` rows do not count as finished and are redone. No schema change: the "did the candidate set change" question is answered by the execution that just ran, not by storing the candidate set. | T-43 self-review |
 | T-46 | ✅ **done** (PR #14). **`retryBulkFailedCells` now selects runs by the executor's own retryability rule.** A complete run is re-executed only if the latest row of some cell is `skipped_pending_review` or a `failed` row whose class `isRetryableFailureClass()` accepts (null and out-of-enum values count as permanent, same as T-43). A non-complete run (failed / queued / stuck running) is still always re-executed, unchanged. | T-43 self-review |
+| T-47 | **Disagreement is reference-relative, not consensus-relative.** `buildDisagreementSpans` marks a position disputed when any provider differs from the *reference* (the longest timed provider). When four of five say "are" and the reference alone says "were", the span is right but `agreesWithReference` is false for the four — the UI shows it neutrally, but a consensus vote per position (as `computeCrossProviderDisagreement` already does) would rank readings better and let T-09 report "judge vs human" and "majority vs human" side by side. | T-08 self-review |
+| T-48 | **OpenAI and ElevenLabs contribute no word timings.** OpenAI is requested with `response_format: json` (text only; `verbose_json` + `timestamp_granularities` may return words for whisper-1 but not gpt-4o-transcribe — must be checked against the real API, not docs). ElevenLabs' stored words carry only `speaker_id` in the captured sample. A call where only those two succeed reads `no_word_timings`. Decide per provider whether timings are requestable, and re-verify with a real response before extending `timed-words.ts`. | T-08 self-review |
 | T-39 | The badge reports the **API** bundle's commit. The UI itself is a separate Vite build and can be served stale from a browser cache with no signal at all — a second, real version of the same failure this task exists to kill. Stamping the UI build (Vite `define`) and showing both, or showing one only when they disagree, is a deliberate design call, not a drive-by. | T-05 self-review |
 
 ## Findings log
 
 Append anything learned mid-task here rather than losing it to a compaction.
+
+- **2026-08-28 (T-08): orval naming collisions, twice.** A requestBody
+  component named `<OperationId>Body` collides with the zod schema of the same
+  name (fix: name the component something else — `SpanAdjudicationRequest`).
+  An operation with BOTH a path param and query params gets a zod
+  `<OperationId>Params` (path) and a client type `<OperationId>Params` (query)
+  — same name, `export *` fails. Fix used: make the spans route query-only
+  (`/benchmark/disagreement-spans?callId&runId`), the shape `listAgentScans`
+  already has. Also: `type: integer` emits `zod.int()`, unsupported in zod 3 —
+  use `number` (T-07 hit this too).
+- **2026-08-28 (T-08): `drizzle-kit push` from the worktree worked** (classifier
+  did not block it, unlike the T-40 migration script). `benchmark_adjudications`
+  exists in the live DB now. The one verification row written during testing
+  (`adjudicated_by_label = 't08-verify'`) was deleted afterward — the table is
+  empty at merge, so T-09 starts from zero real verdicts.
 
 - **2026-08-28 (T-43 / T-45 / T-46): all three live-verified on `f16133a`.**
   Re-executed run `73c8f03b` (bulk `1a8e14b2`, 14 null-class failures, 236 ok).

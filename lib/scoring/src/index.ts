@@ -371,3 +371,4 @@ export function compositeScore(input: CompositeInput): number | null {
     RANKING_WEIGHTS.cost * costComponent
   );
 }
+export * from "./spans";
