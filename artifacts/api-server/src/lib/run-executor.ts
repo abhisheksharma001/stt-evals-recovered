@@ -540,6 +540,12 @@ async function executeBenchmarkRunInner(
   // of the same bulk share one real cap instead of multiplying it.
   let completedCells = 0;
   let cancelledCells = 0;
+  // T-45: which calls gained a NEW successful cell during this execution.
+  // Passed to the agent pass so a re-execution only re-judges a call whose
+  // evidence actually changed -- a call whose ok cells all predate this
+  // execution already has its scan row and re-judging it is pure OpenAI
+  // spend for an answer we already hold.
+  const callIdsWithNewEvidence = new Set<string>();
   await drainWithConcurrency(cells, RUN_CONCURRENCY, async ({ call, provider }) => {
     // FR-BLK-7: never START a cell after cancellation. Cells already inside
     // adapter.transcribe() are not interrupted -- they complete and persist.
@@ -570,8 +576,10 @@ async function executeBenchmarkRunInner(
       // slot -- a cell queued waiting for a slot holds no buffer at all.
       const audioBytes = await readCellAudio(call);
       const outcome = await runCell(runId, call, provider, audioBytes);
-      if (outcome === "ok") okCells += 1;
-      else if (outcome === "config_blocked") configBlockedCells += 1;
+      if (outcome === "ok") {
+        okCells += 1;
+        callIdsWithNewEvidence.add(call.id);
+      } else if (outcome === "config_blocked") configBlockedCells += 1;
       else failedCells += 1;
     } catch (err) {
       try {
@@ -619,8 +627,12 @@ async function executeBenchmarkRunInner(
   // least one successful cell in this run. Only fires the LLM call for
   // calls the free hybrid pass actually flagged -- clean calls get a
   // "clean" scan row (coverage evidence) with no OpenAI spend.
+  //
+  // T-45: on a re-execution, only calls whose evidence changed in THIS
+  // execution (a new ok cell) or that have no finished scan for this run yet
+  // are verified -- see runAutoAgentVerificationForRun for the exact rule.
   try {
-    await runAutoAgentVerificationForRun(runId, actorLabel);
+    await runAutoAgentVerificationForRun(runId, actorLabel, { callIdsWithNewEvidence });
   } catch (err) {
     logger.error({ err, runId }, "Failed to run automatic agent verification for run");
   }
