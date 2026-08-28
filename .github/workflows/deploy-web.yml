@@ -43,9 +43,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Must match the pnpm major that wrote pnpm-lock.yaml (lockfileVersion
+      # 9.0 written by pnpm 11): a mismatch fails `--frozen-lockfile` before
+      # any step runs (T-53).
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11
 
       - uses: actions/setup-node@v4
         with:

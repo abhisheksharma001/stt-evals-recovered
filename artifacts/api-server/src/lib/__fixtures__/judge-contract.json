@@ -1,0 +1,520 @@
+{
+  "version": 1,
+  "recordedAt": "2026-08-28T21:27:49.432Z",
+  "model": "gpt-4o",
+  "promptHash": "1b17b632f773b0164c56161ba580df4c6293fcac584430b4e46f2bc57a84e2b2",
+  "costMicrocents": 222115,
+  "adjudications": [],
+  "scans": [
+    {
+      "scanId": "4d339313-bc41-4be2-8179-9c1219098be1",
+      "callId": "001bc472-d32a-453f-9b9d-7ecbf803c45f",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "deepgram-nova-3",
+      "judgeProviderId": "deepgram-nova-3",
+      "reasoningChars": 748,
+      "promptTokens": 1007,
+      "completionTokens": 170
+    },
+    {
+      "scanId": "93c99f6c-54e2-4a07-a439-570b5d3f1878",
+      "callId": "0cba2282-273f-4420-8239-e96d6037b36d",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "openai-gpt-4o-transcribe",
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 806,
+      "promptTokens": 4198,
+      "completionTokens": 167
+    },
+    {
+      "scanId": "c34969c1-4549-4387-9a68-51696b4cee5a",
+      "callId": "0e6285b8-dfe9-418e-9a35-e4696841fbf2",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "deepgram-nova-3",
+      "judgeProviderId": "deepgram-nova-3",
+      "reasoningChars": 898,
+      "promptTokens": 754,
+      "completionTokens": 193
+    },
+    {
+      "scanId": "9ce0c61b-2a5e-491d-b342-053d3b8e824b",
+      "callId": "0f5afd37-7471-4bc4-945e-1b4e2ec68fb5",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 898,
+      "promptTokens": 1484,
+      "completionTokens": 201
+    },
+    {
+      "scanId": "d7a718c3-b51b-4969-b2d7-d928f63bb404",
+      "callId": "17e63b1e-3e4b-49e5-a637-b2c9a1067f76",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "openai-gpt-4o-transcribe",
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 722,
+      "promptTokens": 950,
+      "completionTokens": 172
+    },
+    {
+      "scanId": "f10a5201-033b-4927-a3b3-07921b8bd082",
+      "callId": "204700da-8ae0-422b-b005-ae66b48f417e",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "assemblyai-universal",
+        "openai-gpt-4o-transcribe",
+        "gladia-solaria",
+        "deepgram-nova-3",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "gladia-solaria",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 838,
+      "promptTokens": 1274,
+      "completionTokens": 178
+    },
+    {
+      "scanId": "c2b981f0-0036-4027-a85e-f887cec1dec8",
+      "callId": "20e27685-7101-4353-8500-af6f2b8245ec",
+      "runId": "84a68df0-87b1-4dea-835e-637f132802a4",
+      "candidateProviderIds": [
+        "deepgram-nova-3",
+        "cartesia-ink-whisper",
+        "openai-gpt-4o-transcribe",
+        "gladia-solaria",
+        "assemblyai-universal"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 637,
+      "promptTokens": 1384,
+      "completionTokens": 155
+    },
+    {
+      "scanId": "4b172f93-fe2c-4665-99a5-8fc015a7dc71",
+      "callId": "21cc8771-77a3-471a-8195-59cdb2708493",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "deepgram-nova-3",
+      "reasoningChars": 777,
+      "promptTokens": 3527,
+      "completionTokens": 156
+    },
+    {
+      "scanId": "6d6f77b3-0627-4726-8283-f0a60f37e20f",
+      "callId": "2b986f0f-759a-458e-ae10-0609ce9bf657",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 967,
+      "promptTokens": 1250,
+      "completionTokens": 200
+    },
+    {
+      "scanId": "0aa2cbd0-0302-45ac-a2c7-5dbbeb91d8ce",
+      "callId": "2bc0a9e4-4fec-408b-a830-3c21b9259d1c",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "assemblyai-universal",
+        "gladia-solaria",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "gladia-solaria",
+      "judgeProviderId": "gladia-solaria",
+      "reasoningChars": 860,
+      "promptTokens": 2932,
+      "completionTokens": 188
+    },
+    {
+      "scanId": "2db9c49c-1e4b-435a-b7cf-638f45f29c7b",
+      "callId": "2bc2acd2-eac8-4e17-92f5-b76094ad079e",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "openai-gpt-4o-transcribe",
+        "assemblyai-universal",
+        "gladia-solaria",
+        "cartesia-ink-whisper",
+        "deepgram-nova-3"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "gladia-solaria",
+      "reasoningChars": 905,
+      "promptTokens": 1991,
+      "completionTokens": 203
+    },
+    {
+      "scanId": "e0bef22d-b577-4e3c-bb6a-eda848d279b8",
+      "callId": "2f4ac0a6-edae-4720-a599-64c59a150d95",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 849,
+      "promptTokens": 1882,
+      "completionTokens": 185
+    },
+    {
+      "scanId": "47bb3516-bc12-4c43-935e-8bd9c7326e03",
+      "callId": "301f13a6-b1ed-44db-84ae-a1891736ee02",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 1132,
+      "promptTokens": 2393,
+      "completionTokens": 251
+    },
+    {
+      "scanId": "7fdd29db-3372-42b7-9dcc-affbc778d82e",
+      "callId": "310a2021-7757-42fa-ae7d-5b8a6552afb4",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 812,
+      "promptTokens": 937,
+      "completionTokens": 196
+    },
+    {
+      "scanId": "aa272bcd-b380-4b15-9d27-d25aec0f457e",
+      "callId": "3559ea45-50e5-4543-b439-3f8eff61b4c0",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "openai-gpt-4o-transcribe",
+        "gladia-solaria",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 976,
+      "promptTokens": 1351,
+      "completionTokens": 194
+    },
+    {
+      "scanId": "82827495-62c5-4fc3-ac0f-149b013a799a",
+      "callId": "37229fe1-fce7-491f-a66e-380fbc3b9dc3",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 808,
+      "promptTokens": 1931,
+      "completionTokens": 190
+    },
+    {
+      "scanId": "788ec22b-32fe-4c55-b258-224dd7552514",
+      "callId": "39bb11ff-78f4-4f5a-b6c1-d0aac9481270",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "deepgram-nova-3",
+        "gladia-solaria",
+        "assemblyai-universal",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 1112,
+      "promptTokens": 4955,
+      "completionTokens": 234
+    },
+    {
+      "scanId": "49328aeb-6dc7-46bb-9b2b-60ae63e663da",
+      "callId": "41c00d4e-30a6-47f0-8b55-d3c823fbe3e0",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "openai-gpt-4o-transcribe",
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "gladia-solaria",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 979,
+      "promptTokens": 3385,
+      "completionTokens": 225
+    },
+    {
+      "scanId": "0c06afb8-3bbc-45be-bf73-68a06c22e8c6",
+      "callId": "46fc8733-b73b-45b1-98b4-ee150f94f40f",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "deepgram-nova-3",
+        "gladia-solaria",
+        "openai-gpt-4o-transcribe",
+        "assemblyai-universal",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 951,
+      "promptTokens": 958,
+      "completionTokens": 220
+    },
+    {
+      "scanId": "44fbcd73-77ad-4dfe-a500-717bbbc0e883",
+      "callId": "51033777-9f82-41da-ac72-3dede27354c6",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 1074,
+      "promptTokens": 2065,
+      "completionTokens": 239
+    },
+    {
+      "scanId": "6ddd8373-798e-47af-8826-fd76a8f09711",
+      "callId": "51ede59c-4b53-4e0b-bb3e-72a338104824",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 774,
+      "promptTokens": 1221,
+      "completionTokens": 165
+    },
+    {
+      "scanId": "ca8035c2-1925-4664-a579-dfa7bc3b9841",
+      "callId": "5abbe66e-dcc5-40b3-954d-a0134648eec3",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "openai-gpt-4o-transcribe",
+        "gladia-solaria",
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "deepgram-nova-3",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 1035,
+      "promptTokens": 6111,
+      "completionTokens": 226
+    },
+    {
+      "scanId": "4f7df928-13d8-483d-84ab-4794311e16bc",
+      "callId": "5c8febd0-2b32-4ecc-a08c-7f6ce4bdb3b3",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "openai-gpt-4o-transcribe",
+        "deepgram-nova-3",
+        "gladia-solaria",
+        "assemblyai-universal",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "assemblyai-universal",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 985,
+      "promptTokens": 1267,
+      "completionTokens": 214
+    },
+    {
+      "scanId": "dc42a877-ecf2-456e-96da-91bd7e4db937",
+      "callId": "64d8f463-f55e-4d06-a867-9b7290e85d9b",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 1124,
+      "promptTokens": 2064,
+      "completionTokens": 255
+    },
+    {
+      "scanId": "1a31f470-b78e-4127-881c-2e4b09742c3a",
+      "callId": "670258a8-3c9d-40db-90e5-fdb2dd5a338a",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 991,
+      "promptTokens": 2602,
+      "completionTokens": 234
+    },
+    {
+      "scanId": "a6c3a8a4-1342-4066-9bbf-c267252b2b2e",
+      "callId": "68b6ec81-652a-4c51-a46b-b05ab911e754",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "assemblyai-universal",
+      "reasoningChars": 716,
+      "promptTokens": 1463,
+      "completionTokens": 158
+    },
+    {
+      "scanId": "99e7ed5f-4f82-4ab9-b254-bef926d9fe36",
+      "callId": "6b0e7900-b283-459b-827b-fedd8449f608",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "deepgram-nova-3",
+        "gladia-solaria",
+        "openai-gpt-4o-transcribe",
+        "assemblyai-universal",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 872,
+      "promptTokens": 828,
+      "completionTokens": 201
+    },
+    {
+      "scanId": "50fa5f64-0fa4-4fce-8dd6-4b04bebbc169",
+      "callId": "738317b4-cfe0-4507-a610-bcfc6c78fe6d",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "deepgram-nova-3",
+        "assemblyai-universal",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 740,
+      "promptTokens": 3764,
+      "completionTokens": 163
+    },
+    {
+      "scanId": "47ddeaf1-32fb-4320-9724-80611f8ce54b",
+      "callId": "76b0031c-0491-45e8-8320-d84226aa91ff",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 890,
+      "promptTokens": 3158,
+      "completionTokens": 190
+    },
+    {
+      "scanId": "e449e968-567c-4019-946a-13e79577bc9e",
+      "callId": "774ce191-ad14-42f8-8a7c-1c9c9344c7bc",
+      "runId": "4ba80a99-531f-4ce3-83a8-d8cc67e7a62d",
+      "candidateProviderIds": [
+        "gladia-solaria",
+        "assemblyai-universal",
+        "deepgram-nova-3",
+        "openai-gpt-4o-transcribe",
+        "cartesia-ink-whisper"
+      ],
+      "storedPickProviderId": "openai-gpt-4o-transcribe",
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 875,
+      "promptTokens": 2069,
+      "completionTokens": 199
+    }
+  ]
+}
