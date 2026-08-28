@@ -788,6 +788,25 @@ export interface BulkProgress {
   cellsSkippedPendingReview: number;
 }
 
+export type BulkFailureGroupFailureClass = typeof BulkFailureGroupFailureClass[keyof typeof BulkFailureGroupFailureClass] | null;
+
+
+export const BulkFailureGroupFailureClass = {
+  retention_expired: 'retention_expired',
+  audio_url_forbidden: 'audio_url_forbidden',
+  provider_timeout: 'provider_timeout',
+  provider_5xx: 'provider_5xx',
+  rate_limited: 'rate_limited',
+  audio_decode: 'audio_decode',
+  unknown: 'unknown',
+} as const;
+
+export interface BulkFailureGroup {
+  failureClass: BulkFailureGroupFailureClass;
+  cells: number;
+  retryable: boolean;
+}
+
 export interface BulkShardRun {
   id: string;
   shardIndex: number;
@@ -811,6 +830,7 @@ export type BulkDetail = Bulk & {
   progress: BulkProgress;
   runs: BulkShardRun[];
   actualCost: BulkActualCost;
+  failureBreakdown: BulkFailureGroup[];
 };
 
 export interface BulkTemplate {

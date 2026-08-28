@@ -27,6 +27,8 @@ export * from './benchmarkRunInput';
 export * from './bulk';
 export * from './bulkActualCost';
 export * from './bulkDetail';
+export * from './bulkFailureGroup';
+export * from './bulkFailureGroupFailureClass';
 export * from './bulkInput';
 export * from './bulkManifest';
 export * from './bulkManifestRunsItem';
