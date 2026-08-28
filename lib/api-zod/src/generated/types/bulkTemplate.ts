@@ -15,6 +15,8 @@ export interface BulkTemplate {
   shardSize: number;
   minDurationSeconds: number;
   /** @nullable */
+  maxDurationSeconds: number | null;
+  /** @nullable */
   createdByLabel?: string | null;
   createdAt: Date;
   updatedAt?: Date;

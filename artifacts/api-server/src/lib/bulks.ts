@@ -96,9 +96,42 @@ export type ResolvedCriteriaCallIds = {
   excludedRetentionExpiredCount: number;
 };
 
+// T-10: default duration band. Below 60s a call is mostly greeting and
+// hang-up; above 120s the gold-review cost per call climbs fast. Both are
+// overridable per bulk; `maxDurationSeconds: null` means no cap.
+export const DEFAULT_MIN_DURATION_SECONDS = 60;
+export const DEFAULT_MAX_DURATION_SECONDS = 120;
+
+export class BulkDurationBandError extends Error {}
+
+/** Resolve the (min, max) band from explicit input, criteria, then defaults. */
+export function resolveDurationBand(input: {
+  minDurationSeconds?: number;
+  maxDurationSeconds?: number | null;
+  criteria: BulkSelectionCriteria;
+}): { min: number; max: number | null } {
+  const min =
+    input.minDurationSeconds ??
+    input.criteria.minDurationSeconds ??
+    DEFAULT_MIN_DURATION_SECONDS;
+  const max =
+    input.maxDurationSeconds !== undefined
+      ? input.maxDurationSeconds
+      : input.criteria.maxDurationSeconds !== undefined
+        ? input.criteria.maxDurationSeconds
+        : DEFAULT_MAX_DURATION_SECONDS;
+  if (max !== null && max < min) {
+    throw new BulkDurationBandError(
+      `maxDurationSeconds (${max}) must be >= minDurationSeconds (${min})`,
+    );
+  }
+  return { min, max };
+}
+
 export async function resolveCriteriaCallIds(
   criteria: BulkSelectionCriteria,
   minDurationSeconds: number,
+  maxDurationSeconds: number | null,
   now: Date = new Date(),
 ): Promise<ResolvedCriteriaCallIds> {
   // Explicit-picks-only criteria select exactly those calls. The filter query
@@ -134,6 +167,10 @@ export async function resolveCriteriaCallIds(
       // bulk by default -- they inflate call counts with near-meaningless WER
       // data and eat the gold budget.
       gte(benchmarkCallsTable.durationSeconds, minDurationSeconds),
+      // T-10: upper bound of the band; null = no cap.
+      maxDurationSeconds !== null
+        ? lte(benchmarkCallsTable.durationSeconds, maxDurationSeconds)
+        : undefined,
     ].filter((c) => c !== undefined);
 
     const matched = await db
@@ -260,12 +297,12 @@ export async function createBulkFromCriteria(input: {
   providerIds: string[];
   shardSize?: number;
   minDurationSeconds?: number;
+  maxDurationSeconds?: number | null;
   confirm?: boolean;
   actorLabel: string;
 }): Promise<CreateBulkResult> {
   const now = new Date();
-  const minDuration =
-    input.minDurationSeconds ?? input.criteria.minDurationSeconds ?? 5;
+  const { min: minDuration, max: maxDuration } = resolveDurationBand(input);
   const shardSize = input.shardSize ?? 50;
 
   const providers = await db
@@ -278,7 +315,7 @@ export async function createBulkFromCriteria(input: {
     );
   }
 
-  const { callIds, excludedRetentionExpiredCount } = await resolveCriteriaCallIds(input.criteria, minDuration, now);
+  const { callIds, excludedRetentionExpiredCount } = await resolveCriteriaCallIds(input.criteria, minDuration, maxDuration, now);
   if (callIds.length === 0) {
     throw new BulkSelectionEmptyError(
       excludedRetentionExpiredCount > 0
@@ -296,6 +333,7 @@ export async function createBulkFromCriteria(input: {
     startedAtFrom: from?.toISOString(),
     startedAtTo: to?.toISOString(),
     minDurationSeconds: minDuration,
+    maxDurationSeconds: maxDuration,
     resolvedCallIds: callIds,
     resolvedAt: now.toISOString(),
   };
@@ -366,6 +404,7 @@ export async function createBulkFromCriteria(input: {
           providerIds: input.providerIds,
           shardSize,
           minDurationSeconds: minDuration,
+          maxDurationSeconds: maxDuration,
           estimatedCostCents,
           estimatedSttCostCents,
           estimatedAgentCostCents,

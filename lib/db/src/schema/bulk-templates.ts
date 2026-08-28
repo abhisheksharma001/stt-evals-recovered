@@ -27,7 +27,8 @@ export const bulkTemplatesTable = pgTable(
       .notNull(),
     providerIds: text("provider_ids").array().notNull(),
     shardSize: integer("shard_size").notNull().default(50),
-    minDurationSeconds: integer("min_duration_seconds").notNull().default(5),
+    minDurationSeconds: integer("min_duration_seconds").notNull().default(60),
+    maxDurationSeconds: integer("max_duration_seconds"),
     createdByLabel: text("created_by_label"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

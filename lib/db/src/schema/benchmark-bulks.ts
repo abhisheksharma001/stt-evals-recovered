@@ -26,6 +26,8 @@ export type BulkSelectionCriteria = {
   // Rolling window, templates only -- resolved against launch time.
   lastNDays?: number;
   minDurationSeconds?: number;
+  // T-10: upper bound of the duration band. Absent/null = no cap.
+  maxDurationSeconds?: number | null;
   // Explicit corpus picks; merged with filter matches.
   callIds?: string[];
   // Frozen resolution, set on bulks only, at creation time.
@@ -59,7 +61,10 @@ export const benchmarkBulksTable = pgTable(
       .notNull(),
     providerIds: text("provider_ids").array().notNull(),
     shardSize: integer("shard_size").notNull().default(50),
-    minDurationSeconds: integer("min_duration_seconds").notNull().default(5),
+    minDurationSeconds: integer("min_duration_seconds").notNull().default(60),
+    // T-10: nullable, no DB default -- bulks created before the band existed
+    // stay honest as "no cap" rather than being backfilled with 120.
+    maxDurationSeconds: integer("max_duration_seconds"),
     // 2026-08-27, per Abhishek ("show cost of each run and the openai agent
     // cost and stt cost separately, estimated"): estimatedCostCents kept as
     // the historical STT-only total (nothing reading it today breaks) --

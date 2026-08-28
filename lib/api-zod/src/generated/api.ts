@@ -772,6 +772,8 @@ export const ListBulksQueryParams = zod.object({
 
 export const listBulksResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const listBulksResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const ListBulksResponseItem = zod.object({
@@ -786,6 +788,7 @@ export const ListBulksResponseItem = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(listBulksResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(listBulksResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -793,6 +796,7 @@ export const ListBulksResponseItem = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),
@@ -812,10 +816,14 @@ export const ListBulksResponse = zod.array(ListBulksResponseItem)
 
 export const createBulkBodyCriteriaMinDurationSecondsMin = 0;
 
+export const createBulkBodyCriteriaMaxDurationSecondsMin = 0;
+
 
 export const createBulkBodyShardSizeMax = 500;
 
 export const createBulkBodyMinDurationSecondsMin = 0;
+
+export const createBulkBodyMaxDurationSecondsMin = 0;
 
 
 
@@ -829,6 +837,7 @@ export const CreateBulkBody = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkBodyCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(createBulkBodyCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -836,11 +845,14 @@ export const CreateBulkBody = zod.object({
   "providerIds": zod.array(zod.string()).min(1),
   "shardSize": zod.number().min(1).max(createBulkBodyShardSizeMax).optional(),
   "minDurationSeconds": zod.number().min(createBulkBodyMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(createBulkBodyMaxDurationSecondsMin).nullish(),
   "confirm": zod.boolean().optional()
 })
 
 
 export const createBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
+
+export const createBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 
 
@@ -856,6 +868,7 @@ export const CreateBulkResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(createBulkResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -863,6 +876,7 @@ export const CreateBulkResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),
@@ -884,6 +898,8 @@ export const GetBulkParams = zod.object({
 
 export const getBulkResponseOneSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const getBulkResponseOneSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const GetBulkResponse = zod.object({
@@ -898,6 +914,7 @@ export const GetBulkResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(getBulkResponseOneSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(getBulkResponseOneSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -905,6 +922,7 @@ export const GetBulkResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),
@@ -958,6 +976,8 @@ export const LaunchBulkParams = zod.object({
 
 export const launchBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const launchBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const LaunchBulkResponse = zod.object({
@@ -972,6 +992,7 @@ export const LaunchBulkResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(launchBulkResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(launchBulkResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -979,6 +1000,7 @@ export const LaunchBulkResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),
@@ -1000,6 +1022,8 @@ export const RetryBulkFailedParams = zod.object({
 
 export const retryBulkFailedResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const retryBulkFailedResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const RetryBulkFailedResponse = zod.object({
@@ -1014,6 +1038,7 @@ export const RetryBulkFailedResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(retryBulkFailedResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(retryBulkFailedResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1021,6 +1046,7 @@ export const RetryBulkFailedResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),
@@ -1042,6 +1068,8 @@ export const CancelBulkParams = zod.object({
 
 export const cancelBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const cancelBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const CancelBulkResponse = zod.object({
@@ -1056,6 +1084,7 @@ export const CancelBulkResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(cancelBulkResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(cancelBulkResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1063,6 +1092,7 @@ export const CancelBulkResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),
@@ -1084,6 +1114,8 @@ export const GetBulkManifestParams = zod.object({
 
 export const getBulkManifestResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const getBulkManifestResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const GetBulkManifestResponse = zod.object({
@@ -1099,6 +1131,7 @@ export const GetBulkManifestResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(getBulkManifestResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(getBulkManifestResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1135,6 +1168,8 @@ export const GetBulkManifestResponse = zod.object({
 
 export const listBulkTemplatesResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const listBulkTemplatesResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const ListBulkTemplatesResponseItem = zod.object({
@@ -1148,6 +1183,7 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1155,6 +1191,7 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "createdByLabel": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date().optional()
@@ -1169,10 +1206,14 @@ export const ListBulkTemplatesResponse = zod.array(ListBulkTemplatesResponseItem
 
 export const createBulkTemplateBodyCriteriaMinDurationSecondsMin = 0;
 
+export const createBulkTemplateBodyCriteriaMaxDurationSecondsMin = 0;
+
 
 export const createBulkTemplateBodyShardSizeMax = 500;
 
 export const createBulkTemplateBodyMinDurationSecondsMin = 0;
+
+export const createBulkTemplateBodyMaxDurationSecondsMin = 0;
 
 
 
@@ -1186,17 +1227,21 @@ export const CreateBulkTemplateBody = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkTemplateBodyCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(createBulkTemplateBodyCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
 }).describe('On a template this is unfrozen (lastNDays re-resolves per launch); on a bulk it is frozen at creation, with resolvedCallIds pinning the exact corpus slice (FR-BLK-1 vs FR-BLK-9).'),
   "providerIds": zod.array(zod.string()).min(1),
   "shardSize": zod.number().min(1).max(createBulkTemplateBodyShardSizeMax).optional(),
-  "minDurationSeconds": zod.number().min(createBulkTemplateBodyMinDurationSecondsMin).optional()
+  "minDurationSeconds": zod.number().min(createBulkTemplateBodyMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(createBulkTemplateBodyMaxDurationSecondsMin).nullish()
 })
 
 
 export const createBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin = 0;
+
+export const createBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 
 
@@ -1211,6 +1256,7 @@ export const CreateBulkTemplateResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(createBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(createBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1218,6 +1264,7 @@ export const CreateBulkTemplateResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "createdByLabel": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date().optional()
@@ -1242,6 +1289,8 @@ export const LaunchBulkTemplateBody = zod.object({
 
 export const launchBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
+export const launchBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
 
 
 export const LaunchBulkTemplateResponse = zod.object({
@@ -1256,6 +1305,7 @@ export const LaunchBulkTemplateResponse = zod.object({
   "startedAtTo": zod.coerce.date().optional(),
   "lastNDays": zod.number().min(1).optional(),
   "minDurationSeconds": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin).nullish(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1263,6 +1313,7 @@ export const LaunchBulkTemplateResponse = zod.object({
   "providerIds": zod.array(zod.string()),
   "shardSize": zod.number(),
   "minDurationSeconds": zod.number(),
+  "maxDurationSeconds": zod.number().nullable(),
   "estimatedCostCents": zod.number().nullish(),
   "estimatedSttCostCents": zod.number().nullish(),
   "estimatedAgentCostCents": zod.number().nullish(),

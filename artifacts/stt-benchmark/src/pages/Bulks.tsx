@@ -79,6 +79,8 @@ type CriteriaDraft = {
   accountLabel: string
   lastNDays: string
   minDurationSeconds: string
+  // T-10: empty string = no cap.
+  maxDurationSeconds: string
 }
 
 type Eligibility = {
@@ -94,6 +96,7 @@ function useCriteriaEligibility(criteria: CriteriaDraft): Eligibility {
   return React.useMemo(() => {
     const all = calls ?? []
     const minDuration = Number.parseInt(criteria.minDurationSeconds, 10) || 0
+    const maxDuration = parseMaxDuration(criteria.maxDurationSeconds)
     const days = Number.parseInt(criteria.lastNDays, 10)
     const from =
       Number.isFinite(days) && days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : undefined
@@ -102,6 +105,7 @@ function useCriteriaEligibility(criteria: CriteriaDraft): Eligibility {
       if (criteria.assistantIds.length > 0 && !criteria.assistantIds.includes(c.sourceAssistantId ?? "")) return false
       if (criteria.accountLabel && c.sourceAccountLabel !== criteria.accountLabel) return false
       if ((c.durationSeconds ?? 0) < minDuration) return false
+      if (maxDuration !== null && (c.durationSeconds ?? 0) > maxDuration) return false
       return true
     }
     const matchesDate = (c: (typeof all)[number]) => {
@@ -160,7 +164,9 @@ function criteriaSummary(c: BulkSelectionCriteria): string {
   if (c.accountLabel) parts.push(c.accountLabel)
   if (c.callIds?.length && !c.resolvedCallIds) parts.push(`${c.callIds.length} picked`)
   if (c.resolvedCallIds) parts.push(`${c.resolvedCallIds.length} calls frozen`)
-  if (c.minDurationSeconds) parts.push(`≥${c.minDurationSeconds}s`)
+  if (c.minDurationSeconds || c.maxDurationSeconds) {
+    parts.push(c.maxDurationSeconds ? `${c.minDurationSeconds ?? 0}–${c.maxDurationSeconds}s` : `≥${c.minDurationSeconds}s`)
+  }
   return parts.join(" · ") || "whole corpus"
 }
 
@@ -268,8 +274,8 @@ function CriteriaFields({
   setShardSize,
 }: {
   providers: Provider[] | undefined
-  criteria: { assistantIds: string[]; accountLabel: string; lastNDays: string; minDurationSeconds: string }
-  setCriteria: (c: { assistantIds: string[]; accountLabel: string; lastNDays: string; minDurationSeconds: string }) => void
+  criteria: CriteriaDraft
+  setCriteria: (c: CriteriaDraft) => void
   providerIds: string[]
   setProviderIds: (ids: string[]) => void
   shardSize: string
@@ -301,6 +307,15 @@ function CriteriaFields({
             min={0}
             value={criteria.minDurationSeconds}
             onChange={(e) => setCriteria({ ...criteria, minDurationSeconds: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Max call duration (s, empty = no cap)</Label>
+          <Input
+            type="number"
+            min={0}
+            value={criteria.maxDurationSeconds}
+            onChange={(e) => setCriteria({ ...criteria, maxDurationSeconds: e.target.value })}
           />
         </div>
         <div className="space-y-2">
@@ -341,7 +356,13 @@ function CriteriaFields({
   )
 }
 
-function buildCriteria(input: { assistantIds: string[]; accountLabel: string; lastNDays: string; minDurationSeconds: string }): BulkSelectionCriteria {
+/** T-10: empty/invalid max = no cap (null); the server default only applies when the field is omitted. */
+function parseMaxDuration(raw: string): number | null {
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function buildCriteria(input: CriteriaDraft): BulkSelectionCriteria {
   const criteria: BulkSelectionCriteria = {}
   if (input.assistantIds.length > 0) criteria.assistantIds = input.assistantIds
   if (input.accountLabel) criteria.accountLabel = input.accountLabel
@@ -349,13 +370,14 @@ function buildCriteria(input: { assistantIds: string[]; accountLabel: string; la
   if (Number.isFinite(days) && days > 0) criteria.lastNDays = days
   const minDuration = Number.parseInt(input.minDurationSeconds, 10)
   if (Number.isFinite(minDuration) && minDuration > 0) criteria.minDurationSeconds = minDuration
+  criteria.maxDurationSeconds = parseMaxDuration(input.maxDurationSeconds)
   return criteria
 }
 
 function CreateBulkDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState({ assistantIds: [] as string[], accountLabel: "", lastNDays: "", minDurationSeconds: "5" })
+  const [criteria, setCriteria] = React.useState<CriteriaDraft>({ assistantIds: [], accountLabel: "", lastNDays: "", minDurationSeconds: "60", maxDurationSeconds: "120" })
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
@@ -393,7 +415,8 @@ function CreateBulkDialog() {
         criteria: buildCriteria(criteria),
         providerIds,
         shardSize: Number.parseInt(shardSize, 10) || 50,
-        minDurationSeconds: Number.parseInt(criteria.minDurationSeconds, 10) || 5,
+        minDurationSeconds: Number.parseInt(criteria.minDurationSeconds, 10) || 60,
+        maxDurationSeconds: parseMaxDuration(criteria.maxDurationSeconds),
       },
     })
   }
@@ -443,7 +466,7 @@ function CreateBulkDialog() {
 function CreateTemplateDialog() {
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState("")
-  const [criteria, setCriteria] = React.useState({ assistantIds: [] as string[], accountLabel: "", lastNDays: "7", minDurationSeconds: "5" })
+  const [criteria, setCriteria] = React.useState<CriteriaDraft>({ assistantIds: [], accountLabel: "", lastNDays: "7", minDurationSeconds: "60", maxDurationSeconds: "120" })
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
@@ -502,7 +525,8 @@ function CreateTemplateDialog() {
                   criteria: buildCriteria(criteria),
                   providerIds,
                   shardSize: Number.parseInt(shardSize, 10) || 50,
-                  minDurationSeconds: Number.parseInt(criteria.minDurationSeconds, 10) || 5,
+                  minDurationSeconds: Number.parseInt(criteria.minDurationSeconds, 10) || 60,
+                  maxDurationSeconds: parseMaxDuration(criteria.maxDurationSeconds),
                 },
               })
             }
