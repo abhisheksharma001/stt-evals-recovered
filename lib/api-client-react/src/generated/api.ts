@@ -34,6 +34,7 @@ import type {
   BenchmarkDashboard,
   BenchmarkRun,
   BenchmarkRunInput,
+  BenchmarkTrend,
   Bulk,
   BulkDetail,
   BulkInput,
@@ -2053,6 +2054,83 @@ export function useListBenchmarkRankings<TData = Awaited<ReturnType<typeof listB
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListBenchmarkRankingsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBenchmarkTrendUrl = () => {
+
+
+
+
+  return `/api/benchmark/trend`
+}
+
+/**
+ * @summary T-23 -- raw material for the trend strip. One summed cell per (finished bulk, client account, assistant, provider) on the T-19 basis (peer flags, normalized words, scored calls, clean calls). Totals, never rates, so any pooling downstream is exact. Free; arithmetic over stored scores.
+ */
+export const getBenchmarkTrend = async ( options?: Parameters<typeof customFetch>[1]): Promise<BenchmarkTrend> => {
+
+  return customFetch<BenchmarkTrend>(getGetBenchmarkTrendUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBenchmarkTrendQueryKey = () => {
+    return [
+    `/api/benchmark/trend`
+    ] as const;
+    }
+
+
+export const getGetBenchmarkTrendQueryOptions = <TData = Awaited<ReturnType<typeof getBenchmarkTrend>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBenchmarkTrendQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBenchmarkTrend>>> = ({ signal }) => getBenchmarkTrend({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkTrend>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBenchmarkTrendQueryResult = NonNullable<Awaited<ReturnType<typeof getBenchmarkTrend>>>
+export type GetBenchmarkTrendQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary T-23 -- raw material for the trend strip. One summed cell per (finished bulk, client account, assistant, provider) on the T-19 basis (peer flags, normalized words, scored calls, clean calls). Totals, never rates, so any pooling downstream is exact. Free; arithmetic over stored scores.
+ */
+
+export function useGetBenchmarkTrend<TData = Awaited<ReturnType<typeof getBenchmarkTrend>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBenchmarkTrendQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

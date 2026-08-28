@@ -522,6 +522,18 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/VerticalRanking"
+  /benchmark/trend:
+    get:
+      operationId: getBenchmarkTrend
+      tags: [benchmark]
+      summary: T-23 -- raw material for the trend strip. One summed cell per (finished bulk, client account, assistant, provider) on the T-19 basis (peer flags, normalized words, scored calls, clean calls). Totals, never rates, so any pooling downstream is exact. Free; arithmetic over stored scores.
+      responses:
+        "200":
+          description: Finished bulks plus their summed cells
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkTrend"
   /benchmark/plan:
     get:
       operationId: getBenchmarkPlan
@@ -1789,6 +1801,41 @@ components:
         # Pairs whose excessAgreement is at or above this are correlated:
         # read their agreement as one vote.
         correlatedExcessAgreement: { type: number }
+    BenchmarkTrend:
+      type: object
+      required: [bulks, cells]
+      properties:
+        # Bulks with status complete or partial. A running bulk is left out
+        # until it settles.
+        bulks:
+          type: array
+          items:
+            type: object
+            required: [id, name, at, status]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              # completedAt, else createdAt -- what the strip orders by.
+              at: { type: string, format: date-time }
+              status: { type: string }
+        cells:
+          type: array
+          items:
+            type: object
+            required: [bulkId, accountLabel, assistantId, providerId, providerName, peerFlags, words, callsScored, cleanCalls]
+            properties:
+              bulkId: { type: string }
+              # The client: the Vapi account label on the call. null when
+              # the call was never labelled -- shown as its own bucket,
+              # never folded into a named client.
+              accountLabel: { type: ["string", "null"] }
+              assistantId: { type: ["string", "null"] }
+              providerId: { type: string }
+              providerName: { type: string }
+              peerFlags: { type: number }
+              words: { type: number }
+              callsScored: { type: number }
+              cleanCalls: { type: number }
     BulkVerdicts:
       type: object
       required: [bulkId, providers, groups]
