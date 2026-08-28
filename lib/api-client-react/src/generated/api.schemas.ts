@@ -960,6 +960,29 @@ export interface BulkPreview {
   costThresholdCents: number;
 }
 
+export type BulkProviderCorrelationProvidersItem = {
+  id: string;
+  name: string;
+};
+
+export type BulkProviderCorrelationPairsItem = {
+  providerAId: string;
+  providerBId: string;
+  sharedCalls: number;
+  /** @nullable */
+  agreement: number | null;
+  /** @nullable */
+  excessAgreement: number | null;
+};
+
+export interface BulkProviderCorrelation {
+  bulkId: string;
+  callCount: number;
+  providers: BulkProviderCorrelationProvidersItem[];
+  pairs: BulkProviderCorrelationPairsItem[];
+  correlatedExcessAgreement: number;
+}
+
 export interface BulkProgress {
   callsTotal: number;
   callsRun: number;

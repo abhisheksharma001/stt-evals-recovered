@@ -24,6 +24,8 @@ import {
   GetBulkManifestParams,
   GetBulkManifestResponse,
   GetBulkParams,
+  GetBulkProviderCorrelationParams,
+  GetBulkProviderCorrelationResponse,
   GetBulkResponse,
   LaunchBulkParams,
   LaunchBulkResponse,
@@ -44,6 +46,7 @@ import {
 } from "@workspace/stt-providers";
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { logger } from "../lib/logger";
+import { bulkProviderCorrelation } from "../lib/provider-correlation";
 import {
   BulkDurationBandError,
   BulkNameConflictError,
@@ -491,6 +494,24 @@ router.post("/benchmark/bulks/:bulkId/cancel", async (req, res): Promise<void> =
 
 // FR-BLK-8: the bulk manifest is the composition of its shard runs' frozen
 // manifests -- replay evidence per FR-REP1, exportable as JSON.
+// T-18
+router.get("/benchmark/bulks/:bulkId/provider-correlation", async (req, res): Promise<void> => {
+  const params = GetBulkProviderCorrelationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [bulk] = await db
+    .select({ id: benchmarkBulksTable.id })
+    .from(benchmarkBulksTable)
+    .where(eq(benchmarkBulksTable.id, params.data.bulkId));
+  if (!bulk) {
+    res.status(404).json({ error: "Bulk not found" });
+    return;
+  }
+  res.json(GetBulkProviderCorrelationResponse.parse(await bulkProviderCorrelation(bulk.id)));
+});
+
 router.get("/benchmark/bulks/:bulkId/manifest", async (req, res): Promise<void> => {
   const params = GetBulkManifestParams.safeParse(req.params);
   if (!params.success) {

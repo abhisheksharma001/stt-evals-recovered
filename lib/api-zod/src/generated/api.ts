@@ -1187,6 +1187,31 @@ export const CancelBulkResponse = zod.object({
 
 
 /**
+ * @summary T-18 -- how often each pair of providers transcribed this bulk's calls the same way. Two providers that agree almost always are one witness, not two, when reading consensus. Free; text arithmetic over stored transcripts.
+ */
+export const GetBulkProviderCorrelationParams = zod.object({
+  "bulkId": zod.coerce.string()
+})
+
+export const GetBulkProviderCorrelationResponse = zod.object({
+  "bulkId": zod.string(),
+  "callCount": zod.number(),
+  "providers": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+})),
+  "pairs": zod.array(zod.object({
+  "providerAId": zod.string(),
+  "providerBId": zod.string(),
+  "sharedCalls": zod.number(),
+  "agreement": zod.number().nullable(),
+  "excessAgreement": zod.number().nullable()
+})),
+  "correlatedExcessAgreement": zod.number()
+})
+
+
+/**
  * @summary Immutable bulk manifest -- the composition of every shard run's frozen manifest (FR-BLK-8, FR-REP1 replay evidence)
  */
 export const GetBulkManifestParams = zod.object({

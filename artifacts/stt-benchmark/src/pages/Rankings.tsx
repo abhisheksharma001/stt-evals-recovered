@@ -13,6 +13,7 @@ import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Do
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
+import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -370,6 +371,10 @@ export default function Rankings() {
           </CardContent>
         </Card>
       )}
+
+      {/* T-18: how independent the providers' votes are. Sits right under
+          the cost line so it is read before the table it qualifies. */}
+      {viewMode === "bulk" && selectedBulkId && <ProviderCorrelationCard bulkId={selectedBulkId} />}
 
       {/* The ranking cards below are scored from transcripts, not from the
           agent, so an agent failure cannot move them. Say that explicitly
