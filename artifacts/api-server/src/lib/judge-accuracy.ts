@@ -30,7 +30,7 @@ import {
   db,
 } from "@workspace/db";
 import { computeJudgeAgreement, picksAgree, type DisagreementSpan, type JudgeAgreementRow } from "@workspace/scoring";
-import { judgeCandidates } from "./agent";
+import { JUDGE_MODEL, judgeCandidates } from "./agent";
 import { writeAudit } from "./audit";
 import { buildSpansForCallRun } from "./disagreement-spans";
 import { logger } from "./logger";
@@ -150,7 +150,7 @@ export async function replayPendingAdjudications(params: {
       .set({
         judgePickedProviderId: validPick,
         judgeReasoning: result.reasoning,
-        judgeModel: model ?? "gpt-4o",
+        judgeModel: model ?? JUDGE_MODEL,
         judgePromptTokens: result.promptTokens,
         judgeCompletionTokens: result.completionTokens,
         judgeCostMicrocents: result.costMicrocents,

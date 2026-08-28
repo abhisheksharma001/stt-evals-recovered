@@ -19,7 +19,7 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 // found, and picking the "most sensible" transcript is the harder call).
 // Both are easy to change in one place if the quality/cost tradeoff is wrong.
 const FLAG_MODEL = "gpt-4o-mini";
-const JUDGE_MODEL = "gpt-4o";
+export const JUDGE_MODEL = "gpt-4o";
 
 // 2026-08-27, per Abhishek ("show the openai agent cost ... separately,
 // estimated"): public per-1M-token pricing as of this writing, cents per
