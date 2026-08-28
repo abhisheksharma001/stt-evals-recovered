@@ -26,6 +26,8 @@ import {
   failureClassOf,
   getProviderAdapter,
   getProviderApiModel,
+  isFailureClass,
+  isRetryableFailureClass,
   type FailureClass,
   type ProviderTranscribeResult,
 } from "@workspace/stt-providers";
@@ -346,18 +348,71 @@ async function executeBenchmarkRunInner(
       .map((r) => `${r.providerId}::${r.callId}`),
   );
 
+  // T-43: a cell whose last attempt failed for a reason a re-run cannot
+  // change must not be attempted again. Before this, `alreadyOk` was the
+  // only skip condition, so every retry re-sent the retention-expired and
+  // 403-audio cells to a paid provider, once per retry, forever -- they
+  // fail identically every time, and every one of those attempts is billed.
+  // T-07 hid the button when a bulk had nothing BUT permanent failures, but
+  // on a mixed bulk the button is (correctly) enabled and the executor then
+  // re-billed the dead cells alongside the live ones. The refusal has to
+  // live here, at the one place that spends the money.
+  //
+  // Null class is treated as permanent too, deliberately: a null means the
+  // row predates classification (T-06) and nothing ever established that it
+  // could succeed. That matches exactly what the UI already tells the user
+  // about those cells -- one judgement, `isRetryableFailureClass`, drives
+  // the breakdown, the button and now the executor, so they cannot drift.
+  // `unknown` is NOT null and stays retryable: it was classified, the cause
+  // just is not identified yet. A stored value outside the enum entirely
+  // (physically possible -- the column has no CHECK constraint) falls on the
+  // permanent side for the same reason a null does, and the same way the
+  // bulk's failure breakdown already folds it into the unclassified bucket.
+  //
+  // Decided on the LATEST row per cell, not on any row: duplicate rows for
+  // one (provider, call) pair exist in history (see the stale-row cleanup
+  // below for how they got there), and the current state of a cell is its
+  // most recent attempt.
+  const latestByCell = new Map<string, (typeof existingResults)[number]>();
+  for (const result of existingResults) {
+    const key = `${result.providerId}::${result.callId}`;
+    const previous = latestByCell.get(key);
+    if (!previous || result.createdAt > previous.createdAt) latestByCell.set(key, result);
+  }
+  const permanentlyFailed = new Set(
+    [...latestByCell.entries()]
+      .filter(
+        ([key, result]) =>
+          result.status === "failed" &&
+          !alreadyOk.has(key) &&
+          !(isFailureClass(result.failureClass) && isRetryableFailureClass(result.failureClass)),
+      )
+      .map(([key]) => key),
+  );
+  if (permanentlyFailed.size > 0) {
+    logger.info(
+      { runId, permanentlyFailedCells: permanentlyFailed.size },
+      "T-43: skipping cells whose recorded failure a re-run cannot fix",
+    );
+  }
+
   // Found live 2026-08-25: every retry re-inserted a brand-new row for any
   // cell that was NOT "ok" (e.g. the permanently-broken bucket-403 cells --
   // see docs/backlog/good-to-have.md), instead of replacing the stale
   // attempt. A run retried twice left 3 rows for the same (provider, call)
   // pair -- /results ballooned with duplicate "failed" rows, and nothing
-  // ever cleaned them up. Every non-"ok" row here is guaranteed to be
-  // re-attempted below (alreadyOk is the only skip condition), so it's safe
-  // to clear them first -- ON DELETE CASCADE on benchmark_scores.result_id
-  // means this can never orphan a real score (only "ok" rows have scores,
-  // and "ok" rows are never in this set).
+  // ever cleaned them up. A non-"ok" row is safe to clear first *because*
+  // it is about to be re-attempted and replaced -- ON DELETE CASCADE on
+  // benchmark_scores.result_id means this can never orphan a real score
+  // (only "ok" rows have scores, and "ok" rows are never in this set).
+  //
+  // T-43: that reasoning stops holding for a permanently-failed cell, which
+  // is no longer re-attempted. Deleting its row would erase the only record
+  // that the cell was ever tried and why -- the failure would vanish from
+  // /results and from the bulk's failure breakdown instead of staying
+  // visible. So those rows are excluded here and left exactly as they are.
   const staleResultIds = existingResults
-    .filter((r) => r.status !== "ok")
+    .filter((r) => r.status !== "ok" && !permanentlyFailed.has(`${r.providerId}::${r.callId}`))
     .map((r) => r.id);
   if (staleResultIds.length > 0) {
     await db
@@ -373,12 +428,28 @@ async function executeBenchmarkRunInner(
   // skipped_pending_review remains a valid result status so historical rows
   // (and the manifest/progress code that reads them) still make sense -- it
   // is simply never written any more.
-  const runnableCalls = calls;
+  //
+  // T-43: a call every one of whose cells is already done (succeeded, or
+  // permanently failed) is dropped here as well, so the audio pre-pass
+  // below never resolves and downloads audio for a call there is nothing
+  // left to run -- that resolution is itself a Vapi request per call.
+  const isCellLive = (providerId: string, callId: string): boolean => {
+    const key = `${providerId}::${callId}`;
+    return !alreadyOk.has(key) && !permanentlyFailed.has(key);
+  };
+  const runnableCalls = calls.filter((call) =>
+    providers.some((provider) => isCellLive(provider.id, call.id)),
+  );
   const skippedCells: number = 0;
 
   let failedCells = 0;
   let configBlockedCells = 0;
   let okCells = alreadyOk.size;
+  // Not re-attempted, but they ARE failed cells of this run: counted so the
+  // run's final status and audit record stay honest about them, and so a
+  // run left with nothing but permanent failures still finalizes as
+  // "failed" rather than as an untouched "complete".
+  const permanentlyFailedCells = permanentlyFailed.size;
 
   // T-7 fix (2026-08-27, base-solidity review): this used to keep every
   // resolved call's audio Buffer in `audioByCallId` for the ENTIRE shard
@@ -444,7 +515,7 @@ async function executeBenchmarkRunInner(
       error: "Audio resolution skipped.",
       failureClass: "unknown" as FailureClass,
     };
-    for (const provider of providers.filter((p) => !alreadyOk.has(`${p.id}::${call.id}`))) {
+    for (const provider of providers.filter((p) => isCellLive(p.id, call.id))) {
       if (!status.ok) {
         await insertResult(runId, call.id, provider.id, {
           status: "failed",
@@ -583,6 +654,15 @@ async function executeBenchmarkRunInner(
   if (failedCells > 0) {
     notes.push(`${failedCells} cell(s) failed transiently and can be retried by re-executing this run.`);
   }
+  // T-43: said separately from the line above, because the line above is a
+  // promise that retrying helps -- and for these cells it does not. They
+  // were not attempted this time and will not be attempted by any future
+  // retry either; their existing rows are the record of why.
+  if (permanentlyFailedCells > 0) {
+    notes.push(
+      `${permanentlyFailedCells} cell(s) left as they were: their recorded failure cannot be fixed by re-running (expired retention, forbidden audio URL, undecodable audio, or a failure that predates classification).`,
+    );
+  }
   if (cancelledCells > 0) {
     notes.push(`${cancelledCells} cell(s) cancelled before starting (FR-BLK-7).`);
   }
@@ -596,7 +676,12 @@ async function executeBenchmarkRunInner(
   // right at the bulk level (failed only when failedCells > 0) -- this run-
   // level formula just hadn't matched it. "failed" is now reserved for
   // "something was actually attempted and none of it succeeded".
-  const attemptedCells = okCells + failedCells + configBlockedCells;
+  // T-43 includes permanentlyFailedCells here on purpose: those cells WERE
+  // attempted (on an earlier execution) and did fail. Leaving them out
+  // would let a re-execution of a run whose every remaining cell is
+  // permanently dead read attemptedCells === 0 -- "nothing was attempted,
+  // so nothing failed" -- and finalize as "complete".
+  const attemptedCells = okCells + failedCells + configBlockedCells + permanentlyFailedCells;
   const finalStatus = wasCancelled
     ? "cancelled"
     : attemptedCells === 0
@@ -628,7 +713,7 @@ async function executeBenchmarkRunInner(
     actorLabel,
     action: "execute",
     beforeState: { status: run.status },
-    afterState: { status: finalStatus, okCells, failedCells, configBlockedCells, skippedCells, cancelledCells, totalCells },
+    afterState: { status: finalStatus, okCells, failedCells, permanentlyFailedCells, configBlockedCells, skippedCells, cancelledCells, totalCells },
   });
 
   // A shard run finishing can finish its bulk (FR-BLK-4) -- recompute the
