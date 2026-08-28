@@ -13,6 +13,7 @@ import {
   type BulkSelectionCriteria,
 } from "@workspace/db";
 import { buildRunManifest } from "./manifest";
+import { isFailureClass, isRetryableFailureClass } from "@workspace/stt-providers";
 import { drainWithConcurrency, envInt, executeBenchmarkRun, requestRunCancellation } from "./run-executor";
 import { audioCachePathFor } from "./audio-cache";
 import { writeAudit } from "./audit";
@@ -509,20 +510,38 @@ export async function retryBulkFailedCells(
   const toRetry: (typeof runs)[number][] = [];
   for (const run of runs) {
     if (run.status === "cancelled") continue;
-    const remaining = await db
-      .select({ id: benchmarkProviderCallResultsTable.id })
+    // T-46: "has any failed row" used to be enough to re-execute a run. But
+    // since T-43 the executor refuses cells whose recorded failure a re-run
+    // cannot fix, so a run whose failures are ALL permanent has nothing a
+    // retry can touch -- re-executing it spent nothing at the provider but
+    // still flipped the bulk back to "running", cleared completedAt and
+    // rewrote the run's status for no reason. Apply the executor's own
+    // rule here, on the latest row per cell, so the selection and the
+    // execution agree about what "something left to retry" means.
+    const rows = await db
+      .select({
+        providerId: benchmarkProviderCallResultsTable.providerId,
+        callId: benchmarkProviderCallResultsTable.callId,
+        status: benchmarkProviderCallResultsTable.status,
+        failureClass: benchmarkProviderCallResultsTable.failureClass,
+        createdAt: benchmarkProviderCallResultsTable.createdAt,
+      })
       .from(benchmarkProviderCallResultsTable)
-      .where(
-        and(
-          eq(benchmarkProviderCallResultsTable.runId, run.id),
-          inArray(benchmarkProviderCallResultsTable.status, [
-            "failed",
-            "skipped_pending_review",
-          ]),
-        ),
-      )
-      .limit(1);
-    if (remaining.length === 0 && run.status === "complete") continue;
+      .where(eq(benchmarkProviderCallResultsTable.runId, run.id));
+    const latestByCell = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const key = `${row.providerId}::${row.callId}`;
+      const previous = latestByCell.get(key);
+      if (!previous || row.createdAt > previous.createdAt) latestByCell.set(key, row);
+    }
+    const hasRetryableWork = [...latestByCell.values()].some(
+      (row) =>
+        row.status === "skipped_pending_review" ||
+        (row.status === "failed" &&
+          isFailureClass(row.failureClass) &&
+          isRetryableFailureClass(row.failureClass)),
+    );
+    if (!hasRetryableWork && run.status === "complete") continue;
     toRetry.push(run);
   }
   const retriedRunIds = toRetry.map((r) => r.id);
