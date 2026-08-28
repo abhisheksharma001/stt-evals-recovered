@@ -4,6 +4,7 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import { classifyProviderHttpStatus } from "../failure-class";
 
 // ElevenLabs Scribe: POST /v1/speech-to-text (multipart upload).
 // Docs: https://elevenlabs.io/docs/api-reference/speech-to-text
@@ -67,6 +68,7 @@ export const elevenLabsAdapter: ProviderAdapter = {
         rawOutput,
         errorMessage: `ElevenLabs returned HTTP ${res.status}: ${(typeof rawOutput?.detail === "string" ? rawOutput.detail : rawOutput?.detail?.message) ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(res.status),
       };
     }
 
@@ -79,6 +81,7 @@ export const elevenLabsAdapter: ProviderAdapter = {
       hypothesisTranscript: parsed.transcript,
       rawOutput,
       errorMessage: parsed.errorMessage,
+      failureClass: parsed.errorMessage ? "unknown" : null,
       diarizationScore: parsed.diarizationScore,
     };
   },

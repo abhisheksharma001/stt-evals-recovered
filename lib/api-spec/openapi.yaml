@@ -1108,6 +1108,18 @@ components:
         httpStatus: { type: ["number", "null"] }
         hypothesisTranscript: { type: ["string", "null"] }
         errorMessage: { type: ["string", "null"] }
+        # T-06 (2026-08-28). Set at the throw site by the code that saw the
+        # failure -- never inferred from errorMessage. Null when the cell
+        # did not fail, and also null on rows written before this existed
+        # (those predate classification and are not back-guessed).
+        # "unknown" is a real, expected value: a failure nobody has
+        # classified yet stays visible as unclassified rather than being
+        # filed under the nearest-looking bucket.
+        failureClass:
+          oneOf:
+            - type: string
+              enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, unknown]
+            - type: "null"
         failureDiagnosis: { type: ["string", "null"], description: "2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed)." }
         failureSuggestedFix: { type: ["string", "null"] }
         rawOutputHash: { type: ["string", "null"] }

@@ -5,6 +5,11 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import {
+  ClassifiedError,
+  classifyProviderHttpStatus,
+  failureClassOf,
+} from "../failure-class";
 
 // Speechmatics batch: POST /v2/jobs (multipart `config` part plus a
 // `data_file` part with the raw audio), then poll GET /v2/jobs/{id} for
@@ -84,6 +89,7 @@ export const speechmaticsAdapter: ProviderAdapter = {
         rawOutput,
         errorMessage: `Speechmatics submit returned HTTP ${submitRes.status}: ${(rawOutput as { detail?: string } | null)?.detail ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(submitRes.status),
       };
     }
 
@@ -99,6 +105,7 @@ export const speechmaticsAdapter: ProviderAdapter = {
         rawOutput: submitBody,
         errorMessage: "Speechmatics did not return a job id",
         diarizationScore: null,
+        failureClass: "unknown",
       };
     }
 
@@ -110,7 +117,12 @@ export const speechmaticsAdapter: ProviderAdapter = {
         const body = (await statusRes.json()) as SpeechmaticsJobStatusResponse;
         if (body.job?.status === "done") return true;
         if (body.job?.status === "rejected") {
-          throw new Error("Speechmatics job was rejected");
+          // Speechmatics rejects a job when it could not use the media we
+          // sent. Classified here, holding the job status, not later.
+          throw new ClassifiedError(
+            "Speechmatics job was rejected",
+            "audio_decode",
+          );
         }
         return null;
       }, { timeoutMs: scaledPollTimeoutMs(input.audioDurationSeconds) });
@@ -141,6 +153,7 @@ export const speechmaticsAdapter: ProviderAdapter = {
         hypothesisTranscript: null,
         rawOutput: { jobId },
         errorMessage: err instanceof Error ? err.message : String(err),
+        failureClass: failureClassOf(err) ?? "unknown",
         diarizationScore: null,
       };
     }

@@ -1301,6 +1301,12 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         httpStatus: result.httpStatus,
         hypothesisTranscript: result.hypothesisTranscript,
         errorMessage: result.errorMessage,
+        // T-06: the stored class, verbatim. Note the difference from
+        // `known` above -- matchKnownFailure() reads errorMessage to build
+        // a human-readable explanation and suggested fix for display;
+        // failureClass is the machine-readable cause, set where the failure
+        // happened. The two are never derived from each other.
+        failureClass: result.failureClass,
         failureDiagnosis: result.failureDiagnosis ?? known?.diagnosis ?? null,
         failureSuggestedFix: result.failureSuggestedFix ?? known?.suggestedFix ?? null,
         rawOutputHash: result.rawOutputHash,

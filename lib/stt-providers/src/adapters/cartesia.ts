@@ -5,6 +5,7 @@ import {
   type ProviderTranscribeResult,
 } from "../types";
 import { scaledPollTimeoutMs } from "../poll";
+import type { FailureClass } from "../failure-class";
 
 // Cartesia Ink-Whisper: WebSocket streaming STT, not a batch/URL REST call
 // like the other six adapters in this package (confirmed against Cartesia's
@@ -195,6 +196,9 @@ export const cartesiaAdapter: ProviderAdapter = {
       wav = parseWavPcm(input.audioBytes);
       encoding = cartesiaEncodingForBitDepth(wav.bitsPerSample);
     } catch (err) {
+      // The bytes are in hand and they are not decodable WAV PCM. Nothing
+      // about the network or the vendor is involved, so this is the one
+      // failure this adapter can name with certainty before connecting.
       return {
         status: "failed",
         submittedAt,
@@ -205,6 +209,7 @@ export const cartesiaAdapter: ProviderAdapter = {
         rawOutput: null,
         errorMessage: err instanceof Error ? err.message : String(err),
         diarizationScore: null,
+        failureClass: "audio_decode",
       };
     }
 
@@ -225,6 +230,10 @@ export const cartesiaAdapter: ProviderAdapter = {
 
     const events: CartesiaReceivedEvent[] = [];
     let connectError: string | null = null;
+    // T-06: set at the same instant as connectError, by whichever handler
+    // actually observed the failure. Nothing downstream re-reads the
+    // sentence to work out what happened.
+    let connectFailureClass: FailureClass | null = null;
     let wsCloseCode: number | null = null;
 
     await new Promise<void>((resolve) => {
@@ -269,6 +278,7 @@ export const cartesiaAdapter: ProviderAdapter = {
 
       const connectTimer = setTimeout(() => {
         connectError = connectError ?? "Cartesia WebSocket connect timed out.";
+        connectFailureClass = connectFailureClass ?? "provider_timeout";
         try {
           ws.close();
         } catch {
@@ -281,6 +291,7 @@ export const cartesiaAdapter: ProviderAdapter = {
         connectError =
           connectError ??
           `Cartesia WebSocket timed out waiting for a final transcript (${Math.round(responseTimeoutMs / 1000)}s budget for a ${input.audioDurationSeconds ?? "unknown-length"}s call).`;
+        connectFailureClass = connectFailureClass ?? "provider_timeout";
         try {
           ws.close();
         } catch {
@@ -316,6 +327,10 @@ export const cartesiaAdapter: ProviderAdapter = {
               finalizeSent = true;
             } catch (err) {
               connectError = err instanceof Error ? err.message : String(err);
+              // Overwritten, not ??-guarded, to stay in step with the line
+              // above: if the message describes this send failure, the class
+              // has to describe the same event.
+              connectFailureClass = "unknown";
               try {
                 ws.close();
               } catch {
@@ -333,6 +348,7 @@ export const cartesiaAdapter: ProviderAdapter = {
             bytesSent += chunk.length;
           } catch (err) {
             connectError = err instanceof Error ? err.message : String(err);
+            connectFailureClass = "unknown";
             if (sendTimer) clearInterval(sendTimer);
             try {
               ws.close();
@@ -369,6 +385,7 @@ export const cartesiaAdapter: ProviderAdapter = {
 
       ws.addEventListener("error", () => {
         connectError = connectError ?? "Cartesia WebSocket connection error.";
+        connectFailureClass = connectFailureClass ?? "unknown";
       });
 
       ws.addEventListener("close", (event: CloseEvent) => {
@@ -379,6 +396,11 @@ export const cartesiaAdapter: ProviderAdapter = {
             `Cartesia WebSocket closed before all audio was streamed ` +
               `(sent ${bytesSent}/${pcm.length} bytes, close code ${wsCloseCode}). ` +
               `Likely a transient server-side drop -- safe to retry.`;
+          // The provider's server ended the stream before we finished
+          // sending. Not an HTTP status, but the same thing provider_5xx
+          // names: the vendor's side failed the request, and a retry is
+          // the right response.
+          connectFailureClass = connectFailureClass ?? "provider_5xx";
         }
         finish();
       });
@@ -391,6 +413,13 @@ export const cartesiaAdapter: ProviderAdapter = {
       connectError ??
       reduced.errorMessage ??
       (reduced.transcript ? null : "Cartesia returned no final transcript segment.");
+    // Cartesia's own `error` frames, and a clean close that simply produced
+    // no final text, are both left `unknown` on purpose: nothing observed
+    // here names a cause, and an unclassified failure has to stay visible
+    // as one rather than be filed under the nearest-looking bucket.
+    const failureClass: FailureClass | null = errorMessage
+      ? (connectFailureClass ?? "unknown")
+      : null;
 
     return {
       status: errorMessage ? "failed" : "ok",
@@ -404,6 +433,7 @@ export const cartesiaAdapter: ProviderAdapter = {
       hypothesisTranscript: reduced.transcript,
       rawOutput,
       errorMessage,
+      failureClass,
       diarizationScore: null, // not exposed by this API per current docs
     };
   },

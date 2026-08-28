@@ -1,3 +1,5 @@
+import type { FailureClass } from "./failure-class";
+
 export type PollOptions = {
   intervalMs?: number;
   timeoutMs?: number;
@@ -17,6 +19,10 @@ export type PollOptions = {
 // retrying pays twice for the same work, it doesn't get a different
 // outcome).
 export class PollTimeoutError extends Error {
+  // T-06: carried on the error itself so every adapter's catch can read the
+  // class off the throw rather than matching on this message.
+  readonly failureClass: FailureClass = "provider_timeout";
+
   constructor(timeoutMs: number) {
     super(`Polling timed out after ${timeoutMs}ms`);
     this.name = "PollTimeoutError";

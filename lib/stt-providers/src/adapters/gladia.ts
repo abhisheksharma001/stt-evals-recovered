@@ -5,6 +5,10 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
 } from "../types";
+import {
+  classifyProviderHttpStatus,
+  failureClassOf,
+} from "../failure-class";
 
 // Gladia: upload bytes first (POST /v2/upload -- returns a URL on Gladia's
 // own storage), submit a transcription job against that URL
@@ -77,6 +81,7 @@ export const gladiaAdapter: ProviderAdapter = {
         rawOutput: uploadBody,
         errorMessage: `Gladia upload returned HTTP ${uploadRes.status}: ${JSON.stringify(uploadBody) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(uploadRes.status),
       };
     }
 
@@ -101,6 +106,7 @@ export const gladiaAdapter: ProviderAdapter = {
         rawOutput,
         errorMessage: `Gladia submit returned HTTP ${submitRes.status}: ${(rawOutput as { message?: string } | null)?.message ?? JSON.stringify(rawOutput) ?? "no body"}`,
         diarizationScore: null,
+        failureClass: classifyProviderHttpStatus(submitRes.status),
       };
     }
 
@@ -115,6 +121,7 @@ export const gladiaAdapter: ProviderAdapter = {
         rawOutput: submitBody,
         errorMessage: "Gladia did not return a result_url",
         diarizationScore: null,
+        failureClass: "unknown",
       };
     }
 
@@ -137,6 +144,10 @@ export const gladiaAdapter: ProviderAdapter = {
         hypothesisTranscript: parsed.transcript,
         rawOutput: finalBody,
         errorMessage: parsed.errorMessage,
+        // Gladia reports job-level failures inside a 200 result body; no
+        // status or socket state here names a cause, so it stays visible as
+        // unclassified rather than inferred from the text.
+        failureClass: parsed.errorMessage ? "unknown" : null,
         diarizationScore: parsed.diarizationScore,
       };
     } catch (err) {
@@ -148,6 +159,7 @@ export const gladiaAdapter: ProviderAdapter = {
         hypothesisTranscript: null,
         rawOutput: submitBody,
         errorMessage: err instanceof Error ? err.message : String(err),
+        failureClass: failureClassOf(err) ?? "unknown",
         diarizationScore: null,
       };
     }

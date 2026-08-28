@@ -6,6 +6,11 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+// The failure taxonomy lives beside the code that produces it
+// (lib/stt-providers/src/failure-class.ts) so there is exactly one list.
+// That package has no runtime dependencies and is consumed as source, so
+// importing its type here costs nothing at run time.
+import type { FailureClass } from "@workspace/stt-providers";
 import { z } from "zod/v4";
 import { benchmarkCallsTable } from "./benchmark-calls";
 import { benchmarkProvidersTable } from "./benchmark-providers";
@@ -36,6 +41,16 @@ export const benchmarkProviderCallResultsTable = pgTable(
     rawOutput: text("raw_output"), // provider JSON verbatim, stringified
     rawOutputHash: text("raw_output_hash"),
     errorMessage: text("error_message"),
+    // T-06: WHY this cell failed, as decided by the code that saw the
+    // failure happen -- never inferred afterwards from errorMessage. Null
+    // on success, and also null on rows written before this column existed
+    // (those predate classification and must not be back-guessed).
+    //
+    // Stored as text rather than a Postgres enum on purpose: adding a class
+    // is then a code change and a deploy, not a migration that has to land
+    // in lockstep with it. The value set is enforced by the TypeScript
+    // union here and by the enum in openapi.yaml at the API boundary.
+    failureClass: text("failure_class").$type<FailureClass>(),
     // 2026-08-26, per Abhishek: a lot of cells were failing and the raw
     // errorMessage alone (an HTTP status, a vendor error string) wasn't
     // enough to act on. On-demand only (POST .../analyze-failure) -- an

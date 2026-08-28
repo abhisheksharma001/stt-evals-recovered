@@ -507,6 +507,7 @@ export const ListBenchmarkRunResultsResponseItem = zod.object({
   "httpStatus": zod.number().nullish(),
   "hypothesisTranscript": zod.string().nullish(),
   "errorMessage": zod.string().nullish(),
+  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'unknown']),zod.null()]).optional(),
   "failureDiagnosis": zod.string().nullish().describe('2026-08-26 -- set by POST ...\/analyze-failure; null until analyzed (or if this cell never failed).'),
   "failureSuggestedFix": zod.string().nullish(),
   "rawOutputHash": zod.string().nullish(),

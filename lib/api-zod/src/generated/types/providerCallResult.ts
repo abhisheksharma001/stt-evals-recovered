@@ -5,6 +5,7 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { ProviderCallResultFailureClass } from './providerCallResultFailureClass';
 import type { ProviderCallResultStatus } from './providerCallResultStatus';
 import type { ScoreDetail } from './scoreDetail';
 
@@ -24,6 +25,7 @@ export interface ProviderCallResult {
   hypothesisTranscript?: string | null;
   /** @nullable */
   errorMessage?: string | null;
+  failureClass?: ProviderCallResultFailureClass;
   /**
      * 2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed).
      * @nullable

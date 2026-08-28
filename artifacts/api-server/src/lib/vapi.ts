@@ -17,6 +17,7 @@
 // change, no secret in Postgres.
 
 import { createHash } from "node:crypto";
+import { classifyProviderHttpStatus, type FailureClass } from "@workspace/stt-providers";
 
 const KEY_PREFIX = "VAPI_API_KEY";
 const DEFAULT_ACCOUNT_ID = "default";
@@ -51,10 +52,34 @@ export class VapiConfigError extends Error {
 
 export class VapiRequestError extends Error {
   readonly httpStatus: number;
-  constructor(httpStatus: number, message: string) {
+  /**
+   * T-06. Assigned here, at the point the response is read, from the status
+   * and the vendor's own body -- not re-derived later from `this.message`.
+   *
+   * The retention case is the one place a *vendor's* body text is matched,
+   * and it is matched here rather than downstream for a reason: Vapi
+   * returns a plain 400 with `{"message":"Your subscription plan only
+   * covers the last 14 days of call history..."}` and no code, flag or
+   * header that distinguishes it from any other bad request. That sentence
+   * is the only signal there is, so it gets read once, at the only place
+   * that holds the real response, and the class it produces is what travels
+   * from then on.
+   */
+  readonly failureClass: FailureClass;
+
+  constructor(httpStatus: number, message: string, bodyText: string) {
     super(message);
     this.name = "VapiRequestError";
     this.httpStatus = httpStatus;
+    this.failureClass =
+      httpStatus === 400 && /retention window|only covers the last \d+ days/i.test(bodyText)
+        ? "retention_expired"
+        : // Vapi is the call source, not an STT provider, so the "provider"
+          // in this helper's name is a stretch here -- but the mapping it
+          // makes is about a vendor's HTTP status, and Vapi is a vendor:
+          // its 429 is a rate limit and its 5xx is its own server failing,
+          // which is what those classes mean and how they should be retried.
+          classifyProviderHttpStatus(httpStatus);
   }
 }
 
@@ -207,9 +232,11 @@ async function vapiGet<T>(path: string, key: string): Promise<T> {
   if (!res.ok) {
     // The body can echo request params; it never contains the key (which is
     // only ever sent as a header), so it is safe to surface to the operator.
+    const bodyText = await res.text();
     throw new VapiRequestError(
       res.status,
-      `Vapi API returned HTTP ${res.status}: ${(await res.text()).slice(0, 500)}`,
+      `Vapi API returned HTTP ${res.status}: ${bodyText.slice(0, 500)}`,
+      bodyText,
     );
   }
   return (await res.json()) as T;
@@ -390,9 +417,14 @@ export function guessVapiCallId(call: RecordingUrlSourceCall): string | null {
 }
 
 export class VapiNoRecordingError extends Error {
-  constructor(message: string) {
+  /** T-06: set by the thrower, which knows whether the recording is gone
+   *  (retention) or was never imported at all (unclassified). */
+  readonly failureClass: FailureClass;
+
+  constructor(message: string, failureClass: FailureClass = "unknown") {
     super(message);
     this.name = "VapiNoRecordingError";
+    this.failureClass = failureClass;
   }
 }
 
@@ -450,7 +482,13 @@ export async function resolveFreshRecordingUrl(
     }
   }
   if (!freshUrl) {
-    throw new VapiNoRecordingError("Vapi has no recording URL for this call anymore.");
+    // Vapi answered about the call but has no recording link for it: the
+    // audio is gone on their side, which is the same permanent outcome as
+    // an explicit retention 400.
+    throw new VapiNoRecordingError(
+      "Vapi has no recording URL for this call anymore.",
+      "retention_expired",
+    );
   }
   return freshUrl;
 }
