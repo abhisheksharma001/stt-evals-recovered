@@ -27,4 +27,4 @@ export * from "./benchmark-agent-scans";
 export * from "./benchmark-bulks";
 export * from "./bulk-templates";
 export * from "./app-settings";
-export * from "./audit-log";
+export * from "./audit-log";export * from "./benchmark-adjudications";

@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { apiBase } from "@/lib/api-base"
+import { SpanAdjudicator } from "@/components/span-adjudicator"
 
 // ---------------------------------------------------------------------------
 // 2026-08-27, per Abhishek: "for corpus and listen if we can merge both into
@@ -526,6 +527,20 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
             </div>
           )
         })}
+      </div>
+
+      {/* T-08: the audio-anchored evidence view (D.3.2). Shown for clean
+          scans too -- "clean" is the hybrid pass's threshold, and a reader
+          may still want to hear the handful of words that differed. */}
+      <div className="pt-1">
+        <h5 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Hear the disagreements
+        </h5>
+        <SpanAdjudicator
+          callId={scan.callId}
+          runId={scan.runId ?? null}
+          providerNames={Object.fromEntries(candidates.map((c) => [c.providerId, c.providerName]))}
+        />
       </div>
     </DetailSection>
   )
