@@ -68,11 +68,19 @@ catalog:
 
 autoInstallPeers: false
 
-onlyBuiltDependencies:
-  - '@swc/core'
-  - esbuild
-  - msw
-  - unrs-resolver
+# Build-script allowlist. pnpm 11 (T-26): `onlyBuiltDependencies` /
+# `ignoredBuiltDependencies` no longer exist; `allowBuilds` maps a package
+# to true (run its scripts) or false (never run them), and any package with
+# a build script that is in neither state fails `install` outright
+# (ERR_PNPM_IGNORED_BUILDS, strictDepBuilds defaults to true).
+# @scarf/scarf is @boundaryml/baml's install-time analytics ping (T-25 dep)
+# -- deliberately never run.
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  msw: true
+  unrs-resolver: true
+  '@scarf/scarf': false
 
 overrides:
   # replit uses linux-x64 only, we can exclude all other platforms

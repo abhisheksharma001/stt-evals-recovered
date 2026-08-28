@@ -16,9 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Must match the pnpm major that wrote pnpm-lock.yaml (lockfileVersion
+      # 9.0 written by pnpm 11): a mismatch fails `--frozen-lockfile` before
+      # any step runs (T-53).
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11
 
       - uses: actions/setup-node@v4
         with:
@@ -39,6 +42,13 @@ jobs:
 
       - name: Unit tests (stt-providers parsers)
         run: pnpm --filter @workspace/stt-providers test
+
+      # T-26: judge contract. Offline: pins baml_src/judge.baml + JUDGE_MODEL
+      # to a fixture recorded by running the judge locally against the saved
+      # scans and human adjudications. A prompt edit without a re-record, or
+      # a re-record below the floors, fails here. No OpenAI key in CI.
+      - name: Judge contract tests (api-server)
+        run: pnpm --filter @workspace/api-server test
 
       - name: Build web app
         run: pnpm --filter @workspace/stt-benchmark run build

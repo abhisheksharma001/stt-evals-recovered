@@ -46,7 +46,7 @@ function spanKey(startMs: number, endMs: number): string {
   return `${startMs}-${endMs}`;
 }
 
-function judgeInputForSpan(
+export function judgeInputForSpan(
   span: DisagreementSpan,
   readings: AdjudicationRow["readings"],
   providerNames: Map<string, string>,
