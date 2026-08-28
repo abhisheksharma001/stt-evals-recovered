@@ -70,6 +70,13 @@ export const benchmarkCallsTable = pgTable("benchmark_calls", {
   // a human can judge it themselves (see docs/backlog/good-to-have.md).
   sourceTranscriberProvider: text("source_transcriber_provider"),
   sourceTranscriberModel: text("source_transcriber_model"),
+  // T-11: Vapi's `endedReason` and `analysis.successEvaluation`, verbatim.
+  // Null means "not captured" (imported before T-11, or Vapi omitted it) --
+  // it must never be read as "normal call". successEvaluation is stored as
+  // the raw string ("true"/"false" today) so a wider vocabulary later
+  // loses nothing.
+  sourceEndedReason: text("source_ended_reason"),
+  sourceSuccessEvaluation: text("source_success_evaluation"),
   // De-identification attestation (FR-C3/G6): two distinct approvers are
   // required before a call may reach ready_to_run. No auth system exists
   // yet, so approvers are recorded as free-text labels via the x-actor

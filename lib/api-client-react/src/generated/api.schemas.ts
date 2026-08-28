@@ -242,6 +242,10 @@ export interface BenchmarkCall {
   sourceTranscriberProvider?: string | null;
   /** @nullable */
   sourceTranscriberModel?: string | null;
+  /** @nullable */
+  sourceEndedReason?: string | null;
+  /** @nullable */
+  sourceSuccessEvaluation?: string | null;
   createdAt: string;
 }
 

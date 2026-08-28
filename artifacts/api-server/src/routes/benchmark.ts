@@ -79,6 +79,7 @@ const VAPI_IMPORT_CONCURRENCY = (() => {
 import {
   draftTranscriptOf,
   durationSecondsOf,
+  successEvaluationOf,
   fetchVapiAssistants,
   fetchVapiCall,
   fetchVapiCalls,
@@ -293,6 +294,8 @@ function serializeCall(call: BenchmarkCallRow) {
     sourceStartedAt: call.sourceStartedAt?.toISOString() ?? null,
     sourceTranscriberProvider: call.sourceTranscriberProvider,
     sourceTranscriberModel: call.sourceTranscriberModel,
+    sourceEndedReason: call.sourceEndedReason,
+    sourceSuccessEvaluation: call.sourceSuccessEvaluation,
     createdAt: call.createdAt.toISOString(),
   };
 }
@@ -886,6 +889,8 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
         // back on this call. See transcriberOf()'s comment in lib/vapi.ts.
         sourceTranscriberProvider: transcriber?.provider ?? null,
         sourceTranscriberModel: transcriber?.model ?? null,
+        sourceEndedReason: call.endedReason ?? null,
+        sourceSuccessEvaluation: successEvaluationOf(call),
       })
       .returning();
 

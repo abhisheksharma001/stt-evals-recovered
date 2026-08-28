@@ -1092,6 +1092,10 @@ components:
         # docs/backlog/good-to-have.md.
         sourceTranscriberProvider: { type: ["string", "null"] }
         sourceTranscriberModel: { type: ["string", "null"] }
+        # T-11: Vapi's endedReason / analysis.successEvaluation, verbatim.
+        # Null = not captured; never "normal call".
+        sourceEndedReason: { type: ["string", "null"] }
+        sourceSuccessEvaluation: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
     BenchmarkCallInput:
       type: object

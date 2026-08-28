@@ -76,7 +76,7 @@ the price of one afternoon, not one quarter.
 | ID | Task | Done when |
 |---|---|---|
 | T-10 | ✅ **done** (PR #18). `maxDurationSeconds` on `benchmark_bulks`, `bulk_templates` (nullable, no DB default — pre-band rows honestly read `null` = no cap), `BulkSelectionCriteria`, OpenAPI, and both create dialogs ("Max call duration (s, empty = no cap)"). Defaults `60–120` via `resolveDurationBand` in `lib/bulks.ts`; explicit `null` = no cap; `max < min` → 400 before any insert. Eligibility preview and criteria summary (`60–120s`) honour the cap. Live: resolver with `min=60,max=120` → 24 calls, durations 60–115, all in band (SQL agrees: 24 of 121 corpus calls); no cap → 41. Not created through `POST /benchmark/bulks`: 3 live bulks already sit at `MAX_LIVE_BULKS`, so a test bulk would have evicted a real one. | A bulk with `min=60,max=120` contains only calls in that range |
-| T-11 | Capture `endedReason` and `analysis.successEvaluation` at import. Add `sourceEndedReason`, `sourceSuccessEvaluation` to `benchmark_calls`. **Only the verified field set** — see `docs/PRD-v4-technical.md` V4-T11. | An imported call reads back with the same `endedReason` Vapi returned |
+| T-11 | ✅ **done** (PR #19). `VapiCall.endedReason` + `VapiCall.analysis.{successEvaluation,summary}` (only fields seen on a live response), `benchmark_calls.source_ended_reason` / `source_success_evaluation` (text, verbatim, null = not captured), read at `/benchmark/vapi/import`, exposed on `BenchmarkCall`. Live: imported Vapi call `01a04696` → API reads back `sourceEndedReason: customer-ended-call`, `sourceSuccessEvaluation: "false"`; direct Vapi GET of the same call returns identical values. Verification call deleted afterwards (re-importable). | An imported call reads back with the same `endedReason` Vapi returned |
 | T-12 | Backfill `endedReason` for existing corpus calls still inside the 14-day window. Older ones stay null; **null must never silently mean "normal call."** | Backfill script run once, count reported |
 | T-13 | Outcome filters (`includeEndedReasons` / `excludeEndedReasons` / `successEvaluation`) plus a "worth benchmarking" preset that drops voicemail, silence timeouts and misdials. | A bulk can be built from forwarded calls only |
 | T-14 | Match-count preview in the create dialog, **above** the cost gate, naming every excluded bucket with its count. | Changing a filter updates the count before any cost is shown |
@@ -163,6 +163,7 @@ either on a date. Start it when its trigger fires.
 | T-48 | **OpenAI and ElevenLabs contribute no word timings.** OpenAI is requested with `response_format: json` (text only; `verbose_json` + `timestamp_granularities` may return words for whisper-1 but not gpt-4o-transcribe — must be checked against the real API, not docs). ElevenLabs' stored words carry only `speaker_id` in the captured sample. A call where only those two succeed reads `no_word_timings`. Decide per provider whether timings are requestable, and re-verify with a real response before extending `timed-words.ts`. | T-08 self-review |
 | T-49 | ✅ **done** (PR #17). `setActorLabel` in the client, `x-actor` on every request, one `lib/actor.ts` for sidebar + client. Live: UI verdict → `adjudicated_by_label = Abhishek`, audit row same. Historical `unknown` rows left as-is. Original finding: **Verdicts (and bulk launches) are recorded as `by unknown`.** The UI shows "Abhishek · Curator" in the sidebar but the generated API client sends no `x-actor` header, so `actorFromRequest` falls back to `unknown` on every write — seen live on the first UI adjudication (`adjudicated_by_label = unknown`) and already true of `launchedByLabel` on bulks. One place to fix: the client's `customFetch` should send the signed-in label. Matters for T-09, which reports agreement "with a human" — it should be able to say which one. | T-08 self-review |
 | T-50 | **Bulk templates cannot be deleted.** There is no `DELETE /benchmark/bulk-templates/{id}` — the T-10 verification templates had to be removed with SQL. A template that is wrong (bad band, wrong providers) is permanent from the UI. | T-10 self-review |
+| T-51 | **No `GET /benchmark/calls/{callId}`.** The path exists only as PATCH; reading one call means fetching the whole list. Harmless at 121 calls, wasteful at 1,000. | T-11 self-review |
 | T-39 | The badge reports the **API** bundle's commit. The UI itself is a separate Vite build and can be served stale from a browser cache with no signal at all — a second, real version of the same failure this task exists to kill. Stamping the UI build (Vite `define`) and showing both, or showing one only when they disagree, is a deliberate design call, not a drive-by. | T-05 self-review |
 
 ## Findings log
@@ -194,6 +195,13 @@ Append anything learned mid-task here rather than losing it to a compaction.
   exists in the live DB now. The one verification row written during testing
   (`adjudicated_by_label = 't08-verify'`) was deleted afterward — the table is
   empty at merge, so T-09 starts from zero real verdicts.
+
+- **2026-08-28 (T-11): Vapi's `successEvaluation` is the *string* `"false"`, not a
+  boolean** — seen on the live import of call `01a04696`. Storing it verbatim as
+  text was the right call; a boolean column would have had to guess at parsing.
+  The first probe call (`01a03b89`) had `analysis: { summary }` with no
+  `successEvaluation` at all, so absence is normal and null must stay
+  "not captured", exactly as the register warned.
 
 - **2026-08-28 (T-10): the corpus is mostly outside the default band.** Of
   121 corpus calls, 24 sit in 60–120s (min 2s, max 445s); 41 are ≥60s at all.
