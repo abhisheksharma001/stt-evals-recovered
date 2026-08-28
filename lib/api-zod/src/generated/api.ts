@@ -906,6 +906,59 @@ export const CreateBulkResponse = zod.object({
 
 
 /**
+ * @summary T-14 dry-run of bulk creation. Runs the SAME matcher createBulk freezes with, and reports how many calls would run, every excluded bucket by name with its count, and (only when providerIds are given) the cost estimate the cost gate would judge. Writes nothing.
+ */
+
+export const previewBulkSelectionBodyCriteriaMinDurationSecondsMin = 0;
+
+export const previewBulkSelectionBodyCriteriaMaxDurationSecondsMin = 0;
+
+export const previewBulkSelectionBodyMinDurationSecondsMin = 0;
+
+export const previewBulkSelectionBodyMaxDurationSecondsMin = 0;
+
+
+
+export const PreviewBulkSelectionBody = zod.object({
+  "criteria": zod.object({
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "assistantIds": zod.array(zod.string()).optional(),
+  "accountLabel": zod.string().optional(),
+  "startedAtFrom": zod.coerce.date().optional(),
+  "startedAtTo": zod.coerce.date().optional(),
+  "lastNDays": zod.number().min(1).optional(),
+  "minDurationSeconds": zod.number().min(previewBulkSelectionBodyCriteriaMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(previewBulkSelectionBodyCriteriaMaxDurationSecondsMin).nullish(),
+  "includeEndedReasons": zod.array(zod.string()).optional(),
+  "excludeEndedReasons": zod.array(zod.string()).optional(),
+  "successEvaluation": zod.string().optional(),
+  "callIds": zod.array(zod.string()).optional(),
+  "resolvedCallIds": zod.array(zod.string()).optional(),
+  "resolvedAt": zod.coerce.date().nullish()
+}).describe('On a template this is unfrozen (lastNDays re-resolves per launch); on a bulk it is frozen at creation, with resolvedCallIds pinning the exact corpus slice (FR-BLK-1 vs FR-BLK-9).'),
+  "providerIds": zod.array(zod.string()).optional(),
+  "minDurationSeconds": zod.number().min(previewBulkSelectionBodyMinDurationSecondsMin).optional(),
+  "maxDurationSeconds": zod.number().min(previewBulkSelectionBodyMaxDurationSecondsMin).nullish()
+})
+
+export const PreviewBulkSelectionResponse = zod.object({
+  "inScopeCount": zod.number(),
+  "matchedCount": zod.number(),
+  "excluded": zod.array(zod.object({
+  "bucket": zod.string(),
+  "count": zod.number()
+})),
+  "estimate": zod.union([zod.null(),zod.object({
+  "sttCostCents": zod.number(),
+  "agentCostCents": zod.number(),
+  "totalCostCents": zod.number(),
+  "overThreshold": zod.boolean()
+})]),
+  "costThresholdCents": zod.number()
+})
+
+
+/**
  * @summary Bulk detail with live progress aggregates (FR-EXC-4, FR-BLK-13)
  */
 export const GetBulkParams = zod.object({

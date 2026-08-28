@@ -928,6 +928,38 @@ export interface BulkInput {
   confirm?: boolean;
 }
 
+export interface BulkPreviewInput {
+  criteria: BulkSelectionCriteria;
+  providerIds?: string[];
+  /** @minimum 0 */
+  minDurationSeconds?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxDurationSeconds?: number | null;
+}
+
+export interface BulkPreviewExclusion {
+  bucket: string;
+  count: number;
+}
+
+export type BulkPreviewEstimate = {
+  sttCostCents: number;
+  agentCostCents: number;
+  totalCostCents: number;
+  overThreshold: boolean;
+} | null;
+
+export interface BulkPreview {
+  inScopeCount: number;
+  matchedCount: number;
+  excluded: BulkPreviewExclusion[];
+  estimate: BulkPreviewEstimate;
+  costThresholdCents: number;
+}
+
 export interface BulkProgress {
   callsTotal: number;
   callsRun: number;

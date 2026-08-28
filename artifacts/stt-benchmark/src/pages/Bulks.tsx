@@ -1,6 +1,6 @@
 import * as React from "react"
 import { formatMicrocents } from "@/lib/utils"
-import { useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   useListBulks,
   useGetBulk,
@@ -16,6 +16,7 @@ import {
   useListVapiAssistants,
   useListVapiAccounts,
   useListBenchmarkCalls,
+  previewBulkSelection,
   getListBulksQueryKey,
   getGetBulkQueryKey,
   getListBulkTemplatesQueryKey,
@@ -25,6 +26,8 @@ import {
   type BulkFailureGroup,
   type BulkTemplate,
   type BulkSelectionCriteria,
+  type BulkPreview,
+  type BulkPreviewInput,
   type Provider,
   type VapiAssistant,
 } from "@workspace/api-client-react"
@@ -66,13 +69,14 @@ function BulkStatusBadge({ status }: { status: BulkStatus }) {
  *
  * That gate is gone (2026-08-27, per Abhishek), so every matched call now
  * runs. The count stays, because the other half of that bug is still live:
- * a bulk can match zero calls and still launch. It also still calls out
- * calls excluded purely because they carry no sourceStartedAt -- a NULL
- * start date never satisfies the server's gte/lte window, which is the
- * non-obvious reason a date-filtered bulk comes back empty.
+ * a bulk can match zero calls and still launch.
  *
- * Mirrors the server's own matcher (resolveCriteriaCallIds +
- * resolveDateWindow in api-server/src/lib/bulks.ts). Keep the two in sync.
+ * T-14: the count comes from POST /benchmark/bulks/preview -- the server's
+ * own matcher (resolveCriteriaSelection in api-server/src/lib/bulks.ts),
+ * which is also what createBulk freezes. This file used to carry a
+ * client-side copy of that matcher; it is gone, so there is nothing to
+ * keep in sync any more. Every excluded bucket comes back named and
+ * counted, and the count renders above (and independently of) the cost.
  */
 type CriteriaDraft = {
   assistantIds: string[]
@@ -98,18 +102,6 @@ const WORTH_BENCHMARKING_ENDED_REASONS = [
   "assistant-said-end-call-phrase",
 ]
 
-function outcomePasses(
-  endedReason: string | null | undefined,
-  successEvaluation: string | null | undefined,
-  criteria: Pick<CriteriaDraft, "includeEndedReasons" | "excludeEndedReasons" | "successEvaluation">,
-): boolean {
-  const reason = endedReason ?? null
-  if (criteria.includeEndedReasons.length > 0 && (reason === null || !criteria.includeEndedReasons.includes(reason))) return false
-  if (criteria.excludeEndedReasons.length > 0 && (reason === null || criteria.excludeEndedReasons.includes(reason))) return false
-  if (criteria.successEvaluation && (successEvaluation ?? null) !== criteria.successEvaluation) return false
-  return true
-}
-
 const EMPTY_CRITERIA: CriteriaDraft = {
   assistantIds: [],
   accountLabel: "",
@@ -121,76 +113,119 @@ const EMPTY_CRITERIA: CriteriaDraft = {
   successEvaluation: "",
 }
 
-type Eligibility = {
-  matched: number
-  /** Calls excluded from a date window purely for having no start date. */
-  excludedForNoStartDate: number
+type SelectionPreview = {
+  data: BulkPreview | undefined
   loading: boolean
+  error: string | null
 }
 
-function useCriteriaEligibility(criteria: CriteriaDraft): Eligibility {
-  const { data: calls, isLoading } = useListBenchmarkCalls()
+/**
+ * T-14: asks the server what these filters would select right now. Debounced
+ * so typing "120" into a duration box is one request, not three. The
+ * request is keyed on the exact body it sends, so a filter change always
+ * refetches and the stale answer is never shown as current (isPlaceholder
+ * covers the gap between a change and the new count).
+ */
+function useSelectionPreview(criteria: CriteriaDraft, providerIds: string[]): SelectionPreview {
+  const body = React.useMemo<BulkPreviewInput>(
+    () => ({
+      criteria: buildCriteria(criteria),
+      providerIds,
+      minDurationSeconds: Number.parseInt(criteria.minDurationSeconds, 10) || 0,
+      maxDurationSeconds: parseMaxDuration(criteria.maxDurationSeconds),
+    }),
+    [criteria, providerIds],
+  )
+  const [debounced, setDebounced] = React.useState(body)
+  React.useEffect(() => {
+    const handle = window.setTimeout(() => setDebounced(body), 250)
+    return () => window.clearTimeout(handle)
+  }, [body])
 
-  return React.useMemo(() => {
-    const all = calls ?? []
-    const minDuration = Number.parseInt(criteria.minDurationSeconds, 10) || 0
-    const maxDuration = parseMaxDuration(criteria.maxDurationSeconds)
-    const days = Number.parseInt(criteria.lastNDays, 10)
-    const from =
-      Number.isFinite(days) && days > 0 ? Date.now() - days * 24 * 60 * 60 * 1000 : undefined
+  const query = useQuery({
+    queryKey: ["previewBulkSelection", debounced],
+    queryFn: () => previewBulkSelection(debounced),
+    placeholderData: keepPreviousData,
+  })
+  const settled = debounced === body && !query.isFetching
+  return {
+    data: settled ? query.data : undefined,
+    loading: !settled && !query.isError,
+    error: query.isError ? (query.error instanceof Error ? query.error.message : String(query.error)) : null,
+  }
+}
 
-    const matchesNonDate = (c: (typeof all)[number]) => {
-      if (criteria.assistantIds.length > 0 && !criteria.assistantIds.includes(c.sourceAssistantId ?? "")) return false
-      if (criteria.accountLabel && c.sourceAccountLabel !== criteria.accountLabel) return false
-      if ((c.durationSeconds ?? 0) < minDuration) return false
-      if (maxDuration !== null && (c.durationSeconds ?? 0) > maxDuration) return false
-      if (!outcomePasses(c.sourceEndedReason, c.sourceSuccessEvaluation, criteria)) return false
-      return true
-    }
-    const matchesDate = (c: (typeof all)[number]) => {
-      if (from === undefined) return true
-      const started = c.sourceStartedAt ? Date.parse(c.sourceStartedAt) : NaN
-      return Number.isFinite(started) && started >= from
-    }
+function cents(n: number): string {
+  return `$${(n / 100).toFixed(2)}`
+}
 
-    const matched = all.filter((c) => matchesNonDate(c) && matchesDate(c))
-    const excludedForNoStartDate = all.filter(
-      (c) => matchesNonDate(c) && !matchesDate(c) && !c.sourceStartedAt,
+/**
+ * The count first, then every excluded bucket by name, then -- only once
+ * providers are picked, and always below the count -- the cost the gate
+ * would judge. Nothing that was in scope goes unaccounted for:
+ * inScopeCount === matchedCount + sum(excluded).
+ */
+function SelectionPreviewPanel({ preview, verb = "will run" }: { preview: SelectionPreview; verb?: string }) {
+  const { data, loading, error } = preview
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        Could not preview this selection: {error}
+      </div>
     )
-
-    return {
-      matched: matched.length,
-      excludedForNoStartDate: excludedForNoStartDate.length,
-      loading: isLoading,
-    }
-  }, [calls, isLoading, criteria])
-}
-
-function EligibilityNotice({ eligibility }: { eligibility: Eligibility }) {
-  const { matched, excludedForNoStartDate, loading } = eligibility
-  if (loading) return null
-
-  const blocked = matched === 0
+  }
+  if (!data) {
+    return (
+      <div className="rounded-lg border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+        {loading ? "Counting matches…" : "—"}
+      </div>
+    )
+  }
+  const { matchedCount, inScopeCount, excluded, estimate, costThresholdCents } = data
+  const blocked = matchedCount === 0
   return (
     <div
-      className={`rounded-lg border px-3 py-2 text-xs space-y-1 ${
+      className={`rounded-lg border px-3 py-2 text-xs space-y-2 ${
         blocked ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border bg-secondary/40"
       }`}
     >
       <div className="flex items-center gap-2 font-medium">
         {blocked && <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
         <span>
-          {matched} call{matched === 1 ? "" : "s"} match and will run
+          {matchedCount} call{matchedCount === 1 ? "" : "s"} match and {verb}
+          <span className="font-normal text-muted-foreground"> (of {inScopeCount} in scope)</span>
         </span>
       </div>
       {blocked && <p>Nothing matches these filters, so this bulk would run nothing.</p>}
-      {excludedForNoStartDate > 0 && (
-        <p className={blocked ? "" : "text-warning"}>
-          {excludedForNoStartDate} call{excludedForNoStartDate === 1 ? " is" : "s are"} excluded by the
-          date filter because {excludedForNoStartDate === 1 ? "it has" : "they have"} no start date on
-          record. Clear &ldquo;last N days&rdquo; to include {excludedForNoStartDate === 1 ? "it" : "them"}.
-        </p>
+      {excluded.length > 0 && (
+        <ul className={`font-mono space-y-0.5 ${blocked ? "" : "text-muted-foreground"}`}>
+          {excluded.map((e) => (
+            <li key={e.bucket} className="flex gap-2">
+              <span className="w-8 shrink-0 text-right tabular-nums">{e.count}</span>
+              <span>excluded: {e.bucket}</span>
+            </li>
+          ))}
+        </ul>
       )}
+      <div className={`border-t pt-2 ${blocked ? "border-destructive/20" : "border-border"}`}>
+        {estimate === null ? (
+          <span className="text-muted-foreground">Pick at least one provider to see the cost estimate.</span>
+        ) : (
+          <div className="space-y-0.5">
+            <div>
+              Estimated cost <span className="font-mono font-semibold">{cents(estimate.totalCostCents)}</span>
+              <span className="text-muted-foreground">
+                {" "}(STT {cents(estimate.sttCostCents)} + agent verification {cents(estimate.agentCostCents)})
+              </span>
+            </div>
+            <p className={estimate.overThreshold ? "text-warning" : "text-muted-foreground"}>
+              {estimate.overThreshold
+                ? `Above the ${cents(costThresholdCents)} cost gate: the bulk will wait for your confirmation instead of launching.`
+                : `Under the ${cents(costThresholdCents)} cost gate: launches straight away.`}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -515,7 +550,7 @@ function CreateBulkDialog() {
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
-  const eligibility = useCriteriaEligibility(criteria)
+  const preview = useSelectionPreview(criteria, providerIds)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -578,7 +613,7 @@ function CreateBulkDialog() {
             shardSize={shardSize}
             setShardSize={setShardSize}
           />
-          <EligibilityNotice eligibility={eligibility} />
+          <SelectionPreviewPanel preview={preview} />
           <p className="text-xs text-muted-foreground">
             Every matched call runs. Creating a 4th bulk evicts the oldest (FR-BLK-10).
           </p>
@@ -587,7 +622,7 @@ function CreateBulkDialog() {
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
           <Button
             onClick={submit}
-            disabled={providerIds.length === 0 || createBulk.isPending || eligibility.matched === 0}
+            disabled={providerIds.length === 0 || createBulk.isPending || preview.data === undefined || preview.data.matchedCount === 0}
           >
             {createBulk.isPending ? "Creating..." : "Create & launch"}
           </Button>
@@ -604,7 +639,7 @@ function CreateTemplateDialog() {
   const [providerIds, setProviderIds] = React.useState<string[]>([])
   const [shardSize, setShardSize] = React.useState("50")
   const { data: providers } = useListBenchmarkProviders()
-  const eligibility = useCriteriaEligibility(criteria)
+  const preview = useSelectionPreview(criteria, providerIds)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -644,7 +679,7 @@ function CreateTemplateDialog() {
             shardSize={shardSize}
             setShardSize={setShardSize}
           />
-          <EligibilityNotice eligibility={eligibility} />
+          <SelectionPreviewPanel preview={preview} verb="would run if launched now" />
           <p className="text-xs text-muted-foreground">
             Criteria stay unfrozen: "last N days" re-resolves against launch time every launch.
           </p>

@@ -38,6 +38,8 @@ import type {
   BulkDetail,
   BulkInput,
   BulkManifest,
+  BulkPreview,
+  BulkPreviewInput,
   BulkTemplate,
   BulkTemplateInput,
   BulkTemplateLaunchInput,
@@ -2291,6 +2293,77 @@ export const useCreateBulk = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCreateBulkMutationOptions(options));
+    }
+
+export const getPreviewBulkSelectionUrl = () => {
+
+
+
+
+  return `/api/benchmark/bulks/preview`
+}
+
+/**
+ * @summary T-14 dry-run of bulk creation. Runs the SAME matcher createBulk freezes with, and reports how many calls would run, every excluded bucket by name with its count, and (only when providerIds are given) the cost estimate the cost gate would judge. Writes nothing.
+ */
+export const previewBulkSelection = async (bulkPreviewInput: BulkPreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<BulkPreview> => {
+
+  return customFetch<BulkPreview>(getPreviewBulkSelectionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bulkPreviewInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewBulkSelectionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewBulkSelection>>, TError,{data: BodyType<BulkPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewBulkSelection>>, TError,{data: BodyType<BulkPreviewInput>}, TContext> => {
+
+const mutationKey = ['previewBulkSelection'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewBulkSelection>>, {data: BodyType<BulkPreviewInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewBulkSelection(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewBulkSelectionMutationResult = NonNullable<Awaited<ReturnType<typeof previewBulkSelection>>>
+    export type PreviewBulkSelectionMutationBody = BodyType<BulkPreviewInput>
+    export type PreviewBulkSelectionMutationError = ErrorType<void>
+
+    /**
+ * @summary T-14 dry-run of bulk creation. Runs the SAME matcher createBulk freezes with, and reports how many calls would run, every excluded bucket by name with its count, and (only when providerIds are given) the cost estimate the cost gate would judge. Writes nothing.
+ */
+export const usePreviewBulkSelection = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewBulkSelection>>, TError,{data: BodyType<BulkPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewBulkSelection>>,
+        TError,
+        {data: BodyType<BulkPreviewInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewBulkSelectionMutationOptions(options));
     }
 
 export const getGetBulkUrl = (bulkId: string,) => {

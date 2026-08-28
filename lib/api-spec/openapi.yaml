@@ -576,6 +576,26 @@ paths:
           description: Invalid criteria or nothing matched
         "409":
           description: Bulk name already in use (names are unique, FR-BLK-2)
+  /benchmark/bulks/preview:
+    post:
+      operationId: previewBulkSelection
+      tags: [benchmark]
+      summary: T-14 dry-run of bulk creation. Runs the SAME matcher createBulk freezes with, and reports how many calls would run, every excluded bucket by name with its count, and (only when providerIds are given) the cost estimate the cost gate would judge. Writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkPreviewInput"
+      responses:
+        "200":
+          description: Match count, named exclusions, cost estimate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkPreview"
+        "400":
+          description: Invalid criteria (e.g. max duration below min)
   /benchmark/bulks/{bulkId}:
     get:
       operationId: getBulk
@@ -1630,6 +1650,54 @@ components:
         # FR-BLK-5: required true when the estimate exceeds the server cost
         # threshold; without it the bulk parks at awaiting_confirmation.
         confirm: { type: boolean }
+    BulkPreviewInput:
+      type: object
+      required: [criteria]
+      properties:
+        criteria: { $ref: "#/components/schemas/BulkSelectionCriteria" }
+        # Optional here (unlike BulkInput): the count is meaningful with no
+        # providers chosen yet; only the cost estimate needs them.
+        providerIds:
+          type: array
+          items: { type: string }
+        minDurationSeconds: { type: number, minimum: 0 }
+        maxDurationSeconds: { type: ["number", "null"], minimum: 0 }
+    BulkPreviewExclusion:
+      type: object
+      required: [bucket, count]
+      properties:
+        # Human-readable reason, e.g. "shorter than 60s", "outcome:
+        # silence-timed-out", "no captured outcome".
+        bucket: { type: string }
+        count: { type: number }
+    BulkPreview:
+      type: object
+      required: [inScopeCount, matchedCount, excluded, estimate, costThresholdCents]
+      properties:
+        # Calls that passed the "who" filters (vertical / assistant /
+        # account) or were explicitly picked. Always equals
+        # matchedCount + sum(excluded[].count): nothing is dropped silently.
+        inScopeCount: { type: number }
+        # Exactly the calls createBulk would freeze right now.
+        matchedCount: { type: number }
+        excluded:
+          type: array
+          items: { $ref: "#/components/schemas/BulkPreviewExclusion" }
+        # null when providerIds is empty -- the count is shown before, and
+        # independently of, any cost (T-14).
+        estimate:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [sttCostCents, agentCostCents, totalCostCents, overThreshold]
+              properties:
+                sttCostCents: { type: number }
+                agentCostCents: { type: number }
+                totalCostCents: { type: number }
+                # FR-BLK-5: true means creation would park at
+                # awaiting_confirmation instead of launching.
+                overThreshold: { type: boolean }
+        costThresholdCents: { type: number }
     BulkProgress:
       type: object
       required: [callsTotal, callsRun, cellsTotal, cellsOk, cellsFailed, cellsPending, cellsCancelled, cellsSkippedPendingReview]
