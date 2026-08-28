@@ -63,7 +63,7 @@ whatever it gets wrong. This is the cheapest high-value work in the whole regist
 | ID | Task | Done when |
 |---|---|---|
 | T-08 | ✅ **done** (PR #15). **Span adjudication UI shipped** — `SpanAdjudicator` under the provider comparison in the Corpus expanded row: each disagreement span is a play button (cached audio, ±0.75s context), every provider's reading beside it, 1–9 picks / 0 = none / J/K / Space, auto-advance. Stored in `benchmark_adjudications(callId, runId, spanStartMs, spanEndMs, correctProviderId | null, readings, adjudicatedByLabel, adjudicatedAt)` — `runId` and `readings` added beyond the register's sketch so T-09 replays against the exact evidence shown. Spans are a pure function (`lib/scoring/src/spans.ts`, 7 tests) of stored results: the longest provider with word timings anchors alignment and supplies the clock, never the answer. Timings verified against real captured responses: AssemblyAI (ms), Deepgram, Gladia, Cartesia; OpenAI/ElevenLabs are text-only readings. Live: call `9e28a844` run `73c8f03b` → 16 real spans. | A human can adjudicate 20 spans in one sitting without leaving the page |
-| T-09 | **Judge accuracy report.** Replay the adjudicated spans through `judgeCandidates` and report agreement rate. | A single number exists for "how often the judge agrees with a human", with its sample size |
+| T-09 | ✅ **done** (PR #16). **Judge accuracy report shipped** — "Judge vs. human" card at the top of Results: `agreementRate` with `agreements / comparable`, total verdicts, replayed, pending, "none of them" count, judge-no-pick count, per-adjudicator breakdown, replay cost, and the replayed spans with the judge's reasoning. `GET /benchmark/judge-accuracy` (free) + `POST /benchmark/judge-accuracy/replay` (spends OpenAI money, ≤50 spans per request, each span replayed once ever — judge_* columns on `benchmark_adjudications`). "Agree" = the readings the two picks name say the same words (not same provider id). Pure math in `lib/scoring/src/judge-agreement.ts` (6 tests). Live-verified: 3 temp verdicts → replay 3 for 6566 µ¢ → 2/2 comparable agree, 1 none excluded, second replay spent 0; temp rows deleted. | A single number exists for "how often the judge agrees with a human", with its sample size |
 
 **Why this ordering matters:** if the judge scores near chance, T-17 (rank on
 adjudicated win rate) and T-30 (memory) must not be built on it. Find that out for
@@ -193,6 +193,17 @@ Append anything learned mid-task here rather than losing it to a compaction.
   exists in the live DB now. The one verification row written during testing
   (`adjudicated_by_label = 't08-verify'`) was deleted afterward — the table is
   empty at merge, so T-09 starts from zero real verdicts.
+
+- **2026-08-28 (T-09): the judge, given only what the human saw, agreed 2/2
+  on the test spans** — and one of those was human=Deepgram, judge=Gladia,
+  both reading "are": the text-equality definition of "agree" is what kept
+  that from being a false disagreement. The judge also confidently picked
+  AssemblyAI's "uh" on the span the human marked "none of them" — evidence
+  that "none" verdicts must stay outside the rate (the judge cannot say it).
+  Replay cost ≈0.22¢ per span on gpt-4o. `benchmark_adjudications` is empty
+  again after verification; the real number starts at Abhishek's first
+  verdicts. T-49 matters here: until the client sends `x-actor`, the
+  per-human breakdown will read `unknown`.
 
 - **2026-08-28 (T-43 / T-45 / T-46): all three live-verified on `f16133a`.**
   Re-executed run `73c8f03b` (bulk `1a8e14b2`, 14 null-class failures, 236 ok).
