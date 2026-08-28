@@ -161,7 +161,7 @@ either on a date. Start it when its trigger fires.
 | T-46 | ✅ **done** (PR #14). **`retryBulkFailedCells` now selects runs by the executor's own retryability rule.** A complete run is re-executed only if the latest row of some cell is `skipped_pending_review` or a `failed` row whose class `isRetryableFailureClass()` accepts (null and out-of-enum values count as permanent, same as T-43). A non-complete run (failed / queued / stuck running) is still always re-executed, unchanged. | T-43 self-review |
 | T-47 | **Disagreement is reference-relative, not consensus-relative.** `buildDisagreementSpans` marks a position disputed when any provider differs from the *reference* (the longest timed provider). When four of five say "are" and the reference alone says "were", the span is right but `agreesWithReference` is false for the four — the UI shows it neutrally, but a consensus vote per position (as `computeCrossProviderDisagreement` already does) would rank readings better and let T-09 report "judge vs human" and "majority vs human" side by side. | T-08 self-review |
 | T-48 | **OpenAI and ElevenLabs contribute no word timings.** OpenAI is requested with `response_format: json` (text only; `verbose_json` + `timestamp_granularities` may return words for whisper-1 but not gpt-4o-transcribe — must be checked against the real API, not docs). ElevenLabs' stored words carry only `speaker_id` in the captured sample. A call where only those two succeed reads `no_word_timings`. Decide per provider whether timings are requestable, and re-verify with a real response before extending `timed-words.ts`. | T-08 self-review |
-| T-49 | **Verdicts (and bulk launches) are recorded as `by unknown`.** The UI shows "Abhishek · Curator" in the sidebar but the generated API client sends no `x-actor` header, so `actorFromRequest` falls back to `unknown` on every write — seen live on the first UI adjudication (`adjudicated_by_label = unknown`) and already true of `launchedByLabel` on bulks. One place to fix: the client's `customFetch` should send the signed-in label. Matters for T-09, which reports agreement "with a human" — it should be able to say which one. | T-08 self-review |
+| T-49 | ✅ **done** (PR #17). `setActorLabel` in the client, `x-actor` on every request, one `lib/actor.ts` for sidebar + client. Live: UI verdict → `adjudicated_by_label = Abhishek`, audit row same. Historical `unknown` rows left as-is. Original finding: **Verdicts (and bulk launches) are recorded as `by unknown`.** The UI shows "Abhishek · Curator" in the sidebar but the generated API client sends no `x-actor` header, so `actorFromRequest` falls back to `unknown` on every write — seen live on the first UI adjudication (`adjudicated_by_label = unknown`) and already true of `launchedByLabel` on bulks. One place to fix: the client's `customFetch` should send the signed-in label. Matters for T-09, which reports agreement "with a human" — it should be able to say which one. | T-08 self-review |
 | T-39 | The badge reports the **API** bundle's commit. The UI itself is a separate Vite build and can be served stale from a browser cache with no signal at all — a second, real version of the same failure this task exists to kill. Stamping the UI build (Vite `define`) and showing both, or showing one only when they disagree, is a deliberate design call, not a drive-by. | T-05 self-review |
 
 ## Findings log
@@ -193,6 +193,13 @@ Append anything learned mid-task here rather than losing it to a compaction.
   exists in the live DB now. The one verification row written during testing
   (`adjudicated_by_label = 't08-verify'`) was deleted afterward — the table is
   empty at merge, so T-09 starts from zero real verdicts.
+
+- **2026-08-28 (T-49): typecheck-clean is not verified.** First attempt put
+  `setActorLabel(...)` inside `main.tsx`'s `if (apiBaseUrl)` block — never
+  runs in local dev — and only the live DB check (`adjudicated_by_label`
+  still `unknown`) caught it. Also learned: Vite's watcher did not re-stamp
+  `lib/api-client-react` edits until the files were `touch`ed; check the
+  `?t=` stamp on the served module before trusting an HMR'd change.
 
 - **2026-08-28 (T-09): the judge, given only what the human saw, agreed 2/2
   on the test spans** — and one of those was human=Deepgram, judge=Gladia,
