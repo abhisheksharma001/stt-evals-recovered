@@ -68,6 +68,9 @@ function criteriaFromBody(criteria: {
   lastNDays?: number;
   minDurationSeconds?: number;
   maxDurationSeconds?: number | null;
+  includeEndedReasons?: string[];
+  excludeEndedReasons?: string[];
+  successEvaluation?: string;
   callIds?: string[];
 }): BulkSelectionCriteria {
   const iso = (value?: Date | string): string | undefined =>

@@ -28,12 +28,32 @@ export type BulkSelectionCriteria = {
   minDurationSeconds?: number;
   // T-10: upper bound of the duration band. Absent/null = no cap.
   maxDurationSeconds?: number | null;
+  // T-13: outcome filters on Vapi's verbatim `endedReason` /
+  // `successEvaluation` (captured by T-11/T-12). Absent = no filter.
+  // A call whose outcome is NULL (not captured) never satisfies an include
+  // list and is ALSO dropped by an exclude list: "unknown outcome" cannot be
+  // shown to be outside the excluded set, and null must never silently pass
+  // as a normal call.
+  includeEndedReasons?: string[];
+  excludeEndedReasons?: string[];
+  // Exact match on the stored string ("true" / "false" today).
+  successEvaluation?: string;
   // Explicit corpus picks; merged with filter matches.
   callIds?: string[];
   // Frozen resolution, set on bulks only, at creation time.
   resolvedCallIds?: string[];
   resolvedAt?: string;
 };
+
+// T-13 "worth benchmarking" preset: the endedReason values that mean a real
+// conversation happened. Everything else (voicemail, silence timeouts,
+// misdials, errors, and calls whose outcome was never captured) is out.
+export const WORTH_BENCHMARKING_ENDED_REASONS = [
+  "customer-ended-call",
+  "assistant-forwarded-call",
+  "assistant-ended-call",
+  "assistant-said-end-call-phrase",
+] as const;
 
 // A Bulk (FR-BLK-1) is a named evaluation batch over a frozen slice of the
 // corpus. It owns no cells itself: launch fans the frozen call set into

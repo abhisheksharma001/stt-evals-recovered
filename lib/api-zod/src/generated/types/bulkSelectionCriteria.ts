@@ -25,6 +25,9 @@ export interface BulkSelectionCriteria {
      * @nullable
      */
   maxDurationSeconds?: number | null;
+  includeEndedReasons?: string[];
+  excludeEndedReasons?: string[];
+  successEvaluation?: string;
   callIds?: string[];
   resolvedCallIds?: string[];
   /** @nullable */
