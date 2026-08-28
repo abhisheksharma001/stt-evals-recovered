@@ -16,7 +16,7 @@ import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { ClientTrendSection, TrendStrip } from "@/components/trend-strip"
-import { GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
+import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupAccountLabel, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -198,7 +198,24 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
         ) : baselineRow && winner && baselineRow.providerId === winner.providerId ? (
           <>Production's own provider is already this group's top candidate.</>
         ) : (
-          <>Not benchmarked in this bulk, so no direct comparison yet.</>
+          <>
+            Not benchmarked in this bulk, so no quality comparison yet.
+            {/* T-24: cost alone can still be stated -- the production
+                provider's list price is in the catalog even when it was
+                never a candidate (T-56). Said as cost only, not a verdict. */}
+            {(() => {
+              const from = monthlyCost(baseline.matchedProviderId ? listPrices.get(baseline.matchedProviderId) : undefined, gv.monthlyMinutes)
+              const to = winner ? monthlyCost(listPrices.get(winner.providerId), gv.monthlyMinutes) : null
+              if (gv.state !== "ok" || from === null || to === null || !winner) return null
+              const diff = to - from
+              return (
+                <span data-testid="switch-money">
+                  {" "}<span className="font-semibold">Cost alone, at this assistant's volume:</span> production ≈ {fmtUsd(from)}/month, {winner.providerName} ≈ {fmtUsd(to)}/month
+                  {" "}({Math.abs(diff) < 0.005 ? "same" : `${fmtUsd(Math.abs(diff))}/month ${diff < 0 ? "less" : "more"}`}; projected from {gv.volume?.windowDays} days of Vapi calls; quality not compared).
+                </span>
+              )
+            })()}
+          </>
         )}
       </p>
     </div>
@@ -230,6 +247,15 @@ export default function Rankings() {
   const { data: rankings, isLoading, isError, error, refetch } = useListBenchmarkRankings(
     activeBulkId ? { bulkId: activeBulkId } : undefined,
   )
+  // T-24: the account behind the biggest assistant group on the page, for
+  // the client-wide cost line. Groups from a second account (rare) still
+  // get their own per-group volume line.
+  const pageAssistantId = React.useMemo(() => {
+    const tally = new Map<string | null, number>()
+    for (const r of rankings ?? []) tally.set(r.assistantId, (tally.get(r.assistantId) ?? 0) + 1)
+    return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+  }, [rankings])
+  const pageAccountLabel = useGroupAccountLabel(pageAssistantId)
   const { data: bulkDetail } = useGetBulk(selectedBulkId ?? "", {
     query: {
       queryKey: getGetBulkQueryKey(selectedBulkId ?? ""),
@@ -434,6 +460,13 @@ export default function Rankings() {
           last time" is on the page, not in someone's memory. Shown in both
           views -- it is the one thing here that is inherently cross-bulk. */}
       <ClientTrendSection highlightBulkId={viewMode === "bulk" ? selectedBulkId : null} />
+
+      {/* T-24: the client as a whole -- every candidate's list price at the
+          account's full projected monthly volume. */}
+      <ClientMonthlyCostLine
+        accountLabel={pageAccountLabel}
+        providerIds={[...new Set((rankings ?? []).map((r) => r.providerId))]}
+      />
 
       {/* The ranking cards below are scored from transcripts, not from the
           agent, so an agent failure cannot move them. Say that explicitly

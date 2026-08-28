@@ -153,3 +153,39 @@ export function MonthlyCostCell({ listPrice, gv }: { listPrice: number | undefin
     </span>
   )
 }
+
+/**
+ * The whole client, not one assistant: every provider's list price at the
+ * account's full projected monthly minutes. This is the number a person
+ * quotes when asked "what would switching cost us" for the client as a
+ * whole. Same projection rule and same absent-not-zero rule as above.
+ */
+export function ClientMonthlyCostLine({ accountLabel, providerIds }: { accountLabel: string | null; providerIds: string[] }) {
+  const { data, isLoading, isError } = useClientVolume(accountLabel)
+  const { data: providers } = useListBenchmarkProviders()
+  if (!accountLabel) return null
+  const cls = "flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border bg-muted/5 px-3 py-2 text-xs"
+  if (isLoading)
+    return <div className={cls} data-testid="client-cost"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Fetching {accountLabel}'s call volume from Vapi (first load can take a minute)…</div>
+  if (isError || !data)
+    return <div className={cls} data-testid="client-cost"><Wallet className="h-3.5 w-3.5" /> Vapi did not return {accountLabel}'s calls -- no client-wide monthly figure.</div>
+  const monthly = projectMonthlyMinutes(data.minutes, data.windowDays)
+  const rows = (providers ?? [])
+    .filter((p) => providerIds.includes(p.id))
+    .map((p) => ({ id: p.id, name: p.name, cost: p.costPerMinute * monthly }))
+    .sort((a, b) => a.cost - b.cost)
+  return (
+    <div className={cls} data-testid="client-cost">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        <Wallet className="h-3.5 w-3.5 text-primary" />
+        <span className="font-medium text-foreground">{accountLabel}, whole account:</span> {data.calls.toLocaleString()} calls, {Math.round(data.minutes).toLocaleString()} min in {data.windowDays} days
+        {" "}→ ≈ {Math.round(monthly).toLocaleString()} min/month{data.truncated ? " (at least — page cap hit)" : ""}.
+      </span>
+      {rows.map((r) => (
+        <span key={r.id} className="font-mono tabular-nums" title={`list $/min × projected monthly minutes`}>
+          {r.name} <span className="font-semibold">{fmtUsd(r.cost)}</span><span className="text-muted-foreground">/mo</span>
+        </span>
+      ))}
+    </div>
+  )
+}
