@@ -16,6 +16,7 @@ import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { ClientTrendSection, TrendStrip } from "@/components/trend-strip"
+import { GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -151,8 +152,9 @@ function useProductionBaseline(assistantId: string | null) {
   }, [calls, providers, assistantId])
 }
 
-function ProductionBaselineNote({ assistantId, ranks }: { assistantId: string | null; ranks: RankingRow[] }) {
+function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: string | null; ranks: RankingRow[]; gv: GroupVolume }) {
   const baseline = useProductionBaseline(assistantId)
+  const listPrices = useListPrices()
   if (!baseline) return null
 
   const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
@@ -176,6 +178,22 @@ function ProductionBaselineNote({ assistantId, ranks }: { assistantId: string | 
               <>, ${Math.abs(baselineRow.score.costPerMinute - winner.score.costPerMinute).toFixed(4)}/min {winner.score.costPerMinute < baselineRow.score.costPerMinute ? "cheaper" : "more expensive"}</>
             )}
             .
+            {/* T-24: the switch stated in money at this assistant's own
+                volume. List prices x projected monthly minutes; absent
+                (not $0) when there is no volume basis. */}
+            {(() => {
+              const from = monthlyCost(listPrices.get(baselineRow.providerId), gv.monthlyMinutes)
+              const to = monthlyCost(listPrices.get(winner.providerId), gv.monthlyMinutes)
+              if (gv.state !== "ok" || from === null || to === null) return null
+              const diff = to - from
+              return (
+                <span className="font-semibold" data-testid="switch-money">
+                  {" "}Switching {baseline.vendor} → {winner.providerName} at this assistant's volume:{" "}
+                  {Math.abs(diff) < 0.005 ? "same cost" : `${fmtUsd(Math.abs(diff))}/month ${diff < 0 ? "saved" : "more"}`}{" "}
+                  ({fmtUsd(from)} → {fmtUsd(to)}/month, projected from {gv.volume?.windowDays} days of Vapi calls).
+                </span>
+              )
+            })()}
           </>
         ) : baselineRow && winner && baselineRow.providerId === winner.providerId ? (
           <>Production's own provider is already this group's top candidate.</>
@@ -187,7 +205,16 @@ function ProductionBaselineNote({ assistantId, ranks }: { assistantId: string | 
   )
 }
 
+// T-24: hooks can't run inside the group map, so the volume lookup lives
+// in this tiny render-prop wrapper -- one Vapi-backed query per group,
+// deduped by react-query since every group of a client shares the key.
+function WithGroupVolume({ assistantId, children }: { assistantId: string | null; children: (gv: GroupVolume) => React.ReactNode }) {
+  const gv = useGroupVolume(assistantId)
+  return <>{children(gv)}</>
+}
+
 export default function Rankings() {
+  const listPrices = useListPrices()
   const { data: bulks } = useListBulks()
   const [viewMode, setViewMode] = React.useState<"bulk" | "overall">("bulk")
   const [selectedBulkId, setSelectedBulkId] = React.useState<string | null>(null)
@@ -437,7 +464,9 @@ export default function Rankings() {
           </p>
         </div>
       ) : (
-        Object.entries(groupedRankings).map(([groupKey, ranks]) => {
+        Object.entries(groupedRankings).map(([groupKey, ranks]) => (
+          <WithGroupVolume key={groupKey} assistantId={ranks[0]?.assistantId ?? null}>
+            {(gv) => {
           const sorted = [...ranks].sort((a, b) => compareRows(a, b, sortKey, asc))
           const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
           const sortAria = (key: SortKey) => (sortKey === key ? (asc ? "ascending" : "descending") : "none")
@@ -447,7 +476,7 @@ export default function Rankings() {
           // is handled the same as "no active provider set" below.
           const activeRow = activeProviderId ? ranks.find((r) => r.providerId === activeProviderId) : undefined
           return (
-          <Card key={groupKey} className="overflow-hidden border-t-4 border-t-primary shadow-sm">
+          <Card className="overflow-hidden border-t-4 border-t-primary shadow-sm">
             <CardHeader className="bg-muted/10 pb-4 border-b">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
@@ -486,6 +515,8 @@ export default function Rankings() {
                 highlightBulkId={viewMode === "bulk" ? selectedBulkId : null}
                 title="Trend for this assistant, bulk over bulk"
               />
+              {/* T-24: the volume basis for every $/month in the table. */}
+              <GroupVolumeLine gv={gv} />
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -511,6 +542,9 @@ export default function Rankings() {
                           {renderSortIcon(key)}
                         </TableHead>
                       ))}
+                    <TableHead className="text-right" title="List $/min x this assistant's projected monthly minutes (Vapi, last 14 days x 30/14). Not sortable: it is price x one shared volume, so its order is the list-price order.">
+                      $/month
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -595,6 +629,9 @@ export default function Rankings() {
                       <TableCell className="text-right font-mono" title="Share of calls where more than one speaker was detected">
                         {r.score.diarizationScore != null ? `${(r.score.diarizationScore * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
                       </TableCell>
+                      <TableCell className="text-right font-mono" data-testid="monthly-cost">
+                        <MonthlyCostCell listPrice={listPrices.get(r.providerId)} gv={gv} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -607,11 +644,13 @@ export default function Rankings() {
                   <p className="text-foreground"><span className="font-semibold mr-1">Decision Logic:</span>{winner.recommendation}</p>
                 </div>
               )}
-              <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} />
+              <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
             </CardContent>
           </Card>
           )
-        })
+            }}
+          </WithGroupVolume>
+        ))
       )}
     </div>
   )

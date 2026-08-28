@@ -29,6 +29,8 @@ import {
   GetBulkVerdictsResponse,
   GetBulkProviderCorrelationResponse,
   GetBenchmarkTrendResponse,
+  GetClientVolumeQueryParams,
+  GetClientVolumeResponse,
   GetBulkResponse,
   LaunchBulkParams,
   LaunchBulkResponse,
@@ -51,6 +53,7 @@ import { actorFromRequest, writeAudit } from "../lib/audit";
 import { logger } from "../lib/logger";
 import { bulkProviderCorrelation } from "../lib/provider-correlation";
 import { benchmarkTrend } from "../lib/trend";
+import { clientVolume } from "../lib/volume";
 import { bulkVerdicts } from "../lib/verdict";
 import {
   BulkDurationBandError,
@@ -522,6 +525,28 @@ router.get("/benchmark/bulks/:bulkId/provider-correlation", async (req, res): Pr
 // @workspace/scoring's buildTrend so one read serves every scope.
 router.get("/benchmark/trend", async (_req, res): Promise<void> => {
   res.json(GetBenchmarkTrendResponse.parse(await benchmarkTrend()));
+});
+
+// T-24: the client's real call volume from Vapi (trailing 14 days -- the plan's retention -- every
+// assistant), so Results can state a provider's price as $/month at this
+// client's volume instead of only $/min.
+router.get("/benchmark/volume", async (req, res): Promise<void> => {
+  const query = GetClientVolumeQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  try {
+    const volume = await clientVolume(query.data.accountLabel);
+    if (!volume) {
+      res.status(404).json({ error: `No Vapi account configured with label "${query.data.accountLabel}"` });
+      return;
+    }
+    res.json(GetClientVolumeResponse.parse(volume));
+  } catch (err) {
+    logger.warn({ err, accountLabel: query.data.accountLabel }, "Could not fetch client volume from Vapi");
+    res.status(502).json({ error: "Vapi did not return this account's calls" });
+  }
 });
 
 // T-20: the headline verdict per ranking group. Read-time, from the same ok

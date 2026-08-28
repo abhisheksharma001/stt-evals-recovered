@@ -534,6 +534,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BenchmarkTrend"
+  /benchmark/volume:
+    get:
+      operationId: getClientVolume
+      tags: [benchmark]
+      summary: T-24 -- a client's real call volume over the trailing 14 days (Vapi's retention window, verified live), read from Vapi for the account with this label (every assistant, every call), so a $/min price can be stated as $/month. Cached 15 minutes server-side.
+      parameters:
+        - name: accountLabel
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Calls and minutes in the window, total and per assistant. windowDays is the basis -- a month is a projection from it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientVolume"
+        "404":
+          description: No configured Vapi account has this label
+        "502":
+          description: Vapi did not answer
   /benchmark/plan:
     get:
       operationId: getBenchmarkPlan
@@ -1836,6 +1857,30 @@ components:
               words: { type: number }
               callsScored: { type: number }
               cleanCalls: { type: number }
+    ClientVolume:
+      type: object
+      required: [accountId, accountLabel, windowDays, from, to, calls, minutes, truncated, assistants, fetchedAt]
+      properties:
+        accountId: { type: string }
+        accountLabel: { type: string }
+        windowDays: { type: number }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        calls: { type: number }
+        minutes: { type: number }
+        # True when the fetch hit the server's page cap -- read the numbers
+        # as "at least".
+        truncated: { type: boolean }
+        assistants:
+          type: array
+          items:
+            type: object
+            required: [assistantId, calls, minutes]
+            properties:
+              assistantId: { type: ["string", "null"] }
+              calls: { type: number }
+              minutes: { type: number }
+        fetchedAt: { type: string, format: date-time }
     BulkVerdicts:
       type: object
       required: [bulkId, providers, groups]
