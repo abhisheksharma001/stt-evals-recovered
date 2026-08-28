@@ -14,6 +14,7 @@ import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
+import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -221,6 +222,10 @@ export default function Rankings() {
     () => Object.fromEntries((providerList ?? []).map((p) => [p.id, p.name])),
     [providerList],
   )
+  // T-21: one verdict fetch per bulk, shared by the banner and every group
+  // card. Only meaningful for a single bulk -- the all-time view has no
+  // noise floor of its own and shows no verdict rather than a wrong one.
+  const { data: verdicts } = useBulkVerdicts(viewMode === "bulk" ? selectedBulkId : null)
   const [sortKey, setSortKey] = React.useState<SortKey>("rank")
   // Direction starts at each metric's sensible default (lower-is-better for
   // WER/cost/latency, higher for accuracy) and clicking the active column
@@ -324,6 +329,18 @@ export default function Rankings() {
           </Select>
         )}
       </div>
+
+      {/* T-21: the answer first. One sentence for the whole bulk, above
+          cost, correlation and every table -- a non-technical reader is
+          done here. Per-group sentences repeat inside each card. */}
+      {viewMode === "bulk" && selectedBulkId && (
+        <BulkVerdictBanner
+          bulkId={selectedBulkId}
+          groupLabels={Object.fromEntries(
+            Object.values(groupedRankings).map((rows) => [rows[0]?.assistantId ?? "__none__", rows[0]?.assistantLabel ?? "Unassigned (no assistant ID captured at import)"]),
+          )}
+        />
+      )}
 
       {/* cost + coverage summary -- 2026-08-27, per Abhishek: "does the
           estimation show cost of each run and the openai agent cost and stt
@@ -448,6 +465,11 @@ export default function Rankings() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {/* T-21: this group's verdict sentence sits above its table so
+                  the decision is read before the numbers that back it. */}
+              {viewMode === "bulk" && (
+                <GroupVerdictHeadline verdict={findGroupVerdict(verdicts, ranks[0]?.assistantId ?? null)?.verdict} />
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
