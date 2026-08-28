@@ -40,6 +40,7 @@ import type {
   BulkManifest,
   BulkPreview,
   BulkPreviewInput,
+  BulkProviderCorrelation,
   BulkTemplate,
   BulkTemplateInput,
   BulkTemplateLaunchInput,
@@ -2655,6 +2656,83 @@ export const useCancelBulk = <TError = ErrorType<void>,
       > => {
       return useMutation(getCancelBulkMutationOptions(options));
     }
+
+export const getGetBulkProviderCorrelationUrl = (bulkId: string,) => {
+
+
+
+
+  return `/api/benchmark/bulks/${bulkId}/provider-correlation`
+}
+
+/**
+ * @summary T-18 -- how often each pair of providers transcribed this bulk's calls the same way. Two providers that agree almost always are one witness, not two, when reading consensus. Free; text arithmetic over stored transcripts.
+ */
+export const getBulkProviderCorrelation = async (bulkId: string, options?: Parameters<typeof customFetch>[1]): Promise<BulkProviderCorrelation> => {
+
+  return customFetch<BulkProviderCorrelation>(getGetBulkProviderCorrelationUrl(bulkId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBulkProviderCorrelationQueryKey = (bulkId: string,) => {
+    return [
+    `/api/benchmark/bulks/${bulkId}/provider-correlation`
+    ] as const;
+    }
+
+
+export const getGetBulkProviderCorrelationQueryOptions = <TData = Awaited<ReturnType<typeof getBulkProviderCorrelation>>, TError = ErrorType<void>>(bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkProviderCorrelation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkProviderCorrelationQueryKey(bulkId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkProviderCorrelation>>> = ({ signal }) => getBulkProviderCorrelation(bulkId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bulkId !== null && bulkId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBulkProviderCorrelation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBulkProviderCorrelationQueryResult = NonNullable<Awaited<ReturnType<typeof getBulkProviderCorrelation>>>
+export type GetBulkProviderCorrelationQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-18 -- how often each pair of providers transcribed this bulk's calls the same way. Two providers that agree almost always are one witness, not two, when reading consensus. Free; text arithmetic over stored transcripts.
+ */
+
+export function useGetBulkProviderCorrelation<TData = Awaited<ReturnType<typeof getBulkProviderCorrelation>>, TError = ErrorType<void>>(
+ bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkProviderCorrelation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBulkProviderCorrelationQueryOptions(bulkId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetBulkManifestUrl = (bulkId: string,) => {
 

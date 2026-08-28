@@ -682,6 +682,26 @@ paths:
           description: Bulk not found
         "409":
           description: Bulk is already in a terminal state
+  /benchmark/bulks/{bulkId}/provider-correlation:
+    get:
+      operationId: getBulkProviderCorrelation
+      tags: [benchmark]
+      summary: T-18 -- how often each pair of providers transcribed this bulk's calls the same way. Two providers that agree almost always are one witness, not two, when reading consensus. Free; text arithmetic over stored transcripts.
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pairwise agreement over the bulk's ok cells
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkProviderCorrelation"
+        "404":
+          description: Bulk not found
   /benchmark/bulks/{bulkId}/manifest:
     get:
       operationId: getBulkManifest
@@ -1698,6 +1718,42 @@ components:
                 # awaiting_confirmation instead of launching.
                 overThreshold: { type: boolean }
         costThresholdCents: { type: number }
+    BulkProviderCorrelation:
+      type: object
+      required: [bulkId, callCount, providers, pairs, correlatedExcessAgreement]
+      properties:
+        bulkId: { type: string }
+        # Calls with at least one ok transcript in this bulk.
+        callCount: { type: number }
+        providers:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
+        # Every unordered pair once, providerAId < providerBId.
+        pairs:
+          type: array
+          items:
+            type: object
+            required: [providerAId, providerBId, sharedCalls, agreement, excessAgreement]
+            properties:
+              providerAId: { type: string }
+              providerBId: { type: string }
+              sharedCalls: { type: number }
+              # Mean share of aligned words the two agreed on, 0..1. null
+              # when they never shared a call -- never a confident 0.
+              agreement: { type: ["number", "null"] }
+              # agreement minus the average of each side's mean agreement
+              # with every other provider (pair excluded). Positive = they
+              # agree with each other more than with the field, the mark of
+              # a shared engine. null without a third provider.
+              excessAgreement: { type: ["number", "null"] }
+        # Pairs whose excessAgreement is at or above this are correlated:
+        # read their agreement as one vote.
+        correlatedExcessAgreement: { type: number }
     BulkProgress:
       type: object
       required: [callsTotal, callsRun, cellsTotal, cellsOk, cellsFailed, cellsPending, cellsCancelled, cellsSkippedPendingReview]
