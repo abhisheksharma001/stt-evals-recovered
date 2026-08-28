@@ -17,6 +17,8 @@ export interface Bulk {
   shardSize: number;
   minDurationSeconds: number;
   /** @nullable */
+  maxDurationSeconds: number | null;
+  /** @nullable */
   estimatedCostCents?: number | null;
   /** @nullable */
   estimatedSttCostCents?: number | null;

@@ -20,6 +20,11 @@ export interface BulkSelectionCriteria {
   lastNDays?: number;
   /** @minimum 0 */
   minDurationSeconds?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxDurationSeconds?: number | null;
   callIds?: string[];
   resolvedCallIds?: string[];
   /** @nullable */

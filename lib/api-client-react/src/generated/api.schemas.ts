@@ -863,6 +863,11 @@ export interface BulkSelectionCriteria {
   lastNDays?: number;
   /** @minimum 0 */
   minDurationSeconds?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxDurationSeconds?: number | null;
   callIds?: string[];
   resolvedCallIds?: string[];
   /** @nullable */
@@ -877,6 +882,8 @@ export interface Bulk {
   providerIds: string[];
   shardSize: number;
   minDurationSeconds: number;
+  /** @nullable */
+  maxDurationSeconds: number | null;
   /** @nullable */
   estimatedCostCents?: number | null;
   /** @nullable */
@@ -906,6 +913,11 @@ export interface BulkInput {
   shardSize?: number;
   /** @minimum 0 */
   minDurationSeconds?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxDurationSeconds?: number | null;
   confirm?: boolean;
 }
 
@@ -973,6 +985,8 @@ export interface BulkTemplate {
   shardSize: number;
   minDurationSeconds: number;
   /** @nullable */
+  maxDurationSeconds: number | null;
+  /** @nullable */
   createdByLabel?: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -991,6 +1005,11 @@ export interface BulkTemplateInput {
   shardSize?: number;
   /** @minimum 0 */
   minDurationSeconds?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxDurationSeconds?: number | null;
 }
 
 export interface BulkTemplateLaunchInput {

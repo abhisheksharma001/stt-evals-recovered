@@ -43,10 +43,12 @@ import {
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { logger } from "../lib/logger";
 import {
+  BulkDurationBandError,
   BulkNameConflictError,
   BulkSelectionEmptyError,
   cancelBulk,
   createBulkFromCriteria,
+  resolveDurationBand,
   isUniqueViolation,
   launchBulk,
   retryBulkFailedCells,
@@ -65,6 +67,7 @@ function criteriaFromBody(criteria: {
   startedAtTo?: Date | string;
   lastNDays?: number;
   minDurationSeconds?: number;
+  maxDurationSeconds?: number | null;
   callIds?: string[];
 }): BulkSelectionCriteria {
   const iso = (value?: Date | string): string | undefined =>
@@ -89,6 +92,7 @@ function serializeBulk(bulk: BenchmarkBulkRow) {
     providerIds: bulk.providerIds,
     shardSize: bulk.shardSize,
     minDurationSeconds: bulk.minDurationSeconds,
+    maxDurationSeconds: bulk.maxDurationSeconds ?? null,
     estimatedCostCents: bulk.estimatedCostCents ?? null,
     estimatedSttCostCents: bulk.estimatedSttCostCents ?? null,
     estimatedAgentCostCents: bulk.estimatedAgentCostCents ?? null,
@@ -108,6 +112,7 @@ function serializeTemplate(template: BulkTemplateRow) {
     providerIds: template.providerIds,
     shardSize: template.shardSize,
     minDurationSeconds: template.minDurationSeconds,
+    maxDurationSeconds: template.maxDurationSeconds ?? null,
     createdByLabel: template.createdByLabel ?? null,
     createdAt: template.createdAt.toISOString(),
     updatedAt: template.updatedAt.toISOString(),
@@ -155,12 +160,13 @@ router.post("/benchmark/bulks", async (req, res): Promise<void> => {
       providerIds: parsed.data.providerIds,
       shardSize: parsed.data.shardSize,
       minDurationSeconds: parsed.data.minDurationSeconds,
+      maxDurationSeconds: parsed.data.maxDurationSeconds,
       confirm: parsed.data.confirm,
       actorLabel: actorFromRequest(req),
     });
     res.status(201).json(CreateBulkResponse.parse(serializeBulk(bulk)));
   } catch (err) {
-    if (err instanceof BulkSelectionEmptyError) {
+    if (err instanceof BulkSelectionEmptyError || err instanceof BulkDurationBandError) {
       res.status(400).json({ error: err.message });
       return;
     }
@@ -517,16 +523,32 @@ router.post("/benchmark/bulk-templates", async (req, res): Promise<void> => {
     return;
   }
   const actorLabel = actorFromRequest(req);
+  const templateCriteria = criteriaFromBody(parsed.data.criteria);
+  let band: { min: number; max: number | null };
+  try {
+    band = resolveDurationBand({
+      minDurationSeconds: parsed.data.minDurationSeconds,
+      maxDurationSeconds: parsed.data.maxDurationSeconds,
+      criteria: templateCriteria,
+    });
+  } catch (err) {
+    if (err instanceof BulkDurationBandError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   let template: BulkTemplateRow;
   try {
     [template] = await db
       .insert(bulkTemplatesTable)
       .values({
         name: parsed.data.name,
-        selectionCriteria: criteriaFromBody(parsed.data.criteria),
+        selectionCriteria: templateCriteria,
         providerIds: parsed.data.providerIds,
         shardSize: parsed.data.shardSize ?? 50,
-        minDurationSeconds: parsed.data.minDurationSeconds ?? 5,
+        minDurationSeconds: band.min,
+        maxDurationSeconds: band.max,
         createdByLabel: actorLabel,
       })
       .returning();
@@ -582,6 +604,7 @@ router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Pr
       providerIds: template.providerIds,
       shardSize: template.shardSize,
       minDurationSeconds: template.minDurationSeconds,
+      maxDurationSeconds: template.maxDurationSeconds ?? null,
       confirm: body.data.confirm,
       actorLabel,
     });
@@ -611,7 +634,7 @@ router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Pr
       .status(201)
       .json(LaunchBulkTemplateResponse.parse(serializeBulk(result.bulk)));
   } catch (err) {
-    if (err instanceof BulkSelectionEmptyError) {
+    if (err instanceof BulkSelectionEmptyError || err instanceof BulkDurationBandError) {
       res.status(400).json({ error: err.message });
       return;
     }

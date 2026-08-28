@@ -1568,6 +1568,8 @@ components:
         startedAtTo: { type: string, format: date-time }
         lastNDays: { type: number, minimum: 1 }
         minDurationSeconds: { type: number, minimum: 0 }
+        # T-10: null = no upper cap.
+        maxDurationSeconds: { type: ["number", "null"], minimum: 0 }
         callIds:
           type: array
           items: { type: string }
@@ -1577,7 +1579,7 @@ components:
         resolvedAt: { type: ["string", "null"], format: date-time }
     Bulk:
       type: object
-      required: [id, name, status, selectionCriteria, providerIds, shardSize, minDurationSeconds, createdAt]
+      required: [id, name, status, selectionCriteria, providerIds, shardSize, minDurationSeconds, maxDurationSeconds, createdAt]
       properties:
         id: { type: string }
         name: { type: string }
@@ -1588,6 +1590,7 @@ components:
           items: { type: string }
         shardSize: { type: number }
         minDurationSeconds: { type: number }
+        maxDurationSeconds: { type: ["number", "null"] }
         estimatedCostCents: { type: ["number", "null"] }
         estimatedSttCostCents: { type: ["number", "null"] }
         estimatedAgentCostCents: { type: ["number", "null"] }
@@ -1609,6 +1612,8 @@ components:
           items: { type: string }
         shardSize: { type: number, minimum: 1, maximum: 500 }
         minDurationSeconds: { type: number, minimum: 0 }
+        # T-10: omitted = default band cap (120s); explicit null = no cap.
+        maxDurationSeconds: { type: ["number", "null"], minimum: 0 }
         # FR-BLK-5: required true when the estimate exceeds the server cost
         # threshold; without it the bulk parks at awaiting_confirmation.
         confirm: { type: boolean }
@@ -1714,7 +1719,7 @@ components:
         agentCallsJudged: { type: number }
     BulkTemplate:
       type: object
-      required: [id, name, selectionCriteria, providerIds, shardSize, minDurationSeconds, createdAt]
+      required: [id, name, selectionCriteria, providerIds, shardSize, minDurationSeconds, maxDurationSeconds, createdAt]
       properties:
         id: { type: string }
         name: { type: string }
@@ -1724,6 +1729,7 @@ components:
           items: { type: string }
         shardSize: { type: number }
         minDurationSeconds: { type: number }
+        maxDurationSeconds: { type: ["number", "null"] }
         createdByLabel: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -1739,6 +1745,7 @@ components:
           items: { type: string }
         shardSize: { type: number, minimum: 1, maximum: 500 }
         minDurationSeconds: { type: number, minimum: 0 }
+        maxDurationSeconds: { type: ["number", "null"], minimum: 0 }
     BulkTemplateLaunchInput:
       type: object
       properties:

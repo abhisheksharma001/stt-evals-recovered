@@ -20,4 +20,9 @@ export interface BulkTemplateInput {
   shardSize?: number;
   /** @minimum 0 */
   minDurationSeconds?: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  maxDurationSeconds?: number | null;
 }

@@ -75,7 +75,7 @@ the price of one afternoon, not one quarter.
 
 | ID | Task | Done when |
 |---|---|---|
-| T-10 | `maxDurationSeconds` through schema, criteria, OpenAPI and the create dialog. Default band 60–120s, overridable. | A bulk with `min=60,max=120` contains only calls in that range |
+| T-10 | ✅ **done** (PR #18). `maxDurationSeconds` on `benchmark_bulks`, `bulk_templates` (nullable, no DB default — pre-band rows honestly read `null` = no cap), `BulkSelectionCriteria`, OpenAPI, and both create dialogs ("Max call duration (s, empty = no cap)"). Defaults `60–120` via `resolveDurationBand` in `lib/bulks.ts`; explicit `null` = no cap; `max < min` → 400 before any insert. Eligibility preview and criteria summary (`60–120s`) honour the cap. Live: resolver with `min=60,max=120` → 24 calls, durations 60–115, all in band (SQL agrees: 24 of 121 corpus calls); no cap → 41. Not created through `POST /benchmark/bulks`: 3 live bulks already sit at `MAX_LIVE_BULKS`, so a test bulk would have evicted a real one. | A bulk with `min=60,max=120` contains only calls in that range |
 | T-11 | Capture `endedReason` and `analysis.successEvaluation` at import. Add `sourceEndedReason`, `sourceSuccessEvaluation` to `benchmark_calls`. **Only the verified field set** — see `docs/PRD-v4-technical.md` V4-T11. | An imported call reads back with the same `endedReason` Vapi returned |
 | T-12 | Backfill `endedReason` for existing corpus calls still inside the 14-day window. Older ones stay null; **null must never silently mean "normal call."** | Backfill script run once, count reported |
 | T-13 | Outcome filters (`includeEndedReasons` / `excludeEndedReasons` / `successEvaluation`) plus a "worth benchmarking" preset that drops voicemail, silence timeouts and misdials. | A bulk can be built from forwarded calls only |
@@ -162,6 +162,7 @@ either on a date. Start it when its trigger fires.
 | T-47 | **Disagreement is reference-relative, not consensus-relative.** `buildDisagreementSpans` marks a position disputed when any provider differs from the *reference* (the longest timed provider). When four of five say "are" and the reference alone says "were", the span is right but `agreesWithReference` is false for the four — the UI shows it neutrally, but a consensus vote per position (as `computeCrossProviderDisagreement` already does) would rank readings better and let T-09 report "judge vs human" and "majority vs human" side by side. | T-08 self-review |
 | T-48 | **OpenAI and ElevenLabs contribute no word timings.** OpenAI is requested with `response_format: json` (text only; `verbose_json` + `timestamp_granularities` may return words for whisper-1 but not gpt-4o-transcribe — must be checked against the real API, not docs). ElevenLabs' stored words carry only `speaker_id` in the captured sample. A call where only those two succeed reads `no_word_timings`. Decide per provider whether timings are requestable, and re-verify with a real response before extending `timed-words.ts`. | T-08 self-review |
 | T-49 | ✅ **done** (PR #17). `setActorLabel` in the client, `x-actor` on every request, one `lib/actor.ts` for sidebar + client. Live: UI verdict → `adjudicated_by_label = Abhishek`, audit row same. Historical `unknown` rows left as-is. Original finding: **Verdicts (and bulk launches) are recorded as `by unknown`.** The UI shows "Abhishek · Curator" in the sidebar but the generated API client sends no `x-actor` header, so `actorFromRequest` falls back to `unknown` on every write — seen live on the first UI adjudication (`adjudicated_by_label = unknown`) and already true of `launchedByLabel` on bulks. One place to fix: the client's `customFetch` should send the signed-in label. Matters for T-09, which reports agreement "with a human" — it should be able to say which one. | T-08 self-review |
+| T-50 | **Bulk templates cannot be deleted.** There is no `DELETE /benchmark/bulk-templates/{id}` — the T-10 verification templates had to be removed with SQL. A template that is wrong (bad band, wrong providers) is permanent from the UI. | T-10 self-review |
 | T-39 | The badge reports the **API** bundle's commit. The UI itself is a separate Vite build and can be served stale from a browser cache with no signal at all — a second, real version of the same failure this task exists to kill. Stamping the UI build (Vite `define`) and showing both, or showing one only when they disagree, is a deliberate design call, not a drive-by. | T-05 self-review |
 
 ## Findings log
@@ -193,6 +194,16 @@ Append anything learned mid-task here rather than losing it to a compaction.
   exists in the live DB now. The one verification row written during testing
   (`adjudicated_by_label = 't08-verify'`) was deleted afterward — the table is
   empty at merge, so T-09 starts from zero real verdicts.
+
+- **2026-08-28 (T-10): the corpus is mostly outside the default band.** Of
+  121 corpus calls, 24 sit in 60–120s (min 2s, max 445s); 41 are ≥60s at all.
+  So the default band roughly halves what an unfiltered bulk would take —
+  which is the point, but the first bulk created after this ships will look
+  smaller than the last one, and that is by design, not a bug. Also: the
+  live-bulk cap (`MAX_LIVE_BULKS = 3`) was already full, so verification
+  used the resolver directly rather than `POST /benchmark/bulks` — creating
+  a test bulk there would have evicted a real one with its runs and scores.
+  Worth remembering before any future "just create a throwaway bulk" check.
 
 - **2026-08-28 (T-49): typecheck-clean is not verified.** First attempt put
   `setActorLabel(...)` inside `main.tsx`'s `if (apiBaseUrl)` block — never
