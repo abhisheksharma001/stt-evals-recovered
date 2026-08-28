@@ -11,6 +11,15 @@
 // of raw fetch against the provider's REST API rather than an SDK dependency.
 
 import type { BenchmarkAgentFlag } from "@workspace/db";
+import { BamlClientFinishReasonError, BamlClientHttpError, BamlValidationError, ClientRegistry, Collector, setLogLevel } from "@boundaryml/baml";
+import { b } from "../baml_client";
+import TypeBuilder from "../baml_client/type_builder";
+import type { JudgeVerdict } from "../baml_client/types";
+
+// T-25: BAML ships its own stdout logger that prints every prompt and parsed
+// answer at "info". pino is this server's one logger; keep BAML quiet unless
+// an operator opts in with BAML_LOG=info/debug for a debugging session.
+if (!process.env.BAML_LOG) setLogLevel("warn");
 
 const API_KEY_ENV_VAR = "OPENAI_API_KEY";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
@@ -126,14 +135,36 @@ async function callOpenAi(params: {
 // (lib/scoring/src/hybrid.ts compares candidates to each other instead).
 // judgeCandidates below is unchanged in shape but is now always called with
 // hybrid-derived flags instead of an LLM's own blind guess at what's wrong.
+//
+// T-25 (2026-08-29): the judge now runs through BAML (baml_src/judge.baml ->
+// generated src/baml_client). Same signature, same return shape, same
+// callers (lib/agent-verify.ts, lib/judge-accuracy.ts) -- only what is
+// underneath changed:
+//
+//   * The pick is a TYPE. `PickedProvider` is a `@@dynamic` enum whose only
+//     values are the candidate provider IDs of THIS call (added at runtime
+//     through the TypeBuilder below), so the parser can only return one of
+//     them. The old strict-JSON-schema enum silently came back empty on
+//     10/10 historical scans and a regex over the reasoning prose had to
+//     rescue the pick (`inferPickFromReasoning`, now deleted). An
+//     unparseable answer is now a thrown BamlValidationError -> a
+//     `judge_failed` scan row, never a guess.
+//   * The prompt lives in a versioned, diffable .baml file instead of a TS
+//     template literal.
+//   * Cost capture is still ours: BAML's Collector reports token usage, the
+//     MODEL_COST_MICROCENTS_PER_1K_TOKENS table above prices it.
+//
+// analyzeFailure (below) deliberately stays on the raw fetch path -- the
+// PRD's rule is "judge only, behind the existing signature; migrate nothing
+// else until a full bulk has been judged through BAML".
 export async function judgeCandidates(params: {
   originalTranscript: string;
   flags: BenchmarkAgentFlag[];
   candidates: { providerId: string; providerName: string; transcript: string }[];
   // 2026-08-26: caller-supplied override, read from app_settings.agentModel
-  // by routes/agent.ts (this file stays DB-free, per the file header's
-  // "ONLY the two OpenAI calls" separation). Falls back to JUDGE_MODEL when
-  // omitted, empty, or the caller passed a settings row with no override set.
+  // by the callers (this file stays DB-free, per the file header's
+  // separation). Falls back to JUDGE_MODEL when omitted, empty, or the
+  // caller passed a settings row with no override set.
   model?: string | null;
 }): Promise<{
   pickedProviderId: string | null;
@@ -152,73 +183,70 @@ export async function judgeCandidates(params: {
     };
   }
 
-  const candidateIds = params.candidates.map((c) => c.providerId);
-  const { data: result, usage } = await callOpenAi({
-    model: params.model?.trim() || JUDGE_MODEL,
-    system:
-      "You are comparing several speech-to-text providers' transcripts of the same call, " +
-      "after another pass flagged specific spans in an earlier transcript as likely wrong. " +
-      "Pick whichever candidate transcript reads most sensibly given the full conversation's " +
-      "context -- especially around the flagged spans. This is your best guess from text alone, " +
-      "not a certainty: a human will review your pick against the actual audio before it is " +
-      "trusted as correct, so explain your reasoning clearly rather than just asserting an answer.",
-    user: JSON.stringify({
-      originalTranscript: params.originalTranscript,
-      flaggedSpans: params.flags,
-      candidates: params.candidates.map((c) => ({ providerId: c.providerId, providerName: c.providerName, transcript: c.transcript })),
-    }),
-    schemaName: "candidate_pick",
-    schema: {
-      type: "object",
-      properties: {
-        pickedProviderId: { type: "string", enum: candidateIds },
-        reasoning: { type: "string", description: "Why this candidate is most sensible, referencing the flagged spans specifically." },
-      },
-      required: ["pickedProviderId", "reasoning"],
-      additionalProperties: false,
-    },
-  });
+  const apiKey = process.env[API_KEY_ENV_VAR];
+  if (!apiKey) throw new AgentConfigError();
+  const model = params.model?.trim() || JUDGE_MODEL;
 
-  const rawPick = typeof result.pickedProviderId === "string" ? result.pickedProviderId : null;
-  const reasoning = typeof result.reasoning === "string" ? result.reasoning : "";
-  // 2026-08-27, found live: every historical flagged scan in the corpus
-  // (10/10, spanning several days) has a null pick despite `reasoning`
-  // plainly naming a provider ("The AssemblyAI transcript provides the
-  // most...") -- the strict-schema enum match below was never once
-  // succeeding in practice, for reasons not reproducible without spending
-  // real OpenAI calls to isolate. Rather than ship the "why this one" UI
-  // on top of a field that silently comes back empty, fall back to
-  // matching the provider NAME the model actually wrote in its prose --
-  // cheap, no extra API call, and the reasoning text is real model output
-  // either way so this isn't inventing an answer, just reading the one
-  // already given in a second, more forgiving way.
-  const pickedProviderId = candidateIds.includes(rawPick ?? "")
-    ? rawPick
-    : inferPickFromReasoning(reasoning, params.candidates);
+  // The enum's values are exactly this call's candidate IDs, nothing else.
+  const tb = new TypeBuilder();
+  for (const c of params.candidates) {
+    tb.PickedProvider.addValue(c.providerId).description(c.providerName);
+  }
+
+  // One client per call, so the model override from app_settings applies
+  // without a shared mutable registry. The key is read here, at call time,
+  // from the environment only.
+  const clientRegistry = new ClientRegistry();
+  clientRegistry.addLlmClient("Judge", "openai", { model, api_key: apiKey });
+  clientRegistry.setPrimary("Judge");
+
+  const collector = new Collector("judge");
+
+  let verdict: JudgeVerdict;
+  try {
+    verdict = await b.withOptions({ tb, clientRegistry, collector }).JudgeCandidates(
+      params.originalTranscript,
+      params.flags.map((f) => ({ text: f.text, reason: f.reason })),
+      params.candidates.map((c) => ({ providerId: c.providerId, providerName: c.providerName, transcript: c.transcript })),
+    );
+  } catch (err) {
+    throw toAgentRequestError(err);
+  }
+
+  const usage = collector.last?.usage;
+  const promptTokens = usage?.inputTokens ?? null;
+  const completionTokens = usage?.outputTokens ?? null;
+  const rawPick = String(verdict.pickedProviderId);
   return {
-    promptTokens: usage.promptTokens,
-    completionTokens: usage.completionTokens,
-    costMicrocents: usage.costMicrocents,
-    pickedProviderId,
-    reasoning,
+    // Belt and braces: the dynamic enum already guarantees membership, but
+    // this function's contract is "null or a real candidate ID", and that
+    // contract is enforced here, not trusted to a library.
+    pickedProviderId: params.candidates.some((c) => c.providerId === rawPick) ? rawPick : null,
+    reasoning: typeof verdict.reasoning === "string" ? verdict.reasoning : "",
+    promptTokens,
+    completionTokens,
+    costMicrocents:
+      promptTokens === null || completionTokens === null ? null : costMicrocentsFor(model, promptTokens, completionTokens),
   };
 }
 
-/** Fallback for when the model's structured `pickedProviderId` doesn't
- * match any candidate (see the caller's comment) -- finds whichever
- * candidate's provider name is mentioned earliest in the reasoning text,
- * which in every observed case is the one the reasoning is actually about. */
-function inferPickFromReasoning(
-  reasoning: string,
-  candidates: { providerId: string; providerName: string }[],
-): string | null {
-  let best: { providerId: string; index: number } | null = null;
-  for (const c of candidates) {
-    const idx = reasoning.toLowerCase().indexOf(c.providerName.toLowerCase());
-    if (idx === -1) continue;
-    if (!best || idx < best.index) best = { providerId: c.providerId, index: idx };
+/** Maps BAML's error classes onto this file's existing AgentRequestError so
+ * callers' `judge_failed` handling (agent-verify.ts, judge-accuracy.ts) is
+ * unchanged. Status codes: the provider's own for HTTP failures; 502 for
+ * "the model answered but not with a valid pick" -- that is an upstream
+ * answer we refuse, not a client mistake. */
+function toAgentRequestError(err: unknown): Error {
+  if (err instanceof BamlClientHttpError) {
+    return new AgentRequestError(err.status_code, `OpenAI returned HTTP ${err.status_code}: ${err.message}`);
   }
-  return best?.providerId ?? null;
+  if (err instanceof BamlValidationError) {
+    return new AgentRequestError(502, `judge output did not parse to a valid pick: ${err.message}`);
+  }
+  if (err instanceof BamlClientFinishReasonError) {
+    return new AgentRequestError(502, `judge stopped early (finish_reason=${err.finish_reason ?? "unknown"}): ${err.message}`);
+  }
+  if (err instanceof Error) return err;
+  return new Error(String(err));
 }
 
 // 2026-08-26, per Abhishek: a raw errorMessage (an HTTP status, a vendor
