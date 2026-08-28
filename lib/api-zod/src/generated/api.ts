@@ -765,6 +765,30 @@ export const ListBenchmarkRankingsResponse = zod.array(ListBenchmarkRankingsResp
 
 
 /**
+ * @summary T-23 -- raw material for the trend strip. One summed cell per (finished bulk, client account, assistant, provider) on the T-19 basis (peer flags, normalized words, scored calls, clean calls). Totals, never rates, so any pooling downstream is exact. Free; arithmetic over stored scores.
+ */
+export const GetBenchmarkTrendResponse = zod.object({
+  "bulks": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "at": zod.coerce.date(),
+  "status": zod.string()
+})),
+  "cells": zod.array(zod.object({
+  "bulkId": zod.string(),
+  "accountLabel": zod.string().nullable(),
+  "assistantId": zod.string().nullable(),
+  "providerId": zod.string(),
+  "providerName": zod.string(),
+  "peerFlags": zod.number(),
+  "words": zod.number(),
+  "callsScored": zod.number(),
+  "cleanCalls": zod.number()
+}))
+})
+
+
+/**
  * @summary Get PRD implementation plan and task dependencies
  */
 export const GetBenchmarkPlanResponseItem = zod.object({

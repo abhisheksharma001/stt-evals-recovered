@@ -28,6 +28,7 @@ import {
   GetBulkVerdictsParams,
   GetBulkVerdictsResponse,
   GetBulkProviderCorrelationResponse,
+  GetBenchmarkTrendResponse,
   GetBulkResponse,
   LaunchBulkParams,
   LaunchBulkResponse,
@@ -49,6 +50,7 @@ import {
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { logger } from "../lib/logger";
 import { bulkProviderCorrelation } from "../lib/provider-correlation";
+import { benchmarkTrend } from "../lib/trend";
 import { bulkVerdicts } from "../lib/verdict";
 import {
   BulkDurationBandError,
@@ -513,6 +515,13 @@ router.get("/benchmark/bulks/:bulkId/provider-correlation", async (req, res): Pr
     return;
   }
   res.json(GetBulkProviderCorrelationResponse.parse(await bulkProviderCorrelation(bulk.id)));
+});
+
+// T-23: raw summed cells for the cross-bulk trend strip, over every
+// finished bulk. Pooling per client / assistant happens client-side with
+// @workspace/scoring's buildTrend so one read serves every scope.
+router.get("/benchmark/trend", async (_req, res): Promise<void> => {
+  res.json(GetBenchmarkTrendResponse.parse(await benchmarkTrend()));
 });
 
 // T-20: the headline verdict per ranking group. Read-time, from the same ok

@@ -999,6 +999,32 @@ export interface BulkProviderCorrelation {
   correlatedExcessAgreement: number;
 }
 
+export type BenchmarkTrendBulksItem = {
+  id: string;
+  name: string;
+  at: string;
+  status: string;
+};
+
+export type BenchmarkTrendCellsItem = {
+  bulkId: string;
+  /** @nullable */
+  accountLabel: string | null;
+  /** @nullable */
+  assistantId: string | null;
+  providerId: string;
+  providerName: string;
+  peerFlags: number;
+  words: number;
+  callsScored: number;
+  cleanCalls: number;
+};
+
+export interface BenchmarkTrend {
+  bulks: BenchmarkTrendBulksItem[];
+  cells: BenchmarkTrendCellsItem[];
+}
+
 export type BulkVerdictsProvidersItem = {
   id: string;
   name: string;

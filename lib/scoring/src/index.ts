@@ -375,3 +375,4 @@ export * from "./spans";
 export * from "./judge-agreement";
 export * from "./provider-correlation";
 export * from "./verdict";
+export * from "./trend";

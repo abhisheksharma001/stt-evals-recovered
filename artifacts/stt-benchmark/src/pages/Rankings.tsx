@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
+import { ClientTrendSection, TrendStrip } from "@/components/trend-strip"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -401,6 +402,12 @@ export default function Rankings() {
           the cost line so it is read before the table it qualifies. */}
       {viewMode === "bulk" && selectedBulkId && <ProviderCorrelationCard bulkId={selectedBulkId} />}
 
+      {/* T-23: the same providers, bulk over bulk. Sits under the
+          single-bulk evidence so "is this bulk's answer the same answer as
+          last time" is on the page, not in someone's memory. Shown in both
+          views -- it is the one thing here that is inherently cross-bulk. */}
+      <ClientTrendSection highlightBulkId={viewMode === "bulk" ? selectedBulkId : null} />
+
       {/* The ranking cards below are scored from transcripts, not from the
           agent, so an agent failure cannot move them. Say that explicitly
           rather than leaving a red number next to a table and letting the
@@ -470,6 +477,15 @@ export default function Rankings() {
               {viewMode === "bulk" && (
                 <GroupVerdictHeadline verdict={findGroupVerdict(verdicts, ranks[0]?.assistantId ?? null)?.verdict} />
               )}
+              {/* T-23: this assistant's own trend, so a regression for one
+                  client's agent is visible even when the client-level line
+                  averages it away. */}
+              <TrendStrip
+                compact
+                scope={{ assistantId: ranks[0]?.assistantId ?? null }}
+                highlightBulkId={viewMode === "bulk" ? selectedBulkId : null}
+                title="Trend for this assistant, bulk over bulk"
+              />
               <Table>
                 <TableHeader>
                   <TableRow>
