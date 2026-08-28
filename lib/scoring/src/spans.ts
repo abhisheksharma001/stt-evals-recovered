@@ -51,6 +51,12 @@ export type DisagreementSpan = {
 export type DisagreementSpansResult = {
   /** Which provider supplied the clock and alignment anchor. */
   referenceProviderId: string | null;
+  /** The reference provider's normalized words, in order. T-22: lets a UI
+   *  show one flowing reading of the call with each span's
+   *  `referencePositions` swapped for the disputed readings, instead of
+   *  every provider's full transcript side by side. Empty when there is
+   *  no reference. */
+  referenceWords: string[];
   spans: DisagreementSpan[];
   /** Why there are no spans, when the reason is structural rather than
    *  "everyone agreed": nothing to build from. */
@@ -94,7 +100,7 @@ function tokenize(candidate: SpanCandidate): Token[] {
  */
 export function buildDisagreementSpans(candidates: SpanCandidate[]): DisagreementSpansResult {
   if (candidates.length < 2) {
-    return { referenceProviderId: null, spans: [], unavailableReason: "fewer_than_two_candidates" };
+    return { referenceProviderId: null, referenceWords: [], spans: [], unavailableReason: "fewer_than_two_candidates" };
   }
   const tokenized = candidates.map((c) => ({ providerId: c.providerId, tokens: tokenize(c) }));
 
@@ -103,7 +109,7 @@ export function buildDisagreementSpans(candidates: SpanCandidate[]): Disagreemen
   // fewest words to unanchored insertions.
   const timed = tokenized.filter((t) => t.tokens.length > 0 && t.tokens.every((tok) => tok.start !== null));
   if (timed.length === 0) {
-    return { referenceProviderId: null, spans: [], unavailableReason: "no_word_timings" };
+    return { referenceProviderId: null, referenceWords: [], spans: [], unavailableReason: "no_word_timings" };
   }
   const reference = [...timed].sort((a, b) => b.tokens.length - a.tokens.length)[0]!;
   const refWords = reference.tokens.map((t) => t.text);
@@ -182,5 +188,5 @@ export function buildDisagreementSpans(candidates: SpanCandidate[]): Disagreemen
     };
   });
 
-  return { referenceProviderId: reference.providerId, spans, unavailableReason: null };
+  return { referenceProviderId: reference.providerId, referenceWords: refWords, spans, unavailableReason: null };
 }

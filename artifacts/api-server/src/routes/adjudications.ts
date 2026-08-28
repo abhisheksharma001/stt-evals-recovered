@@ -83,7 +83,7 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
 
   if (!runId) {
     res.json(
-      ListDisagreementSpansResponse.parse({ callId, runId: null, referenceProviderId: null, unavailableReason: "no_run", spans: [] }),
+      ListDisagreementSpansResponse.parse({ callId, runId: null, referenceProviderId: null, referenceWords: [], unavailableReason: "no_run", spans: [] }),
     );
     return;
   }
@@ -101,6 +101,7 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
       callId,
       runId,
       referenceProviderId: built.referenceProviderId,
+      referenceWords: built.referenceWords,
       unavailableReason: built.unavailableReason,
       spans: built.spans.map((s) => {
         const adjudication = adjudicationByKey.get(spanKey(s.startMs, s.endMs));
@@ -109,6 +110,7 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
           endMs: s.endMs,
           contextBefore: s.contextBefore,
           contextAfter: s.contextAfter,
+          referencePositions: s.referencePositions,
           readings: s.readings,
           adjudication: adjudication ? serializeAdjudication(adjudication) : null,
         };

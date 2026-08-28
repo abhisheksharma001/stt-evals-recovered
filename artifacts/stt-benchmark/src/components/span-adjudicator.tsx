@@ -36,6 +36,81 @@ function fmtTime(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
+// T-22: one flowing reading of the call, not six full transcripts. The
+// reference provider's words run as plain text; each stretch where the
+// providers disagree is swapped for a play button carrying its timestamp
+// and the reference's own reading. Clicking it plays those seconds and
+// selects the same span in the adjudication list below, so the eye and
+// the ear land on the same place. The reference is only the clock and the
+// alignment anchor here (T-08) -- its reading is never "the right one".
+function DisagreementReading({
+  referenceWords,
+  spans,
+  activeIndex,
+  playingIndex,
+  nameOf,
+  onPlay,
+}: {
+  referenceWords: string[]
+  spans: DisagreementSpan[]
+  activeIndex: number
+  playingIndex: number | null
+  nameOf: (providerId: string) => string
+  onPlay: (index: number) => void
+}) {
+  const pieces: React.ReactNode[] = []
+  let cursor = 0
+  spans.forEach((span, index) => {
+    const [first, last] = span.referencePositions as [number, number]
+    if (first > cursor) pieces.push(<span key={`t${cursor}`}>{referenceWords.slice(cursor, first).join(" ")} </span>)
+    const ownWords = referenceWords.slice(first, last + 1).join(" ")
+    const others = span.readings.filter((r) => !r.agreesWithReference)
+    const active = index === activeIndex
+    const playing = index === playingIndex
+    pieces.push(
+      <button
+        type="button"
+        key={`s${index}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          onPlay(index)
+        }}
+        title={
+          others.length > 0
+            ? others.map((r) => `${nameOf(r.providerId)}: ${r.text || "(nothing)"}`).join("\n")
+            : "Providers disagree here"
+        }
+        aria-label={`Play ${fmtTime(span.startMs)} to ${fmtTime(span.endMs)}: ${ownWords || "nothing"}`}
+        className={`mx-0.5 inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 align-baseline font-mono text-[11px] leading-tight transition-colors ${
+          playing
+            ? "border-primary bg-primary text-primary-foreground"
+            : active
+              ? "border-primary bg-primary/10 text-foreground"
+              : span.adjudication
+                ? "border-success/40 bg-success/10 text-foreground hover:bg-success/20"
+                : "border-warning/40 bg-warning/10 text-foreground hover:bg-warning/20"
+        }`}
+      >
+        <Play className="h-2.5 w-2.5 shrink-0" />
+        <span className="shrink-0 text-muted-foreground">{fmtTime(span.startMs)}</span>
+        <span className={`truncate ${ownWords ? "" : "italic text-muted-foreground"}`}>{ownWords || "(nothing)"}</span>
+      </button>,
+    )
+    pieces.push(<span key={`g${index}`}> </span>)
+    cursor = last + 1
+  })
+  if (cursor < referenceWords.length) pieces.push(<span key={`t${cursor}`}>{referenceWords.slice(cursor).join(" ")}</span>)
+
+  return (
+    <div
+      data-testid="disagreement-reading"
+      className="max-h-72 overflow-y-auto rounded-md border border-border bg-muted/20 p-3 font-serif text-sm leading-7 text-foreground"
+    >
+      {pieces}
+    </div>
+  )
+}
+
 export function SpanAdjudicator({
   callId,
   runId,
@@ -84,6 +159,13 @@ export function SpanAdjudicator({
     },
     [spans, toast],
   )
+
+  // T-22: when the reading view (or J/K) moves the active span, bring its
+  // row in the list into view so the readings are right there.
+  React.useEffect(() => {
+    const row = containerRef.current?.querySelector<HTMLElement>(`[data-span-index="${activeIndex}"]`)
+    row?.scrollIntoView({ block: "nearest" })
+  }, [activeIndex])
 
   const onTimeUpdate = () => {
     const audio = audioRef.current
@@ -208,6 +290,24 @@ export function SpanAdjudicator({
         </span>
       </div>
 
+      {data.referenceWords.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[10px] text-muted-foreground">
+            The call as {data.referenceProviderId ? nameOf(data.referenceProviderId) : "the reference"} heard it, normalized
+            (lowercase, digits, no punctuation). Highlighted stretches are where providers disagree -- click one to hear
+            it and see every reading below.
+          </p>
+          <DisagreementReading
+            referenceWords={data.referenceWords}
+            spans={spans}
+            activeIndex={activeIndex}
+            playingIndex={playingIndex}
+            nameOf={nameOf}
+            onPlay={play}
+          />
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-md border border-border">
         {spans.map((span, index) => {
           const active = index === activeIndex
@@ -216,6 +316,7 @@ export function SpanAdjudicator({
           return (
             <div
               key={`${span.startMs}-${span.endMs}`}
+              data-span-index={index}
               className={`border-b border-border last:border-b-0 ${active ? "bg-primary/5" : ""}`}
               onClick={(e) => {
                 e.stopPropagation()

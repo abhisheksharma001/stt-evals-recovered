@@ -13,6 +13,11 @@ export interface DisagreementSpan {
   endMs: number;
   contextBefore: string;
   contextAfter: string;
+  /**
+     * @minItems 2
+     * @maxItems 2
+     */
+  referencePositions: number[];
   readings: SpanReading[];
   adjudication: Adjudication | null;
 }

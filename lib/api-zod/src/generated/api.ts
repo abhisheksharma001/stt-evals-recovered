@@ -190,16 +190,23 @@ export const ListDisagreementSpansQueryParams = zod.object({
   "runId": zod.coerce.string().optional().describe('Which run\'s results to build spans from. Defaults to the most recent run that has a successful cell for this call.')
 })
 
+export const listDisagreementSpansResponseSpansItemReferencePositionsMin = 2;
+export const listDisagreementSpansResponseSpansItemReferencePositionsMax = 2;
+
+
+
 export const ListDisagreementSpansResponse = zod.object({
   "callId": zod.string(),
   "runId": zod.string().nullable(),
   "referenceProviderId": zod.string().nullable(),
+  "referenceWords": zod.array(zod.string()),
   "unavailableReason": zod.union([zod.enum(['no_run', 'no_word_timings', 'fewer_than_two_candidates']),zod.null()]),
   "spans": zod.array(zod.object({
   "startMs": zod.number(),
   "endMs": zod.number(),
   "contextBefore": zod.string(),
   "contextAfter": zod.string(),
+  "referencePositions": zod.array(zod.number()).min(listDisagreementSpansResponseSpansItemReferencePositionsMin).max(listDisagreementSpansResponseSpansItemReferencePositionsMax),
   "readings": zod.array(zod.object({
   "providerId": zod.string(),
   "text": zod.string(),

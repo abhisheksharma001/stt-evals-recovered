@@ -14,6 +14,7 @@ export interface DisagreementSpansResponse {
   runId: string | null;
   /** @nullable */
   referenceProviderId: string | null;
+  referenceWords: string[];
   unavailableReason: DisagreementSpansResponseUnavailableReason;
   spans: DisagreementSpan[];
 }

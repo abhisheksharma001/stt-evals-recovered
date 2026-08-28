@@ -470,8 +470,12 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
         </>
       )}
 
-      {/* Every candidate's real transcript, winner first -- click a row to
-          read it in full alongside exactly which spans it was flagged for. */}
+      {/* Every candidate, winner first, with its flag summary. T-22: the
+          full transcript no longer opens by default -- the disagreement
+          reading under "Hear the disagreements" shows the call once with
+          only the disputed stretches expanded, which is what a reader
+          needs. The full text stays one click further in, for the rare
+          "but what did it say overall" question. */}
       <div className="overflow-hidden rounded-md border border-border">
         {sorted.map((c) => {
           const isPicked = c.providerId === scan.agentPickProviderId
@@ -507,9 +511,9 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
               </button>
               {expanded && (
                 <div className="space-y-2 border-t border-border bg-muted/20 p-3">
-                  <p className="whitespace-pre-wrap font-serif text-sm leading-relaxed text-foreground">
-                    {c.transcript}
-                  </p>
+                  {spans.length === 0 && entityCount === 0 && (
+                    <p className="text-xs text-muted-foreground">No low-confidence spans or entity mismatches for this provider.</p>
+                  )}
                   {spans.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {spans.map((s, i) => (
@@ -523,6 +527,10 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
                       ))}
                     </div>
                   )}
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Full transcript</summary>
+                    <p className="mt-2 whitespace-pre-wrap font-serif text-sm leading-relaxed text-foreground">{c.transcript}</p>
+                  </details>
                 </div>
               )}
             </div>
