@@ -50,11 +50,9 @@ describe("classifyProviderHttpStatus", () => {
     expect(classifyProviderHttpStatus(503)).toBe("provider_5xx");
   });
 
-  it("stays silent on 401/403 — whoever holds the response decides what a 403 meant", () => {
-    // A 403 is a forbidden *audio URL* at the fetch site and a bad *API key*
-    // from a vendor; this helper must not pick one.
-    expect(classifyProviderHttpStatus(403)).toBe("unknown");
-    expect(classifyProviderHttpStatus(401)).toBe("unknown");
+  it("classes a provider's 401/403 as provider_auth (T-42); the audio-URL 403 is decided earlier, by fetchAudioBytes", () => {
+    expect(classifyProviderHttpStatus(403)).toBe("provider_auth");
+    expect(classifyProviderHttpStatus(401)).toBe("provider_auth");
   });
 
   it("returns unknown for an unmapped 4xx rather than the nearest-looking bucket", () => {
@@ -87,6 +85,16 @@ describe("isRetryableFailureClass", () => {
     for (const cls of FAILURE_CLASSES) {
       expect(typeof isRetryableFailureClass(cls)).toBe("boolean");
     }
+  });
+});
+
+describe("classifyProviderHttpStatus (T-42)", () => {
+  it("classes a provider's 401/403 as provider_auth, never retryable", async () => {
+    const { classifyProviderHttpStatus } = await import("./failure-class");
+    expect(classifyProviderHttpStatus(401)).toBe("provider_auth");
+    expect(classifyProviderHttpStatus(403)).toBe("provider_auth");
+    expect(isRetryableFailureClass("provider_auth")).toBe(false);
+    expect(classifyProviderHttpStatus(429)).toBe("rate_limited");
   });
 });
 

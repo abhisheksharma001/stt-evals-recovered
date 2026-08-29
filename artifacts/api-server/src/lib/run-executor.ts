@@ -1097,7 +1097,26 @@ function aggregateRankingRows(
       0,
       ...rowsForGroup.map((r) => r.score.latencyFinalMs ?? 0),
     );
-    const maxCostPerMinute = Math.max(0, ...rowsForGroup.map((r) => r.score.costPerMinute ?? 0));
+    // T-61: score.costPerMinute on a CELL is that cell's whole cost (rate x
+    // this call's duration -- mislabeled since T-11), so averaging it gave a
+    // "per minute" that moved with call length (AssemblyAI 0.0036-0.0348
+    // across groups against a $0.006 list price). The ranking's number is
+    // now a real rate: this provider's total spend in the group over the
+    // group's total audio minutes, in dollars. costMicrocents is the exact
+    // unit (T-01); cells scored before it exist fall back to the per-cell
+    // dollar figure, which is the same quantity.
+    const dollarsPerMinuteFor = (rows: typeof rowsForGroup): number | null => {
+      let dollars = 0;
+      let minutes = 0;
+      for (const r of rows) {
+        const cellDollars = r.score.costMicrocents !== null ? r.score.costMicrocents / 1_000_000 : r.score.costPerMinute;
+        const seconds = callById.get(r.result.callId)?.durationSeconds ?? 0;
+        if (cellDollars === null || seconds <= 0) continue;
+        dollars += cellDollars;
+        minutes += seconds / 60;
+      }
+      return minutes > 0 ? dollars / minutes : null;
+    };
     // T-2 fix (2026-08-27, base-solidity review): flagBadness now uses
     // peerFlagCount/peerFlagSeverity (cross-provider disagreement + entity
     // mismatch, available for every provider), NOT flagCount/flagSeverity
@@ -1112,6 +1131,8 @@ function aggregateRankingRows(
         ? null
         : (r.score.peerFlagCount ?? 0) + severityRank((r.score.peerFlagSeverity as HybridSeverity | null) ?? "none");
     const maxFlagBadness = Math.max(0, ...rowsForGroup.map((r) => flagBadnessOf(r) ?? 0));
+    const dollarsPerMinuteByProvider = new Map([...byProvider.entries()].map(([id, rows]) => [id, dollarsPerMinuteFor(rows)]));
+    const maxCostPerMinute = Math.max(0, ...[...dollarsPerMinuteByProvider.values()].map((v) => v ?? 0));
 
     const providerAggregates = [...byProvider.entries()].map(([providerId, rows]) => {
       const avg = (values: Array<number | null>) => {
@@ -1128,7 +1149,7 @@ function aggregateRankingRows(
       const alphanumericAccuracy = avg(rows.map((r) => r.score.alphanumericAccuracy));
       const latencyFirstPartialMs = avg(rows.map((r) => r.score.latencyFirstPartialMs));
       const latencyFinalMs = avg(rows.map((r) => r.score.latencyFinalMs));
-      const costPerMinute = avg(rows.map((r) => r.score.costPerMinute));
+      const costPerMinute = dollarsPerMinuteByProvider.get(providerId) ?? null;
       const diarizationScore = avg(rows.map((r) => r.score.diarizationScore));
       // avgFlagCount/avgFlagSeverityScore stay the FULL picture (confidence
       // included) for display; avgPeerFlagCount/avgPeerFlagSeverityScore

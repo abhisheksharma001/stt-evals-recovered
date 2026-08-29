@@ -34,6 +34,17 @@ export type BulkVerdicts = {
 const NO_ASSISTANT_KEY = "__no_assistant__";
 const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+/** Which provider row IS a call's production transcriber -- the same
+ * vendor/model normalisation the verdict uses, shared with the bulk preview
+ * (T-56) so both answer identically. Null when nothing on file matches. */
+export function resolveProductionProviderId(
+  vendor: string,
+  model: string | null,
+  providers: { id: string; name: string; model: string }[],
+): string | null {
+  return providers.find((p) => norm(p.name) === norm(vendor) && (model ? norm(p.model) === norm(model) : false))?.id ?? null;
+}
+
 export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
   const runs = await db
     .select({ id: benchmarkRunsTable.id, callIds: benchmarkRunsTable.callIds, providerIds: benchmarkRunsTable.providerIds })
@@ -124,8 +135,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
     if (topProd) {
       const [vendor, model] = topProd[0].split("::") as [string, string];
       production = { vendor, model: model || null, coverage: topProd[1], total: groupCalls.length };
-      productionProviderId =
-        providers.find((p) => norm(p.name) === norm(vendor) && (model ? norm(p.model) === norm(model) : false))?.id ?? null;
+      productionProviderId = resolveProductionProviderId(vendor, model || null, providers);
     }
 
     const verdictCells: VerdictCell[] = cells

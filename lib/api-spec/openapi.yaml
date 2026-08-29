@@ -1451,7 +1451,7 @@ components:
         failureClass:
           oneOf:
             - type: string
-              enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, unknown]
+              enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, provider_auth, unknown]
             - type: "null"
         failureDiagnosis: { type: ["string", "null"], description: "2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed)." }
         failureSuggestedFix: { type: ["string", "null"] }
@@ -1760,8 +1760,23 @@ components:
         count: { type: number }
     BulkPreview:
       type: object
-      required: [inScopeCount, matchedCount, excluded, estimate, costThresholdCents]
+      required: [inScopeCount, matchedCount, excluded, estimate, costThresholdCents, productionCoverage]
       properties:
+        # T-56: one entry per production transcriber (vendor/model) among
+        # the matched calls. benchmarked=false means the verdict will not be
+        # able to say "vs production" for those calls -- shown as a warning
+        # before the cost, never blocking.
+        productionCoverage:
+          type: array
+          items:
+            type: object
+            required: [vendor, model, calls, providerId, benchmarked]
+            properties:
+              vendor: { type: string }
+              model: { type: ["string", "null"] }
+              calls: { type: number }
+              providerId: { type: ["string", "null"] }
+              benchmarked: { type: boolean }
         # Calls that passed the "who" filters (vertical / assistant /
         # account) or were explicitly picked. Always equals
         # matchedCount + sum(excluded[].count): nothing is dropped silently.
@@ -2015,7 +2030,7 @@ components:
         failureClass:
           oneOf:
             - type: string
-              enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, unknown]
+              enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, provider_auth, unknown]
             - type: "null"
         cells: { type: number }
         # Decided server-side by isRetryableFailureClass() (the same function

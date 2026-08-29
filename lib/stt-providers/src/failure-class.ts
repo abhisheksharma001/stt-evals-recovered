@@ -40,6 +40,11 @@ export const FAILURE_CLASSES = [
    *  a corrupt or unsupported file, not a transport problem. Not
    *  retryable without fixing the source audio. */
   "audio_decode",
+  /** T-42: the provider rejected OUR credentials -- a 401/403 from the
+   *  vendor's own API with a key that is present but wrong, revoked, or
+   *  out of plan. A missing key never reaches the vendor (ProviderConfigError
+   *  stops it first). Not retryable: the same key gets the same answer. */
+  "provider_auth",
   /** Deliberately unclassified. Must stay visible. */
   "unknown",
 ] as const;
@@ -64,6 +69,7 @@ export function isRetryableFailureClass(failureClass: FailureClass): boolean {
     case "retention_expired":
     case "audio_url_forbidden":
     case "audio_decode":
+    case "provider_auth":
       return false;
     case "provider_timeout":
     case "provider_5xx":
@@ -109,12 +115,13 @@ export function failureClassOf(err: unknown): FailureClass | null {
  * parsing: the caller is holding a real response object at the moment it
  * decides, which is the throw site by definition.
  *
- * Deliberately says nothing about 401/403. A 403 means completely different
- * things depending on who returned it -- a forbidden audio URL at the fetch
- * site, a bad API key from a vendor -- so the caller that knows which one it
- * is assigns that class itself, rather than this helper guessing.
+ * 401/403 here means the PROVIDER refused our key (T-42: provider_auth).
+ * The other 403 in this system -- a forbidden presigned audio URL -- is
+ * classified by fetchAudioBytes (types.ts) before it ever reaches this
+ * helper, because that caller is the one holding the audio response.
  */
 export function classifyProviderHttpStatus(status: number): FailureClass {
+  if (status === 401 || status === 403) return "provider_auth";
   if (status === 429) return "rate_limited";
   if (status >= 500) return "provider_5xx";
   if (status === 408) return "provider_timeout";

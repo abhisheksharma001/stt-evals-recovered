@@ -652,7 +652,7 @@ export const ListBenchmarkRunResultsResponseItem = zod.object({
   "httpStatus": zod.number().nullish(),
   "hypothesisTranscript": zod.string().nullish(),
   "errorMessage": zod.string().nullish(),
-  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'unknown']),zod.null()]).optional(),
+  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]).optional(),
   "failureDiagnosis": zod.string().nullish().describe('2026-08-26 -- set by POST ...\/analyze-failure; null until analyzed (or if this cell never failed).'),
   "failureSuggestedFix": zod.string().nullish(),
   "rawOutputHash": zod.string().nullish(),
@@ -1003,6 +1003,13 @@ export const PreviewBulkSelectionBody = zod.object({
 })
 
 export const PreviewBulkSelectionResponse = zod.object({
+  "productionCoverage": zod.array(zod.object({
+  "vendor": zod.string(),
+  "model": zod.string().nullable(),
+  "calls": zod.number(),
+  "providerId": zod.string().nullable(),
+  "benchmarked": zod.boolean()
+})),
   "inScopeCount": zod.number(),
   "matchedCount": zod.number(),
   "excluded": zod.array(zod.object({
@@ -1094,7 +1101,7 @@ export const GetBulkResponse = zod.object({
   "agentCallsJudged": zod.number()
 }),
   "failureBreakdown": zod.array(zod.object({
-  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'unknown']),zod.null()]),
+  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]),
   "cells": zod.number(),
   "retryable": zod.boolean()
 }))
