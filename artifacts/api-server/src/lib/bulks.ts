@@ -360,39 +360,33 @@ export async function estimateBulkCostCents(
 // 2026-08-27, per Abhishek ("show the openai agent cost ... separately,
 // estimated"): the agent judge call only fires for calls the free hybrid
 // pass actually flags, so callCount alone can't predict it the way STT cost
-// can -- this projects from real history (what fraction of past scans came
-// back "flagged", and what those judge calls actually cost) once any exist.
-// Falls back to a documented placeholder assumption before any real scan
-// history exists, same placeholder-and-flag-it convention as
-// costPerMinute's Nova-2 placeholder elsewhere in this codebase.
-const AGENT_COST_ESTIMATE_FALLBACK = { assumedFlagRate: 0.3, assumedCostMicrocentsPerJudgeCall: 5_000 };
-
-// T-01 (2026-08-28): reads micro-cents from the scan table now (the column
-// it used to read was integer cents and never held a value -- every judged
-// insert failed, so this estimator has only ever seen the fallback). Returns
-// whole CENTS, because a bulk-level estimate is a budget figure a person
-// reads, and estimates elsewhere on the bulk are cents too. Actuals stay in
-// micro-cents; only this projection rounds.
-export async function estimateBulkAgentCostCents(callCount: number): Promise<number> {
+// can -- this projects from real history: what fraction of past scans came
+// back flagged (or were flagged and since resolved), and what those judge
+// calls actually cost.
+//
+// T-35 (2026-08-29): the placeholder fallback ("assume 30% flag at 0.5c")
+// is gone. It was checked against the first real bulks: 4c estimated vs
+// 42c actual (56 calls, 56/56 flagged, ~0.75c per judge call). History is
+// 244 scans now, so the projection is real; on a database with no scans
+// at all this returns null -- "no basis for an estimate", shown as such --
+// rather than a number that was wrong by 10x.
+//
+// T-01 (2026-08-28): reads micro-cents from the scan table (the column it
+// used to read was integer cents and never held a value). Returns whole
+// CENTS, because a bulk-level estimate is a budget figure a person reads.
+export async function estimateBulkAgentCostCents(callCount: number): Promise<number | null> {
   if (callCount === 0) return 0;
   const scans = await db
     .select({ status: benchmarkAgentScansTable.status, judgeCostMicrocents: benchmarkAgentScansTable.judgeCostMicrocents })
     .from(benchmarkAgentScansTable);
+  if (scans.length === 0) return null;
 
-  const toCents = (microcents: number) => Math.ceil((callCount * microcents) / 10_000);
-
-  if (scans.length === 0) {
-    return toCents(AGENT_COST_ESTIMATE_FALLBACK.assumedFlagRate * AGENT_COST_ESTIMATE_FALLBACK.assumedCostMicrocentsPerJudgeCall);
-  }
-
-  const flaggedCount = scans.filter((s) => s.status === "flagged").length;
-  const flagRate = flaggedCount / scans.length;
+  const judgedCount = scans.filter((s) => s.status === "flagged" || s.status === "approved" || s.status === "rejected").length;
   const judgeCosts = scans.map((s) => s.judgeCostMicrocents).filter((c): c is number => c !== null);
-  const avgJudgeCostMicrocents = judgeCosts.length
-    ? judgeCosts.reduce((sum, c) => sum + c, 0) / judgeCosts.length
-    : AGENT_COST_ESTIMATE_FALLBACK.assumedCostMicrocentsPerJudgeCall;
-
-  return toCents(flagRate * avgJudgeCostMicrocents);
+  if (judgeCosts.length === 0) return null; // judged, but never priced: nothing to project from
+  const flagRate = judgedCount / scans.length;
+  const avgJudgeCostMicrocents = judgeCosts.reduce((sum, c) => sum + c, 0) / judgeCosts.length;
+  return Math.ceil((callCount * flagRate * avgJudgeCostMicrocents) / 10_000);
 }
 
 export type BulkPreviewResult = {
@@ -401,7 +395,8 @@ export type BulkPreviewResult = {
   excluded: SelectionExclusion[];
   estimate: {
     sttCostCents: number;
-    agentCostCents: number;
+    /** null = no scan history to project from (T-35); never a guess. */
+    agentCostCents: number | null;
     totalCostCents: number;
     overThreshold: boolean;
   } | null;
@@ -427,7 +422,9 @@ export async function previewBulkSelection(input: {
   if (providerIds.length > 0) {
     const sttCostCents = await estimateBulkCostCents(selection.callIds, providerIds);
     const agentCostCents = await estimateBulkAgentCostCents(selection.callIds.length);
-    const totalCostCents = sttCostCents + agentCostCents;
+    // A null agent estimate is "unknown", not zero; the total is then STT
+    // only and the response says so via the null.
+    const totalCostCents = sttCostCents + (agentCostCents ?? 0);
     estimate = {
       sttCostCents,
       agentCostCents,
@@ -508,14 +505,14 @@ export async function createBulkFromCriteria(input: {
     input.providerIds,
   );
   const estimatedAgentCostCents = await estimateBulkAgentCostCents(callIds.length);
-  const estimatedCostCents = estimatedSttCostCents + estimatedAgentCostCents;
+  const estimatedCostCents = estimatedSttCostCents + (estimatedAgentCostCents ?? 0);
   const overThreshold = estimatedCostCents > BULK_COST_THRESHOLD_CENTS;
   const name = input.name ?? now.toISOString().slice(0, 10); // FR-BLK-2
 
   const notesLines: string[] = [];
   if (overThreshold && !input.confirm) {
     notesLines.push(
-      `Estimated cost $${(estimatedCostCents / 100).toFixed(2)} (STT $${(estimatedSttCostCents / 100).toFixed(2)} + agent verification $${(estimatedAgentCostCents / 100).toFixed(2)}) exceeds the $${(BULK_COST_THRESHOLD_CENTS / 100).toFixed(2)} threshold -- confirm to launch (FR-BLK-5).`,
+      `Estimated cost $${(estimatedCostCents / 100).toFixed(2)} (STT $${(estimatedSttCostCents / 100).toFixed(2)} + agent verification ${estimatedAgentCostCents === null ? "unknown, no scan history" : `$${(estimatedAgentCostCents / 100).toFixed(2)}`}) exceeds the $${(BULK_COST_THRESHOLD_CENTS / 100).toFixed(2)} threshold -- confirm to launch (FR-BLK-5).`,
     );
   }
   if (excludedRetentionExpiredCount > 0) {

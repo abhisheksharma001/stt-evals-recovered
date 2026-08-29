@@ -217,7 +217,8 @@ function SelectionPreviewPanel({ preview, verb = "will run" }: { preview: Select
             <div>
               Estimated cost <span className="font-mono font-semibold">{cents(estimate.totalCostCents)}</span>
               <span className="text-muted-foreground">
-                {" "}(STT {cents(estimate.sttCostCents)} + agent verification {cents(estimate.agentCostCents)})
+                {" "}(STT {cents(estimate.sttCostCents)} + agent verification{" "}
+                    {estimate.agentCostCents === null ? "unknown — no scan history yet" : cents(estimate.agentCostCents)})
               </span>
             </div>
             <p className={estimate.overThreshold ? "text-warning" : "text-muted-foreground"}>
@@ -943,6 +944,7 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
                 <div className="text-[10px] font-mono uppercase text-muted-foreground">Agent coverage</div>
                 <div className="font-mono font-semibold">
                   {detail.actualCost.agentCallsChecked} checked, {detail.actualCost.agentCallsFlagged} flagged
+                  {detail.actualCost.agentCallsResolved > 0 && <>, {detail.actualCost.agentCallsResolved} resolved</>}
                   {detail.actualCost.agentCallsErrored > 0 && (
                     <span className="text-destructive">, {detail.actualCost.agentCallsErrored} errored</span>
                   )}

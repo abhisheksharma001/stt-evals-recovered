@@ -8,7 +8,8 @@
 
 export type BulkPreviewEstimate = {
   sttCostCents: number;
-  agentCostCents: number;
+  /** @nullable */
+  agentCostCents: number | null;
   totalCostCents: number;
   overThreshold: boolean;
 } | null;

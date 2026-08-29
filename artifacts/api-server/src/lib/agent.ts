@@ -81,6 +81,30 @@ async function callOpenAi(params: {
   const apiKey = process.env[API_KEY_ENV_VAR];
   if (!apiKey) throw new AgentConfigError();
 
+  // T-54: same shape as the provider path (run-executor.ts): 429 and 5xx
+  // are retried with exponential back-off + jitter, up to 3 extra tries;
+  // everything else fails fast. Bounded, so a hard outage still surfaces.
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fetchOpenAi(apiKey, params);
+    } catch (err) {
+      const status = err instanceof AgentRequestError ? err.httpStatus : null;
+      const retryable = status === 429 || (status !== null && status >= 500);
+      if (!retryable || attempt >= OPENAI_MAX_RETRIES) throw err;
+      const delay = Math.min(8_000, 500 * 2 ** attempt) * (0.5 + Math.random());
+      attempt += 1;
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+const OPENAI_MAX_RETRIES = 3;
+
+async function fetchOpenAi(
+  apiKey: string,
+  params: Parameters<typeof callOpenAi>[0],
+): Promise<{ data: Record<string, unknown>; usage: OpenAiUsage }> {
   const res = await fetch(OPENAI_URL, {
     method: "POST",
     headers: {
@@ -197,7 +221,9 @@ export async function judgeCandidates(params: {
   // without a shared mutable registry. The key is read here, at call time,
   // from the environment only.
   const clientRegistry = new ClientRegistry();
-  clientRegistry.addLlmClient("Judge", "openai", { model, api_key: apiKey });
+  // T-54: 429/5xx back off inside BAML (baml_src/retry.baml) before this
+  // ever becomes a judge_failed scan row.
+  clientRegistry.addLlmClient("Judge", "openai", { model, api_key: apiKey }, "JudgeRetry");
   clientRegistry.setPrimary("Judge");
 
   const collector = new Collector("judge");

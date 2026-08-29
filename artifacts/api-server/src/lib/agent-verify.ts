@@ -23,6 +23,24 @@ import { judgeCandidates } from "./agent";
 import { computeHybridFlagsForCandidates } from "./hybrid-flagging";
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
+
+/** T-37: an audit row is a record OF the scan, not the scan. If it cannot
+ * be written, the scan still landed and the money is still accounted for,
+ * so this must not throw into the executor's "verification crashed" catch
+ * -- that text would be a lie. Third failure meaning, own log line. */
+async function auditOrLog(entry: Parameters<typeof writeAudit>[0], callId: string): Promise<void> {
+  try {
+    await writeAudit(entry);
+  } catch (err) {
+    logger.error({ err, callId, action: entry.action, scanId: entry.entityId }, "audit_write_failed: scan row landed, audit row did not");
+  }
+}
+
+/** T-36: the last-resort log below carries the judge's reasoning, which
+ * quotes transcript spans and therefore caller names. Fine while logs stay
+ * on this machine; set REDACT_TRANSCRIPT_TEXT_IN_LOGS=1 before shipping
+ * logs anywhere and only the length is logged. */
+const REDACT_TRANSCRIPT_TEXT_IN_LOGS = process.env.REDACT_TRANSCRIPT_TEXT_IN_LOGS === "1";
 import { drainWithConcurrency, envInt } from "./run-executor";
 
 /** Human-readable {text, reason} restatements of the hybrid flags, for the
@@ -143,13 +161,16 @@ export async function verifyCallWithAgent(params: {
         runId: params.runId,
       })
       .returning();
-    await writeAudit({
-      entityType: "agent_scan",
-      entityId: clean.id,
-      actorLabel: params.requestedByLabel,
-      action: "auto_verify_clean",
-      afterState: { callId: params.callId },
-    });
+    await auditOrLog(
+      {
+        entityType: "agent_scan",
+        entityId: clean.id,
+        actorLabel: params.requestedByLabel,
+        action: "auto_verify_clean",
+        afterState: { callId: params.callId },
+      },
+      params.callId,
+    );
     return;
   }
 
@@ -223,6 +244,12 @@ export async function verifyCallWithAgent(params: {
             eq(benchmarkProviderCallResultsTable.callId, params.callId),
             eq(benchmarkProviderCallResultsTable.providerId, judgeResult.pickedProviderId),
             eq(benchmarkProviderCallResultsTable.status, "ok"),
+            // T-65: the candidates came from THIS run, so the link must
+            // point into this run. Unscoped, 106/178 links pointed at a
+            // newer run's row for the same provider (found recording the
+            // T-26 fixture). Null runId (old manual path) keeps the
+            // latest-anywhere behaviour, which is all it ever had.
+            ...(params.runId ? [eq(benchmarkProviderCallResultsTable.runId, params.runId)] : []),
           ),
         )
         .orderBy(desc(benchmarkProviderCallResultsTable.createdAt))
@@ -282,7 +309,7 @@ export async function verifyCallWithAgent(params: {
           firstError: message,
           callId: params.callId,
           pickedProviderId: judgeResult.pickedProviderId,
-          reasoning: judgeResult.reasoning,
+          reasoning: REDACT_TRANSCRIPT_TEXT_IN_LOGS ? `[redacted, ${judgeResult.reasoning.length} chars]` : judgeResult.reasoning,
           promptTokens: judgeResult.promptTokens,
           completionTokens: judgeResult.completionTokens,
           costMicrocents: judgeResult.costMicrocents,
@@ -293,13 +320,16 @@ export async function verifyCallWithAgent(params: {
     }
   }
 
-  await writeAudit({
-    entityType: "agent_scan",
-    entityId: scanId,
-    actorLabel: params.requestedByLabel,
-    action: degraded ? "auto_verify_flagged_degraded" : "auto_verify_flagged",
-    afterState: { callId: params.callId, flagCount: totalFlagCount, pickedResultId: agentPickResultId, costRecorded: !degraded },
-  });
+  await auditOrLog(
+    {
+      entityType: "agent_scan",
+      entityId: scanId,
+      actorLabel: params.requestedByLabel,
+      action: degraded ? "auto_verify_flagged_degraded" : "auto_verify_flagged",
+      afterState: { callId: params.callId, flagCount: totalFlagCount, pickedResultId: agentPickResultId, costRecorded: !degraded },
+    },
+    params.callId,
+  );
 }
 
 /** Called once per completed run (run-executor.ts, after
