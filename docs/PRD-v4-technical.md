@@ -1,5 +1,7 @@
 # Technical PRD v4 — Durable execution, a typed LLM layer, and honest cost
 
+> **2026-08-30:** Part J added — backend/database/devops audit against the standard vocabulary, measured on `1419d97`. Register rows T-75–T-79.
+
 **Version:** 1.0
 **Date:** 2026-08-28
 **Companion doc:** `docs/PRD-v4-uiux.md` (same review, UI/UX side — cross-referenced as U-n)
@@ -772,6 +774,133 @@ from that, and they apply to BAML and `workflow` equally:
 mid-bulk doesn't resume cleanly, the migration bought nothing.
 
 ---
+
+## Part J — Added 2026-08-30: backend structure audited against the standard vocabulary
+
+Abhishek supplied a backend/database/devops glossary and asked which of it matters
+here. Only the terms that change a decision for this project are kept; the rest is
+named once in the "not needed" line so nobody re-asks. Every finding is measured on
+the code as of `1419d97`.
+
+### J.1 Layered architecture — what we have is three layers, and that is right
+
+| Layer | Where | Measured |
+|---|---|---|
+| Presentation / controller | `artifacts/api-server/src/routes/*.ts` | 5 route files, 50 handlers. `benchmark.ts` is **1,623 lines with 37 direct `db.` calls** — it is a controller doing repository work. `bulks.ts` 850 lines / 9 `db.` calls, mostly delegating to `lib/bulks.ts`. |
+| Service / business rules | `artifacts/api-server/src/lib/*.ts` + the pure packages `lib/scoring`, `lib/stt-providers` | `run-executor.ts` 1,510 lines / 21 `db.` calls; `bulks.ts` 841 / 18. Scoring and provider adapters have **zero** database access — they are the clean core. |
+| Data access | drizzle directly from `lib/` | No repository layer. Drizzle *is* the repository; adding one on top would be a fourth layer for one operator's tool. |
+| Middleware | `app.ts` | `pino-http` (request logging with secret redaction), `cors`, `express.json`. **No central error handler** — an unhandled throw inside a handler becomes Express's default HTML 500, not the JSON `{error}` every other response uses. No auth (OD-11: single operator, `x-actor` header is the stopgap). No inbound rate limit — correct for one operator; outbound 429 back-off exists (`run-executor.ts:173`, BAML retry). |
+
+**Decisions:** keep three layers. Do **not** add a repository layer. Do move
+`benchmark.ts`'s queries into `lib/` *when a handler is next touched* — not as a
+sweep (T-79, gated). Add the one missing middleware: a JSON error handler (T-76).
+
+**Hexagonal, in our words:** `lib/stt-providers` adapters are the ports-and-adapters
+pattern already — every vendor is behind one `transcribe()` shape, and the executor
+never knows which vendor it is calling. `lib/scoring` is pure functions over plain
+data. Those two are the core; keep them dependency-free.
+
+**Monolith:** yes, one process, one database. Microservices are the wrong answer
+below ~10 clients (same reasoning as T-28's trigger).
+
+### J.2 Database structure — the ERD, and the one place it is deliberately loose
+
+12 tables. FK chain, with the cascade rules that exist:
+
+```
+benchmark_calls ──< benchmark_provider_call_results >── benchmark_providers
+      │                     │ (cascade on run delete)          │
+      │                     └──< benchmark_scores (cascade)     │
+      │                     └──< benchmark_agent_scans.agent_pick_result_id
+      ├──< benchmark_agent_scans (cascade)  ──> benchmark_runs
+      ├──< benchmark_adjudications (cascade) ──> benchmark_runs, benchmark_providers ×2
+benchmark_runs ──> benchmark_bulks (bulk_id)        app_settings ──> benchmark_providers
+benchmark_rankings (run_id | bulk_id, NO FK)        audit_log (entity_type + entity_id, NO FK by design)
+bulk_templates                                      benchmark_calls.source_account_label (text, no accounts table)
+```
+
+- **Unique keys that carry meaning:** `benchmark_calls (source, source_call_id)`,
+  `benchmark_provider_call_results (run_id, call_id, provider_id)` (T-27 — this is the
+  idempotency key), `benchmark_adjudications` span key, `bulks.name`, `templates.name`.
+- **Many-to-many without a junction table:** `benchmark_runs.call_ids[]` and
+  `provider_ids[]` are text arrays. A junction table would give FK integrity
+  (deleting a call today leaves its id in the array). **Kept on purpose:** a run's
+  manifest is a *frozen record of what was executed* (FR-REP1); cascading a deleted
+  call out of it would rewrite history. The cost is that array membership is
+  checked in code, never by the database. Documented, not a task.
+- **`benchmark_rankings` has no FK** to runs/bulks — it is a derived snapshot. Fine.
+- **Accounts are a label, not a table.** `source_account_label` is free text keyed to
+  an env var name. Becomes a table when FR-ORG-2 (encrypted per-org keys) lands, not
+  before.
+
+### J.3 Dependency & flow
+
+- **Circular dependency, real:** `lib/run-executor.ts:40` imports
+  `runAutoAgentVerificationForRun` from `agent-verify`, and `agent-verify.ts:44`
+  imports `drainWithConcurrency, envInt` back from `run-executor`. Works today only
+  because both are functions resolved at call time; a top-level use would be
+  `undefined`. Fix: move the two helpers to `lib/concurrency.ts` (T-75). No other
+  cycles; `lib/` never imports `routes/`.
+- **Data flow, one line, for the record:** Vapi pull → `benchmark_calls` (draft) →
+  human review → gold → bulk → shard runs → cells (`results`) → `scores` →
+  hybrid flags → agent scans → `rankings` snapshot → verdict (computed at read time
+  from cells, never stored) → T-32 artefact. The two places where a *derived* value is
+  stored (rankings, agent scans) are the two places a stale read is possible; the
+  verdict is computed live precisely to avoid a third.
+- **Call stack for the error class that matters:** provider throw → `failureClass`
+  assigned *at the throw site* (T-06) → cell row → T-43 retryability → T-41
+  diagnosis. Never inferred downstream. This is the invariant the 25 remaining
+  null-class rows (T-69) respect: text that states no cause gets no class.
+
+### J.4 API & integration
+
+- **Idempotency:** cell writes are idempotent (T-27 upsert, `setWhere status <> ok`);
+  run execution is resumable (only non-ok cells re-run); adjudications upsert on the
+  span key. **Not checked:** `POST /benchmark/bulks/{id}/launch` twice in quick
+  succession — the bulk status machine should refuse the second, but no test proves
+  it. T-77 covers it.
+- **Webhooks / event-driven:** none, and none needed. Vapi is pulled on demand;
+  provider polling is in `lib/stt-providers/poll.ts`. An event-driven runner is T-28's
+  concern (Workflow DevKit), triggered by weekly cadence or ~10 clients.
+- **Rate limits:** outbound only — per-vendor concurrency caps, 429 halves the cap for
+  60 s (`run-executor.ts:173`), BAML retries the judge. Inbound: none, single operator.
+
+### J.5 DevOps
+
+- **CI:** `.github/workflows/ci.yml` runs typecheck, three unit suites (scoring 96,
+  stt-providers 41, api-server 18 + 1 skipped = **155 tests**), and both builds on
+  every PR. `deploy-web.yml` pushes the UI to Vercel.
+- **CD for the API: manual** — `node ./build.mjs`, kill by PID, restart with
+  `--env-file`. Three steps, done by hand every deploy this week. T-78 makes it one
+  script with a printed before/after `commitSha`, and writes the rollback procedure
+  (`git revert` → same script) next to it. No blue/green, no load balancer — one
+  process is correct at this load.
+- **Environments:** one. The local Postgres on `:5433` is both dev and "prod". A
+  staging environment is not justified until a second operator exists; what *is*
+  justified is the T-78 script refusing to deploy when `pnpm run typecheck` fails.
+
+### J.6 Testing — where the 155 tests are, and the hole
+
+| Kind | Count | Where |
+|---|---|---|
+| Unit | 155 | scoring (alignment, WER, spans, verdict, trend, correlation), provider failure classes, polling, api-server libs (known-failure, timed-words, verdict artefact) |
+| Integration | 1 suite | `judge-contract.test.ts` — the judge over a saved fixture of real scans + adjudications (T-26). Human half dormant until T-67. |
+| Route-level | **0** | No `supertest`; no handler is exercised in CI. The T-27 upsert, bulk launch, and verdicts endpoints have only been checked by hand against the live database. |
+| End-to-end | 0 | Browser checks are manual (kimi-webbridge in session). Acceptable for one operator; a Playwright smoke of "launch bulk → see verdict" becomes worth it when T-31 moves the routes. |
+
+T-77: route tests for the three endpoints above against a throwaway schema, in CI.
+
+**Edge cases already encoded as rules, listed so they are not re-derived:** null
+metric never reads as 0; null outcome never means "normal call"; draft transcript is
+never gold; a cell with no output renders as "no output — reason", never a dash
+(E.5); text that states no failure cause gets no class.
+
+### J.7 Not needed here (named once)
+
+Repository layer, onion rings beyond the two pure packages, microservices, load
+balancer, staging environment, inbound rate limiting, auth/RBAC (until a second
+operator), webhooks, junction tables for run membership. Each has a trigger above or
+in the register; none is a gap today.
 
 ## Verification rules for every item here
 

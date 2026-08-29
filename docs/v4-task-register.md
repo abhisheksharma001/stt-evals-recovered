@@ -137,6 +137,19 @@ worktree. Deploy is still gated on the T-27 index push + T-69 backfill.
 | T-73 | **Show what we did not get** (E.5). In T-72's section and every per-call/provider grid: a failed/missing cell renders "<Provider>: no output — <failure class in plain words>" with T-41 diagnosis, T-43 retryable state and a retry action when retryable; per-provider missing count in the section header. Never an empty cell or a dash. Depends on T-69 having run. | Verified in browser on bulk `7d2585da` (45 failed cells); every one of the 45 shows a class and a diagnosis or "unknown". |
 | T-74 | **In-page hierarchy** (E.1 layer 1). Reorder sections on Results (verdict → cost → judge accuracy → correlation → cards), Bulks (live/recent bulk first, creation collapsed while running), Corpus (needs-a-human first), Providers (live first, active-provider setting beside its list). No route changes. Then, if Abhishek confirms, un-gate T-31 (D.4 seven → four). | Each page's first screen answers its one question without scrolling; typecheck clean; browser check per page. |
 
+## Phase 7 — backend structure (added 2026-08-30, from PRD-v4-technical Part J)
+
+Small, independent, each one PR. Order after Phase 6 unless one blocks a Phase 6
+task (T-75 blocks nothing today; do it first because it is 20 minutes).
+
+| ID | Task | Acceptance |
+|---|---|---|
+| T-75 | **Break the `run-executor` ↔ `agent-verify` import cycle** (J.3). Move `drainWithConcurrency` and `envInt` to `lib/concurrency.ts`; both files import from there. | No cycle in a script that walks relative imports under `api-server/src`; typecheck clean; api-server tests pass. |
+| T-76 | **Central JSON error handler** (J.1). One `app.use((err, req, res, next) => …)` after the router: logs via pino with the request id, answers `{ error }` with 500 (or the thrown status), never Express's HTML page. Zod parse failures already 400 in handlers — unchanged. | A route that throws returns JSON 500 with the request id; verified with a temporary throwing route in a test. |
+| T-77 | **Route-level tests for the three riskiest endpoints** (J.6): (a) T-27 upsert — second write to an `ok` cell is discarded, a `failed` cell is replaced; (b) `POST /bulks/{id}/launch` twice — second is refused by the status machine; (c) `GET /bulks/{id}/verdicts` and `verdict.html` — 404 on unknown, 200 with expected shape on a seeded bulk. `supertest` against a throwaway schema (`DATABASE_URL` in CI = a service container). | Runs in `ci.yml`; fails if any of the three regresses. |
+| T-78 | **One-command API deploy + rollback runbook** (J.5). `scripts/deploy-api.sh`: refuse if typecheck fails or tree is dirty; build UI + API; kill by PID (never `pkill`); restart; poll `/api/healthz`; print old → new `commitSha`. `docs/runbooks/deploy-and-rollback.md`: rollback = `git revert <sha>` → same script. | Used for the next real deploy; healthz SHA matches `git rev-parse --short=12 HEAD`. |
+| T-79 | **Move `routes/benchmark.ts` queries into `lib/`** (J.1) — *only* as each handler is touched for another reason. Not a sweep. | Gated: no standalone PR. Track handlers moved in this row. |
+
 ## Deferred, by name
 
 | ID | Task | Owner |
