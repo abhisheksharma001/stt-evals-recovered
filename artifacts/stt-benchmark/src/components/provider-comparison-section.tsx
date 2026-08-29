@@ -10,6 +10,7 @@ import {
 import { ChevronDown, ChevronRight, Trophy, AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { WordDiffView } from "@/components/word-diff-view"
+import { NoOutputChip, NoOutputDetail, MissingCounts, missingByProvider, type NoOutputStatus } from "@/components/no-output"
 import { formatMicrocents } from "@/lib/utils"
 import { apiBase } from "@/lib/api-base"
 import { useToast } from "@/hooks/use-toast"
@@ -58,6 +59,10 @@ function ComparisonBody({ data }: { data: CallComparison }) {
     : null
   const oneLiner = data.judge?.reasoning ? data.judge.reasoning.split(/(?<=[.!?])\s/)[0] : null
   const missing = data.rows.filter((r) => r.status !== "ok").length
+  // E.5: per-provider missing counts in the header. One call here, so each
+  // is "1 of 1" -- the names are what matter: which providers gave nothing
+  // is readable before scrolling to their rows.
+  const missingCounts = missingByProvider(data.rows.map((r) => ({ providerId: r.providerId, providerName: r.providerName, ok: r.status === "ok" })))
 
   return (
     <div className="space-y-4">
@@ -158,6 +163,7 @@ function ComparisonBody({ data }: { data: CallComparison }) {
             {missing > 0 && <>, <span className="text-warning">{missing} without output</span></>}
             {" · "}ordered {data.ordering === "verdict_rate" ? "by this bulk's verdict rate" : "alphabetically"}
           </span>
+          <MissingCounts counts={missingCounts} className="basis-full" />
         </div>
         {data.rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -208,7 +214,9 @@ function ProviderRow({
   onToggle: () => void
 }) {
   const ok = row.status === "ok"
-  const canExpand = ok && (row.diff != null || !!row.hypothesisTranscript)
+  // ok rows expand into the diff; no-output rows expand into the E.5 panel
+  // (class in plain words, diagnosis, retryable state, retry action).
+  const canExpand = ok ? row.diff != null || !!row.hypothesisTranscript : true
   return (
     <div className="border-b border-border last:border-b-0">
       <button
@@ -228,7 +236,9 @@ function ProviderRow({
               <Trophy className="mr-1 h-2.5 w-2.5" /> Picked
             </Badge>
           )}
-          {!ok && <NoOutputChip row={row} />}
+          {!ok && (
+            <NoOutputChip status={row.status as NoOutputStatus} failureClass={row.failureClass} retryable={row.retryable} errorMessage={row.errorMessage} />
+          )}
         </span>
         <span className="text-right font-mono text-xs" title={row.diff ? `${row.diff.wordsDiffer} of ${row.diff.referenceWords} reference words differ` : undefined}>
           {ok ? (row.diff ? `${row.diff.wordsDiffer}/${row.diff.referenceWords}` : <span className="text-muted-foreground">—</span>) : ""}
@@ -259,29 +269,23 @@ function ProviderRow({
           )}
         </div>
       )}
-      {!ok && (row.errorMessage || row.failureDiagnosis) && (
-        <div className="border-t border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-          {row.failureDiagnosis ?? row.errorMessage}
+      {!ok && !expanded && row.failureDiagnosis && (
+        <div className="border-t border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">{row.failureDiagnosis}</div>
+      )}
+      {!ok && expanded && (
+        <div className="border-t border-border bg-muted/20 p-3">
+          <NoOutputDetail
+            status={row.status as NoOutputStatus}
+            failureClass={row.failureClass}
+            retryable={row.retryable}
+            errorMessage={row.errorMessage}
+            failureDiagnosis={row.failureDiagnosis}
+            failureSuggestedFix={row.failureSuggestedFix}
+            runId={row.runId}
+          />
         </div>
       )}
     </div>
-  )
-}
-
-// A row with no output is still a row (E.5). T-73 turns this chip into the
-// full "no output -- <class in plain words> / retry" organism; until then it
-// states the class verbatim and never renders a dash or an empty cell.
-function NoOutputChip({ row }: { row: ComparisonRow }) {
-  const text =
-    row.status === "missing"
-      ? "no output — never attempted"
-      : row.status === "failed"
-        ? `no output — ${row.failureClass ? row.failureClass.replace(/_/g, " ") : "unclassified failure"}${row.retryable === true ? " (retryable)" : row.retryable === false ? " (permanent)" : ""}`
-        : `no output — ${row.status.replace(/_/g, " ")}`
-  return (
-    <span className="rounded border border-destructive/25 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-mono text-destructive" title={row.errorMessage ?? undefined}>
-      {text}
-    </span>
   )
 }
 

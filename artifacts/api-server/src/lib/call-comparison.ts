@@ -109,6 +109,24 @@ function words(text: string): string[] {
   return normalizeTranscript(text).split(" ").filter(Boolean);
 }
 
+/**
+ * T-73: one place decides whether a cell's failure is worth re-running.
+ * Same rule as the executor's permanently-failed set (isRetryableFailureClass)
+ * and the bulk failure groups; used by the comparison rows and the run
+ * results rows so no screen re-derives it.
+ *   - failed + classified          -> the class's verdict
+ *   - skipped_pending_review       -> true (a re-run picks it up once the
+ *                                     call clears review)
+ *   - failed + no class            -> null: predates classification, never
+ *                                     defaulted to either answer
+ *   - anything else                -> null (not a failure)
+ */
+export function cellRetryable(status: string, failureClass: string | null | undefined): boolean | null {
+  if (status === "skipped_pending_review") return true;
+  if (status !== "failed") return null;
+  return isFailureClass(failureClass) ? isRetryableFailureClass(failureClass) : null;
+}
+
 export function diffAgainstReference(reference: string, hypothesis: string): ComparisonDiff {
   const ref = words(stripSpeakerLabels(reference));
   const ops = diffWords(ref, words(hypothesis));
@@ -157,7 +175,8 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
       bulkId
         ? and(eq(benchmarkRunsTable.bulkId, bulkId), eq(benchmarkRunsTable.purpose, "batch"))
         : eq(benchmarkRunsTable.purpose, "batch"),
-    );
+    )
+    .orderBy(desc(benchmarkRunsTable.createdAt));
   const runsWithCall = runs.filter((r) => r.callIds.includes(callId));
   const runIds = runsWithCall.map((r) => r.id);
 
@@ -189,7 +208,15 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
   // Providers a run was supposed to cover for this call but never wrote a
   // row for -- rendered as "missing", never silently dropped.
   const expectedProviderIds = new Set<string>();
-  for (const r of runsWithCall) for (const p of r.providerIds) expectedProviderIds.add(p);
+  // T-73: remember which run expected each provider, so a "missing" row can
+  // still offer the retry action (re-execute that run) -- latest run wins.
+  const runExpectingProvider = new Map<string, string>();
+  for (const r of runsWithCall) {
+    for (const p of r.providerIds) {
+      expectedProviderIds.add(p);
+      if (!runExpectingProvider.has(p)) runExpectingProvider.set(p, r.id);
+    }
+  }
   for (const p of latestByProvider.keys()) expectedProviderIds.add(p);
 
   // Judge pick: latest scan for this call, scoped to the context's runs
@@ -231,7 +258,7 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
         providerName: name,
         status: "missing",
         resultId: null,
-        runId: null,
+        runId: runExpectingProvider.get(providerId) ?? null,
         attemptedAt: null,
         hypothesisTranscript: null,
         diff: null,
@@ -275,14 +302,7 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
       latencyFinalMs: score?.latencyFinalMs ?? null,
       costMicrocents: score?.costMicrocents ?? null,
       failureClass,
-      retryable:
-        result.status === "failed" || result.status === "skipped_pending_review"
-          ? failureClass
-            ? isRetryableFailureClass(failureClass)
-            : result.status === "skipped_pending_review"
-              ? true
-              : null
-          : null,
+      retryable: cellRetryable(result.status, failureClass),
       errorMessage: result.errorMessage,
       failureDiagnosis: result.failureDiagnosis ?? known?.diagnosis ?? null,
       failureSuggestedFix: result.failureSuggestedFix ?? known?.suggestedFix ?? null,

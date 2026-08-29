@@ -901,6 +901,7 @@ export const ListBenchmarkRunResultsResponseItem = zod.object({
   "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]).optional(),
   "failureDiagnosis": zod.string().nullish().describe('2026-08-26 -- set by POST ...\/analyze-failure; null until analyzed (or if this cell never failed).'),
   "failureSuggestedFix": zod.string().nullish(),
+  "retryable": zod.boolean().nullish(),
   "rawOutputHash": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "score": zod.union([zod.object({

@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { WordDiffView } from "@/components/word-diff-view"
+import { NoOutputChip, NoOutputDetail, MissingCounts, missingByProvider, type NoOutputStatus } from "@/components/no-output"
 
 export default function Runs() {
   // Runs execute fire-and-forget in the background (no job queue -- see
@@ -125,7 +126,7 @@ export default function Runs() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <ResultsDialog runId={run.id} />
+                        <ResultsDialog runId={run.id} providerIds={run.providerIds} runStatus={run.status} />
                         {/* B-15: the backend deliberately re-executes
                             complete (retry failed cells) and running (crash
                             recovery) runs too — gating the button to
@@ -272,12 +273,18 @@ export function HybridFlagView({ detail }: { detail: HybridFlagDetail }) {
 function FailureAnalysisPanel({
   runId,
   resultId,
+  status,
+  failureClass,
+  retryable,
   errorMessage,
   failureDiagnosis,
   failureSuggestedFix,
 }: {
   runId: string
-  resultId: string
+  resultId: string | null
+  status: NoOutputStatus
+  failureClass: string | null
+  retryable: boolean | null
   errorMessage: string | null
   failureDiagnosis: string | null
   failureSuggestedFix: string | null
@@ -286,26 +293,27 @@ function FailureAnalysisPanel({
   const { toast } = useToast()
   const analyze = useAnalyzeResultFailure()
 
+  // T-73: the panel itself is the shared no-output organism (class in plain
+  // words, T-41 diagnosis, T-43 retryable state, retry action). Only the
+  // paid, on-demand "AI analysis" button is Runs-specific, passed as the
+  // slot; it disappears once a diagnosis exists.
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground font-mono whitespace-pre-wrap">{errorMessage}</p>
-      {failureDiagnosis ? (
-        <div className="text-sm rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diagnosis: </span>
-            {failureDiagnosis}
-          </div>
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested fix: </span>
-            {failureSuggestedFix}
-          </div>
-        </div>
-      ) : (
+    <NoOutputDetail
+      status={status}
+      failureClass={failureClass}
+      retryable={retryable}
+      errorMessage={errorMessage}
+      failureDiagnosis={failureDiagnosis}
+      failureSuggestedFix={failureSuggestedFix}
+      runId={runId}
+    >
+      {status === "failed" && resultId && !failureDiagnosis && (
         <Button
           size="sm"
           variant="outline"
           disabled={analyze.isPending || !errorMessage}
-          onClick={() =>
+          onClick={(e) => {
+            e.stopPropagation()
             analyze.mutate(
               { resultId },
               {
@@ -313,13 +321,14 @@ function FailureAnalysisPanel({
                 onError: (err) => toast({ title: "Error", description: err instanceof Error ? err.message : "Analysis failed.", variant: "destructive" }),
               },
             )
-          }
+          }}
+          title="Asks OpenAI for a plain-English diagnosis of the raw error and saves it on this cell. Costs a small amount per click."
         >
           <Sparkles className={`w-3.5 h-3.5 mr-1.5 ${analyze.isPending ? "animate-pulse" : ""}`} />
           {analyze.isPending ? "Analyzing…" : "AI analysis"}
         </Button>
       )}
-    </div>
+    </NoOutputDetail>
   )
 }
 
@@ -328,7 +337,7 @@ function FailureAnalysisPanel({
 // aggregate recommendation). Renamed to "Cell detail" throughout -- this
 // dialog is the raw per-(call, provider) drill-down; "Results" now means
 // only the Rankings page.
-function ResultsDialog({ runId }: { runId: string }) {
+function ResultsDialog({ runId, providerIds, runStatus }: { runId: string; providerIds: string[]; runStatus: RunStatus }) {
   const [open, setOpen] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   // ux-fixes UX-1: skipped_pending_review cells are collapsed by default --
@@ -373,38 +382,61 @@ function ResultsDialog({ runId }: { runId: string }) {
     () => (results ?? []).filter((r) => r.status === 'skipped_pending_review'),
     [results],
   )
-  const groupByCall = (rows: typeof results) => {
+  // T-73 (E.5): a cell the run should have produced but has no row for is
+  // still a row -- status "missing", never a dropped line. Only synthesized
+  // once the run is terminal (while it runs, absence just means "not yet").
+  // Calls with no row at all cannot be listed here: the run response carries
+  // providerIds but not callIds, so a wholly-unattempted call is invisible in
+  // this dialog (the per-call comparison in Corpus does show it).
+  type CellRow = NonNullable<typeof results>[number] | { synthetic: true; id: string; callId: string; providerId: string; status: "missing" }
+  const runIsTerminal = runStatus === 'complete' || runStatus === 'failed' || runStatus === 'cancelled'
+  const groupByCall = (rows: typeof results, fillMissing: boolean) => {
     const order: string[] = []
-    const byCallId = new Map<string, typeof results>()
+    const byCallId = new Map<string, CellRow[]>()
     for (const r of rows ?? []) {
       if (!byCallId.has(r.callId)) { order.push(r.callId); byCallId.set(r.callId, []) }
       byCallId.get(r.callId)!.push(r)
     }
+    if (fillMissing && runIsTerminal) {
+      for (const [callId, cellRows] of byCallId) {
+        const seen = new Set(cellRows.map((r) => r.providerId))
+        for (const providerId of providerIds) {
+          if (!seen.has(providerId)) cellRows.push({ synthetic: true, id: `missing:${callId}:${providerId}`, callId, providerId, status: 'missing' })
+        }
+      }
+    }
     return order.map((callId) => ({ callId, rows: byCallId.get(callId)! }))
   }
-  const attemptedGroups = React.useMemo(() => groupByCall(attemptedResults), [attemptedResults])
-  const skippedGroups = React.useMemo(() => groupByCall(skippedResults), [skippedResults])
+  const attemptedGroups = React.useMemo(() => groupByCall(attemptedResults, true), [attemptedResults, providerIds, runIsTerminal])
+  const skippedGroups = React.useMemo(() => groupByCall(skippedResults, false), [skippedResults])
+  // Header: which provider gave nothing, and how often, before scrolling.
+  const missingCounts = React.useMemo(
+    () => missingByProvider(attemptedGroups.flatMap((g) => g.rows.map((r) => ({ providerId: r.providerId, providerName: providerNameOf(r.providerId), ok: r.status === 'ok' })))),
+    [attemptedGroups, providers],
+  )
 
-  const renderRow = (r: NonNullable<typeof results>[number]) => {
-    const hasDiff = !!r.score?.wordDiff?.length
-    const flagCount = r.score?.flagCount ?? null
-    const flagSeverity = r.score?.flagSeverity ?? null
+  const renderRow = (row: CellRow) => {
+    const r = 'synthetic' in row ? null : row
+    const hasDiff = !!r?.score?.wordDiff?.length
+    const flagCount = r?.score?.flagCount ?? null
+    const flagSeverity = r?.score?.flagSeverity ?? null
     const hasHybridFlags = flagCount != null && flagCount > 0
-    const hasExpandable = hasDiff || hasHybridFlags || r.status === 'failed'
-    const isExpanded = expandedId === r.id
+    const noOutput = row.status !== 'ok'
+    const hasExpandable = hasDiff || hasHybridFlags || noOutput
+    const isExpanded = expandedId === row.id
     return (
-      <React.Fragment key={r.id}>
+      <React.Fragment key={row.id}>
         <TableRow
           className={hasExpandable ? "cursor-pointer" : undefined}
-          onClick={() => hasExpandable && setExpandedId(isExpanded ? null : r.id)}
+          onClick={() => hasExpandable && setExpandedId(isExpanded ? null : row.id)}
         >
           <TableCell className="w-6">
             {hasExpandable && (isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />)}
           </TableCell>
-          <TableCell className="text-xs">{providerNameOf(r.providerId)}</TableCell>
+          <TableCell className="text-xs">{providerNameOf(row.providerId)}</TableCell>
           <TableCell>
-            <Badge variant={r.status === 'ok' ? 'default' : r.status === 'failed' ? 'destructive' : 'secondary'} className="uppercase text-[10px]">
-              {r.status.replaceAll('_', ' ')}
+            <Badge variant={row.status === 'ok' ? 'default' : row.status === 'failed' ? 'destructive' : 'secondary'} className="uppercase text-[10px]">
+              {row.status.replaceAll('_', ' ')}
             </Badge>
           </TableCell>
           {/* 2026-08-27: gold-free hybrid flag count + severity, replaces
@@ -420,33 +452,42 @@ function ResultsDialog({ runId }: { runId: string }) {
               </span>
             )}
           </TableCell>
-          <TableCell className="text-xs text-muted-foreground max-w-xs truncate" title={r.errorMessage ?? undefined}>
-            {r.failureDiagnosis ? "Diagnosis available" : r.errorMessage ?? '—'}
+          {/* T-73 (E.5): a cell with no output says so in plain words --
+              never a raw error, never a dash. Expand for diagnosis + retry. */}
+          <TableCell className="text-xs text-muted-foreground max-w-xs">
+            {noOutput ? (
+              <NoOutputChip status={row.status as NoOutputStatus} failureClass={r?.failureClass ?? null} retryable={r?.retryable ?? null} errorMessage={r?.errorMessage ?? null} />
+            ) : (
+              <span className="text-[10px] uppercase tracking-wide">output received</span>
+            )}
           </TableCell>
         </TableRow>
-        {isExpanded && hasHybridFlags && (
+        {isExpanded && hasHybridFlags && r && (
           <TableRow>
             <TableCell colSpan={5} className="bg-muted/30">
               <HybridFlagView detail={(r.score?.hybridFlags ?? {}) as HybridFlagDetail} />
             </TableCell>
           </TableRow>
         )}
-        {isExpanded && !hasHybridFlags && hasDiff && r.score?.wordDiff && (
+        {isExpanded && !hasHybridFlags && hasDiff && r?.score?.wordDiff && (
           <TableRow>
             <TableCell colSpan={5} className="bg-muted/30">
               <WordDiffView wordDiff={r.score.wordDiff} referenceLabel="gold" />
             </TableCell>
           </TableRow>
         )}
-        {isExpanded && r.status === 'failed' && (
+        {isExpanded && noOutput && (
           <TableRow>
             <TableCell colSpan={5} className="bg-muted/30">
               <FailureAnalysisPanel
                 runId={runId}
-                resultId={r.id}
-                errorMessage={r.errorMessage ?? null}
-                failureDiagnosis={r.failureDiagnosis ?? null}
-                failureSuggestedFix={r.failureSuggestedFix ?? null}
+                resultId={r?.id ?? null}
+                status={row.status as NoOutputStatus}
+                failureClass={r?.failureClass ?? null}
+                retryable={r?.retryable ?? null}
+                errorMessage={r?.errorMessage ?? null}
+                failureDiagnosis={r?.failureDiagnosis ?? null}
+                failureSuggestedFix={r?.failureSuggestedFix ?? null}
               />
             </TableCell>
           </TableRow>
@@ -464,6 +505,12 @@ function ResultsDialog({ runId }: { runId: string }) {
         <DialogHeader>
           <DialogTitle>Cell detail</DialogTitle>
         </DialogHeader>
+        {missingCounts.some((c) => c.missing > 0) && (
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
+            <span>No output:</span>
+            <MissingCounts counts={missingCounts} />
+          </div>
+        )}
         <div className="max-h-[55vh] overflow-y-auto">
           <Table>
             <TableHeader>

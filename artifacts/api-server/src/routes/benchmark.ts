@@ -17,7 +17,7 @@ import {
 } from "@workspace/db";
 import { getProviderAdapter } from "@workspace/stt-providers";
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk, spanAdjudicationCounts } from "../lib/overview";
-import { callComparison } from "../lib/call-comparison";
+import { callComparison, cellRetryable } from "../lib/call-comparison";
 import {
   AttestBenchmarkCallDeidBody,
   AttestBenchmarkCallDeidParams,
@@ -1389,6 +1389,10 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         failureClass: result.failureClass,
         failureDiagnosis: result.failureDiagnosis ?? known?.diagnosis ?? null,
         failureSuggestedFix: result.failureSuggestedFix ?? known?.suggestedFix ?? null,
+        // T-73: one judgement (isRetryableFailureClass) shared with the
+        // executor and the bulk failure groups; null when there is no
+        // class to judge from.
+        retryable: cellRetryable(result.status, result.failureClass),
         rawOutputHash: result.rawOutputHash,
         createdAt: result.createdAt.toISOString(),
         score: score
