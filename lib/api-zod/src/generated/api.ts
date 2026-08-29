@@ -1011,7 +1011,7 @@ export const PreviewBulkSelectionResponse = zod.object({
 })),
   "estimate": zod.union([zod.null(),zod.object({
   "sttCostCents": zod.number(),
-  "agentCostCents": zod.number(),
+  "agentCostCents": zod.number().nullable(),
   "totalCostCents": zod.number(),
   "overThreshold": zod.boolean()
 })]),
@@ -1089,6 +1089,7 @@ export const GetBulkResponse = zod.object({
   "agentCostMicrocents": zod.number().nullable(),
   "agentCallsChecked": zod.number(),
   "agentCallsFlagged": zod.number(),
+  "agentCallsResolved": zod.number(),
   "agentCallsErrored": zod.number(),
   "agentCallsJudged": zod.number()
 }),

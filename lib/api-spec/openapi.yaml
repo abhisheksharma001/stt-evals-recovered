@@ -1780,7 +1780,8 @@ components:
               required: [sttCostCents, agentCostCents, totalCostCents, overThreshold]
               properties:
                 sttCostCents: { type: number }
-                agentCostCents: { type: number }
+                # T-35: null = no scan history to project from; "unknown", not $0.
+                agentCostCents: { type: ["number", "null"] }
                 totalCostCents: { type: number }
                 # FR-BLK-5: true means creation would park at
                 # awaiting_confirmation instead of launching.
@@ -2052,7 +2053,7 @@ components:
               items: { $ref: "#/components/schemas/BulkFailureGroup" }
     BulkActualCost:
       type: object
-      required: [sttCostMicrocents, agentCostMicrocents, agentCallsChecked, agentCallsFlagged, agentCallsErrored, agentCallsJudged]
+      required: [sttCostMicrocents, agentCostMicrocents, agentCallsChecked, agentCallsFlagged, agentCallsResolved, agentCallsErrored, agentCallsJudged]
       properties:
         # Real spend, summed from benchmark_scores.cost_microcents /
         # benchmark_agent_scans.judge_cost_microcents for this bulk's calls --
@@ -2080,9 +2081,14 @@ components:
         # T-03 (2026-08-28): flagged and errored are separate counts and must
         # never be added together. flagged = the check ran and found
         # something. errored = the check did not complete, so nothing is
-        # known about that call. checked = flagged + errored + clean.
+        # known about that call. checked = flagged + resolved + errored + clean.
+        # T-38: resolved = flagged scans a human has since approved or
+        # rejected -- work done, not an open finding, not a gap.
+        # T-34: judged = the judge's reasoning is on the row, regardless of
+        # whether its cost is known.
         agentCallsChecked: { type: number }
         agentCallsFlagged: { type: number }
+        agentCallsResolved: { type: number }
         agentCallsErrored: { type: number }
         agentCallsJudged: { type: number }
     BulkTemplate:

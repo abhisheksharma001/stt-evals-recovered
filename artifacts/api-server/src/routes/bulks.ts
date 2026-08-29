@@ -298,15 +298,29 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
     : [];
   const sttCostMicrocents = sttCostRows.reduce((sum, r) => sum + (r.costMicrocents ?? 0), 0);
 
-  const agentScanRows = runs.length
+  const allAgentScanRows = runs.length
     ? await db
         .select({
+          callId: benchmarkAgentScansTable.callId,
+          createdAt: benchmarkAgentScansTable.createdAt,
           status: benchmarkAgentScansTable.status,
           judgeCostMicrocents: benchmarkAgentScansTable.judgeCostMicrocents,
+          agentPickReasoning: benchmarkAgentScansTable.agentPickReasoning,
         })
         .from(benchmarkAgentScansTable)
         .where(inArray(benchmarkAgentScansTable.runId, runs.map((run) => run.id)))
     : [];
+  // Coverage counts CALLS, by each call's latest scan for this bulk. A
+  // re-execution appends a new scan row per call (history is kept), so
+  // counting rows read "126 checked" on a 72-call bulk after one retry
+  // (T-35 check, 2026-08-29). Spend, below, still sums every row: money
+  // was paid for each judge call, superseded or not.
+  const latestScanByCall = new Map<string, (typeof allAgentScanRows)[number]>();
+  for (const row of allAgentScanRows) {
+    const current = latestScanByCall.get(row.callId);
+    if (!current || row.createdAt > current.createdAt) latestScanByCall.set(row.callId, row);
+  }
+  const agentScanRows = [...latestScanByCall.values()];
   // T-03 (2026-08-28): "flagged" and "error" are different facts and must
   // never be added together. "flagged" means the verification ran and found
   // something worth a human's attention -- a real result. "error" means the
@@ -314,11 +328,22 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
   // call either way. Summing them produced a single number that read as
   // "the AI found 63 problems" when the truth was "the AI crashed 63 times"
   // (bulk 7d2585da, the T-01 post-mortem).
+  //
+  // T-38: "approved" / "rejected" are flagged scans a human has already
+  // resolved. They are neither open findings (flagged) nor gaps (errored),
+  // so they get their own count instead of vanishing from the line.
+  // checked = clean + flagged + resolved + errored.
   const agentCallsChecked = agentScanRows.length;
   const agentCallsFlagged = agentScanRows.filter((r) => r.status === "flagged").length;
+  const agentCallsResolved = agentScanRows.filter((r) => r.status === "approved" || r.status === "rejected").length;
   const agentCallsErrored = agentScanRows.filter((r) => r.status === "error").length;
-  const agentCostRows = agentScanRows.filter((r) => r.judgeCostMicrocents !== null);
-  const agentCallsJudged = agentCostRows.filter((r) => r.status === "flagged").length;
+  const agentCostRows = allAgentScanRows.filter((r) => r.judgeCostMicrocents !== null);
+  // T-34: "judged" means the judge answered -- the reasoning is on the row
+  // -- not "we know what it cost". A model with no published rate stores a
+  // null cost for a perfectly real verdict.
+  const agentCallsJudged = agentScanRows.filter(
+    (r) => (r.status === "flagged" || r.status === "approved" || r.status === "rejected") && r.agentPickReasoning !== null,
+  ).length;
 
   // Three distinguishable cost states, because "$0.00" is a claim about
   // money and must only be made when it is true:
@@ -330,7 +355,7 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
   const agentCostMicrocents =
     agentCostRows.length > 0
       ? agentCostRows.reduce((sum, r) => sum + (r.judgeCostMicrocents ?? 0), 0)
-      : agentCallsFlagged + agentCallsErrored === 0
+      : agentCallsFlagged + agentCallsResolved + agentCallsErrored === 0
         ? 0
         : null;
 
@@ -406,6 +431,7 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         agentCostMicrocents,
         agentCallsChecked,
         agentCallsFlagged,
+        agentCallsResolved,
         agentCallsErrored,
         agentCallsJudged,
       },

@@ -963,7 +963,8 @@ export interface BulkPreviewExclusion {
 
 export type BulkPreviewEstimate = {
   sttCostCents: number;
-  agentCostCents: number;
+  /** @nullable */
+  agentCostCents: number | null;
   totalCostCents: number;
   overThreshold: boolean;
 } | null;
@@ -1187,6 +1188,7 @@ export interface BulkActualCost {
   agentCostMicrocents: number | null;
   agentCallsChecked: number;
   agentCallsFlagged: number;
+  agentCallsResolved: number;
   agentCallsErrored: number;
   agentCallsJudged: number;
 }

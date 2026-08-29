@@ -11,6 +11,7 @@ export interface BulkActualCost {
   agentCostMicrocents: number | null;
   agentCallsChecked: number;
   agentCallsFlagged: number;
+  agentCallsResolved: number;
   agentCallsErrored: number;
   agentCallsJudged: number;
 }

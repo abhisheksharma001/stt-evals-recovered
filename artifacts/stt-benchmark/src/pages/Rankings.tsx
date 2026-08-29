@@ -432,6 +432,7 @@ export default function Rankings() {
                 {bulkDetail.actualCost.agentCallsChecked} checked
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                   {bulkDetail.actualCost.agentCallsFlagged} flagged, {bulkDetail.actualCost.agentCallsJudged} judged by OpenAI
+                  {bulkDetail.actualCost.agentCallsResolved > 0 && <>, {bulkDetail.actualCost.agentCallsResolved} resolved by a human</>}
                 </span>
               </div>
             </div>
