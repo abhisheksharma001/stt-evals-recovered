@@ -18,6 +18,7 @@ import { drainWithConcurrency, envInt, executeBenchmarkRun, requestRunCancellati
 import { audioCachePathFor } from "./audio-cache";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";
+import { resolveProductionProviderId } from "./verdict";
 
 // 2026-08-27, per Abhishek ("let's not take the calls which are 14 days
 // back, so we never encounter this problem again"): matches the warning
@@ -401,6 +402,9 @@ export type BulkPreviewResult = {
     overThreshold: boolean;
   } | null;
   costThresholdCents: number;
+  /** T-56: for each production transcriber among the matched calls,
+   *  whether the provider it maps to is one of the candidates. */
+  productionCoverage: { vendor: string; model: string | null; calls: number; providerId: string | null; benchmarked: boolean }[];
 };
 
 /**
@@ -432,12 +436,37 @@ export async function previewBulkSelection(input: {
       overThreshold: totalCostCents > BULK_COST_THRESHOLD_CENTS,
     };
   }
+  // T-56: the verdict's "vs production" comparison can only fill when
+  // production's own provider is a candidate. Say so here, before money.
+  const productionCoverage: BulkPreviewResult["productionCoverage"] = [];
+  if (selection.callIds.length > 0) {
+    const prodRows = await db
+      .select({ vendor: benchmarkCallsTable.sourceTranscriberProvider, model: benchmarkCallsTable.sourceTranscriberModel })
+      .from(benchmarkCallsTable)
+      .where(inArray(benchmarkCallsTable.id, selection.callIds));
+    const providerRows = await db
+      .select({ id: benchmarkProvidersTable.id, name: benchmarkProvidersTable.name, model: benchmarkProvidersTable.model })
+      .from(benchmarkProvidersTable);
+    const counts = new Map<string, { vendor: string; model: string | null; calls: number }>();
+    for (const r of prodRows) {
+      if (!r.vendor) continue;
+      const key = `${r.vendor}::${r.model ?? ""}`;
+      const entry = counts.get(key) ?? { vendor: r.vendor, model: r.model ?? null, calls: 0 };
+      entry.calls += 1;
+      counts.set(key, entry);
+    }
+    for (const entry of [...counts.values()].sort((a, b) => b.calls - a.calls)) {
+      const providerId = resolveProductionProviderId(entry.vendor, entry.model, providerRows);
+      productionCoverage.push({ ...entry, providerId, benchmarked: providerId !== null && providerIds.includes(providerId) });
+    }
+  }
   return {
     inScopeCount: selection.inScopeCount,
     matchedCount: selection.callIds.length,
     excluded: selection.excluded,
     estimate,
     costThresholdCents: BULK_COST_THRESHOLD_CENTS,
+    productionCoverage,
   };
 }
 

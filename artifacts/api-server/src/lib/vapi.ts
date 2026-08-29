@@ -312,11 +312,14 @@ export async function fetchVapiAssistants(
  * per-request cap so wide date windows no longer silently truncate at
  * VAPI_MAX_LIMIT (found as triage claim #10 in ox-alpha/triage.md).
  *
- * Pagination is defensive about sort order: we request ascending order and
- * walk a `createdAtGt` cursor, but if the API ignored the order hint and
- * returns newest-first, each page still advances (newer calls), and the
- * seen-id set guarantees termination either way -- the loop only continues
- * while a page contributes calls we have not seen before.
+ * Pagination (T-60, 2026-08-29): Vapi returns /call NEWEST first and
+ * rejects an `order` param outright, so the walk goes newest -> oldest: the
+ * cursor is the OLDEST createdAt on each page, sent as createdAtLe for the
+ * next, exactly as lib/volume.ts does. The old walk used the NEWEST
+ * createdAt as a createdAtGe cursor, which under newest-first order re-served
+ * the same page and stopped after one -- the same 14-day window returned
+ * 1,000 calls here and 3,448 via descending paging. The collected Map
+ * dedupes the boundary tie; `truncated` says when MAX_VAPI_PAGES ran out.
  *
  * Note on assistantId: Vapi's own `assistantId` query filter was observed to
  * return an empty list for assistants that demonstrably have calls, so the
@@ -327,59 +330,58 @@ export async function fetchVapiAssistants(
 export async function fetchVapiCalls(
   opts: VapiFetchOptions,
 ): Promise<VapiCall[]> {
+  return (await fetchVapiCallsPaged(opts)).calls;
+}
+
+export async function fetchVapiCallsPaged(
+  opts: VapiFetchOptions,
+): Promise<{ calls: VapiCall[]; truncated: boolean }> {
   const key = resolveKey(opts.accountId);
   const matchesAssistant = (c: VapiCall) =>
     !opts.assistantId || c.assistantId === opts.assistantId;
 
   const collected = new Map<string, VapiCall>();
-  let cursor: string | null = null; // createdAtGt watermark
+  let upper: string | undefined = opts.createdAtLe; // createdAtLe watermark, walks older
+  let truncated = false;
 
-  for (let page = 0; page < MAX_VAPI_PAGES; page++) {
-    // Per-page over-fetch keeps the requested limit reachable even after the
-    // local assistant filter drops non-matching calls from THIS page.
+  for (let page = 0; ; page++) {
     const remaining = opts.limit - [...collected.values()].filter(matchesAssistant).length;
     if (remaining <= 0) break;
+    if (page >= MAX_VAPI_PAGES) {
+      truncated = true;
+      break;
+    }
     const wireLimit = opts.assistantId
       ? Math.min(VAPI_MAX_LIMIT, Math.max(remaining * 10, 100))
       : Math.min(VAPI_MAX_LIMIT, remaining);
 
     const params = new URLSearchParams();
     params.set("limit", String(wireLimit));
-    // No `order` param: verified live 2026-08-26 that Vapi's /call endpoint
-    // now rejects it outright ("property order should not exist"), not just
-    // ignores it. The pagination loop below was already written to tolerate
-    // either sort order (see the class comment above), so dropping the hint
-    // is safe -- nothing here assumed ascending order to be true, only
-    // defended against it not being honored.
-    if (opts.createdAtGe && page === 0) params.set("createdAtGe", opts.createdAtGe);
-    // `Ge` not `Gt` (review 2026-08-25): a strict cursor skips the rest of a
-    // tie group whose timestamp straddles the page edge. `Ge` re-serves the
-    // boundary ties, the collected-Map dedupes them, and the freshCount==0
-    // break below still terminates the loop at end of data.
-    if (cursor) params.set("createdAtGe", cursor);
-    if (opts.createdAtLe) params.set("createdAtLe", opts.createdAtLe);
+    if (opts.createdAtGe) params.set("createdAtGe", opts.createdAtGe);
+    // `Le` re-serves the boundary tie on purpose; the Map dedupes it.
+    if (upper) params.set("createdAtLe", upper);
 
     const calls = await vapiGet<VapiCall[]>(`/call?${params.toString()}`, key);
     if (!Array.isArray(calls) || calls.length === 0) break;
 
-    let newestCreatedAt = "";
+    let oldestCreatedAt = "";
     let freshCount = 0;
     for (const c of calls) {
       if (!collected.has(c.id)) freshCount += 1;
       collected.set(c.id, c);
-      // createdAt is optional on VapiCall; missing timestamps sort as "" so
-      // they never become the cursor watermark.
-      if ((c.createdAt ?? "") > newestCreatedAt) newestCreatedAt = c.createdAt ?? "";
+      if (c.createdAt && (oldestCreatedAt === "" || c.createdAt < oldestCreatedAt)) oldestCreatedAt = c.createdAt;
     }
-    if (freshCount === 0) break; // sort-order surprise: nothing new -> done
-
+    if (freshCount === 0 || !oldestCreatedAt) break; // nothing new: end of data
     if (calls.length < wireLimit) break; // short page: end of the window
-    cursor = newestCreatedAt;
+    upper = oldestCreatedAt;
   }
 
-  return [...collected.values()]
-    .filter(matchesAssistant)
-    .slice(0, opts.limit);
+  return {
+    calls: [...collected.values()]
+      .filter(matchesAssistant)
+      .slice(0, opts.limit),
+    truncated,
+  };
 }
 
 /**

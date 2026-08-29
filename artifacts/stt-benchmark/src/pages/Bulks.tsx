@@ -183,7 +183,10 @@ function SelectionPreviewPanel({ preview, verb = "will run" }: { preview: Select
       </div>
     )
   }
-  const { matchedCount, inScopeCount, excluded, estimate, costThresholdCents } = data
+  const { matchedCount, inScopeCount, excluded, estimate, costThresholdCents, productionCoverage } = data
+  // T-56: the verdict's "vs production" line can only fill when the
+  // provider production actually uses is one of the candidates.
+  const productionGaps = productionCoverage.filter((c) => !c.benchmarked)
   const blocked = matchedCount === 0
   return (
     <div
@@ -199,6 +202,22 @@ function SelectionPreviewPanel({ preview, verb = "will run" }: { preview: Select
         </span>
       </div>
       {blocked && <p>Nothing matches these filters, so this bulk would run nothing.</p>}
+      {!blocked && productionGaps.length > 0 && (
+        <ul className="space-y-0.5 text-amber-700 dark:text-amber-400">
+          {productionGaps.map((c) => (
+            <li key={`${c.vendor}::${c.model ?? ""}`} className="flex gap-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Production for {c.calls} of these calls is {c.vendor}
+                {c.model ? ` / ${c.model}` : ""}
+                {c.providerId
+                  ? `, which is not among the selected providers -- add "${c.providerId}" or the verdict cannot say "vs production".`
+                  : ", which matches no provider on file -- the verdict cannot say \"vs production\"."}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {excluded.length > 0 && (
         <ul className={`font-mono space-y-0.5 ${blocked ? "" : "text-muted-foreground"}`}>
           {excluded.map((e) => (
@@ -793,6 +812,10 @@ const FAILURE_CLASS_COPY: Record<string, { label: string; detail: string }> = {
     label: "Audio could not be decoded",
     detail: "The bytes arrived but were not usable audio. The source file has to be fixed first.",
   },
+  provider_auth: {
+    label: "Provider rejected our API key",
+    detail: "The key is present but the provider answered 401/403 -- wrong, revoked, or outside its plan. Fix the key; a retry gets the same answer.",
+  },
   unknown: {
     label: "Unknown cause",
     detail: "Classified as a failure, but the cause was not identified. Counted as retryable until it is.",
@@ -903,6 +926,9 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
   // a bulk that still has real work left in it.
   const unfinishedCells =
     (p?.cellsPending ?? 0) + (p?.cellsSkippedPendingReview ?? 0) + (p?.cellsCancelled ?? 0)
+  // T-44: an UPPER BOUND for enabling the button, not a promise or a cost
+  // estimate -- cellsPending is plannedCells - cellsWritten and so also
+  // counts cells that were never planned to run. The label says "up to".
   const retryTargets = retryableCells + unfinishedCells
 
   return (
@@ -1070,9 +1096,10 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
                 variant="outline"
                 onClick={() => retry.mutate({ bulkId: bulk.id })}
                 disabled={retry.isPending || !detail || retryTargets === 0}
+                title="Upper bound: retryable failures plus cells with no verdict yet. Not a cost estimate -- the executor decides cell by cell."
               >
                 <RotateCw className="mr-2 h-4 w-4" />
-                {detail ? `Retry ${retryTargets} cell(s)` : "Retry failed cells"}
+                {detail ? `Retry up to ${retryTargets} cell(s)` : "Retry failed cells"}
               </Button>
             </div>
           )}

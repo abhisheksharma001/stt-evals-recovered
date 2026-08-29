@@ -41,6 +41,7 @@ export * from './bulkPreview';
 export * from './bulkPreviewEstimate';
 export * from './bulkPreviewExclusion';
 export * from './bulkPreviewInput';
+export * from './bulkPreviewProductionCoverageItem';
 export * from './bulkProgress';
 export * from './bulkProviderCorrelation';
 export * from './bulkProviderCorrelationPairsItem';

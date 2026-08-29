@@ -532,6 +532,7 @@ export const ProviderCallResultFailureClass = {
   provider_5xx: 'provider_5xx',
   rate_limited: 'rate_limited',
   audio_decode: 'audio_decode',
+  provider_auth: 'provider_auth',
   unknown: 'unknown',
 } as const;
 
@@ -961,6 +962,16 @@ export interface BulkPreviewExclusion {
   count: number;
 }
 
+export type BulkPreviewProductionCoverageItem = {
+  vendor: string;
+  /** @nullable */
+  model: string | null;
+  calls: number;
+  /** @nullable */
+  providerId: string | null;
+  benchmarked: boolean;
+};
+
 export type BulkPreviewEstimate = {
   sttCostCents: number;
   /** @nullable */
@@ -970,6 +981,7 @@ export type BulkPreviewEstimate = {
 } | null;
 
 export interface BulkPreview {
+  productionCoverage: BulkPreviewProductionCoverageItem[];
   inScopeCount: number;
   matchedCount: number;
   excluded: BulkPreviewExclusion[];
@@ -1164,6 +1176,7 @@ export const BulkFailureGroupFailureClass = {
   provider_5xx: 'provider_5xx',
   rate_limited: 'rate_limited',
   audio_decode: 'audio_decode',
+  provider_auth: 'provider_auth',
   unknown: 'unknown',
 } as const;
 

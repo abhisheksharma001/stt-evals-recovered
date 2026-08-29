@@ -7,8 +7,10 @@
  */
 import type { BulkPreviewEstimate } from './bulkPreviewEstimate';
 import type { BulkPreviewExclusion } from './bulkPreviewExclusion';
+import type { BulkPreviewProductionCoverageItem } from './bulkPreviewProductionCoverageItem';
 
 export interface BulkPreview {
+  productionCoverage: BulkPreviewProductionCoverageItem[];
   inScopeCount: number;
   matchedCount: number;
   excluded: BulkPreviewExclusion[];

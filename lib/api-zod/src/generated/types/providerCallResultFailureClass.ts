@@ -16,5 +16,6 @@ export const ProviderCallResultFailureClass = {
   provider_5xx: 'provider_5xx',
   rate_limited: 'rate_limited',
   audio_decode: 'audio_decode',
+  provider_auth: 'provider_auth',
   unknown: 'unknown',
 } as const;
