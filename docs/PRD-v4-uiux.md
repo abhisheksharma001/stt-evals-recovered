@@ -713,6 +713,32 @@ failure shows as "unknown / permanent".
 Each step is one register row, one PR, one deploy, per the loop. Big rewrites (E.3,
 E.4, T-31) go through a worktree per the project rule.
 
+## E.7 Vocabulary for the Part E work — which terms apply here, and how
+
+Abhishek supplied a glossary (2026-08-30) and asked which of it this project needs.
+Checked against the actual codebase (React + wouter + Tailwind v4 tokens in
+`index.css`, shadcn/ui primitives in `components/ui/`, Radix for dialogs/dropdowns).
+
+| Term | Needed? | Where it bites in this project |
+|---|---|---|
+| **View hierarchy / component tree** | Yes — core of E.1 | `Rankings.tsx` (38 KB) and `Bulks.tsx` (55 KB) are single files where page, sections and rows are one flat function. E.1 layer 1 = re-nesting them: page → section → card → row. |
+| **Nesting / parent-child** | Yes | Same as above. Rule for the agent: a section never renders a sibling's data; if a row needs the bulk id, it gets it from its parent, not a second fetch. |
+| **Information architecture (IA)** | Yes — E.1 layer 2 / D.4 | The seven → four route merge *is* the IA decision. Pending Abhishek's call. |
+| **Atomic design** | Partly | shadcn primitives already are the atoms (`Button`, `Card`, `Badge`). Missing layer is **molecules/organisms**: `DecisionChip`, `GroupVerdictHeadline`, `MonthlyCostCell` exist; the "provider output row with diff + metrics + failure state" (E.4/E.5) must be built as one organism used by Corpus, Results and Runs — not three copies. |
+| **Stacking context / z-index / overlay** | Only as a check | Radix handles modals/popovers. One known risk: the sticky table header in Corpus vs. the `SpanAdjudicator` popover. Verify after T-70, no new work. |
+| **Elevation** | No | Single light surface (E.2); depth comes from borders and ground tint, not shadows. |
+| **Visual hierarchy / contrast / scale** | Yes — E.2 + E.1 | Answer → evidence → controls → table is a *visual* order too: headline 20 px, evidence 13 px mono, table 13 px. Contrast ≥ 4.5:1 is T-70's acceptance. |
+| **Proximity** | Yes | The active-provider setting sits away from the provider list it affects (E.1 Providers item). Cost estimate sits away from the launch button in Bulks. |
+| **Repetition** | Yes | Same chip, same evidence line, same "no output — reason" row everywhere (E.5). |
+| **Design tokens** | Yes — T-70 is *only* tokens | Every colour lives in `index.css` `:root` as `--background`, `--primary`, … consumed via Tailwind `bg-background`. Rule: no hex/hsl literal in a `.tsx` file. `grep -rn "hsl(\|#[0-9a-f]\{6\}" src/pages src/components` must return nothing after T-70. |
+| **Container / wrapper** | Yes | Page shell in `layout.tsx` sets max width and padding once; pages must not set their own. |
+| **Breakpoint** | Minimal | Desktop tool; one breakpoint (sidebar collapses < 1024 px) already in `layout.tsx`. Tables get `overflow-x: auto`, nothing else responsive. |
+
+**How the agent should use this vocabulary in the loop:** each Part E PR names,
+in its description, which of these it touches — "tokens only" (T-70), "organism:
+ProviderOutputRow, used in 3 places" (T-72/73), "re-nesting Results into
+page → section → card" (T-74). A PR that changes tokens *and* nesting is two PRs.
+
 ---
 
 ## Verification
