@@ -732,12 +732,97 @@ Checked against the actual codebase (React + wouter + Tailwind v4 tokens in
 | **Repetition** | Yes | Same chip, same evidence line, same "no output — reason" row everywhere (E.5). |
 | **Design tokens** | Yes — T-70 is *only* tokens | Every colour lives in `index.css` `:root` as `--background`, `--primary`, … consumed via Tailwind `bg-background`. Rule: no hex/hsl literal in a `.tsx` file. `grep -rn "hsl(\|#[0-9a-f]\{6\}" src/pages src/components` must return nothing after T-70. |
 | **Container / wrapper** | Yes | Page shell in `layout.tsx` sets max width and padding once; pages must not set their own. |
-| **Breakpoint** | Minimal | Desktop tool; one breakpoint (sidebar collapses < 1024 px) already in `layout.tsx`. Tables get `overflow-x: auto`, nothing else responsive. |
+| **Breakpoint** | Minimal | Desktop tool. **Correction 2026-08-30 (audit E.8):** there is no sidebar breakpoint — `layout.tsx:206` is a fixed `w-[232px]`, and no `lg:`/`md:` class touches it. Pages use `sm:` 48×, `md:` 23×, `lg:` 7× for grids only. Add one breakpoint (sidebar → icon rail < 1024 px) in T-74; tables get `overflow-x: auto`; nothing else responsive. |
 
 **How the agent should use this vocabulary in the loop:** each Part E PR names,
 in its description, which of these it touches — "tokens only" (T-70), "organism:
 ProviderOutputRow, used in 3 places" (T-72/73), "re-nesting Results into
 page → section → card" (T-74). A PR that changes tokens *and* nesting is two PRs.
+
+## E.8 Audit against the vocabulary — what the code actually shows (2026-08-30)
+
+Grep-and-read pass over `artifacts/stt-benchmark/src`, so Part E starts from
+measured facts, not impressions. Each finding names the term it belongs to and the
+register row that fixes it.
+
+### Hierarchy / nesting (E.1, T-74)
+
+| File | Lines | Functions | Finding |
+|---|---|---|---|
+| `pages/Bulks.tsx` | 1,301 | 17 | Create form, template table, detail dialog, failure groups, launch confirm, all in one file. **17 data hooks** at page level — every child re-renders on any fetch. |
+| `pages/Corpus.tsx` | 878 | 11 | Table + adjudicator + details dialog + agent-scan panel in one file. |
+| `pages/Rankings.tsx` | 724 | 9 | **11 data hooks.** Section order today: title → `JudgeAccuracyCard` (`:352`) → view toggle + bulk picker (`:362`) → verdict banner (`:409`) → cost card → correlation (`:469`) → client cost line (`:479`) → group cards. The trust metric comes *before* the reader knows which bulk it is about; the answer (banner) is fourth. Target order: picker → banner → cost → correlation → judge accuracy → cards. |
+| `pages/Runs.tsx` | 592 | 7 | Owns `WordDiffView` (`:206`) and the failure panel (`:305–:344`) that E.4/E.5 need everywhere — they must move to `components/` as organisms. |
+| `pages/Providers.tsx` | 419 | 5 | "System settings" card with the active-provider `Select` (`:219–:229`) is a separate card *below* the provider list it acts on — proximity fault. |
+
+Every page sets its own top-level rhythm (`space-y-6` ×5, `space-y-4` Rankings,
+`space-y-0.5` Bulks) — the wrapper in `layout.tsx:264` (`max-w-[1400px] p-7`) is the
+only shared container, and pages disagree with each other below it. T-74 sets one
+page-section gap token and removes the per-page values.
+
+### Design tokens (E.2, T-70)
+
+- Token set in `index.css:85–180`: ground/ink/border, card, sidebar (8 tokens),
+  popover, primary, secondary, muted, accent, destructive, input/ring, **success,
+  warning**, 8 `--entity-*` colours (de-identification highlights), 5 `--chart-*`,
+  fonts, radius, 3 shadows. Good base — T-70 changes values, not names.
+- `.dark {}` at `index.css:180` is an empty `color-scheme` stub. Delete in T-70 unless
+  the toggle is kept.
+- **Literal palette classes outside `components/ui/` (must be zero after T-70):**
+  `judge-accuracy-card.tsx:129,131` (`emerald-500/15`, `red-500/15`, with `dark:`
+  variants that will never fire) → `bg-success/15 text-success`, `bg-destructive/15`.
+  `Bulks.tsx:207` (`text-amber-700 dark:text-amber-400`) → `text-warning`.
+- **Inline `hsl(...)` in TSX:** `trend-strip.tsx:29,31,121,123,127` and
+  `provider-correlation-card.tsx:101` — all go through `var(--…)` except
+  `trend-strip.tsx:31`, which generates `hsl(${index*67} 45% 55%)` per provider at
+  runtime. On a cream ground that saturation/lightness will fail contrast; T-70 maps
+  provider series to the 5 `--chart-*` tokens instead.
+- **Copied input styling:** `Import.tsx:34`, `Corpus.tsx:671`, `Corpus.tsx:859` each
+  paste the full `<Input>` class string instead of using the `Input` atom. Fix in
+  T-74 (atomic design: use the atom).
+
+### Elevation / stacking (no task — verify only)
+
+- `shadow-*` outside `ui/`: `Dashboard.tsx:35` (custom ring on the "current" step),
+  `Rankings.tsx:530` (`shadow-sm` on the group card), `trend-strip.tsx:132`
+  (tooltip). All others are inside shadcn primitives (43 uses). On a light ground
+  E.2 keeps `--shadow-sm` for popovers/tooltips only; cards use border + tint.
+- No hand-written `z-index`, `sticky`, or `fixed` anywhere outside `ui/`. Stacking is
+  entirely Radix-managed. The Corpus-header/adjudicator risk named in E.7 does not
+  exist as code today (`SpanAdjudicator` is inline at `Corpus.tsx:548`, not a
+  popover) — remove that worry.
+
+### Repetition / organisms (E.4, E.5 — T-72, T-73)
+
+- One word-diff renderer: `Runs.tsx:206 WordDiffView` (+ its gold-free sibling at
+  `:240`). Used in exactly one place (`:474`). T-72 lifts it to
+  `components/provider-output-row.tsx` and uses it from Corpus, Results, Runs.
+- Failure text is rendered four different ways: `Runs.tsx:461` ("Diagnosis
+  available" **or raw error or `—`** — the dash E.5 forbids), `Runs.tsx:305–344`
+  (diagnosis panel), `Bulks.tsx:857` (`FAILURE_CLASS_COPY` per failure group — the
+  only class-driven one), `Corpus.tsx:380` (agent-scan error). T-73 makes
+  `FAILURE_CLASS_COPY` the single source (move to `components/`) and the row
+  organism the single renderer.
+
+### Proximity (E.1, T-74)
+
+- Providers: active-provider setting in a second card below the list (above).
+- Bulks: cost estimate is shown in the detail dialog header (`:952–:956`) and the
+  "Confirm & launch" button at `:1078`, ~120 lines and one scroll apart in the same
+  dialog; the over-threshold guard (`:591–:594`) fires as a toast, elsewhere again.
+  T-74 puts estimate, threshold state and the button in one row.
+
+### Breakpoints
+
+- Sidebar is a fixed `w-[232px]` (`layout.tsx:206`); the app shell is
+  `h-screen overflow-hidden` (`:261`). Below ~1100 px content is clipped, not
+  reflowed. One breakpoint (icon rail < 1024 px) in T-74; no mobile layout — this
+  is a desktop tool.
+
+### Not found (good)
+
+- No hex colours in any `.tsx`. No `!important`. No inline `style={{ color }}`
+  except the token-driven `provider-correlation-card.tsx:101`.
 
 ---
 

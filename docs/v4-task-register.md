@@ -126,7 +126,7 @@ either on a date. Start it when its trigger fires.
 
 ## Phase 6 — Part E (added 2026-08-30, per Abhishek after T-32)
 
-Spec: `docs/PRD-v4-uiux.md` Part E. Do in this order. Each is one PR; E.3/E.4/T-31 in a
+Spec: `docs/PRD-v4-uiux.md` Part E; measured findings with file:line in **E.8** (audit 2026-08-30). Do in this order. Each is one PR; E.3/E.4/T-31 in a
 worktree. Deploy is still gated on the T-27 index push + T-69 backfill.
 
 | ID | Task | Acceptance |
