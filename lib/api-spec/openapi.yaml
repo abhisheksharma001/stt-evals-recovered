@@ -77,6 +77,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/BenchmarkCall"
   /benchmark/calls/{callId}:
+    get:
+      operationId: getBenchmarkCall
+      tags: [benchmark]
+      summary: One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkCall"
+        "404":
+          description: Call not found
     patch:
       operationId: updateBenchmarkCall
       tags: [benchmark]
@@ -808,6 +827,22 @@ paths:
                 $ref: "#/components/schemas/BulkTemplate"
         "409":
           description: Template name already in use
+  /benchmark/bulk-templates/{templateId}:
+    delete:
+      operationId: deleteBulkTemplate
+      tags: [benchmark]
+      summary: Delete a saved template (T-50). Bulks already launched from it are untouched -- they froze their own call set and provider list at creation.
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Template not found
   /benchmark/bulk-templates/{templateId}/launch:
     post:
       operationId: launchBulkTemplate

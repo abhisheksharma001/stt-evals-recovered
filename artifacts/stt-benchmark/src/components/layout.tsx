@@ -1,4 +1,5 @@
 import { actor } from "@/lib/actor"
+import { uiBuildCommitSha } from "@/lib/build-info"
 import * as React from "react"
 import { Link, useLocation } from "wouter"
 import {
@@ -131,10 +132,17 @@ function BuildBadge() {
   // are errors, but all three mean the SHA does not identify a real commit, so
   // they are marked rather than shown as if they did.
   const sha = data.commitSha
-  const isProvisional = sha.endsWith("-dirty") || sha === "dev" || sha === "unknown"
+  const provisional = (v: string) => v.endsWith("-dirty") || v === "dev" || v === "unknown"
+  const isProvisional = provisional(sha)
+  // T-39: the UI is a separate build and a browser can serve a stale cached
+  // copy against a fresh API with no signal at all. Compare the two stamps
+  // when both name a real commit; disagree = shout, agree = one SHA as before.
+  const uiSha = uiBuildCommitSha
+  const mismatch = !isProvisional && !provisional(uiSha) && uiSha !== sha
 
   const title = [
-    `commit  ${sha}`,
+    `api     ${sha}`,
+    `ui      ${uiSha}${mismatch ? "  <-- differs from the API: this browser is showing a stale UI build. Hard-refresh." : ""}`,
     `built   ${data.builtAt ?? "not a bundle (running from source)"}`,
     `started ${data.startedAt}`,
     `keyed   ${data.providersConfigured.length} provider(s) have a key set`,
@@ -142,8 +150,8 @@ function BuildBadge() {
   ].join("\n")
 
   return (
-    <BuildBadgeShell tone={isProvisional ? "provisional" : "quiet"} title={title}>
-      {sha}
+    <BuildBadgeShell tone={mismatch ? "down" : isProvisional ? "provisional" : "quiet"} title={title}>
+      {mismatch ? `api ${sha} ≠ ui ${uiSha}` : sha}
     </BuildBadgeShell>
   )
 }

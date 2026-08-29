@@ -12,6 +12,7 @@ import {
   useListBulkTemplates,
   useCreateBulkTemplate,
   useLaunchBulkTemplate,
+  useDeleteBulkTemplate,
   useListBenchmarkProviders,
   useListVapiAssistants,
   useListVapiAccounts,
@@ -31,7 +32,7 @@ import {
   type Provider,
   type VapiAssistant,
 } from "@workspace/api-client-react"
-import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle } from "lucide-react"
+import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1134,6 +1135,18 @@ function TemplateRow({ template }: { template: BulkTemplate }) {
         toast({ title: "Launch failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" }),
     },
   })
+  // T-50: templates were permanent from the UI. Deleting one never touches
+  // bulks already launched from it -- they froze their own selection.
+  const remove = useDeleteBulkTemplate({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListBulkTemplatesQueryKey() })
+        toast({ title: "Template deleted", description: `"${template.name}" is gone. Bulks already launched from it are unaffected.` })
+      },
+      onError: (err) =>
+        toast({ title: "Delete failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" }),
+    },
+  })
 
   return (
     <TableRow>
@@ -1148,6 +1161,20 @@ function TemplateRow({ template }: { template: BulkTemplate }) {
       <TableCell className="text-right">
         <Button size="sm" variant="outline" onClick={() => launch.mutate({ templateId: template.id, data: {} })} disabled={launch.isPending}>
           <Rocket className="mr-2 h-3.5 w-3.5" /> {launch.isPending ? "Launching..." : "Launch"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-1 text-muted-foreground hover:text-destructive"
+          title="Delete this template. Bulks already launched from it are not affected."
+          disabled={remove.isPending}
+          onClick={() => {
+            if (window.confirm(`Delete template "${template.name}"? Bulks already launched from it keep running.`)) {
+              remove.mutate({ templateId: template.id })
+            }
+          }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </TableCell>
     </TableRow>

@@ -148,13 +148,21 @@ export function SpanAdjudicator({
       audio.currentTime = Math.max(0, span.startMs / 1000 - CONTEXT_SECONDS)
       setActiveIndex(index)
       setPlayingIndex(index)
-      void audio.play().catch(() => {
+      void audio.play().catch((err: unknown) => {
         setPlayingIndex(null)
-        toast({
-          title: "Couldn't play audio",
-          description: "The recording isn't cached on the server and its Vapi link may have expired.",
-          variant: "destructive",
-        })
+        // T-59: say what actually went wrong. A rejected play() is most often
+        // the browser's autoplay policy (no user gesture on the document yet,
+        // e.g. the page was reached via keyboard) -- the audio itself was
+        // served fine. Only a NotSupportedError / network failure means the
+        // recording is really unavailable.
+        const name = err instanceof DOMException ? err.name : ""
+        const description =
+          name === "NotAllowedError"
+            ? "The browser blocked playback until you interact with the page. Click anywhere on the page first, then play again."
+            : name === "AbortError"
+              ? "Playback was interrupted by another play request."
+              : "The recording isn't cached on the server and its Vapi link may have expired."
+        toast({ title: "Couldn't play audio", description, variant: "destructive" })
       })
     },
     [spans, toast],

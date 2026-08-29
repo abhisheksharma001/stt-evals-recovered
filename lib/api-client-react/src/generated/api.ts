@@ -413,6 +413,83 @@ export const useCreateBenchmarkCall = <TError = ErrorType<unknown>,
       return useMutation(getCreateBenchmarkCallMutationOptions(options));
     }
 
+export const getGetBenchmarkCallUrl = (callId: string,) => {
+
+
+
+
+  return `/api/benchmark/calls/${callId}`
+}
+
+/**
+ * @summary One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
+ */
+export const getBenchmarkCall = async (callId: string, options?: Parameters<typeof customFetch>[1]): Promise<BenchmarkCall> => {
+
+  return customFetch<BenchmarkCall>(getGetBenchmarkCallUrl(callId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBenchmarkCallQueryKey = (callId: string,) => {
+    return [
+    `/api/benchmark/calls/${callId}`
+    ] as const;
+    }
+
+
+export const getGetBenchmarkCallQueryOptions = <TData = Awaited<ReturnType<typeof getBenchmarkCall>>, TError = ErrorType<void>>(callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkCall>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBenchmarkCallQueryKey(callId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBenchmarkCall>>> = ({ signal }) => getBenchmarkCall(callId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: callId !== null && callId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkCall>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBenchmarkCallQueryResult = NonNullable<Awaited<ReturnType<typeof getBenchmarkCall>>>
+export type GetBenchmarkCallQueryError = ErrorType<void>
+
+
+/**
+ * @summary One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
+ */
+
+export function useGetBenchmarkCall<TData = Awaited<ReturnType<typeof getBenchmarkCall>>, TError = ErrorType<void>>(
+ callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkCall>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBenchmarkCallQueryOptions(callId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getUpdateBenchmarkCallUrl = (callId: string,) => {
 
 
@@ -3199,6 +3276,77 @@ export const useCreateBulkTemplate = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCreateBulkTemplateMutationOptions(options));
+    }
+
+export const getDeleteBulkTemplateUrl = (templateId: string,) => {
+
+
+
+
+  return `/api/benchmark/bulk-templates/${templateId}`
+}
+
+/**
+ * @summary Delete a saved template (T-50). Bulks already launched from it are untouched -- they froze their own call set and provider list at creation.
+ */
+export const deleteBulkTemplate = async (templateId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteBulkTemplateUrl(templateId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteBulkTemplateMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteBulkTemplate>>, TError,{templateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteBulkTemplate>>, TError,{templateId: string}, TContext> => {
+
+const mutationKey = ['deleteBulkTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteBulkTemplate>>, {templateId: string}> = (props) => {
+          const {templateId} = props ?? {};
+
+          return  deleteBulkTemplate(templateId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteBulkTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof deleteBulkTemplate>>>
+
+    export type DeleteBulkTemplateMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a saved template (T-50). Bulks already launched from it are untouched -- they froze their own call set and provider list at creation.
+ */
+export const useDeleteBulkTemplate = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteBulkTemplate>>, TError,{templateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteBulkTemplate>>,
+        TError,
+        {templateId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteBulkTemplateMutationOptions(options));
     }
 
 export const getLaunchBulkTemplateUrl = (templateId: string,) => {
