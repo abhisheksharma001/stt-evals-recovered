@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   benchmarkBulksTable,
   benchmarkCallsTable,
@@ -742,8 +742,9 @@ async function executeBenchmarkRunInner(
 
 // One cell = one (call, provider) pair. The provider call is retried with
 // backoff for transient outcomes; persistence is NOT -- the first row written
-// to benchmark_provider_call_results makes the attempt committed history, and
-// replacement semantics belong to the stale-row cleanup at run start.
+// to benchmark_provider_call_results makes the attempt committed history.
+// Replacement semantics live in upsertResult() (T-27: one row per cell, the
+// database enforces it) plus the stale-row cleanup at run start.
 async function runCell(
   runId: string,
   call: BenchmarkCallRow,
@@ -866,26 +867,35 @@ async function runCell(
     // stays null there rather than being defaulted to "instant" (RUN-02).
     const firstPartialAt = result.firstPartialAt ? new Date(result.firstPartialAt) : null;
 
-    const [resultRow] = await db
-      .insert(benchmarkProviderCallResultsTable)
-      .values({
-        runId,
-        callId: call.id,
-        providerId: provider.id,
-        status: result.status,
-        submittedAt,
-        firstPartialAt,
-        finalAt,
-        httpStatus: result.httpStatus,
-        hypothesisTranscript: result.hypothesisTranscript,
-        rawOutput: rawOutputString,
-        rawOutputHash,
-        errorMessage: result.errorMessage,
-        // Straight from the adapter, which set it where the failure
-        // happened. Null when the cell succeeded.
-        failureClass: result.status === "ok" ? null : (result.failureClass ?? "unknown"),
-      })
-      .returning();
+    const resultRow = await upsertResult(runId, call.id, provider.id, {
+      status: result.status,
+      submittedAt,
+      firstPartialAt,
+      finalAt,
+      httpStatus: result.httpStatus,
+      hypothesisTranscript: result.hypothesisTranscript,
+      rawOutput: rawOutputString,
+      rawOutputHash,
+      errorMessage: result.errorMessage,
+      // Straight from the adapter, which set it where the failure
+      // happened. Null when the cell succeeded.
+      failureClass: result.status === "ok" ? null : (result.failureClass ?? "unknown"),
+    });
+
+    if (!resultRow) {
+      // T-27: the cell key already holds an "ok" row written by someone
+      // else (a concurrent execution of the same run -- the documented
+      // no-job-queue race). That row and its score are the record; this
+      // attempt's output is dropped rather than stacked beside it. The
+      // provider was still billed for this attempt, which is exactly the
+      // waste the race causes -- nothing here can undo that, only keep
+      // it from corrupting the data.
+      logger.warn(
+        { runId, providerId: provider.id, callId: call.id },
+        "T-27: cell already recorded ok by another writer; discarding duplicate attempt",
+      );
+      return "ok";
+    }
 
     if (result.status !== "ok" || !result.hypothesisTranscript) {
       return "failed";
@@ -967,18 +977,28 @@ async function runCell(
     // crash here must still leave a visible failed row instead of silently
     // dropping the cell.
     try {
-      await insertResult(runId, call.id, provider.id, {
-        status: "failed",
-        submittedAt: new Date(),
-        finalAt: new Date(),
-        httpStatus: null,
-        hypothesisTranscript: null,
-        rawOutput: null,
-        errorMessage: `Persisted transcription but failed to store/score it: ${err instanceof Error ? err.message : String(err)}`,
-        // Our own bookkeeping broke after the provider had already
-        // answered. None of the provider-side classes fit.
-        failureClass: "unknown",
-      });
+      // T-27: this is the one place an existing "ok" row may be replaced --
+      // it is our own row from a few lines up, and its transcript stored
+      // fine but never got a score. Before the unique key this stacked a
+      // second, "failed" row beside the "ok" one and the cell read as both.
+      await insertResult(
+        runId,
+        call.id,
+        provider.id,
+        {
+          status: "failed",
+          submittedAt: new Date(),
+          finalAt: new Date(),
+          httpStatus: null,
+          hypothesisTranscript: null,
+          rawOutput: null,
+          errorMessage: `Persisted transcription but failed to store/score it: ${err instanceof Error ? err.message : String(err)}`,
+          // Our own bookkeeping broke after the provider had already
+          // answered. None of the provider-side classes fit.
+          failureClass: "unknown",
+        },
+        { replaceOk: true },
+      );
     } catch (insertErr) {
       logger.error({ insertErr, runId, providerId: provider.id, callId: call.id }, "failed to persist cell failure");
     }
@@ -1008,24 +1028,96 @@ async function insertResult(
      */
     failureClass: FailureClass | null;
   },
+  options: { replaceOk?: boolean } = {},
 ): Promise<void> {
   const rawOutputString = fields.rawOutput === null ? null : JSON.stringify(fields.rawOutput);
-  await db.insert(benchmarkProviderCallResultsTable).values({
+  await upsertResult(
     runId,
     callId,
     providerId,
-    status: fields.status,
-    submittedAt: fields.submittedAt,
-    finalAt: fields.finalAt,
-    httpStatus: fields.httpStatus,
-    hypothesisTranscript: fields.hypothesisTranscript,
-    rawOutput: rawOutputString,
-    rawOutputHash: rawOutputString
-      ? createHash("sha256").update(rawOutputString).digest("hex")
-      : null,
-    errorMessage: fields.errorMessage,
-    failureClass: fields.failureClass,
-  });
+    {
+      status: fields.status,
+      submittedAt: fields.submittedAt,
+      firstPartialAt: null,
+      finalAt: fields.finalAt,
+      httpStatus: fields.httpStatus,
+      hypothesisTranscript: fields.hypothesisTranscript,
+      rawOutput: rawOutputString,
+      rawOutputHash: rawOutputString
+        ? createHash("sha256").update(rawOutputString).digest("hex")
+        : null,
+      errorMessage: fields.errorMessage,
+      failureClass: fields.failureClass,
+    },
+    options,
+  );
+}
+
+type CellResultFields = Pick<
+  typeof benchmarkProviderCallResultsTable.$inferInsert,
+  | "status"
+  | "submittedAt"
+  | "firstPartialAt"
+  | "finalAt"
+  | "httpStatus"
+  | "hypothesisTranscript"
+  | "rawOutput"
+  | "rawOutputHash"
+  | "errorMessage"
+  | "failureClass"
+>;
+
+// T-27: the single writer for benchmark_provider_call_results. The table
+// carries a unique key on (run_id, call_id, provider_id), so a cell is a
+// slot that gets overwritten, never a log that gets appended to. Rules:
+//
+//   * A row that is not "ok" is always replaced by the newer attempt --
+//     that is what "retry the failed cells" means.
+//   * A row that IS "ok" is never replaced by default. An "ok" row owns a
+//     benchmark_scores row and is the evidence every ranking reads; a
+//     later "failed" (or a second "ok" from a concurrent executor) must
+//     not clobber it. The caller sees `undefined` back and decides.
+//   * `replaceOk` opts out of that guard, for the one caller that is
+//     overwriting its own just-written row (transcript stored, scoring
+//     blew up -- the cell genuinely is failed).
+//
+// `id` is kept on update so nothing that already references the row (a
+// score, an agent pick) dangles; `created_at` is moved to the new attempt's
+// time so "latest attempt" reads stay meaningful.
+async function upsertResult(
+  runId: string,
+  callId: string,
+  providerId: string,
+  fields: CellResultFields,
+  options: { replaceOk?: boolean } = {},
+): Promise<typeof benchmarkProviderCallResultsTable.$inferSelect | undefined> {
+  const t = benchmarkProviderCallResultsTable;
+  const [row] = await db
+    .insert(t)
+    .values({ runId, callId, providerId, ...fields })
+    .onConflictDoUpdate({
+      target: [t.runId, t.callId, t.providerId],
+      set: {
+        status: sql`excluded.status`,
+        submittedAt: sql`excluded.submitted_at`,
+        firstPartialAt: sql`excluded.first_partial_at`,
+        finalAt: sql`excluded.final_at`,
+        httpStatus: sql`excluded.http_status`,
+        hypothesisTranscript: sql`excluded.hypothesis_transcript`,
+        rawOutput: sql`excluded.raw_output`,
+        rawOutputHash: sql`excluded.raw_output_hash`,
+        errorMessage: sql`excluded.error_message`,
+        failureClass: sql`excluded.failure_class`,
+        // A replaced attempt's on-demand diagnosis described the old
+        // failure, not this one.
+        failureDiagnosis: null,
+        failureSuggestedFix: null,
+        createdAt: sql`excluded.created_at`,
+      },
+      ...(options.replaceOk ? {} : { setWhere: ne(t.status, "ok") }),
+    })
+    .returning();
+  return row;
 }
 
 // RANK-01/FR-S8: aggregate this run's scores into per-vertical rankings.
