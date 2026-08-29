@@ -3,6 +3,7 @@ import { Router, type IRouter } from "express";
 import {
   benchmarkAgentScansTable,
   benchmarkBulksTable,
+  benchmarkProvidersTable,
   benchmarkProviderCallResultsTable,
   benchmarkRunsTable,
   benchmarkScoresTable,
@@ -56,6 +57,9 @@ import { bulkProviderCorrelation } from "../lib/provider-correlation";
 import { benchmarkTrend } from "../lib/trend";
 import { clientVolume } from "../lib/volume";
 import { bulkVerdicts } from "../lib/verdict";
+import { renderVerdictArtefact } from "../lib/verdict-artefact";
+import { buildCommitSha } from "../lib/build-info";
+import { SCORING_VERSION } from "@workspace/scoring";
 import {
   BulkDurationBandError,
   BulkNameConflictError,
@@ -593,6 +597,41 @@ router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> 
     return;
   }
   res.json(GetBulkVerdictsResponse.parse(await bulkVerdicts(bulk.id)));
+});
+
+// T-32 (PRD-v4 D.6): the shareable, dated verdict artefact. One
+// self-contained HTML document (no scripts, no external assets) built from
+// the same bulkVerdicts numbers the Results page shows, stamped with
+// produced-at, build SHA and scoring version. Not in the generated client
+// on purpose: it is opened as a page / saved as a file, not fetched as JSON.
+router.get("/benchmark/bulks/:bulkId/verdict.html", async (req, res): Promise<void> => {
+  const params = GetBulkVerdictsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const bulk = await loadBulk(params.data.bulkId);
+  if (!bulk) {
+    res.status(404).json({ error: "Bulk not found" });
+    return;
+  }
+  const [verdicts, providers] = await Promise.all([
+    bulkVerdicts(bulk.id),
+    db.select({ id: benchmarkProvidersTable.id, costPerMinute: benchmarkProvidersTable.costPerMinute }).from(benchmarkProvidersTable),
+  ]);
+  const producedAt = new Date();
+  const html = renderVerdictArtefact({
+    bulk: { id: bulk.id, name: bulk.name, status: bulk.status, createdAt: bulk.createdAt, completedAt: bulk.completedAt },
+    verdicts,
+    listPricePerMinute: Object.fromEntries(providers.map((p) => [p.id, p.costPerMinute])),
+    producedAt,
+    buildCommitSha,
+    scoringVersion: SCORING_VERSION,
+  });
+  const slug = bulk.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "bulk";
+  res.setHeader("Content-Disposition", `inline; filename="stt-verdict-${slug}-${producedAt.toISOString().slice(0, 10)}.html"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.type("html").send(html);
 });
 
 router.get("/benchmark/bulks/:bulkId/manifest", async (req, res): Promise<void> => {

@@ -774,6 +774,26 @@ paths:
                 $ref: "#/components/schemas/BulkVerdicts"
         "404":
           description: Bulk not found
+  /benchmark/bulks/{bulkId}/verdict.html:
+    get:
+      operationId: getBulkVerdictArtefact
+      tags: [benchmark]
+      summary: T-32 -- the shareable dated verdict artefact. One self-contained HTML page (no scripts, no external assets, print-clean) rendered from the same numbers as getBulkVerdicts, stamped with the produced-at time, build SHA and scoring version. Open in a browser or save/attach; not part of the generated JSON client.
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Self-contained HTML document
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Bulk not found
   /benchmark/bulks/{bulkId}/manifest:
     get:
       operationId: getBulkManifest
