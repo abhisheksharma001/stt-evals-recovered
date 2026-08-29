@@ -46,6 +46,7 @@ import type {
   BulkTemplateInput,
   BulkTemplateLaunchInput,
   BulkVerdicts,
+  CallComparison,
   ClientVolume,
   DisagreementSpansResponse,
   GetClientVolumeParams,
@@ -561,6 +562,165 @@ export const useUpdateBenchmarkCall = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getUpdateBenchmarkCallMutationOptions(options));
     }
+
+export const getGetCallComparisonUrl = (callId: string,) => {
+
+
+
+
+  return `/api/benchmark/calls/${callId}/comparison`
+}
+
+/**
+ * @summary T-72 (E.4) -- one call, reference transcript on top, every provider's output under it as a word-diff row with its cell metrics and the judge's pick marked
+ */
+export const getCallComparison = async (callId: string, options?: Parameters<typeof customFetch>[1]): Promise<CallComparison> => {
+
+  return customFetch<CallComparison>(getGetCallComparisonUrl(callId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCallComparisonQueryKey = (callId: string,) => {
+    return [
+    `/api/benchmark/calls/${callId}/comparison`
+    ] as const;
+    }
+
+
+export const getGetCallComparisonQueryOptions = <TData = Awaited<ReturnType<typeof getCallComparison>>, TError = ErrorType<void>>(callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCallComparison>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCallComparisonQueryKey(callId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCallComparison>>> = ({ signal }) => getCallComparison(callId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: callId !== null && callId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCallComparison>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCallComparisonQueryResult = NonNullable<Awaited<ReturnType<typeof getCallComparison>>>
+export type GetCallComparisonQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-72 (E.4) -- one call, reference transcript on top, every provider's output under it as a word-diff row with its cell metrics and the judge's pick marked
+ */
+
+export function useGetCallComparison<TData = Awaited<ReturnType<typeof getCallComparison>>, TError = ErrorType<void>>(
+ callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCallComparison>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCallComparisonQueryOptions(callId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBulkCallComparisonUrl = (bulkId: string,
+    callId: string,) => {
+
+
+
+
+  return `/api/benchmark/bulks/${bulkId}/calls/${callId}/comparison`
+}
+
+/**
+ * @summary T-72 (E.4) -- the same comparison scoped to one bulk's runs, providers ordered by the bulk's verdict rate. (A separate operation rather than ?bulkId= because orval names a query-param type and a path-param zod schema identically and they collide.)
+ */
+export const getBulkCallComparison = async (bulkId: string,
+    callId: string, options?: Parameters<typeof customFetch>[1]): Promise<CallComparison> => {
+
+  return customFetch<CallComparison>(getGetBulkCallComparisonUrl(bulkId,callId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBulkCallComparisonQueryKey = (bulkId: string,
+    callId: string,) => {
+    return [
+    `/api/benchmark/bulks/${bulkId}/calls/${callId}/comparison`
+    ] as const;
+    }
+
+
+export const getGetBulkCallComparisonQueryOptions = <TData = Awaited<ReturnType<typeof getBulkCallComparison>>, TError = ErrorType<void>>(bulkId: string,
+    callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkCallComparison>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkCallComparisonQueryKey(bulkId,callId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkCallComparison>>> = ({ signal }) => getBulkCallComparison(bulkId,callId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bulkId !== null && bulkId !== undefined && callId !== null && callId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBulkCallComparison>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBulkCallComparisonQueryResult = NonNullable<Awaited<ReturnType<typeof getBulkCallComparison>>>
+export type GetBulkCallComparisonQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-72 (E.4) -- the same comparison scoped to one bulk's runs, providers ordered by the bulk's verdict rate. (A separate operation rather than ?bulkId= because orval names a query-param type and a path-param zod schema identically and they collide.)
+ */
+
+export function useGetBulkCallComparison<TData = Awaited<ReturnType<typeof getBulkCallComparison>>, TError = ErrorType<void>>(
+ bulkId: string,
+    callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkCallComparison>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBulkCallComparisonQueryOptions(bulkId,callId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListDisagreementSpansUrl = (params: ListDisagreementSpansParams,) => {
   const normalizedParams = new URLSearchParams();
