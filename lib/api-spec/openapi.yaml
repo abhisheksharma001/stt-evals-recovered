@@ -1563,6 +1563,13 @@ components:
             - type: "null"
         failureDiagnosis: { type: ["string", "null"], description: "2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed)." }
         failureSuggestedFix: { type: ["string", "null"] }
+        # T-73 (E.5). Decided server-side by isRetryableFailureClass() -- the
+        # same rule the executor and the bulk failure groups use, so the UI
+        # never re-derives it. true/false only for failed cells with a class
+        # (and true for skipped_pending_review, which a re-run picks up once
+        # the call clears review); null = not a failure, or a failure that
+        # predates classification (never defaulted to either).
+        retryable: { type: ["boolean", "null"] }
         rawOutputHash: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
         score:

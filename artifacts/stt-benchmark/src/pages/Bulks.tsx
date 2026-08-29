@@ -1,5 +1,6 @@
 import * as React from "react"
 import { formatMicrocents } from "@/lib/utils"
+import { failureCopy } from "@/components/no-output"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   useListBulks,
@@ -771,63 +772,10 @@ function ManifestView({ bulkId }: { bulkId: string }) {
   )
 }
 
-/**
- * T-07: how each failure class is named and explained on screen.
- *
- * The wording is the whole point of the task. "45 cells failed" reads as
- * "the tool is broken"; "30 recordings expired before we asked for them"
- * reads as what actually happened, and stops an operator paying to retry
- * something that can never succeed.
- *
- * Two entries deserve their difference spelled out, because they look
- * interchangeable and are not:
- *   - "unknown" is a CLASSIFIED failure whose cause was not identified. It
- *     is retryable, because nothing has shown it to be permanent.
- *   - null is an UNCLASSIFIED row -- written before the class column
- *     existed, and left alone by the T-40 backfill because its stored error
- *     text named no cause. It is not retryable: guessing that it was
- *     transient would spend real provider money on a maybe.
- */
-const FAILURE_CLASS_COPY: Record<string, { label: string; detail: string }> = {
-  retention_expired: {
-    label: "Recording expired",
-    detail: "Vapi keeps a recording 14 days. Past that the audio is gone for everyone, permanently.",
-  },
-  audio_url_forbidden: {
-    label: "Audio URL forbidden (403)",
-    detail: "The signed storage URL refused the download. Bucket-specific and not fixable from here.",
-  },
-  provider_timeout: {
-    label: "Provider timed out",
-    detail: "The provider took the audio and never returned a final transcript inside its deadline.",
-  },
-  provider_5xx: {
-    label: "Provider server error",
-    detail: "The provider's own side failed the request, or dropped the stream mid-transfer.",
-  },
-  rate_limited: {
-    label: "Rate limited",
-    detail: "The provider refused on quota. Worth re-running once the window clears.",
-  },
-  audio_decode: {
-    label: "Audio could not be decoded",
-    detail: "The bytes arrived but were not usable audio. The source file has to be fixed first.",
-  },
-  provider_auth: {
-    label: "Provider rejected our API key",
-    detail: "The key is present but the provider answered 401/403 -- wrong, revoked, or outside its plan. Fix the key; a retry gets the same answer.",
-  },
-  unknown: {
-    label: "Unknown cause",
-    detail: "Classified as a failure, but the cause was not identified. Counted as retryable until it is.",
-  },
-}
-
-const UNCLASSIFIED_COPY = {
-  label: "Unclassified (predates classification)",
-  detail:
-    "Recorded before failures carried a cause, and its stored error text names none. Not guessed, and not retried — re-running it would be paying for a maybe.",
-}
+// T-73: FAILURE_CLASS_COPY / UNCLASSIFIED_COPY moved to
+// components/no-output.tsx -- one source for every screen that names a
+// failure class (this breakdown, the Runs cell drill-down, the per-call
+// comparison).
 
 /**
  * T-07: replaces the bare "cells failed" number with what it is made of,
@@ -854,7 +802,7 @@ function FailureBreakdown({
       </div>
       <div className="divide-y divide-border">
         {groups.map((group) => {
-          const copy = group.failureClass ? (FAILURE_CLASS_COPY[group.failureClass] ?? UNCLASSIFIED_COPY) : UNCLASSIFIED_COPY
+          const copy = failureCopy(group.failureClass)
           return (
             <div key={group.failureClass ?? "__unclassified__"} className="flex items-start gap-3 px-3 py-2.5">
               <div className="w-10 shrink-0 font-mono text-lg font-semibold tabular-nums">{group.cells}</div>

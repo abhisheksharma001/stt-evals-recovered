@@ -666,6 +666,8 @@ export interface ProviderCallResult {
   /** @nullable */
   failureSuggestedFix?: string | null;
   /** @nullable */
+  retryable?: boolean | null;
+  /** @nullable */
   rawOutputHash?: string | null;
   createdAt: string;
   score?: ScoreDetail | null;
