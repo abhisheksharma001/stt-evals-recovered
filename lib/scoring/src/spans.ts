@@ -33,6 +33,10 @@ export type SpanReading = {
   text: string;
   /** True when this reading is identical to the reference's. */
   agreesWithReference: boolean;
+  /** T-47: true when this reading is the span's plurality text (see
+   *  `DisagreementSpan.majorityText`). False for everyone when there is
+   *  no plurality. */
+  agreesWithMajority: boolean;
 };
 
 export type DisagreementSpan = {
@@ -46,6 +50,12 @@ export type DisagreementSpan = {
   /** Normalized reference positions covered, inclusive. Diagnostic only. */
   referencePositions: [number, number];
   readings: SpanReading[];
+  /** T-47: the text most providers gave for this span, when one text has
+   *  strictly more votes than any other -- consensus-relative, the same
+   *  idea hybrid.ts uses per position. Null on a tie (2 vs 2, 1-1-1). The
+   *  reference is just one vote here: when four say "are" and the
+   *  reference alone says "were", the majority is "are". */
+  majorityText: string | null;
 };
 
 export type DisagreementSpansResult = {
@@ -92,6 +102,29 @@ function tokenize(candidate: SpanCandidate): Token[] {
     .split(/\s+/)
     .flatMap(tokenizeWord)
     .map((text) => ({ text, start: null, end: null }));
+}
+
+/**
+ * T-47: plurality text across readings, or null when no single text has
+ * strictly the most votes. Shared with judge-agreement.ts so "majority vs
+ * human" is computed by exactly the rule the span UI shows.
+ */
+export function majorityReadingText(readings: readonly { text: string }[]): string | null {
+  const votes = new Map<string, number>();
+  for (const r of readings) votes.set(r.text, (votes.get(r.text) ?? 0) + 1);
+  let best: string | null = null;
+  let bestVotes = 0;
+  let tied = false;
+  for (const [text, n] of votes) {
+    if (n > bestVotes) {
+      best = text;
+      bestVotes = n;
+      tied = false;
+    } else if (n === bestVotes) {
+      tied = true;
+    }
+  }
+  return tied ? null : best;
 }
 
 /**
@@ -166,18 +199,22 @@ export function buildDisagreementSpans(candidates: SpanCandidate[]): Disagreemen
   const spans: DisagreementSpan[] = runs.map(([first, last]) => {
     const startMs = Math.round(reference.tokens[first]!.start! * 1000);
     const endMs = Math.round(reference.tokens[last]!.end! * 1000);
-    const readings: SpanReading[] = tokenized.map((t) => {
-      const aligned = alignedByProvider.get(t.providerId)!;
-      const text = aligned
+    const texts = tokenized.map((t) => ({
+      providerId: t.providerId,
+      text: alignedByProvider
+        .get(t.providerId)!
         .slice(first, last + 1)
         .flat()
-        .join(" ");
-      return {
-        providerId: t.providerId,
-        text,
-        agreesWithReference: text === refWords.slice(first, last + 1).join(" "),
-      };
-    });
+        .join(" "),
+    }));
+    const majorityText = majorityReadingText(texts);
+    const refText = refWords.slice(first, last + 1).join(" ");
+    const readings: SpanReading[] = texts.map(({ providerId, text }) => ({
+      providerId,
+      text,
+      agreesWithReference: text === refText,
+      agreesWithMajority: majorityText !== null && text === majorityText,
+    }));
     return {
       startMs,
       endMs: Math.max(endMs, startMs),
@@ -185,6 +222,7 @@ export function buildDisagreementSpans(candidates: SpanCandidate[]): Disagreemen
       contextAfter: refWords.slice(last + 1, last + 1 + CONTEXT_WORDS).join(" "),
       referencePositions: [first, last],
       readings,
+      majorityText,
     };
   });
 

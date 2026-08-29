@@ -42,6 +42,32 @@ describe("buildDisagreementSpans", () => {
     expect(byProvider.c!.text).not.toBe(byProvider.a!.text);
   });
 
+  // T-47: the reference is one vote, not the truth.
+  it("names the plurality reading even when the reference is the outlier", () => {
+    const result = buildDisagreementSpans([
+      { providerId: "ref", timedWords: timed("they were here") },
+      { providerId: "b", transcript: "they are here" },
+      { providerId: "c", transcript: "they are here" },
+      { providerId: "d", transcript: "they are here" },
+    ]);
+    expect(result.spans).toHaveLength(1);
+    const span = result.spans[0]!;
+    expect(span.majorityText).toBe("are");
+    const byProvider = Object.fromEntries(span.readings.map((r) => [r.providerId, r]));
+    expect(byProvider.ref!.agreesWithReference).toBe(true);
+    expect(byProvider.ref!.agreesWithMajority).toBe(false);
+    expect(byProvider.b!.agreesWithMajority).toBe(true);
+  });
+
+  it("has no majority on a tie", () => {
+    const result = buildDisagreementSpans([
+      { providerId: "ref", timedWords: timed("they were here") },
+      { providerId: "b", transcript: "they are here" },
+    ]);
+    expect(result.spans[0]!.majorityText).toBeNull();
+    expect(result.spans[0]!.readings.every((r) => !r.agreesWithMajority)).toBe(true);
+  });
+
   it("returns no spans when everyone agrees", () => {
     const result = buildDisagreementSpans([
       { providerId: "a", timedWords: timed("hello there friend") },

@@ -990,11 +990,13 @@ components:
   schemas:
     SpanReading:
       type: object
-      required: [providerId, text, agreesWithReference]
+      required: [providerId, text, agreesWithReference, agreesWithMajority]
       properties:
         providerId: { type: string }
         text: { type: string }
         agreesWithReference: { type: boolean }
+        # T-47: true when this text is the span's plurality; false for all when tied.
+        agreesWithMajority: { type: boolean }
     Adjudication:
       type: object
       required: [id, callId, runId, spanStartMs, spanEndMs, correctProviderId, readings, adjudicatedByLabel, adjudicatedAt]
@@ -1054,7 +1056,7 @@ components:
               text: { type: string }
     JudgeAccuracyResponse:
       type: object
-      required: [totalVerdicts, replayed, pending, humanSaidNone, judgeNoPick, comparable, agreements, agreementRate, byAdjudicator, replayCostMicrocents, replayBatchLimit, items]
+      required: [totalVerdicts, replayed, pending, humanSaidNone, judgeNoPick, comparable, agreements, agreementRate, byAdjudicator, majorityComparable, majorityAgreements, majorityAgreementRate, replayCostMicrocents, replayBatchLimit, items]
       properties:
         totalVerdicts: { type: number }
         replayed: { type: number }
@@ -1075,6 +1077,10 @@ components:
               comparable: { type: number }
               agreements: { type: number }
               agreementRate: { type: ["number", "null"] }
+        # T-47: no-LLM baseline -- a plain majority vote over the readings vs the human.
+        majorityComparable: { type: number }
+        majorityAgreements: { type: number }
+        majorityAgreementRate: { type: ["number", "null"] }
         replayCostMicrocents: { type: number }
         replayBatchLimit: { type: number }
         items:
@@ -1082,10 +1088,12 @@ components:
           items: { $ref: "#/components/schemas/JudgeAccuracyItem" }
     DisagreementSpan:
       type: object
-      required: [startMs, endMs, contextBefore, contextAfter, referencePositions, readings, adjudication]
+      required: [startMs, endMs, contextBefore, contextAfter, referencePositions, readings, adjudication, majorityText]
       properties:
         startMs: { type: number }
         endMs: { type: number }
+        # T-47: plurality reading across providers (reference counts as one vote); null on a tie.
+        majorityText: { type: ["string", "null"] }
         contextBefore: { type: string }
         contextAfter: { type: string }
         # T-22: inclusive [first, last] index into DisagreementSpansResponse.referenceWords.
@@ -1949,10 +1957,20 @@ components:
           type: array
           items:
             type: object
-            required: [assistantId, vertical, production, verdict]
+            required: [clientLabel, assistantIds, callCount, vertical, production, verdict]
             properties:
-              # null = calls imported without a Vapi assistant id.
-              assistantId: { type: ["string", "null"] }
+              # T-55: one verdict group per CLIENT (the call's Vapi account
+              # label), not per assistant -- per-assistant groups were 1-2
+              # calls each and could never reach the 5-shared-call floor.
+              # null = calls with no account label on file.
+              clientLabel: { type: ["string", "null"] }
+              # Every assistant whose calls fed this group; null entry = calls
+              # imported without a Vapi assistant id. Rankings cards look
+              # their assistant up here.
+              assistantIds:
+                type: array
+                items: { type: ["string", "null"] }
+              callCount: { type: number }
               vertical: { type: string }
               # Vapi's live transcriber for this group's calls (most common
               # vendor/model), null when no call recorded one.

@@ -10,4 +10,5 @@ export interface SpanReading {
   providerId: string;
   text: string;
   agreesWithReference: boolean;
+  agreesWithMajority: boolean;
 }

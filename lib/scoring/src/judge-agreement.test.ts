@@ -27,6 +27,19 @@ describe("computeJudgeAgreement", () => {
     expect(r.agreementRate).toBe(1);
   });
 
+  // T-47: majority-vs-human is free, so it counts pending rows too.
+  it("scores a plain majority vote against the human, replayed or not", () => {
+    const r = computeJudgeAgreement([
+      row({ humanProviderId: "a", judgeProviderId: undefined }), // majority "are" = human
+      row({ humanProviderId: "c", judgeProviderId: "a" }), // majority "are" != human "were"
+      row({ humanProviderId: null }), // no human pick: excluded
+      row({ humanProviderId: "a", readings: [{ providerId: "a", text: "x" }, { providerId: "b", text: "y" }] }), // tie: excluded
+    ]);
+    expect(r.majorityComparable).toBe(2);
+    expect(r.majorityAgreements).toBe(1);
+    expect(r.majorityAgreementRate).toBe(0.5);
+  });
+
   it("agrees on identical text even when the provider ids differ", () => {
     expect(picksAgree(row({ humanProviderId: "a", judgeProviderId: "b" }))).toBe(true);
     expect(picksAgree(row({ humanProviderId: "a", judgeProviderId: "c" }))).toBe(false);
