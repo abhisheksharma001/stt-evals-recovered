@@ -199,11 +199,16 @@ const defaultProviders = [
     model: "Flux General EN",
     supportsStreaming: true,
     supportsDiarization: true,
-    costPerMinute: 0.0043,
+    // T-62: verified against deepgram.com/pricing on 2026-08-29. Flux is
+    // streaming-only; pay-as-you-go regular price $0.0077/min (a promotional
+    // $0.0065 was showing that day -- list price is what gets quoted).
+    // Nova-3's $0.0043 above is the PRE-RECORDED rate, which is what this
+    // benchmark actually calls; Flux has no pre-recorded rate.
+    costPerMinute: 0.0077,
     keywordBoosting: true,
     manuallyDisabled: true,
     configNote:
-      "The model most of this corpus was actually recorded with in production (86 of 121 calls). Enable it to benchmark against the real baseline. Price is a placeholder copied from Nova-3 -- verify per-model pricing before relying on cost.",
+      "The model most of this corpus was actually recorded with in production (86 of 121 calls). Enable it to benchmark against the real baseline. Price: Deepgram pay-as-you-go regular streaming rate, verified 2026-08-29 (promo $0.0065 seen).",
   },
   {
     id: "deepgram-nova-2",
