@@ -29,7 +29,36 @@ export const GetBenchmarkDashboardResponse = zod.object({
   "configuredProviderCount": zod.number(),
   "totalProviderCount": zod.number(),
   "latestRunStatus": zod.enum(['queued', 'running', 'complete', 'blocked', 'failed', 'cancelled']),
-  "decisionStatus": zod.string()
+  "decisionStatus": zod.string(),
+  "latestFinishedBulk": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
+  "completedAt": zod.coerce.date().nullable()
+}).nullable(),
+  "runningBulk": zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}).nullable(),
+  "needsHuman": zod.object({
+  "callsAwaitingReview": zod.number(),
+  "hardCaseCalls": zod.number(),
+  "retryableFailedCells": zod.number(),
+  "spans": zod.object({
+  "bulkId": zod.string(),
+  "total": zod.number(),
+  "adjudicated": zod.number()
+}).nullable()
+}),
+  "thisMonth": zod.object({
+  "monthStart": zod.coerce.date(),
+  "sttMicrocents": zod.number(),
+  "sttCellsPriced": zod.number(),
+  "sttCellsUnpriced": zod.number(),
+  "agentMicrocents": zod.number(),
+  "agentJudgementsPriced": zod.number(),
+  "agentJudgementsUnpriced": zod.number()
+})
 }).describe('2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.')
 
 

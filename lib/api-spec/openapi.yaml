@@ -1702,7 +1702,7 @@ components:
     BenchmarkDashboard:
       type: object
       description: 2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.
-      required: [corpusCount, readyToRunCount, configuredProviderCount, totalProviderCount, latestRunStatus, decisionStatus]
+      required: [corpusCount, readyToRunCount, configuredProviderCount, totalProviderCount, latestRunStatus, decisionStatus, latestFinishedBulk, runningBulk, needsHuman, thisMonth]
       properties:
         corpusCount: { type: number }
         readyToRunCount: { type: number }
@@ -1710,6 +1710,60 @@ components:
         totalProviderCount: { type: number }
         latestRunStatus: { $ref: "#/components/schemas/RunStatus" }
         decisionStatus: { type: string }
+        # T-71 (E.3). The four Overview blocks, computed server-side from the
+        # same tables the detail pages read (lib/overview.ts). The verdict
+        # itself is NOT duplicated here -- the page fetches
+        # GET /benchmark/bulks/{id}/verdicts for latestFinishedBulk, the same
+        # source Results uses. Null = no such bulk, never an empty object.
+        latestFinishedBulk:
+          type: ["object", "null"]
+          required: [id, name, status, completedAt]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            # complete or partial -- partial is finished-with-failures.
+            status: { $ref: "#/components/schemas/BulkStatus" }
+            completedAt: { type: ["string", "null"], format: date-time }
+        runningBulk:
+          type: ["object", "null"]
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        needsHuman:
+          type: object
+          required: [callsAwaitingReview, hardCaseCalls, retryableFailedCells, spans]
+          properties:
+            callsAwaitingReview: { type: number }
+            hardCaseCalls: { type: number }
+            # Failed / skipped cells in stopped (partial, failed) bulks that
+            # a retry could fix -- same rule as POST /bulks/{id}/retry-failed.
+            retryableFailedCells: { type: number }
+            # Disagreement spans in latestFinishedBulk and how many a human
+            # has ruled on (T-67). Null when no bulk has finished.
+            spans:
+              type: ["object", "null"]
+              required: [bulkId, total, adjudicated]
+              properties:
+                bulkId: { type: string }
+                total: { type: number }
+                adjudicated: { type: number }
+        thisMonth:
+          type: object
+          required: [monthStart, sttMicrocents, sttCellsPriced, sttCellsUnpriced, agentMicrocents, agentJudgementsPriced, agentJudgementsUnpriced]
+          properties:
+            # Calendar month start, UTC.
+            monthStart: { type: string, format: date-time }
+            # STT and agent (OpenAI judge) spend kept apart -- standing rule
+            # 2026-08-27. Micro-cents. A sum only covers rows with a recorded
+            # cost; *Unpriced counts the rows it could not include, so 0 with
+            # unpriced > 0 reads "not recorded", never "free".
+            sttMicrocents: { type: number }
+            sttCellsPriced: { type: number }
+            sttCellsUnpriced: { type: number }
+            agentMicrocents: { type: number }
+            agentJudgementsPriced: { type: number }
+            agentJudgementsUnpriced: { type: number }
     PlanTask:
       type: object
       required: [id, phase, title, description, status, dependencies, logicNotes]

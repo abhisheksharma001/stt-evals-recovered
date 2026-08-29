@@ -5,6 +5,10 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { BenchmarkDashboardLatestFinishedBulk } from './benchmarkDashboardLatestFinishedBulk';
+import type { BenchmarkDashboardNeedsHuman } from './benchmarkDashboardNeedsHuman';
+import type { BenchmarkDashboardRunningBulk } from './benchmarkDashboardRunningBulk';
+import type { BenchmarkDashboardThisMonth } from './benchmarkDashboardThisMonth';
 import type { RunStatus } from './runStatus';
 
 /**
@@ -17,4 +21,10 @@ export interface BenchmarkDashboard {
   totalProviderCount: number;
   latestRunStatus: RunStatus;
   decisionStatus: string;
+  /** @nullable */
+  latestFinishedBulk: BenchmarkDashboardLatestFinishedBulk;
+  /** @nullable */
+  runningBulk: BenchmarkDashboardRunningBulk;
+  needsHuman: BenchmarkDashboardNeedsHuman;
+  thisMonth: BenchmarkDashboardThisMonth;
 }

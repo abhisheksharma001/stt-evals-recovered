@@ -16,6 +16,7 @@ import {
   type BenchmarkRunRow,
 } from "@workspace/db";
 import { getProviderAdapter } from "@workspace/stt-providers";
+import { latestFinishedBulk, monthSpend, needsHuman, runningBulk, spanAdjudicationCounts } from "../lib/overview";
 import {
   AttestBenchmarkCallDeidBody,
   AttestBenchmarkCallDeidParams,
@@ -326,7 +327,7 @@ function serializeRun(run: BenchmarkRunRow, bulkName: string | null = null) {
 router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
   await ensureDefaultProviders();
   await syncProviderReadiness();
-  const [calls, providers, latestRuns] = await Promise.all([
+  const [calls, providers, latestRuns, finished, running, human, month] = await Promise.all([
     db.select().from(benchmarkCallsTable),
     db.select().from(benchmarkProvidersTable),
     db
@@ -334,7 +335,13 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
       .from(benchmarkRunsTable)
       .orderBy(desc(benchmarkRunsTable.createdAt))
       .limit(1),
+    // T-71 (E.3): the Overview blocks, computed in lib/overview.ts.
+    latestFinishedBulk(),
+    runningBulk(),
+    needsHuman(),
+    monthSpend(),
   ]);
+  const spans = finished ? { bulkId: finished.id, ...(await spanAdjudicationCounts(finished.id)) } : null;
 
   const latestRunStatus = latestRuns[0]?.status ?? "blocked";
   // 2026-08-27, per Abhishek: gold-transcript stage retired, then the
@@ -361,6 +368,10 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
           : providers.every((provider) => provider.status !== "ready")
             ? "Provider credentials not configured"
             : "Ready for controlled benchmark run",
+    latestFinishedBulk: finished,
+    runningBulk: running,
+    needsHuman: { ...human, spans },
+    thisMonth: month,
   };
 
   res.json(GetBenchmarkDashboardResponse.parse(data));
