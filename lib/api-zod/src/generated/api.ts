@@ -1389,6 +1389,16 @@ export const GetBulkVerdictsResponse = zod.object({
 
 
 /**
+ * @summary T-32 -- the shareable dated verdict artefact. One self-contained HTML page (no scripts, no external assets, print-clean) rendered from the same numbers as getBulkVerdicts, stamped with the produced-at time, build SHA and scoring version. Open in a browser or save/attach; not part of the generated JSON client.
+ */
+export const GetBulkVerdictArtefactParams = zod.object({
+  "bulkId": zod.coerce.string()
+})
+
+export const GetBulkVerdictArtefactResponse = zod.unknown()
+
+
+/**
  * @summary Immutable bulk manifest -- the composition of every shard run's frozen manifest (FR-BLK-8, FR-REP1 replay evidence)
  */
 export const GetBulkManifestParams = zod.object({

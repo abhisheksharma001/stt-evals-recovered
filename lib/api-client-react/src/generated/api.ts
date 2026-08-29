@@ -3053,6 +3053,83 @@ export function useGetBulkVerdicts<TData = Awaited<ReturnType<typeof getBulkVerd
 
 
 
+export const getGetBulkVerdictArtefactUrl = (bulkId: string,) => {
+
+
+
+
+  return `/api/benchmark/bulks/${bulkId}/verdict.html`
+}
+
+/**
+ * @summary T-32 -- the shareable dated verdict artefact. One self-contained HTML page (no scripts, no external assets, print-clean) rendered from the same numbers as getBulkVerdicts, stamped with the produced-at time, build SHA and scoring version. Open in a browser or save/attach; not part of the generated JSON client.
+ */
+export const getBulkVerdictArtefact = async (bulkId: string, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
+
+  return customFetch<string>(getGetBulkVerdictArtefactUrl(bulkId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBulkVerdictArtefactQueryKey = (bulkId: string,) => {
+    return [
+    `/api/benchmark/bulks/${bulkId}/verdict.html`
+    ] as const;
+    }
+
+
+export const getGetBulkVerdictArtefactQueryOptions = <TData = Awaited<ReturnType<typeof getBulkVerdictArtefact>>, TError = ErrorType<void>>(bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdictArtefact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkVerdictArtefactQueryKey(bulkId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkVerdictArtefact>>> = ({ signal }) => getBulkVerdictArtefact(bulkId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bulkId !== null && bulkId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdictArtefact>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBulkVerdictArtefactQueryResult = NonNullable<Awaited<ReturnType<typeof getBulkVerdictArtefact>>>
+export type GetBulkVerdictArtefactQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-32 -- the shareable dated verdict artefact. One self-contained HTML page (no scripts, no external assets, print-clean) rendered from the same numbers as getBulkVerdicts, stamped with the produced-at time, build SHA and scoring version. Open in a browser or save/attach; not part of the generated JSON client.
+ */
+
+export function useGetBulkVerdictArtefact<TData = Awaited<ReturnType<typeof getBulkVerdictArtefact>>, TError = ErrorType<void>>(
+ bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdictArtefact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBulkVerdictArtefactQueryOptions(bulkId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetBulkManifestUrl = (bulkId: string,) => {
 
 

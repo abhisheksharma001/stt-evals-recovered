@@ -9,13 +9,14 @@ import {
   useListBenchmarkProviders,
   type VerticalRanking,
 } from "@workspace/api-client-react"
-import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle } from "lucide-react"
+import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText } from "lucide-react"
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { ClientTrendSection, TrendStrip } from "@/components/trend-strip"
+import { apiBase } from "@/lib/api-base"
 import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupAccountLabel, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -381,6 +382,22 @@ export default function Rankings() {
               ))}
             </SelectContent>
           </Select>
+        )}
+        {/* T-32: the dated, print-clean verdict page for this bulk -- a
+            file someone can attach to an email, produced by the API from
+            the same numbers the banner below shows. Opens in a new tab;
+            "Save as PDF" from there. */}
+        {viewMode === "bulk" && selectedBulkId && (
+          <a
+            href={`${apiBase()}/api/benchmark/bulks/${selectedBulkId}/verdict.html`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-muted"
+            data-testid="share-verdict-link"
+            title="Read-only dated verdict page for this bulk. Save or print it to share."
+          >
+            <FileText className="h-4 w-4" /> Share verdict
+          </a>
         )}
       </div>
 
