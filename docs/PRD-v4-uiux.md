@@ -1,5 +1,7 @@
 # UI/UX PRD v4 — Stop the screen from stating confident falsehoods
 
+> **2026-08-30:** Part E added (hierarchy, warm light theme, overview rewrite, per-call provider comparison, missing outputs) — five asks from Abhishek after T-32. Register rows T-70–T-74.
+
 **Version:** 1.0
 **Date:** 2026-08-28
 **Companion doc:** `docs/PRD-v4-technical.md` (same review, technical side —
@@ -571,6 +573,145 @@ opens this tool and sees a claim they would normally have to build a spreadsheet
 verify — and then finds they can check it, by ear, in two clicks. Nothing on the
 market does that. Everything else in this part is in service of that sentence.
 
+
+---
+
+# Part E — Added 2026-08-30, per Abhishek: hierarchy, warm light theme, overview, comparison, missing outputs
+
+Five asks, given in one message after T-32 shipped, recorded verbatim in intent so
+none of them lives only in chat. Each maps to one register row (T-70 … T-74). The
+earlier plan file "Fold agent into bulk + redesign Results + merge Corpus/Listen"
+(2026-08-29) is absorbed here: its Workstream A (auto agent judge in bulks, Agent page
+removed) and the Listen removal already shipped; what remains of it is folded into E.1
+and E.4 below so it does not exist in two places.
+
+**State verified 2026-08-30 before writing this:** sidebar has seven entries —
+Overview `/`, Corpus `/corpus`, Runs `/runs`, Bulks `/bulks`, Results `/results`,
+Providers `/providers`, Call sources `/sources`. Theme is a single dark warm-clay
+surface (`index.css` `:root`, `--background: 30 21% 7%`), with an unused `.dark`
+block. Overview (`Dashboard.tsx`, 254 lines) still renders the pre-bulk layout:
+corpus-by-vertical, providers, recent runs — nothing about bulks, verdicts, judge
+accuracy, or what needs a human.
+
+## E.1 View hierarchy — every page answers one question, top to bottom (T-74)
+
+"Fix all the view hierarchy, in the current one, and on the PRD which we need to do."
+
+Two layers, done in this order:
+
+1. **Inside each existing page** (low risk, no route changes): the order of sections
+   is the order of the reader's questions. Rule: *answer → evidence → controls →
+   raw table*. Concretely —
+   - Results: verdict banner → cost line → judge-accuracy → correlation → group
+     cards. (Today judge-accuracy sits above the bulk picker; a reader meets a
+     trust metric before they know which bulk it is about.)
+   - Bulks: the running/most recent bulk's status and cost first; creation form and
+     templates below, collapsed when a bulk is running.
+   - Corpus: what needs a human (unreviewed, hard cases, adjudication queue) first;
+     full table second.
+   - Providers: configured-and-live first, unconfigured second; the active-provider
+     setting next to the list it affects, not in a separate settings block.
+2. **Across pages** — D.4's seven → four merge (Verdict, Evidence, Work, Setup).
+   This is T-31, previously gated on "phases 1–3 proven". Abhishek un-gated it
+   2026-08-30. It is still done **last** in this Part, after E.2–E.5, because the
+   content underneath must be right before the doors are moved.
+
+**Open decision (Abhishek):** do layer 2 as the full D.4 merge, or stop at layer 1
+and keep seven routes? Default if unanswered: layer 1 only, layer 2 stays T-31.
+
+## E.2 Theme — warm light (T-70)
+
+"Change the whole theme to light warm colour."
+
+Replace the single dark clay surface with a single **light, warm** one: cream/sand
+ground, warm near-black ink, warm greys with a hue bias toward the accent (never a
+pure mid-grey), one accent kept from today's coral or shifted to a deeper terracotta
+that holds contrast on cream; jade for good and rose for wrong stay but are re-tuned
+for a light ground (D.5's rule: semantic colour is not the accent). Token-level only
+— change `:root` in `index.css`, nothing per-component. Tabular numerals and density
+rules from D.5 unchanged.
+
+Constraints: every text/ground pair ≥ 4.5:1 (WCAG AA) — check the muted-foreground
+and the chips especially, those are what usually fail on cream. The T-32 verdict
+artefact already renders light; make the app and the artefact agree on the palette so
+a screenshot of one is not visibly a different product from the other.
+
+**Open decision (Abhishek):** keep a dark mode behind a toggle, or drop it? Default
+if unanswered: drop it — one surface, as D.5 argued, just light instead of dark.
+
+## E.3 Overview page — drop the old stuff, show what matters now (T-71)
+
+"The overview page still has all the old stuff."
+
+Rewrite `Dashboard.tsx` around four blocks, in this order:
+1. **Latest verdict** — the newest completed bulk's headline sentence and decision
+   chip (from `GET /benchmark/bulks/{id}/verdicts`, the same source as Results),
+   with a link to Results and to its T-32 artefact. "No bulk has completed yet" when
+   none has; never blank.
+2. **What needs a human** — counts with links: calls awaiting review, hard cases,
+   disagreement spans not yet adjudicated (T-67's gap made visible), failed cells
+   that are retryable.
+3. **Running now** — any bulk in `running`, with its progress counts and estimated
+   vs actual cost so far; hidden when nothing is running.
+4. **This month** — STT spend and agent spend, separately (the standing rule from
+   2026-08-27), plus build SHA / provider health from `/api/healthz`.
+
+Removed: corpus-by-vertical chart, provider list, recent-runs list — they belong to
+Corpus, Providers and Bulks respectively and are reachable in one click.
+
+## E.4 Per-call provider comparison — one section, gold on top, every provider under it (T-72)
+
+"The comparison of all the provider output in a particular section, and also putting
+the main transcript there as well."
+
+One section, reachable from Corpus (per call) and from a Results group card (per
+call in that group), showing for one call:
+
+- **Top: the reference transcript.** Gold (human-corrected) when the call is
+  reviewed; otherwise the Vapi draft, **labelled as draft, never as gold** (the
+  project's standing rule — the draft is Vapi's own live provider and must not read
+  as the standard). Audio player anchored to it.
+- **Below: every provider's output for that call**, one row each, word-diff against
+  the reference (the existing diff view reused, not rewritten), with the cell's
+  metrics (WER, peer flags, latency, cost) on the row and the agent judge's pick
+  marked if a scan exists.
+- Providers ordered by the bulk's verdict rate when in a bulk context, alphabetically
+  otherwise.
+
+This subsumes the old plan's "merge Corpus + Listen" intent: the comparison section
+*is* the listen surface.
+
+**Open decision (Abhishek):** when a call has a gold transcript, show the Vapi draft
+as well (as one more row, marked "production / draft")? Default if unanswered: yes,
+as a row, so the production baseline is always visible next to the candidates.
+
+## E.5 Show what we did not get (T-73)
+
+"Also showing what we didn't get from what provider, if something fails."
+
+In the E.4 section and in every per-call/provider grid (Runs cell view, Bulks
+failure groups), a provider with no output for a call renders an explicit row:
+**"<Provider>: no output — <failure class in plain words>"**, with the T-41 known
+diagnosis when there is one, the retryable/permanent state from T-43, and a retry
+action when retryable. Never an empty cell, never a missing row, never a dash. The
+count of missing outputs per provider is shown at the section header ("Cartesia:
+3 of 22 calls missing") so a provider that fails often is visible before you scroll.
+
+Depends on T-69 (T-40 backfill) having run on the live DB, otherwise every legacy
+failure shows as "unknown / permanent".
+
+## E.6 Order and risk
+
+| Step | Item | Risk | Why this position |
+|---|---|---|---|
+| 1 | E.2 warm light theme (T-70) | Low — tokens only | Reversible in one file; everything after is seen in the final palette |
+| 2 | E.3 overview rewrite (T-71) | Low — one page, read-only | No shared components change |
+| 3 | E.4 + E.5 comparison section with missing outputs (T-72, T-73) | Medium | New surface, reuses diff view; the highest-value item here |
+| 4 | E.1 layer 1, in-page ordering (T-74) | Low | Moves sections, no logic |
+| 5 | E.1 layer 2 = D.4 nav merge (T-31) | **Highest** | Only after 1–4 are live and used |
+
+Each step is one register row, one PR, one deploy, per the loop. Big rewrites (E.3,
+E.4, T-31) go through a worktree per the project rule.
 
 ---
 
