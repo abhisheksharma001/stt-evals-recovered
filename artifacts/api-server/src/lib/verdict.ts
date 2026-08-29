@@ -1,5 +1,9 @@
-// T-20: per-bulk headline verdicts, one per ranking group (Vapi assistant,
-// same grouping as computeRankingsForBulk). Reads the bulk's ok cells with
+// T-20: per-bulk headline verdicts. T-55 (2026-08-29): one per CLIENT (the
+// call's Vapi account label), no longer per assistant -- live bulks split
+// into 22-23 assistant groups of 1-2 calls, so no group could reach the
+// 5-shared-call floor and every card said too_few_calls. Rankings still
+// group per assistant; each card looks its assistant up in the client
+// group's `assistantIds`. Reads the bulk's ok cells with
 // their scores and hands the peer flag counts + word counts to the pure
 // scorer in @workspace/scoring. Computed at read time from the same cells
 // the rankings snapshot was built from, so it can never disagree with a
@@ -17,7 +21,11 @@ import { computeVerdict, normalizeTranscript, type HeadlineVerdict, type Verdict
 import { extractProviderConfidenceWords } from "./hybrid-flagging";
 
 export type BulkGroupVerdict = {
-  assistantId: string | null;
+  /** Vapi account label the group's calls came from; null = none on file. */
+  clientLabel: string | null;
+  /** Every assistant (null = no assistant id) whose calls fed this group. */
+  assistantIds: (string | null)[];
+  callCount: number;
   vertical: string;
   /** Vapi's live transcriber for this group's calls, most common
    *  vendor/model pair, with how many of the group's calls it covers. */
@@ -31,7 +39,7 @@ export type BulkVerdicts = {
   groups: BulkGroupVerdict[];
 };
 
-const NO_ASSISTANT_KEY = "__no_assistant__";
+const NO_CLIENT_KEY = "__no_client__";
 const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /** Which provider row IS a call's production transcriber -- the same
@@ -61,13 +69,14 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
           .select({
             id: benchmarkCallsTable.id,
             sourceAssistantId: benchmarkCallsTable.sourceAssistantId,
+            sourceAccountLabel: benchmarkCallsTable.sourceAccountLabel,
             vertical: benchmarkCallsTable.vertical,
             sourceTranscriberProvider: benchmarkCallsTable.sourceTranscriberProvider,
             sourceTranscriberModel: benchmarkCallsTable.sourceTranscriberModel,
           })
           .from(benchmarkCallsTable)
           .where(inArray(benchmarkCallsTable.id, allCallIds))
-      : Promise.resolve([] as { id: string; sourceAssistantId: string | null; vertical: string; sourceTranscriberProvider: string | null; sourceTranscriberModel: string | null }[]),
+      : Promise.resolve([] as { id: string; sourceAssistantId: string | null; sourceAccountLabel: string | null; vertical: string; sourceTranscriberProvider: string | null; sourceTranscriberModel: string | null }[]),
     allProviderIds.length
       ? db
           .select({ id: benchmarkProvidersTable.id, name: benchmarkProvidersTable.name, model: benchmarkProvidersTable.model })
@@ -109,13 +118,15 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
     .map((s) => s.providerId);
 
   const providerNames = Object.fromEntries(providers.map((p) => [p.id, p.name]));
-  const groupKeys = new Set(calls.map((c) => c.sourceAssistantId ?? NO_ASSISTANT_KEY));
+  const clientKeyOf = (c: { sourceAccountLabel: string | null }) => c.sourceAccountLabel?.trim() || NO_CLIENT_KEY;
+  const groupKeys = new Set(calls.map(clientKeyOf));
 
   const groups: BulkGroupVerdict[] = [];
   for (const key of [...groupKeys].sort()) {
-    const assistantId = key === NO_ASSISTANT_KEY ? null : key;
-    const groupCalls = calls.filter((c) => (c.sourceAssistantId ?? NO_ASSISTANT_KEY) === key);
+    const clientLabel = key === NO_CLIENT_KEY ? null : key;
+    const groupCalls = calls.filter((c) => clientKeyOf(c) === key);
     const groupCallIds = new Set(groupCalls.map((c) => c.id));
+    const assistantIds = [...new Set(groupCalls.map((c) => c.sourceAssistantId ?? null))].sort((a, b) => (a ?? "").localeCompare(b ?? ""));
 
     const verticalCounts = new Map<string, number>();
     for (const c of groupCalls) verticalCounts.set(c.vertical, (verticalCounts.get(c.vertical) ?? 0) + 1);
@@ -148,7 +159,9 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       }));
 
     groups.push({
-      assistantId,
+      clientLabel,
+      assistantIds,
+      callCount: groupCalls.length,
       vertical,
       production,
       verdict: computeVerdict(verdictCells, { productionProviderId, confidenceReportingProviderIds, providerNames }),

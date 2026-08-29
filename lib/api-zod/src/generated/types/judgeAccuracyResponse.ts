@@ -19,6 +19,10 @@ export interface JudgeAccuracyResponse {
   /** @nullable */
   agreementRate: number | null;
   byAdjudicator: JudgeAccuracyResponseByAdjudicatorItem[];
+  majorityComparable: number;
+  majorityAgreements: number;
+  /** @nullable */
+  majorityAgreementRate: number | null;
   replayCostMicrocents: number;
   replayBatchLimit: number;
   items: JudgeAccuracyItem[];

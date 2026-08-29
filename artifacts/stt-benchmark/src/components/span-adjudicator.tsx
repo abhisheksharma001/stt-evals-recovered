@@ -76,9 +76,10 @@ function DisagreementReading({
           onPlay(index)
         }}
         title={
-          others.length > 0
+          (span.majorityText !== null ? `majority: ${span.majorityText || "(nothing)"}\n` : "no majority (tie)\n") +
+          (others.length > 0
             ? others.map((r) => `${nameOf(r.providerId)}: ${r.text || "(nothing)"}`).join("\n")
-            : "Providers disagree here"
+            : "Providers disagree here")
         }
         aria-label={`Play ${fmtTime(span.startMs)} to ${fmtTime(span.endMs)}: ${ownWords || "nothing"}`}
         className={`mx-0.5 inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 align-baseline font-mono text-[11px] leading-tight transition-colors ${

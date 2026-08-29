@@ -9,6 +9,7 @@ export interface SpanReading {
   providerId: string;
   text: string;
   agreesWithReference: boolean;
+  agreesWithMajority: boolean;
 }
 
 export type AdjudicationReadingsItem = {
@@ -90,6 +91,10 @@ export interface JudgeAccuracyResponse {
   /** @nullable */
   agreementRate: number | null;
   byAdjudicator: JudgeAccuracyResponseByAdjudicatorItem[];
+  majorityComparable: number;
+  majorityAgreements: number;
+  /** @nullable */
+  majorityAgreementRate: number | null;
   replayCostMicrocents: number;
   replayBatchLimit: number;
   items: JudgeAccuracyItem[];
@@ -98,6 +103,8 @@ export interface JudgeAccuracyResponse {
 export interface DisagreementSpan {
   startMs: number;
   endMs: number;
+  /** @nullable */
+  majorityText: string | null;
   contextBefore: string;
   contextAfter: string;
   /**
@@ -1142,7 +1149,9 @@ export interface HeadlineVerdict {
 
 export type BulkVerdictsGroupsItem = {
   /** @nullable */
-  assistantId: string | null;
+  clientLabel: string | null;
+  assistantIds: (string | null)[];
+  callCount: number;
   vertical: string;
   /** @nullable */
   production: BulkVerdictsGroupsItemProduction;

@@ -24,6 +24,8 @@
 //   * Rows not yet replayed are the PENDING sample: the number the report
 //     could grow to, and a reminder that replaying costs money.
 
+import { majorityReadingText } from "./spans";
+
 export type JudgeAgreementRow = {
   readings: { providerId: string; text: string }[];
   /** Human verdict: provider id, or null for "none of them". */
@@ -56,6 +58,14 @@ export type JudgeAgreementReport = {
   agreementRate: number | null;
   /** Same rate, per human, so "agrees with a human" can say which one. */
   byAdjudicator: { label: string; comparable: number; agreements: number; agreementRate: number | null }[];
+  /** T-47: the no-LLM baseline -- "would a plain majority vote over the
+   *  readings have matched the human?" Costs nothing, so it covers every
+   *  verdict where the human named a provider and the readings have a
+   *  plurality (ties excluded), replayed or not. The judge is only worth
+   *  its money if `agreementRate` beats `majorityAgreementRate`. */
+  majorityComparable: number;
+  majorityAgreements: number;
+  majorityAgreementRate: number | null;
 };
 
 function readingText(readings: JudgeAgreementRow["readings"], providerId: string): string | null {
@@ -84,9 +94,19 @@ export function computeJudgeAgreement(rows: readonly JudgeAgreementRow[]): Judge
   let judgeNoPick = 0;
   let comparable = 0;
   let agreements = 0;
+  let majorityComparable = 0;
+  let majorityAgreements = 0;
   const perLabel = new Map<string, { comparable: number; agreements: number }>();
 
   for (const row of rows) {
+    if (row.humanProviderId !== null) {
+      const human = readingText(row.readings, row.humanProviderId);
+      const majority = majorityReadingText(row.readings.map((r) => ({ text: r.text.trim() })));
+      if (human !== null && majority !== null) {
+        majorityComparable += 1;
+        if (human === majority) majorityAgreements += 1;
+      }
+    }
     if (row.judgeProviderId === undefined) {
       pending += 1;
       continue;
@@ -123,5 +143,8 @@ export function computeJudgeAgreement(rows: readonly JudgeAgreementRow[]): Judge
     byAdjudicator: [...perLabel.entries()]
       .map(([label, b]) => ({ label, comparable: b.comparable, agreements: b.agreements, agreementRate: rate(b.agreements, b.comparable) }))
       .sort((a, b) => b.comparable - a.comparable || a.label.localeCompare(b.label)),
+    majorityComparable,
+    majorityAgreements,
+    majorityAgreementRate: rate(majorityAgreements, majorityComparable),
   };
 }

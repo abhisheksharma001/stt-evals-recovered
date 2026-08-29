@@ -387,14 +387,9 @@ export default function Rankings() {
       {/* T-21: the answer first. One sentence for the whole bulk, above
           cost, correlation and every table -- a non-technical reader is
           done here. Per-group sentences repeat inside each card. */}
-      {viewMode === "bulk" && selectedBulkId && (
-        <BulkVerdictBanner
-          bulkId={selectedBulkId}
-          groupLabels={Object.fromEntries(
-            Object.values(groupedRankings).map((rows) => [rows[0]?.assistantId ?? "__none__", rows[0]?.assistantLabel ?? "Unassigned (no assistant ID captured at import)"]),
-          )}
-        />
-      )}
+      {/* T-55: verdict groups are per client (account label); the banner
+          names them by that label directly. */}
+      {viewMode === "bulk" && selectedBulkId && <BulkVerdictBanner bulkId={selectedBulkId} groupLabels={{}} />}
 
       {/* cost + coverage summary -- 2026-08-27, per Abhishek: "does the
           estimation show cost of each run and the openai agent cost and stt
@@ -509,6 +504,11 @@ export default function Rankings() {
           // in this particular group (e.g. it errored out entirely) -- undefined
           // is handled the same as "no active provider set" below.
           const activeRow = activeProviderId ? ranks.find((r) => r.providerId === activeProviderId) : undefined
+          // T-55/T-57: the verdict this card sits under (client group in bulk
+          // mode; none in the all-time view). The verdict owns the word
+          // "Recommended" -- the composite rank only ever says "leading".
+          const groupVerdict = viewMode === "bulk" ? findGroupVerdict(verdicts, ranks[0]?.assistantId ?? null) : undefined
+          const verdictWinnerId = groupVerdict?.verdict.decision === "winner" ? groupVerdict.verdict.winnerProviderId : null
           return (
           <Card className="overflow-hidden border-t-4 border-t-primary shadow-sm">
             <CardHeader className="bg-muted/10 pb-4 border-b">
@@ -538,7 +538,10 @@ export default function Rankings() {
               {/* T-21: this group's verdict sentence sits above its table so
                   the decision is read before the numbers that back it. */}
               {viewMode === "bulk" && (
-                <GroupVerdictHeadline verdict={findGroupVerdict(verdicts, ranks[0]?.assistantId ?? null)?.verdict} />
+                <GroupVerdictHeadline
+                  verdict={groupVerdict?.verdict}
+                  scope={groupVerdict ? { clientLabel: groupVerdict.clientLabel, assistantCount: groupVerdict.assistantIds.length, callCount: groupVerdict.callCount } : undefined}
+                />
               )}
               {/* T-23: this assistant's own trend, so a regression for one
                   client's agent is visible even when the client-level line
@@ -596,11 +599,19 @@ export default function Rankings() {
                             </Badge>
                           )}
                         </div>
-                        {r.rank === 1 && (
-                          <div className="text-xs text-primary font-medium mt-1 flex items-center">
+                        {/* T-57: "Recommended" is the verdict's word. The badge
+                            appears only on the provider the T-20 noise-floor
+                            verdict named; rank 1 without a verdict win is
+                            "leading", not decided. */}
+                        {verdictWinnerId === r.providerId ? (
+                          <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named winner by this group's verdict: the gap to the runner-up survived the noise floor.">
                             <CheckCircle2 className="w-3 h-3 mr-1" /> Recommended
                           </div>
-                        )}
+                        ) : r.rank === 1 ? (
+                          <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best composite score, but the verdict above did not name a winner -- not decision-grade." : "Best composite score across all bulks. The all-time view has no noise-floor verdict, so nothing here is decision-grade."}>
+                            Leading, not decided
+                          </div>
+                        ) : null}
                       </TableCell>
                       {/* Null "—" means "not measured in this run" (spec:
                           distinct from a true zero) -- title says so instead
@@ -675,7 +686,12 @@ export default function Rankings() {
               {winner?.recommendation && (
                 <div className="p-4 bg-muted/30 border-t flex gap-3 text-sm">
                   <ArrowUpRight className="w-5 h-5 text-primary shrink-0" />
-                  <p className="text-foreground"><span className="font-semibold mr-1">Decision Logic:</span>{winner.recommendation}</p>
+                  {/* T-57: this footer explains the composite ORDER; the
+                      decision itself is the verdict headline at the top. */}
+                  <p className="text-foreground">
+                    <span className="font-semibold mr-1">{verdictWinnerId ? "Decision Logic:" : "Composite order (not the decision):"}</span>
+                    {winner.recommendation}
+                  </p>
                 </div>
               )}
               <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />

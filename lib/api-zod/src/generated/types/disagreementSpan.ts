@@ -11,6 +11,8 @@ import type { SpanReading } from './spanReading';
 export interface DisagreementSpan {
   startMs: number;
   endMs: number;
+  /** @nullable */
+  majorityText: string | null;
   contextBefore: string;
   contextAfter: string;
   /**

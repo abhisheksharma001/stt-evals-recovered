@@ -82,6 +82,11 @@ export function JudgeAccuracyCard({ providerNames }: { providerNames: Record<str
                 {" · "}replay cost {formatMicrocents(data.replayCostMicrocents)}
               </div>
             </div>
+            {/* T-47: the free baseline the judge has to beat. */}
+            <div className="text-sm text-muted-foreground tabular-nums" data-testid="majority-vs-human">
+              Majority vote (no LLM) vs human: <span className="font-semibold text-foreground">{pct(data.majorityAgreementRate)}</span>
+              {" "}({data.majorityAgreements}/{data.majorityComparable}; ties excluded)
+            </div>
             <p className="text-xs text-muted-foreground">
               "Agree" means the judge, given only the same few words of context and each provider's
               reading (no audio), picked a reading with the same words the human picked. "None of

@@ -243,13 +243,15 @@ export const ListDisagreementSpansResponse = zod.object({
   "spans": zod.array(zod.object({
   "startMs": zod.number(),
   "endMs": zod.number(),
+  "majorityText": zod.string().nullable(),
   "contextBefore": zod.string(),
   "contextAfter": zod.string(),
   "referencePositions": zod.array(zod.number()).min(listDisagreementSpansResponseSpansItemReferencePositionsMin).max(listDisagreementSpansResponseSpansItemReferencePositionsMax),
   "readings": zod.array(zod.object({
   "providerId": zod.string(),
   "text": zod.string(),
-  "agreesWithReference": zod.boolean()
+  "agreesWithReference": zod.boolean(),
+  "agreesWithMajority": zod.boolean()
 })),
   "adjudication": zod.union([zod.object({
   "id": zod.string(),
@@ -321,6 +323,9 @@ export const GetJudgeAccuracyResponse = zod.object({
   "agreements": zod.number(),
   "agreementRate": zod.number().nullable()
 })),
+  "majorityComparable": zod.number(),
+  "majorityAgreements": zod.number(),
+  "majorityAgreementRate": zod.number().nullable(),
   "replayCostMicrocents": zod.number(),
   "replayBatchLimit": zod.number(),
   "items": zod.array(zod.object({
@@ -1338,7 +1343,9 @@ export const GetBulkVerdictsResponse = zod.object({
   "name": zod.string()
 })),
   "groups": zod.array(zod.object({
-  "assistantId": zod.string().nullable(),
+  "clientLabel": zod.string().nullable(),
+  "assistantIds": zod.array(zod.string().nullable()),
+  "callCount": zod.number(),
   "vertical": zod.string(),
   "production": zod.object({
   "vendor": zod.string(),

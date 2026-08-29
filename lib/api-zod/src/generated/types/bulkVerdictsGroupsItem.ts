@@ -10,7 +10,9 @@ import type { HeadlineVerdict } from './headlineVerdict';
 
 export type BulkVerdictsGroupsItem = {
   /** @nullable */
-  assistantId: string | null;
+  clientLabel: string | null;
+  assistantIds: (string | null)[];
+  callCount: number;
   vertical: string;
   /** @nullable */
   production: BulkVerdictsGroupsItemProduction;

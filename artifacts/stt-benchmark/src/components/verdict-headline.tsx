@@ -69,10 +69,15 @@ export function DecisionChip({ decision }: { decision: HeadlineVerdict["decision
   )
 }
 
-/** Verdict groups are keyed by assistantId with null for "no assistant on the call". */
+/** T-55: verdict groups are per client; a Rankings card (per assistant)
+ *  finds the client group its assistant's calls fed. */
 export function findGroupVerdict(data: BulkVerdicts | undefined, assistantId: string | null) {
   if (!data) return undefined
-  return data.groups.find((g) => (g.assistantId ?? null) === assistantId)
+  return data.groups.find((g) => g.assistantIds.includes(assistantId))
+}
+
+export function clientGroupLabel(g: { clientLabel: string | null }): string {
+  return g.clientLabel ?? "No account label on file"
 }
 
 export function useBulkVerdicts(bulkId: string | null | undefined) {
@@ -133,7 +138,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
     tone = "too_few_calls"
     headline = (
       <>
-        No clear winner in this bulk yet: {counts.too_few_calls} of {groups.length} assistant group
+        No clear winner in this bulk yet: {counts.too_few_calls} of {groups.length} client group
         {groups.length === 1 ? "" : "s"} have fewer than 5 calls shared by the top two providers, which is the minimum before a noise floor can be drawn.
       </>
     )
@@ -159,8 +164,8 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
         {winners.length > 0 && (
           <ul className="space-y-1 text-sm">
             {winners.map((g) => (
-              <li key={g.assistantId ?? "__none__"} className="flex flex-wrap gap-x-2">
-                <span className="font-medium">{groupLabels[g.assistantId ?? "__none__"] ?? g.vertical}</span>
+              <li key={g.clientLabel ?? "__none__"} className="flex flex-wrap gap-x-2">
+                <span className="font-medium">{groupLabels[g.clientLabel ?? "__none__"] ?? clientGroupLabel(g)}</span>
                 <span className="text-muted-foreground">{g.verdict.sentence}</span>
               </li>
             ))}
@@ -174,7 +179,16 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
   )
 }
 
-export function GroupVerdictHeadline({ verdict }: { verdict: HeadlineVerdict | undefined }) {
+export function GroupVerdictHeadline({
+  verdict,
+  scope,
+}: {
+  verdict: HeadlineVerdict | undefined
+  /** T-55: the client group this verdict was computed over, so a
+   *  per-assistant card never implies the verdict is about that assistant
+   *  alone. */
+  scope?: { clientLabel: string | null; assistantCount: number; callCount: number }
+}) {
   if (!verdict) {
     return (
       <div className="border-b bg-muted/20 px-4 py-3 text-sm text-muted-foreground" data-testid="group-verdict-headline">
@@ -196,6 +210,13 @@ export function GroupVerdictHeadline({ verdict }: { verdict: HeadlineVerdict | u
           </span>
         </div>
         <p className="text-sm text-foreground" style={{ textWrap: "balance" }}>{verdict.sentence}</p>
+        {scope && (
+          <p className="text-[11px] text-muted-foreground" data-testid="group-verdict-scope">
+            Client-level verdict for <span className="font-medium">{scope.clientLabel ?? "calls with no account label"}</span>:{" "}
+            {scope.callCount} call{scope.callCount === 1 ? "" : "s"} across {scope.assistantCount} assistant{scope.assistantCount === 1 ? "" : "s"}.
+            One assistant alone rarely has enough shared calls to draw a noise floor (T-55).
+          </p>
+        )}
       </div>
     </div>
   )
