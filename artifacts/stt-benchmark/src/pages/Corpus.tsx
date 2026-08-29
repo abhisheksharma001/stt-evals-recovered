@@ -301,7 +301,7 @@ function ExpandedCallDetail({ call, bulkId }: { call: any; bulkId: string | null
 function ProviderComparisonPanel({ scan }: { scan: any | null }) {
   if (!scan) {
     return (
-      <DetailSection title="Provider comparison">
+      <DetailSection title="Agent verification">
         <p className="text-xs text-muted-foreground">
           Not checked yet -- runs automatically the next time this call is included in a run or bulk.
         </p>
@@ -317,7 +317,7 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
     const meta = statusMeta[scan.status]
     const Icon = meta.icon
     return (
-      <DetailSection title="Provider comparison">
+      <DetailSection title="Agent verification">
         <div className={`flex items-center gap-1.5 text-sm ${meta.className}`}>
           <Icon className="h-3.5 w-3.5" />
           <span className="font-medium">{meta.label}</span>
@@ -331,7 +331,7 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
     scan.candidates ?? []
   const flags = scan.hybridFlags
   return (
-    <DetailSection title="Provider comparison">
+    <DetailSection title="Agent verification">
       {scan.status === "clean" ? (
         <div className="flex items-center gap-1.5 text-sm text-success">
           <CheckCircle2 className="h-3.5 w-3.5" />
