@@ -41,15 +41,16 @@ function SidebarItem({ href, icon: Icon, label, badge, badgeTone = "quiet" }: Si
     <Link
       href={href}
       onClick={handleNavClick}
+      title={label}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
+        "flex items-center justify-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors lg:justify-start",
         isActive
           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
           : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
       )}
     >
       <Icon className={cn("w-4 h-4 shrink-0", isActive && "text-primary")} />
-      <span>{label}</span>
+      <span className="hidden lg:inline">{label}</span>
       {badge !== undefined && (
         <span
           className={cn(
@@ -69,7 +70,8 @@ function SidebarItem({ href, icon: Icon, label, badge, badgeTone = "quiet" }: Si
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-2.5 pb-2 pt-5 font-mono text-[10px] font-medium uppercase tracking-[0.09em] text-muted-foreground">
-      {children}
+      <span className="hidden lg:inline">{children}</span>
+      <span className="block h-px bg-sidebar-border lg:hidden" aria-hidden />
     </div>
   )
 }
@@ -170,6 +172,7 @@ function BuildBadgeShell({
       title={title}
       className="flex items-center gap-2 border-t border-sidebar-border px-4 py-2 font-mono text-[10px] tabular-nums"
     >
+      {/* Below lg only the dot survives; the title carries the detail. */}
       <span
         className={cn(
           "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -184,10 +187,10 @@ function BuildBadgeShell({
                 : "bg-chart-2",
         )}
       />
-      <span className="uppercase tracking-[0.09em] text-muted-foreground">api</span>
+      <span className="hidden uppercase tracking-[0.09em] text-muted-foreground lg:inline">api</span>
       <span
         className={cn(
-          "truncate",
+          "hidden truncate lg:inline",
           tone === "down"
             ? "text-destructive"
             : tone === "provisional"
@@ -203,12 +206,15 @@ function BuildBadgeShell({
 
 export function Sidebar() {
   return (
-    <div className="flex h-full w-[232px] shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
-      <div className="flex items-center gap-2.5 px-[18px] pb-5 pt-5">
+    // T-74 (E.1 breakpoints): below lg (1024px) the sidebar is an icon rail
+    // -- content reflows instead of being clipped. Desktop tool; no mobile
+    // layout beyond this one breakpoint.
+    <div className="flex h-full w-14 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar lg:w-[232px]">
+      <div className="flex items-center gap-2.5 px-[11px] pb-5 pt-5 lg:px-[18px]">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-primary">
           <AudioLines className="h-4 w-4 text-primary-foreground" strokeWidth={2.4} />
         </div>
-        <div className="flex flex-col gap-px leading-none">
+        <div className="hidden flex-col gap-px leading-none lg:flex">
           <span className="text-sm font-bold tracking-[-0.015em] text-sidebar-foreground">
             Transcribe Bench
           </span>
@@ -218,7 +224,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3">
+      <div className="flex-1 overflow-y-auto px-2 lg:px-3">
         <SectionLabel>Pipeline</SectionLabel>
         <div className="flex flex-col gap-px">
           <SidebarItem href="/" icon={LayoutGrid} label="Overview" />
@@ -235,11 +241,11 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2.5 border-t border-sidebar-border px-4 py-3.5">
-        <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-secondary">
+      <div className="flex items-center gap-2.5 border-t border-sidebar-border px-3 py-3.5 lg:px-4">
+        <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-secondary">
           <span className="font-mono text-[10px] font-medium text-muted-foreground">{actor.initials}</span>
         </div>
-        <div className="flex flex-col gap-px leading-none">
+        <div className="hidden flex-col gap-px leading-none lg:flex">
           <span className="text-xs text-sidebar-foreground">{actor.label}</span>
           <span className="font-mono text-[10px] uppercase tracking-[0.09em] text-muted-foreground">
             {actor.role}

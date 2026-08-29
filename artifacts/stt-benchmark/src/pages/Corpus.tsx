@@ -7,7 +7,9 @@ import {
   useUpdateBenchmarkCall,
   useListBenchmarkProviders,
   useListAgentScans,
+  useGetBenchmarkDashboard,
   getListBenchmarkCallsQueryKey,
+  getGetBenchmarkDashboardQueryKey,
   CallStatus,
   Vertical,
 } from "@workspace/api-client-react"
@@ -21,6 +23,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  Users,
+  AlertCircle,
+  Gavel,
 } from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -59,6 +64,10 @@ export default function Corpus() {
   // "show me the needs_review trucking calls" on a 1000-row corpus.
   const [statusFilter, setStatusFilter] = React.useState("all")
   const [verticalFilter, setVerticalFilter] = React.useState("all")
+  // T-74 (E.1): "what needs a human" is the page's first question. The
+  // strip above the table answers it and its chips filter the table.
+  const [hardCasesOnly, setHardCasesOnly] = React.useState(false)
+  const { data: dashboard } = useGetBenchmarkDashboard({ query: { queryKey: getGetBenchmarkDashboardQueryKey() } })
 
   // Deep link support (replaces the old /review?call=<id> link): "expand
   // this call and scroll to it" from anywhere that still passes ?call=<id>.
@@ -81,9 +90,10 @@ export default function Corpus() {
     return calls.filter(c =>
       (c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) &&
       (statusFilter === "all" || c.status === statusFilter) &&
-      (verticalFilter === "all" || c.vertical === verticalFilter)
+      (verticalFilter === "all" || c.vertical === verticalFilter) &&
+      (!hardCasesOnly || c.hardCases.length > 0)
     )
-  }, [calls, searchText, statusFilter, verticalFilter])
+  }, [calls, searchText, statusFilter, verticalFilter, hardCasesOnly])
 
   return (
     <div className="space-y-6">
@@ -125,6 +135,14 @@ export default function Corpus() {
           <CreateCallDialog />
         </div>
       </div>
+
+      <NeedsHumanStrip
+        data={dashboard?.needsHuman}
+        statusFilter={statusFilter}
+        hardCasesOnly={hardCasesOnly}
+        onAwaitingReview={() => { setStatusFilter(statusFilter === "needs_review" ? "all" : "needs_review"); setHardCasesOnly(false) }}
+        onHardCases={() => { setHardCasesOnly((v) => !v); setStatusFilter("all") }}
+      />
 
       <Card>
         <CardContent className="p-0">
@@ -234,6 +252,68 @@ export default function Corpus() {
 // one call, now inline. `useListAgentScans()` is unfiltered/shared across
 // every expanded row rather than one query per row (corpus-sized dataset,
 // cheap either way, and avoids a waterfall as rows expand).
+// T-74 (E.1): the Corpus page's first screen answers "what needs a human?"
+// -- calls awaiting review, calls a person tagged as hard, and disagreement
+// spans nobody has ruled on yet. Same numbers as the Overview's needs-a-human
+// block (one endpoint, GET /benchmark/dashboard), so the two never disagree.
+// The first two chips are filters on the table below; spans are ruled on
+// inside a flagged call's expanded row ("Hear the disagreements").
+function NeedsHumanStrip({
+  data,
+  statusFilter,
+  hardCasesOnly,
+  onAwaitingReview,
+  onHardCases,
+}: {
+  data: { callsAwaitingReview: number; hardCaseCalls: number; spans: { total: number; adjudicated: number } | null } | undefined
+  statusFilter: string
+  hardCasesOnly: boolean
+  onAwaitingReview: () => void
+  onHardCases: () => void
+}) {
+  const openSpans = data?.spans ? data.spans.total - data.spans.adjudicated : null
+  const chip = (active: boolean, attention: boolean) =>
+    `flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
+      active ? "border-primary bg-primary/10" : attention ? "border-warning/30 bg-warning/5 hover:bg-warning/10" : "border-border hover:bg-muted/40"
+    }`
+  const num = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString())
+  return (
+    <section aria-label="Needs a human" className="space-y-1.5">
+      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Needs a human</h2>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <button className={chip(statusFilter === "needs_review", (data?.callsAwaitingReview ?? 0) > 0)} onClick={onAwaitingReview} aria-pressed={statusFilter === "needs_review"}>
+          <Users className={`h-4 w-4 shrink-0 ${(data?.callsAwaitingReview ?? 0) > 0 ? "text-warning" : "text-muted-foreground"}`} />
+          <span className="min-w-0">
+            <span className="font-mono text-lg font-semibold tabular-nums leading-none">{num(data?.callsAwaitingReview)}</span>
+            <span className="ml-2 text-sm font-medium">awaiting review</span>
+            <span className="block text-[11px] text-muted-foreground">Imported but not ready to run. Click to show only these.</span>
+          </span>
+        </button>
+        <button className={chip(hardCasesOnly, (data?.hardCaseCalls ?? 0) > 0)} onClick={onHardCases} aria-pressed={hardCasesOnly}>
+          <AlertCircle className={`h-4 w-4 shrink-0 ${(data?.hardCaseCalls ?? 0) > 0 ? "text-warning" : "text-muted-foreground"}`} />
+          <span className="min-w-0">
+            <span className="font-mono text-lg font-semibold tabular-nums leading-none">{num(data?.hardCaseCalls)}</span>
+            <span className="ml-2 text-sm font-medium">tagged hard case</span>
+            <span className="block text-[11px] text-muted-foreground">Unusually hard audio per a person. Click to show only these.</span>
+          </span>
+        </button>
+        <div className={chip(false, (openSpans ?? 0) > 0).replace("hover:bg-warning/10", "").replace("hover:bg-muted/40", "")}>
+          <Gavel className={`h-4 w-4 shrink-0 ${(openSpans ?? 0) > 0 ? "text-warning" : "text-muted-foreground"}`} />
+          <span className="min-w-0">
+            <span className="font-mono text-lg font-semibold tabular-nums leading-none">{num(openSpans)}</span>
+            <span className="ml-2 text-sm font-medium">spans not yet ruled on</span>
+            <span className="block text-[11px] text-muted-foreground">
+              {data?.spans
+                ? `${data.spans.adjudicated} of ${data.spans.total} adjudicated in the latest finished bulk. Expand a flagged call → "Hear the disagreements".`
+                : "No finished bulk yet, so nothing to rule on."}
+            </span>
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function ExpandedCallDetail({ call, bulkId }: { call: any; bulkId: string | null }) {
   const { data: scans } = useListAgentScans()
   const latestScan = React.useMemo(

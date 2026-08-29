@@ -54,8 +54,6 @@ export default function Providers() {
         <CreateProviderDialog />
       </div>
 
-      <SystemSettingsCard providers={providers} />
-
       {isError ? (
         <div className="text-center py-24 border rounded-md border-destructive/40 text-destructive text-sm">
           Failed to load providers: {error instanceof Error ? error.message : String(error)}
@@ -72,8 +70,60 @@ export default function Providers() {
           <CreateProviderDialog />
         </div>
       ) : (
+        <>
+          {/* T-74 (E.1): the page's question is "which providers are live?"
+              -- live vendors first, the active-production designation on
+              the same line as the list it affects, and the unconfigured
+              vendors in their own section below. */}
+          {(() => {
+            const groups = groupByVendor(providers ?? [])
+            const isLive = ([, models]: [string, Provider[]]) => models.some((m) => m.status === "ready")
+            const live = groups.filter(isLive)
+            const notLive = groups.filter((g) => !isLive(g))
+            return (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">Live now</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {live.length} vendor{live.length === 1 ? "" : "s"} with at least one enabled, keyed model. These are the candidates a bulk can run.
+                    </p>
+                  </div>
+                  <ActiveProviderControl providers={providers} />
+                </div>
+                {live.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-muted-foreground/30 p-6 text-center text-sm text-muted-foreground">
+                    No provider is live. Add an API key as an env var and enable a model below.
+                  </p>
+                ) : (
+                  <VendorGrid groups={live} />
+                )}
+                {notLive.length > 0 && (
+                  <>
+                    <div className="pt-2">
+                      <h2 className="text-lg font-semibold text-muted-foreground">Not configured</h2>
+                      <p className="text-xs text-muted-foreground">
+                        Adapter present but no key set, or every model disabled. Not offered to bulks until fixed.
+                      </p>
+                    </div>
+                    <VendorGrid groups={notLive} />
+                  </>
+                )}
+              </>
+            )
+          })()}
+        </>
+      )}
+
+      <SystemSettingsCard />
+    </div>
+  )
+}
+
+function VendorGrid({ groups }: { groups: [string, Provider[]][] }) {
+  return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {groupByVendor(providers ?? []).map(([vendor, models]) => (
+          {groups.map(([vendor, models]) => (
             <Card
               key={vendor}
               className={`border-t-4 ${models.some((m) => m.status === "ready") ? "border-t-primary" : "border-t-muted"}`}
@@ -144,7 +194,58 @@ export default function Providers() {
             </Card>
           ))}
         </div>
-      )}
+  )
+}
+
+/**
+ * T-74 (E.1 proximity): the active-production designation sits on the same
+ * line as the provider list it affects (it used to be one of two fields in
+ * a settings card above the list). Same PATCH as before, only this field.
+ * Still a label this tool records -- it never reconfigures a live Vapi
+ * assistant.
+ */
+function ActiveProviderControl({ providers }: { providers: Provider[] | undefined }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { data: settings, isLoading } = useGetAppSettings()
+  const [activeProviderId, setActiveProviderId] = React.useState("")
+  React.useEffect(() => {
+    if (settings) setActiveProviderId(settings.activeProviderId ?? "")
+  }, [settings])
+  const updateSettings = useUpdateAppSettings({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetAppSettingsQueryKey() })
+        toast({ title: "Active provider saved" })
+      },
+      onError: (err) => {
+        toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to save.", variant: "destructive" })
+      },
+    },
+  })
+  const dirty = !isLoading && (settings?.activeProviderId ?? "") !== activeProviderId
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+      <Label className="text-xs whitespace-nowrap" title="Which provider real production calls use today. A label this tool records -- it does not reconfigure any live Vapi assistant. Results highlights this provider's row and shows every other row's delta against it.">
+        Active in production
+      </Label>
+      <Select value={activeProviderId || "none"} onValueChange={(v) => setActiveProviderId(v === "none" ? "" : v)}>
+        <SelectTrigger className="h-8 w-[260px] text-xs"><SelectValue placeholder="None designated" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">None designated</SelectItem>
+          {providers?.map((p) => (
+            <SelectItem key={p.id} value={p.id}>{p.name} ({p.model})</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant={dirty ? "default" : "outline"}
+        disabled={!dirty || updateSettings.isPending}
+        onClick={() => updateSettings.mutate({ data: { activeProviderId: activeProviderId || null } })}
+      >
+        {updateSettings.isPending ? "Saving…" : "Save"}
+      </Button>
     </div>
   )
 }
@@ -166,17 +267,15 @@ const KNOWN_AGENT_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", 
  * higher-risk action against production assistants -- not built here
  * without an explicit ask, since it's outward-facing and hard to reverse).
  */
-function SystemSettingsCard({ providers }: { providers: Provider[] | undefined }) {
+function SystemSettingsCard() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const { data: settings, isLoading } = useGetAppSettings()
-  const [activeProviderId, setActiveProviderId] = React.useState("")
   const [agentModel, setAgentModel] = React.useState("")
   const [customModel, setCustomModel] = React.useState("")
 
   React.useEffect(() => {
     if (!settings) return
-    setActiveProviderId(settings.activeProviderId ?? "")
     const known = settings.agentModel && KNOWN_AGENT_MODELS.includes(settings.agentModel)
     setAgentModel(known ? settings.agentModel! : settings.agentModel ? "other" : "")
     setCustomModel(known ? "" : settings.agentModel ?? "")
@@ -198,18 +297,12 @@ function SystemSettingsCard({ providers }: { providers: Provider[] | undefined }
     agentModel === "other" ? customModel.trim() : agentModel === "default" || !agentModel ? "" : agentModel
 
   const save = () => {
-    updateSettings.mutate({
-      data: {
-        activeProviderId: activeProviderId || null,
-        agentModel: resolvedAgentModel || null,
-      },
-    })
+    // T-74: only this field -- the active provider has its own control
+    // beside the provider list now.
+    updateSettings.mutate({ data: { agentModel: resolvedAgentModel || null } })
   }
 
-  const dirty =
-    !isLoading &&
-    ((settings?.activeProviderId ?? "") !== activeProviderId ||
-      (settings?.agentModel ?? "") !== resolvedAgentModel)
+  const dirty = !isLoading && (settings?.agentModel ?? "") !== resolvedAgentModel
 
   return (
     <Card className="border-t-4 border-t-accent">
@@ -219,23 +312,10 @@ function SystemSettingsCard({ providers }: { providers: Provider[] | undefined }
           <CardTitle className="text-lg">System settings</CardTitle>
         </div>
         <CardDescription>
-          Changeable anytime. The active provider is a label this tool records -- it does not itself
-          reconfigure any live Vapi assistant.
+          Changeable anytime. The active production provider is set beside the provider list above.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Active production provider</Label>
-          <Select value={activeProviderId || "none"} onValueChange={(v) => setActiveProviderId(v === "none" ? "" : v)}>
-            <SelectTrigger><SelectValue placeholder="None designated" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None designated</SelectItem>
-              {providers?.map((p) => (
-                <SelectItem key={p.id} value={p.id}>{p.name} ({p.model})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
         <div className="space-y-2">
           <Label>Agent judge model</Label>
           <Select value={agentModel || "default"} onValueChange={setAgentModel}>
