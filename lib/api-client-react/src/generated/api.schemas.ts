@@ -842,28 +842,6 @@ export interface VerticalRanking {
   recommendation: string;
 }
 
-/**
- * 2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.
- */
-export interface BenchmarkDashboard {
-  corpusCount: number;
-  readyToRunCount: number;
-  configuredProviderCount: number;
-  totalProviderCount: number;
-  latestRunStatus: RunStatus;
-  decisionStatus: string;
-}
-
-export interface PlanTask {
-  id: string;
-  phase: string;
-  title: string;
-  description: string;
-  status: string;
-  dependencies: string[];
-  logicNotes: string[];
-}
-
 export type BulkStatus = typeof BulkStatus[keyof typeof BulkStatus];
 
 
@@ -877,6 +855,80 @@ export const BulkStatus = {
   failed: 'failed',
   cancelled: 'cancelled',
 } as const;
+
+/**
+ * @nullable
+ */
+export type BenchmarkDashboardLatestFinishedBulk = {
+  id: string;
+  name: string;
+  status: BulkStatus;
+  /** @nullable */
+  completedAt: string | null;
+} | null;
+
+/**
+ * @nullable
+ */
+export type BenchmarkDashboardRunningBulk = {
+  id: string;
+  name: string;
+} | null;
+
+/**
+ * @nullable
+ */
+export type BenchmarkDashboardNeedsHumanSpans = {
+  bulkId: string;
+  total: number;
+  adjudicated: number;
+} | null;
+
+export type BenchmarkDashboardNeedsHuman = {
+  callsAwaitingReview: number;
+  hardCaseCalls: number;
+  retryableFailedCells: number;
+  /** @nullable */
+  spans: BenchmarkDashboardNeedsHumanSpans;
+};
+
+export type BenchmarkDashboardThisMonth = {
+  monthStart: string;
+  sttMicrocents: number;
+  sttCellsPriced: number;
+  sttCellsUnpriced: number;
+  agentMicrocents: number;
+  agentJudgementsPriced: number;
+  agentJudgementsUnpriced: number;
+};
+
+/**
+ * 2026-08-27 -- the pipeline dropped its gold-transcript stage (goldReadyCount removed). A call now only needs de-id sign-off to reach readyToRunCount.
+ */
+export interface BenchmarkDashboard {
+  corpusCount: number;
+  readyToRunCount: number;
+  configuredProviderCount: number;
+  totalProviderCount: number;
+  latestRunStatus: RunStatus;
+  decisionStatus: string;
+  /** @nullable */
+  latestFinishedBulk: BenchmarkDashboardLatestFinishedBulk;
+  /** @nullable */
+  runningBulk: BenchmarkDashboardRunningBulk;
+  needsHuman: BenchmarkDashboardNeedsHuman;
+  thisMonth: BenchmarkDashboardThisMonth;
+}
+
+export interface PlanTask {
+  id: string;
+  phase: string;
+  title: string;
+  description: string;
+  status: string;
+  dependencies: string[];
+  logicNotes: string[];
+}
 
 /**
  * On a template this is unfrozen (lastNDays re-resolves per launch); on a bulk it is frozen at creation, with resolvedCallIds pinning the exact corpus slice (FR-BLK-1 vs FR-BLK-9).
