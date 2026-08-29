@@ -14,7 +14,8 @@ import {
 } from "@workspace/db";
 import { buildRunManifest } from "./manifest";
 import { isFailureClass, isRetryableFailureClass } from "@workspace/stt-providers";
-import { drainWithConcurrency, envInt, executeBenchmarkRun, requestRunCancellation } from "./run-executor";
+import { executeBenchmarkRun, requestRunCancellation } from "./run-executor";
+import { drainWithConcurrency, envInt } from "./concurrency";
 import { audioCachePathFor } from "./audio-cache";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";

@@ -97,7 +97,8 @@ import {
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { AgentConfigError, AgentRequestError, analyzeFailure, matchKnownFailure } from "../lib/agent";
 import { logger } from "../lib/logger";
-import { drainWithConcurrency, executeBenchmarkRun } from "../lib/run-executor";
+import { executeBenchmarkRun } from "../lib/run-executor";
+import { drainWithConcurrency } from "../lib/concurrency";
 import { audioCachePathFor } from "../lib/audio-cache";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";

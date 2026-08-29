@@ -35,6 +35,11 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      # T-75: no import cycles among api-server modules (a cycle only "works"
+      # by luck of evaluation order and breaks silently on the next refactor).
+      - name: Check import cycles (api-server)
+        run: node scripts/check-import-cycles.mjs artifacts/api-server/src
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)

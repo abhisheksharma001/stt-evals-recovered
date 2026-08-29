@@ -38,6 +38,7 @@ import { refreshBulkStatus } from "./bulk-status";
 import { getOrCacheAudioBytes, readCachedAudioBytes } from "./audio-cache";
 import { computeHybridFlagsForRun } from "./hybrid-flagging";
 import { runAutoAgentVerificationForRun } from "./agent-verify";
+import { drainWithConcurrency, envInt } from "./concurrency";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
 // documented race (see the comment on the run.status check below) --
@@ -66,20 +67,6 @@ export function requestRunCancellation(runId: string): void {
 // two-level gate: RUN_CONCURRENCY caps cells in flight overall,
 // PROVIDER_CONCURRENCY caps cells in flight per vendor (a 429 storm helps
 // nobody's latency ranking). See ox-alpha/scalability-design.md.
-export function envInt(name: string, fallback: number, max: number): number {
-  const raw = process.env[name];
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  // Upper clamp (UX/threshold review 2026-08-25): a typo like
-  // PROVIDER_CONCURRENCY=400 would guarantee vendor 429 storms and poison
-  // latency rankings. Sane ceilings, applied silently but logged once below.
-  const clamped = Math.min(parsed, max);
-  if (clamped !== parsed) {
-    logger.warn({ name, requested: parsed, applied: clamped }, "concurrency env clamped to ceiling");
-  }
-  return clamped;
-}
-
 const RUN_CONCURRENCY = envInt("RUN_CONCURRENCY", 16, 64);
 const PROVIDER_CONCURRENCY = envInt("PROVIDER_CONCURRENCY", 4, 16);
 // Attempts per cell = 1 initial + (CELL_MAX_ATTEMPTS - 1) retries.
@@ -190,26 +177,6 @@ function applyBackPressure(providerId: string): void {
     backPressureActive.delete(providerId);
     logger.info({ providerId, restoredTo: current }, "429 back-off window elapsed -- provider concurrency restored");
   }, 60_000).unref();
-}
-
-// Fixed-size worker pool over a materialized item list: exactly `limit`
-// workers pull from a shared cursor until exhausted. No dependencies, no
-// unbounded Promise.all blowups. Exported for reuse by the Vapi import
-// route's bounded-parallel fetch loop.
-export async function drainWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (cursor < items.length) {
-      const item = items[cursor];
-      cursor += 1;
-      await worker(item);
-    }
-  });
-  await Promise.all(runners);
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
