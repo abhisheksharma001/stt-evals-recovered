@@ -121,8 +121,7 @@ either on a date. Start it when its trigger fires.
 | T-29 | Audio cache → blob storage. | A second machine needs to run the corpus, or T-28 lands |
 | T-30 | Failure-pattern graph + agent self-audit + the T-17 guard rails. | Client count passes ~15. Below that it is ~36 data points a year — over-structure. |
 | T-31 | Navigation merge, seven routes → four. | Phases 1–3 shipped and proven. Highest risk item in the register. |
-| T-32 | Shareable dated verdict artefact. | Any time after T-21 |
-
+| T-32 | ✅ **done** (PR #42, `ba356ea`). `GET /benchmark/bulks/:id/verdict.html` (`lib/verdict-artefact.ts`): one self-contained, print-clean HTML page rendered server-side from the same `bulkVerdicts` numbers as the Results banner, stamped with produced-at (UTC), build SHA, scoring version, bulk id + launch/complete dates. Per client group: decision chip, winner + margin (only on `decision === "winner"`; a too-close leader is shown as "leader (not a verdict)"), evidence/shared calls, 95% CI of the gap, production transcriber + vs-production %, cost delta as list price vs list price with prose for every reason a delta is missing, provisional + confidence-comparability caveats, rate table, legend (what winner means, prices operator-entered, dated snapshot). Every DB string HTML-escaped; no scripts/assets; `Cache-Control: no-store`; dated filename in `Content-Disposition`; 404 on unknown bulk. "Share verdict" link beside the bulk picker on Results opens it in a new tab (Save as PDF from there). In openapi as `text/html`, not used via generated client. 5 unit tests. Smoke-tested from source on local DB: newest bulk renders honestly (Land And Apartment: too close, Gladia named leader not winner, no fake cost delta). Not yet deployed — same T-27 index gate. Original: Shareable dated verdict artefact. | Any time after T-21 |
 ---
 
 ## Deferred, by name
