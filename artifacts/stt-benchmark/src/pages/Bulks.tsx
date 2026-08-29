@@ -894,14 +894,38 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
           <div className="text-sm text-muted-foreground">
             {criteriaSummary(current.selectionCriteria)} · shard size {current.shardSize} ·{" "}
             {current.providerIds.length} provider(s)
-            {/* 2026-08-27, per Abhishek: STT and OpenAI agent-verification
-                cost shown separately, not combined -- they're different
-                budgets to someone deciding whether to launch this. */}
-            {current.estimatedSttCostCents != null && (
-              <> · est. STT ${(current.estimatedSttCostCents / 100).toFixed(2)}</>
+          </div>
+
+          {/* T-74 (E.1 proximity): the estimate, the cost-gate state and the
+              launch button were ~120 lines apart in this dialog (header
+              text vs footer button, with the over-threshold reason only in
+              a toast). One row now: what it costs, why it is waiting, and
+              the button that spends it.
+              2026-08-27, per Abhishek: STT and OpenAI agent-verification
+              cost shown separately, not combined -- different budgets. */}
+          <div
+            className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border px-3 py-2.5 text-sm ${
+              current.status === "awaiting_confirmation" ? "border-warning/30 bg-warning/5" : "border-border bg-muted/20"
+            }`}
+          >
+            <div>
+              <div className="text-[10px] font-mono uppercase text-muted-foreground">Estimated cost</div>
+              <div className="font-mono font-semibold">
+                {current.estimatedSttCostCents != null ? `STT $${(current.estimatedSttCostCents / 100).toFixed(2)}` : "STT —"}
+                {current.estimatedAgentCostCents != null && <> + agent ${(current.estimatedAgentCostCents / 100).toFixed(2)}</>}
+              </div>
+            </div>
+            {current.status === "awaiting_confirmation" && (
+              <div className="flex items-center gap-1.5 text-xs text-warning">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Over the cost threshold — not launched until you confirm.
+              </div>
             )}
-            {current.estimatedAgentCostCents != null && (
-              <> + agent ${(current.estimatedAgentCostCents / 100).toFixed(2)}</>
+            {current.status === "draft" && <div className="text-xs text-muted-foreground">Not launched yet.</div>}
+            {(current.status === "awaiting_confirmation" || current.status === "draft") && (
+              <Button className="ml-auto" size="sm" onClick={() => launch.mutate({ bulkId: bulk.id })} disabled={launch.isPending}>
+                <Play className="mr-2 h-4 w-4" /> {launch.isPending ? "Launching…" : "Confirm & launch"}
+              </Button>
             )}
           </div>
 
@@ -1021,11 +1045,6 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
         </div>
 
         <DialogFooter>
-          {(current.status === "awaiting_confirmation" || current.status === "draft") && (
-            <Button onClick={() => launch.mutate({ bulkId: bulk.id })} disabled={launch.isPending}>
-              <Play className="mr-2 h-4 w-4" /> Confirm & launch
-            </Button>
-          )}
           {/* T-07: the button says how much it would actually re-run, and
               refuses when that is nothing. Before this it was always
               enabled and always said "Retry failed cells" -- on bulk
@@ -1129,6 +1148,91 @@ function TemplateRow({ template }: { template: BulkTemplate }) {
   )
 }
 
+/**
+ * T-74 (E.1): the Bulks page's first question is "what is running / what
+ * just finished, and what did it cost?" This card answers it for the one
+ * bulk that matters most right now -- the running one if any, else the
+ * newest -- before the table, the creation form and the templates.
+ */
+function LiveBulkCard({ bulk }: { bulk: Bulk }) {
+  const inFlight = bulk.status === "running" || bulk.status === "estimating"
+  const { data: detail } = useGetBulk(bulk.id, {
+    query: {
+      queryKey: getGetBulkQueryKey(bulk.id),
+      refetchInterval: (query) => {
+        const status = query.state.data?.status
+        return status === "running" || status === "estimating" ? 2000 : false
+      },
+    },
+  })
+  const p = detail?.progress
+  const done = p ? p.cellsOk + p.cellsFailed + p.cellsCancelled + p.cellsSkippedPendingReview : 0
+  const pct = p && p.cellsTotal > 0 ? Math.round((done / p.cellsTotal) * 100) : null
+  const hasActual = !!detail?.actualCost && (p?.cellsOk ?? 0) > 0
+  return (
+    <Card className={`border-t-4 ${inFlight ? "border-t-primary" : "border-t-accent"}`}>
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            {inFlight ? "Running now" : "Most recent bulk"}
+          </span>
+          <span className="text-lg font-semibold">{bulk.name}</span>
+          <BulkStatusBadge status={detail?.status ?? bulk.status} />
+          <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(bulk.createdAt), { addSuffix: true })}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <BulkDetailDialog bulk={bulk}>
+              <Button size="sm" variant="outline">Open detail</Button>
+            </BulkDetailDialog>
+          </div>
+        </div>
+        {p && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
+              <span>
+                {p.cellsOk} ok · {p.cellsFailed} failed · {p.cellsPending} pending
+                {p.cellsSkippedPendingReview > 0 && <> · {p.cellsSkippedPendingReview} skipped</>}
+                {p.cellsCancelled > 0 && <> · {p.cellsCancelled} cancelled</>}
+              </span>
+              <span>{pct == null ? "—" : `${pct}%`} of {p.cellsTotal} cells · {p.callsRun}/{p.callsTotal} calls</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className={`h-full ${inFlight ? "bg-primary" : "bg-accent"}`} style={{ width: `${pct ?? 0}%` }} />
+            </div>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+          <div>
+            <div className="text-[10px] font-mono uppercase text-muted-foreground">STT cost{hasActual ? "" : " (estimate)"}</div>
+            <div className="font-mono font-semibold">
+              {hasActual
+                ? formatMicrocents(detail!.actualCost.sttCostMicrocents)
+                : bulk.estimatedSttCostCents != null
+                  ? cents(bulk.estimatedSttCostCents)
+                  : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-mono uppercase text-muted-foreground">Agent cost{hasActual ? "" : " (estimate)"}</div>
+            <div className="font-mono font-semibold">
+              {hasActual
+                ? formatMicrocents(detail!.actualCost.agentCostMicrocents)
+                : bulk.estimatedAgentCostCents != null
+                  ? cents(bulk.estimatedAgentCostCents)
+                  : "—"}
+            </div>
+          </div>
+          {detail?.actualCost && detail.actualCost.agentCallsErrored > 0 && (
+            <div className="text-destructive">
+              <div className="text-[10px] font-mono uppercase">Agent errors</div>
+              <div className="font-mono font-semibold">{detail.actualCost.agentCallsErrored} unchecked</div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function Bulks() {
   // Poll while any bulk is in flight (same reasoning as the Runs page).
   const { data: bulks, isLoading, isError, error } = useListBulks(undefined, {
@@ -1139,21 +1243,22 @@ export default function Bulks() {
     },
   })
   const { data: templates } = useListBulkTemplates()
+  // T-74 (E.1): the running bulk (else the newest -- the list is newest-
+  // first) is the page's headline; creation and templates collapse while
+  // something is running so the live status is what the first screen shows.
+  const anyRunning = !!bulks?.some((b) => b.status === "running" || b.status === "estimating")
+  const headline = bulks?.find((b) => b.status === "running" || b.status === "estimating") ?? bulks?.[0] ?? null
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Bulk Evaluations</h1>
-          <p className="mt-1 text-muted-foreground">
-            Shard large call slices into runs, with cost gates, retry and cancel. Max 3 live bulks -- the oldest is evicted.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <CreateTemplateDialog />
-          <CreateBulkDialog />
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Bulk Evaluations</h1>
+        <p className="mt-1 text-muted-foreground">
+          Shard large call slices into runs, with cost gates, retry and cancel. Max 3 live bulks -- the oldest is evicted.
+        </p>
       </div>
+
+      {headline && <LiveBulkCard key={headline.id} bulk={headline} />}
 
       <Card>
         <CardContent className="p-0">
@@ -1213,6 +1318,22 @@ export default function Bulks() {
         </CardContent>
       </Card>
 
+      {/* T-74 (E.1): creation and templates sit below the live status and
+          the table, collapsed while a bulk is running. Native <details>:
+          the key forces the default to re-evaluate when running flips. */}
+      <details key={anyRunning ? "collapsed" : "open"} open={!anyRunning} className="group rounded-lg border border-border">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 px-4 py-3">
+          <Plus className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-45" />
+          <span className="text-sm font-semibold">Create a bulk</span>
+          <span className="text-xs text-muted-foreground">
+            {anyRunning ? "A bulk is running -- creation is folded away until it finishes. Expand to create anyway." : "New bulk from criteria, or launch a saved template."}
+          </span>
+        </summary>
+        <div className="space-y-4 border-t border-border p-4">
+          <div className="flex gap-2">
+            <CreateBulkDialog />
+            <CreateTemplateDialog />
+          </div>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -1244,6 +1365,8 @@ export default function Bulks() {
           </Table>
         </CardContent>
       </Card>
+        </div>
+      </details>
     </div>
   )
 }

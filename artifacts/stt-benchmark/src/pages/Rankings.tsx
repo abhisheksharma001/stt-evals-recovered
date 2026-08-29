@@ -394,12 +394,10 @@ export default function Rankings() {
         </p>
       </div>
 
-      {/* T-09: the one number that says whether the judge can be trusted
-          to stand in for a listening human -- and its sample size. Sits
-          above the rankings because every "agent pick" below it is only as
-          good as this. */}
-      <JudgeAccuracyCard providerNames={providerNames} />
-
+      {/* T-74 (E.1) page order: picker (which bulk?) -> verdict (the
+          answer) -> cost -> judge accuracy -> correlation -> trend ->
+          monthly cost -> group cards (the raw table). Answer, evidence,
+          controls, table -- in that order. */}
       {/* view switcher + bulk picker -- 2026-08-27, per Abhishek: "for each
           run then it should show the ranking for each, and for bulk overall
           ranking for all the call" -- "run" here means one launched Bulk,
@@ -512,6 +510,13 @@ export default function Rankings() {
           </CardContent>
         </Card>
       )}
+
+      {/* T-09: the one number that says whether the judge can be trusted
+          to stand in for a listening human -- and its sample size. T-74
+          (E.1): moved from above the bulk picker to here -- a reader now
+          meets the verdict and its cost before this trust metric, and
+          knows which bulk it is about. Still above every "agent pick". */}
+      <JudgeAccuracyCard providerNames={providerNames} />
 
       {/* T-18: how independent the providers' votes are. Sits right under
           the cost line so it is read before the table it qualifies. */}
