@@ -7,8 +7,11 @@ import {
   getGetBulkQueryKey,
   useListBenchmarkCalls,
   useListBenchmarkProviders,
+  useGetBulkManifest,
+  getGetBulkManifestQueryKey,
   type VerticalRanking,
 } from "@workspace/api-client-react"
+import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText } from "lucide-react"
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -226,6 +229,52 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
 // T-24: hooks can't run inside the group map, so the volume lookup lives
 // in this tiny render-prop wrapper -- one Vapi-backed query per group,
 // deduped by react-query since every group of a client shares the key.
+/**
+ * T-72 (E.4): the per-call provider comparison is reachable from a Results
+ * group card. One link per call in this group -- scoped to the selected
+ * bulk's calls (from its manifest) in bulk mode, every call of the
+ * assistant in the all-time view. Opens Corpus with the row expanded and
+ * the comparison scoped to the bulk (?call=<id>&bulk=<id>).
+ */
+function PerCallComparisonLinks({ assistantId, bulkId }: { assistantId: string | null; bulkId: string | null }) {
+  const { data: calls } = useListBenchmarkCalls()
+  const { data: manifest } = useGetBulkManifest(bulkId ?? "", {
+    query: { queryKey: getGetBulkManifestQueryKey(bulkId ?? ""), enabled: !!bulkId },
+  })
+  const groupCalls = React.useMemo(() => {
+    if (!calls) return []
+    const inBulk = bulkId
+      ? new Set((manifest?.runs ?? []).flatMap((r) => r.calls.map((c) => c.id)))
+      : null
+    return calls
+      .filter((c) => (c.sourceAssistantId ?? null) === assistantId && (!inBulk || inBulk.has(c.id)))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [calls, manifest, assistantId, bulkId])
+  if (bulkId && !manifest) return null
+  if (groupCalls.length === 0) return null
+  return (
+    <details className="border-t px-4 py-3 text-sm">
+      <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+        <FileText className="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" />
+        Compare providers per call ({groupCalls.length} call{groupCalls.length === 1 ? "" : "s"})
+      </summary>
+      <ul className="mt-2 grid max-h-56 grid-cols-1 gap-x-6 gap-y-1 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+        {groupCalls.map((c) => (
+          <li key={c.id}>
+            <Link
+              href={`/corpus?call=${c.id}${bulkId ? `&bulk=${bulkId}` : ""}`}
+              className="font-mono text-xs text-primary hover:underline"
+              title="Open this call in Corpus: reference transcript on top, every provider's output diffed under it"
+            >
+              {c.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
 function WithGroupVolume({ assistantId, children }: { assistantId: string | null; children: (gv: GroupVolume) => React.ReactNode }) {
   const gv = useGroupVolume(assistantId)
   return <>{children(gv)}</>
@@ -712,6 +761,7 @@ export default function Rankings() {
                 </div>
               )}
               <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
+              <PerCallComparisonLinks assistantId={ranks[0]?.assistantId ?? null} bulkId={viewMode === "bulk" ? selectedBulkId : null} />
             </CardContent>
           </Card>
           )

@@ -251,6 +251,179 @@ export const UpdateBenchmarkCallResponse = zod.object({
 
 
 /**
+ * @summary T-72 (E.4) -- one call, reference transcript on top, every provider's output under it as a word-diff row with its cell metrics and the judge's pick marked
+ */
+export const GetCallComparisonParams = zod.object({
+  "callId": zod.coerce.string()
+})
+
+export const GetCallComparisonResponse = zod.object({
+  "callId": zod.string(),
+  "label": zod.string(),
+  "callStatus": zod.string(),
+  "durationSeconds": zod.number(),
+  "reference": zod.object({
+  "kind": zod.enum(['gold', 'draft']),
+  "text": zod.string()
+}).nullable(),
+  "audioAvailable": zod.boolean(),
+  "production": zod.object({
+  "vendor": zod.string(),
+  "model": zod.string().nullable()
+}).nullable(),
+  "productionRow": zod.object({
+  "text": zod.string(),
+  "diff": zod.union([zod.object({
+  "wordDiff": zod.array(zod.object({
+  "op": zod.enum(['ok', 'sub', 'del', 'ins']),
+  "ref": zod.string().nullable(),
+  "hyp": zod.string().nullable()
+})),
+  "referenceWords": zod.number(),
+  "wordsDiffer": zod.number(),
+  "werVsReference": zod.number().nullable().describe('wordsDiffer \/ referenceWords; null when the reference is empty.')
+}).describe('Word alignment of one transcript against THIS section\'s reference (gold when the call has one, else the Vapi draft). Not the retired gold WER column -- computed fresh on read.'),zod.null()])
+}).nullable(),
+  "context": zod.object({
+  "bulkId": zod.string(),
+  "bulkName": zod.string()
+}).nullable(),
+  "ordering": zod.enum(['verdict_rate', 'alphabetical']),
+  "judge": zod.object({
+  "scanId": zod.string(),
+  "status": zod.string(),
+  "pickProviderId": zod.string().nullable(),
+  "reasoning": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}).nullable(),
+  "rows": zod.array(zod.object({
+  "providerId": zod.string(),
+  "providerName": zod.string(),
+  "status": zod.enum(['ok', 'failed', 'skipped_pending_review', 'pending', 'cancelled', 'missing']),
+  "resultId": zod.string().nullable(),
+  "runId": zod.string().nullable(),
+  "attemptedAt": zod.coerce.date().nullable(),
+  "hypothesisTranscript": zod.string().nullable(),
+  "diff": zod.union([zod.object({
+  "wordDiff": zod.array(zod.object({
+  "op": zod.enum(['ok', 'sub', 'del', 'ins']),
+  "ref": zod.string().nullable(),
+  "hyp": zod.string().nullable()
+})),
+  "referenceWords": zod.number(),
+  "wordsDiffer": zod.number(),
+  "werVsReference": zod.number().nullable().describe('wordsDiffer \/ referenceWords; null when the reference is empty.')
+}).describe('Word alignment of one transcript against THIS section\'s reference (gold when the call has one, else the Vapi draft). Not the retired gold WER column -- computed fresh on read.'),zod.null()]),
+  "peerFlagCount": zod.number().nullable(),
+  "peerFlagSeverity": zod.string().nullable(),
+  "flagCount": zod.number().nullable(),
+  "flagSeverity": zod.string().nullable(),
+  "hybridFlags": zod.object({
+  "disagreementRate": zod.number().nullable(),
+  "lowConfidenceSpans": zod.number(),
+  "confidenceAvailable": zod.boolean(),
+  "entityMismatches": zod.number()
+}).nullable(),
+  "latencyFinalMs": zod.number().nullable(),
+  "costMicrocents": zod.number().nullable().describe('Micro-cents (1 cent = 10,000). null = not recorded, never zero.'),
+  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]),
+  "retryable": zod.boolean().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "failureDiagnosis": zod.string().nullable(),
+  "failureSuggestedFix": zod.string().nullable(),
+  "isJudgePick": zod.boolean()
+}))
+}).describe('T-72 (E.4). The reference is gold only when the call has a gold transcript; otherwise it is the Vapi draft, labelled draft -- the draft is Vapi\'s own live provider output and is never presented as a standard. When the reference is gold, the draft is still shown as productionRow.')
+
+
+/**
+ * @summary T-72 (E.4) -- the same comparison scoped to one bulk's runs, providers ordered by the bulk's verdict rate. (A separate operation rather than ?bulkId= because orval names a query-param type and a path-param zod schema identically and they collide.)
+ */
+export const GetBulkCallComparisonParams = zod.object({
+  "bulkId": zod.coerce.string(),
+  "callId": zod.coerce.string()
+})
+
+export const GetBulkCallComparisonResponse = zod.object({
+  "callId": zod.string(),
+  "label": zod.string(),
+  "callStatus": zod.string(),
+  "durationSeconds": zod.number(),
+  "reference": zod.object({
+  "kind": zod.enum(['gold', 'draft']),
+  "text": zod.string()
+}).nullable(),
+  "audioAvailable": zod.boolean(),
+  "production": zod.object({
+  "vendor": zod.string(),
+  "model": zod.string().nullable()
+}).nullable(),
+  "productionRow": zod.object({
+  "text": zod.string(),
+  "diff": zod.union([zod.object({
+  "wordDiff": zod.array(zod.object({
+  "op": zod.enum(['ok', 'sub', 'del', 'ins']),
+  "ref": zod.string().nullable(),
+  "hyp": zod.string().nullable()
+})),
+  "referenceWords": zod.number(),
+  "wordsDiffer": zod.number(),
+  "werVsReference": zod.number().nullable().describe('wordsDiffer \/ referenceWords; null when the reference is empty.')
+}).describe('Word alignment of one transcript against THIS section\'s reference (gold when the call has one, else the Vapi draft). Not the retired gold WER column -- computed fresh on read.'),zod.null()])
+}).nullable(),
+  "context": zod.object({
+  "bulkId": zod.string(),
+  "bulkName": zod.string()
+}).nullable(),
+  "ordering": zod.enum(['verdict_rate', 'alphabetical']),
+  "judge": zod.object({
+  "scanId": zod.string(),
+  "status": zod.string(),
+  "pickProviderId": zod.string().nullable(),
+  "reasoning": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}).nullable(),
+  "rows": zod.array(zod.object({
+  "providerId": zod.string(),
+  "providerName": zod.string(),
+  "status": zod.enum(['ok', 'failed', 'skipped_pending_review', 'pending', 'cancelled', 'missing']),
+  "resultId": zod.string().nullable(),
+  "runId": zod.string().nullable(),
+  "attemptedAt": zod.coerce.date().nullable(),
+  "hypothesisTranscript": zod.string().nullable(),
+  "diff": zod.union([zod.object({
+  "wordDiff": zod.array(zod.object({
+  "op": zod.enum(['ok', 'sub', 'del', 'ins']),
+  "ref": zod.string().nullable(),
+  "hyp": zod.string().nullable()
+})),
+  "referenceWords": zod.number(),
+  "wordsDiffer": zod.number(),
+  "werVsReference": zod.number().nullable().describe('wordsDiffer \/ referenceWords; null when the reference is empty.')
+}).describe('Word alignment of one transcript against THIS section\'s reference (gold when the call has one, else the Vapi draft). Not the retired gold WER column -- computed fresh on read.'),zod.null()]),
+  "peerFlagCount": zod.number().nullable(),
+  "peerFlagSeverity": zod.string().nullable(),
+  "flagCount": zod.number().nullable(),
+  "flagSeverity": zod.string().nullable(),
+  "hybridFlags": zod.object({
+  "disagreementRate": zod.number().nullable(),
+  "lowConfidenceSpans": zod.number(),
+  "confidenceAvailable": zod.boolean(),
+  "entityMismatches": zod.number()
+}).nullable(),
+  "latencyFinalMs": zod.number().nullable(),
+  "costMicrocents": zod.number().nullable().describe('Micro-cents (1 cent = 10,000). null = not recorded, never zero.'),
+  "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]),
+  "retryable": zod.boolean().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "failureDiagnosis": zod.string().nullable(),
+  "failureSuggestedFix": zod.string().nullable(),
+  "isJudgePick": zod.boolean()
+}))
+}).describe('T-72 (E.4). The reference is gold only when the call has a gold transcript; otherwise it is the Vapi draft, labelled draft -- the draft is Vapi\'s own live provider output and is never presented as a standard. When the reference is gold, the draft is still shown as productionRow.')
+
+
+/**
  * @summary T-08 -- the stretches of one call where providers heard different words, each with a start/end in the audio, every provider's reading, and any human verdict already recorded
  */
 export const ListDisagreementSpansQueryParams = zod.object({

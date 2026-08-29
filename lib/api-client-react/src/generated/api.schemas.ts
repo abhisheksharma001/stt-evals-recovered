@@ -671,6 +671,184 @@ export interface ProviderCallResult {
   score?: ScoreDetail | null;
 }
 
+/**
+ * Word alignment of one transcript against THIS section's reference (gold when the call has one, else the Vapi draft). Not the retired gold WER column -- computed fresh on read.
+ */
+export interface ComparisonDiff {
+  wordDiff: WordDiffOp[];
+  referenceWords: number;
+  wordsDiffer: number;
+  /**
+     * wordsDiffer / referenceWords; null when the reference is empty.
+     * @nullable
+     */
+  werVsReference: number | null;
+}
+
+export type ComparisonRowStatus = typeof ComparisonRowStatus[keyof typeof ComparisonRowStatus];
+
+
+export const ComparisonRowStatus = {
+  ok: 'ok',
+  failed: 'failed',
+  skipped_pending_review: 'skipped_pending_review',
+  pending: 'pending',
+  cancelled: 'cancelled',
+  missing: 'missing',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ComparisonRowHybridFlags = {
+  /** @nullable */
+  disagreementRate: number | null;
+  lowConfidenceSpans: number;
+  confidenceAvailable: boolean;
+  entityMismatches: number;
+} | null;
+
+export type ComparisonRowFailureClass = typeof ComparisonRowFailureClass[keyof typeof ComparisonRowFailureClass] | null;
+
+
+export const ComparisonRowFailureClass = {
+  retention_expired: 'retention_expired',
+  audio_url_forbidden: 'audio_url_forbidden',
+  provider_timeout: 'provider_timeout',
+  provider_5xx: 'provider_5xx',
+  rate_limited: 'rate_limited',
+  audio_decode: 'audio_decode',
+  provider_auth: 'provider_auth',
+  unknown: 'unknown',
+} as const;
+
+export interface ComparisonRow {
+  providerId: string;
+  providerName: string;
+  status: ComparisonRowStatus;
+  /** @nullable */
+  resultId: string | null;
+  /** @nullable */
+  runId: string | null;
+  /** @nullable */
+  attemptedAt: string | null;
+  /** @nullable */
+  hypothesisTranscript: string | null;
+  diff: ComparisonDiff | null;
+  /** @nullable */
+  peerFlagCount: number | null;
+  /** @nullable */
+  peerFlagSeverity: string | null;
+  /** @nullable */
+  flagCount: number | null;
+  /** @nullable */
+  flagSeverity: string | null;
+  /** @nullable */
+  hybridFlags: ComparisonRowHybridFlags;
+  /** @nullable */
+  latencyFinalMs: number | null;
+  /**
+     * Micro-cents (1 cent = 10,000). null = not recorded, never zero.
+     * @nullable
+     */
+  costMicrocents: number | null;
+  failureClass: ComparisonRowFailureClass;
+  /** @nullable */
+  retryable: boolean | null;
+  /** @nullable */
+  errorMessage: string | null;
+  /** @nullable */
+  failureDiagnosis: string | null;
+  /** @nullable */
+  failureSuggestedFix: string | null;
+  isJudgePick: boolean;
+}
+
+export type CallComparisonReferenceKind = typeof CallComparisonReferenceKind[keyof typeof CallComparisonReferenceKind];
+
+
+export const CallComparisonReferenceKind = {
+  gold: 'gold',
+  draft: 'draft',
+} as const;
+
+/**
+ * @nullable
+ */
+export type CallComparisonReference = {
+  kind: CallComparisonReferenceKind;
+  text: string;
+} | null;
+
+/**
+ * @nullable
+ */
+export type CallComparisonProduction = {
+  vendor: string;
+  /** @nullable */
+  model: string | null;
+} | null;
+
+/**
+ * @nullable
+ */
+export type CallComparisonProductionRow = {
+  text: string;
+  diff: ComparisonDiff | null;
+} | null;
+
+/**
+ * @nullable
+ */
+export type CallComparisonContext = {
+  bulkId: string;
+  bulkName: string;
+} | null;
+
+export type CallComparisonOrdering = typeof CallComparisonOrdering[keyof typeof CallComparisonOrdering];
+
+
+export const CallComparisonOrdering = {
+  verdict_rate: 'verdict_rate',
+  alphabetical: 'alphabetical',
+} as const;
+
+/**
+ * @nullable
+ */
+export type CallComparisonJudge = {
+  scanId: string;
+  status: string;
+  /** @nullable */
+  pickProviderId: string | null;
+  /** @nullable */
+  reasoning: string | null;
+  createdAt: string;
+} | null;
+
+/**
+ * T-72 (E.4). The reference is gold only when the call has a gold transcript; otherwise it is the Vapi draft, labelled draft -- the draft is Vapi's own live provider output and is never presented as a standard. When the reference is gold, the draft is still shown as productionRow.
+ */
+export interface CallComparison {
+  callId: string;
+  label: string;
+  callStatus: string;
+  durationSeconds: number;
+  /** @nullable */
+  reference: CallComparisonReference;
+  audioAvailable: boolean;
+  /** @nullable */
+  production: CallComparisonProduction;
+  /** @nullable */
+  productionRow: CallComparisonProductionRow;
+  /** @nullable */
+  context: CallComparisonContext;
+  ordering: CallComparisonOrdering;
+  /** @nullable */
+  judge: CallComparisonJudge;
+  rows: ComparisonRow[];
+}
+
 export interface AgentFlag {
   text: string;
   reason: string;

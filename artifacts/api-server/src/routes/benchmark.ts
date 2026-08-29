@@ -17,6 +17,7 @@ import {
 } from "@workspace/db";
 import { getProviderAdapter } from "@workspace/stt-providers";
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk, spanAdjudicationCounts } from "../lib/overview";
+import { callComparison } from "../lib/call-comparison";
 import {
   AttestBenchmarkCallDeidBody,
   AttestBenchmarkCallDeidParams,
@@ -51,6 +52,10 @@ import {
   UpdateBenchmarkCallBody,
   GetBenchmarkCallParams,
   GetBenchmarkCallResponse,
+  GetBulkCallComparisonParams,
+  GetBulkCallComparisonResponse,
+  GetCallComparisonParams,
+  GetCallComparisonResponse,
   UpdateBenchmarkCallParams,
   UpdateBenchmarkCallResponse,
   UpdateBenchmarkProviderBody,
@@ -462,6 +467,37 @@ router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetBenchmarkCallResponse.parse(serializeCall(call)));
+});
+
+// T-72 (E.4): one call, every provider's output under the reference.
+// All the work is in lib/call-comparison.ts; two operations only because
+// orval cannot express path + optional query params without a name clash.
+router.get("/benchmark/calls/:callId/comparison", async (req, res): Promise<void> => {
+  const params = GetCallComparisonParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const comparison = await callComparison(params.data.callId, null);
+  if (!comparison) {
+    res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  res.json(GetCallComparisonResponse.parse(comparison));
+});
+
+router.get("/benchmark/bulks/:bulkId/calls/:callId/comparison", async (req, res): Promise<void> => {
+  const params = GetBulkCallComparisonParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const comparison = await callComparison(params.data.callId, params.data.bulkId);
+  if (!comparison) {
+    res.status(404).json({ error: "Call or bulk not found" });
+    return;
+  }
+  res.json(GetBulkCallComparisonResponse.parse(comparison));
 });
 
 router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {

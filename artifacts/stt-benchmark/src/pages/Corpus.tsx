@@ -21,7 +21,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  Trophy,
 } from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -32,8 +31,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { apiBase } from "@/lib/api-base"
 import { SpanAdjudicator } from "@/components/span-adjudicator"
+import { ProviderComparisonSection } from "@/components/provider-comparison-section"
 import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 
 // ---------------------------------------------------------------------------
@@ -48,25 +47,13 @@ import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 // verification result, plus the audio player. No second page, no navigation.
 // ---------------------------------------------------------------------------
 
-/** Speaker turns parsed out of a provider transcript ("AI: ...", "User: ..."). */
-type Turn = { speaker: string | null; text: string }
-
-function parseTurns(transcript: string | null | undefined): Turn[] {
-  if (!transcript) return []
-  return transcript
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const match = /^([A-Za-z][A-Za-z ]{0,14}):\s*(.*)$/.exec(line)
-      return match ? { speaker: match[1], text: match[2] } : { speaker: null, text: line }
-    })
-}
-
 export default function Corpus() {
   const { data: calls, isLoading, isError, error } = useListBenchmarkCalls()
   const search = useSearch()
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
+  // T-72: a Results group card links here as ?call=<id>&bulk=<id> so the
+  // comparison opens scoped to that bulk (its runs, its verdict ordering).
+  const deepLinkBulkId = React.useMemo(() => new URLSearchParams(search).get("bulk"), [search])
   const [searchText, setSearchText] = React.useState("")
   // UX review 2026-08-25: label/id substring search alone couldn't answer
   // "show me the needs_review trucking calls" on a 1000-row corpus.
@@ -227,7 +214,7 @@ export default function Corpus() {
                       {expanded && (
                         <TableRow>
                           <TableCell colSpan={7} className="bg-muted/10 p-0">
-                            <ExpandedCallDetail call={call} />
+                            <ExpandedCallDetail call={call} bulkId={deepLinkBulkId} />
                           </TableCell>
                         </TableRow>
                       )}
@@ -247,8 +234,7 @@ export default function Corpus() {
 // one call, now inline. `useListAgentScans()` is unfiltered/shared across
 // every expanded row rather than one query per row (corpus-sized dataset,
 // cheap either way, and avoids a waterfall as rows expand).
-function ExpandedCallDetail({ call }: { call: any }) {
-  const { toast } = useToast()
+function ExpandedCallDetail({ call, bulkId }: { call: any; bulkId: string | null }) {
   const { data: scans } = useListAgentScans()
   const latestScan = React.useMemo(
     () =>
@@ -257,56 +243,17 @@ function ExpandedCallDetail({ call }: { call: any }) {
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null,
     [scans, call.id],
   )
-  const draftTurns = React.useMemo(() => parseTurns(call.draftTranscript), [call.draftTranscript])
 
   return (
     <div className="space-y-5 border-t border-border p-5">
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <div className="space-y-4">
-          <div>
-            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Provider draft transcript
-            </h4>
-            {draftTurns.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No provider draft transcript on file for this call.</p>
-            ) : (
-              <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
-                {draftTurns.map((turn, i) => (
-                  <div key={i} className="flex gap-3">
-                    {turn.speaker && (
-                      <span className="w-12 shrink-0 pt-1 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        {turn.speaker}
-                      </span>
-                    )}
-                    <p className="rounded-md bg-muted/40 p-2.5 font-serif text-sm leading-relaxed text-foreground">
-                      {turn.text}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Audio</h4>
-            {call.audioObjectPath ? (
-              <audio
-                key={call.id}
-                src={`${apiBase()}/api/benchmark/calls/${call.id}/audio`}
-                controls
-                onError={() =>
-                  toast({
-                    title: "Couldn't load audio",
-                    description: "The recording link may have expired on Vapi's side, or no Vapi account is configured on the server.",
-                    variant: "destructive",
-                  })
-                }
-                className="h-9 w-full"
-              />
-            ) : (
-              <p className="text-xs text-muted-foreground">No audio URL on this call.</p>
-            )}
-          </div>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
+        {/* T-72 (E.4): reference transcript (gold, else the draft labelled
+            draft), audio, and every provider's output diffed against it
+            with the cell's metrics and the judge's pick. Replaces the
+            separate draft-transcript + audio panels and the scan-candidate
+            list that used to live further down. */}
+        <div>
+          <ProviderComparisonSection callId={call.id} bulkId={bulkId} />
         </div>
 
         <div className="space-y-4">
@@ -352,8 +299,6 @@ function ExpandedCallDetail({ call }: { call: any }) {
  * comparison, not an LLM guess. Both are real signal; neither is hidden.
  */
 function ProviderComparisonPanel({ scan }: { scan: any | null }) {
-  const [expandedProviderId, setExpandedProviderId] = React.useState<string | null>(null)
-
   if (!scan) {
     return (
       <DetailSection title="Provider comparison">
@@ -385,31 +330,6 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
   const candidates: Array<{ providerId: string; providerName: string; status: string; transcript: string | null }> =
     scan.candidates ?? []
   const flags = scan.hybridFlags
-  const lowConfByProvider: Record<string, Array<{ words: string[]; avgConfidence: number; severity: string }>> =
-    flags?.lowConfidenceSpans ?? {}
-  const disagreementByProvider = new Map<string, number>(
-    (flags?.crossProviderDisagreements ?? []).map((d: any) => [d.providerId, d.disagreementRate]),
-  )
-  const entityMismatchCountByProvider = new Map<string, number>()
-  for (const m of flags?.entityMismatches ?? []) {
-    for (const pid of [...Object.keys(m.valuesByProvider ?? {}), ...(m.missingProviderIds ?? [])]) {
-      entityMismatchCountByProvider.set(pid, (entityMismatchCountByProvider.get(pid) ?? 0) + 1)
-    }
-  }
-
-  const flagScoreOf = (providerId: string): number =>
-    (lowConfByProvider[providerId]?.length ?? 0) + (entityMismatchCountByProvider.get(providerId) ?? 0)
-
-  const sorted = [...candidates]
-    .filter((c) => c.status === "ok" && c.transcript)
-    .sort((a, b) => {
-      if (a.providerId === scan.agentPickProviderId) return -1
-      if (b.providerId === scan.agentPickProviderId) return 1
-      return flagScoreOf(a.providerId) - flagScoreOf(b.providerId)
-    })
-
-  const oneLiner = scan.agentPickReasoning ? scan.agentPickReasoning.split(/(?<=[.!?])\s/)[0] : null
-
   return (
     <DetailSection title="Provider comparison">
       {scan.status === "clean" ? (
@@ -433,25 +353,8 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
               made. Only ever show the trophy/badge when there's an actual
               agentPickProviderId; otherwise say plainly that OpenAI didn't
               return a usable pick for this one. */}
-          {scan.agentPickProviderId ? (
-            <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
-              <div className="flex items-center gap-1.5 text-sm">
-                <Trophy className="h-3.5 w-3.5 text-primary" />
-                <span className="font-semibold text-foreground">
-                  {candidates.find((c) => c.providerId === scan.agentPickProviderId)?.providerName ?? scan.agentPickProviderId}
-                </span>
-                <Badge variant="outline" className="text-[9px] uppercase">OpenAI pick</Badge>
-              </div>
-              {oneLiner && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{oneLiner}</p>}
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-              OpenAI didn't return a usable pick for this call -- providers below are ordered by fewest flags
-              instead, not an AI decision.
-              {oneLiner && <p className="mt-1 leading-relaxed">{oneLiner}</p>}
-            </div>
-          )}
-
+          {/* T-72: the judge's pick and its one-liner now sit in the
+              comparison section above, next to the row it picked. */}
           {(flags?.entityMismatches ?? []).length > 0 && (
             <div className="space-y-1 rounded-md border border-warning/25 bg-warning/5 p-2.5 text-xs">
               <span className="font-medium uppercase tracking-wide text-warning">Entities disagree</span>
@@ -470,74 +373,9 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
         </>
       )}
 
-      {/* Every candidate, winner first, with its flag summary. T-22: the
-          full transcript no longer opens by default -- the disagreement
-          reading under "Hear the disagreements" shows the call once with
-          only the disputed stretches expanded, which is what a reader
-          needs. The full text stays one click further in, for the rare
-          "but what did it say overall" question. */}
-      <div className="overflow-hidden rounded-md border border-border">
-        {sorted.map((c) => {
-          const isPicked = c.providerId === scan.agentPickProviderId
-          const spans = lowConfByProvider[c.providerId] ?? []
-          const disagreement = disagreementByProvider.get(c.providerId)
-          const entityCount = entityMismatchCountByProvider.get(c.providerId) ?? 0
-          const expanded = expandedProviderId === c.providerId
-          return (
-            <div key={c.providerId} className="border-b border-border last:border-b-0">
-              <button
-                onClick={() => setExpandedProviderId(expanded ? null : c.providerId)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
-              >
-                {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                <span className="text-sm font-medium">{c.providerName}</span>
-                {isPicked && (
-                  <Badge className="text-[9px] uppercase">
-                    <Trophy className="mr-1 h-2.5 w-2.5" /> Picked
-                  </Badge>
-                )}
-                <span className="ml-auto flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
-                  {spans.length > 0 && <span title="Low-confidence spans">{spans.length} low-conf</span>}
-                  {disagreement != null && disagreement > 0.15 && (
-                    <span className="text-warning" title="Disagrees with the other candidates on this share of words">
-                      {Math.round(disagreement * 100)}% disagree
-                    </span>
-                  )}
-                  {entityCount > 0 && <span className="text-warning">{entityCount} entity mismatch</span>}
-                  {spans.length === 0 && (disagreement == null || disagreement <= 0.15) && entityCount === 0 && (
-                    <span className="text-success">clean</span>
-                  )}
-                </span>
-              </button>
-              {expanded && (
-                <div className="space-y-2 border-t border-border bg-muted/20 p-3">
-                  {spans.length === 0 && entityCount === 0 && (
-                    <p className="text-xs text-muted-foreground">No low-confidence spans or entity mismatches for this provider.</p>
-                  )}
-                  {spans.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {spans.map((s, i) => (
-                        <span
-                          key={i}
-                          className="rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 font-mono text-[10px] text-warning"
-                          title={`Avg confidence ${(s.avgConfidence * 100).toFixed(0)}%`}
-                        >
-                          "{s.words.join(" ")}" ({(s.avgConfidence * 100).toFixed(0)}%)
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <details className="text-xs">
-                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Full transcript</summary>
-                    <p className="mt-2 whitespace-pre-wrap font-serif text-sm leading-relaxed text-foreground">{c.transcript}</p>
-                  </details>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
+      {/* T-72: the per-candidate rows (transcript, low-confidence spans,
+          disagreement share) moved into ProviderComparisonSection above,
+          where each provider's output is diffed against the reference. */}
       {/* T-08: the audio-anchored evidence view (D.3.2). Shown for clean
           scans too -- "clean" is the hybrid pass's threshold, and a reader
           may still want to hear the handful of words that differed. */}

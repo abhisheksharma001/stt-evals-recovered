@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { WordDiffView } from "@/components/word-diff-view"
 
 export default function Runs() {
   // Runs execute fire-and-forget in the background (no job queue -- see
@@ -196,46 +197,8 @@ function ExecuteButton({ runId }: { runId: string }) {
 // FR-E3 drill-down: per (provider, call) cell -- raw status/latency plus the
 // score, so an operator can see exactly why a run landed where it did
 // instead of trusting only the aggregate ranking.
-// Colors a gold-vs-hypothesis word alignment so a reviewer can see exactly
-// which words a provider missed instead of only an aggregate WER number.
-// "ok" words are dimmed (not the point), "sub"/"del" are what the provider
-// got wrong, "ins" is text the provider added that isn't in gold at all.
-// Exported for reuse by the Agent page (2026-08-26): its candidate-vs-real-
-// transcript diff highlighting uses the exact same colors/component so a
-// mismatch reads the same way everywhere in the app, not a second style.
-export function WordDiffView({ wordDiff }: { wordDiff: Array<{ op: string; ref: string | null; hyp: string | null }> }) {
-  if (!wordDiff.length) return <p className="text-xs text-muted-foreground">No diff available.</p>
-  const errorCount = wordDiff.filter(w => w.op !== "ok").length
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">{errorCount} word{errorCount === 1 ? '' : 's'} differ from gold, out of {wordDiff.length}.</p>
-      <p className="text-sm leading-7 font-mono">
-        {wordDiff.map((w, i) => {
-          if (w.op === "ok") {
-            return <span key={i} className="text-muted-foreground">{w.ref} </span>
-          }
-          if (w.op === "sub") {
-            return (
-              <span key={i} className="mr-1 inline-block">
-                {/* Full-opacity destructive + strikethrough: /70 opacity
-                    measured ≈3:1 contrast, vanishing the gold word a
-                    reviewer needs (theme review 2026-08-25). */}
-                <span className="line-through text-destructive">{w.ref}</span>
-                {"→"}
-                <span className="text-warning font-semibold">{w.hyp}</span>
-              </span>
-            )
-          }
-          if (w.op === "del") {
-            return <span key={i} className="line-through text-destructive mr-1">{w.ref}</span>
-          }
-          // ins: provider said a word that isn't in gold at all
-          return <span key={i} className="text-chart-3 font-semibold mr-1">+{w.hyp}</span>
-        })}
-      </p>
-    </div>
-  )
-}
+// T-72: WordDiffView moved to components/word-diff-view.tsx (one organism
+// for Runs, Corpus and Results).
 
 // 2026-08-27: the gold-free replacement for WordDiffView above -- shows
 // exactly why a cell was flagged (cross-provider disagreement, low-
@@ -471,7 +434,7 @@ function ResultsDialog({ runId }: { runId: string }) {
         {isExpanded && !hasHybridFlags && hasDiff && r.score?.wordDiff && (
           <TableRow>
             <TableCell colSpan={5} className="bg-muted/30">
-              <WordDiffView wordDiff={r.score.wordDiff} />
+              <WordDiffView wordDiff={r.score.wordDiff} referenceLabel="gold" />
             </TableCell>
           </TableRow>
         )}
