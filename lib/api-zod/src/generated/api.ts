@@ -128,6 +128,45 @@ export const CreateBenchmarkCallResponse = zod.object({
 
 
 /**
+ * @summary One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
+ */
+export const GetBenchmarkCallParams = zod.object({
+  "callId": zod.coerce.string()
+})
+
+export const GetBenchmarkCallResponse = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "durationSeconds": zod.number(),
+  "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
+  "hardCases": zod.array(zod.string()),
+  "goldTranscript": zod.string().nullish(),
+  "draftTranscript": zod.string().nullish(),
+  "entityNotes": zod.string().nullish(),
+  "entityReferences": zod.array(zod.object({
+  "type": zod.enum(['ro_number', 'unit_number', 'vin', 'phone_number', 'name', 'address', 'load_number', 'city']),
+  "value": zod.string()
+})),
+  "audioObjectPath": zod.string().nullish(),
+  "deIdAttestedByLabel": zod.string().nullish(),
+  "deIdAttestedAt": zod.coerce.date().nullish(),
+  "deIdSecondApproverLabel": zod.string().nullish(),
+  "deIdSecondApprovedAt": zod.coerce.date().nullish(),
+  "sourceProvider": zod.string().optional(),
+  "sourceCallId": zod.string().nullish(),
+  "sourceAccountLabel": zod.string().nullish(),
+  "sourceAssistantId": zod.string().nullish(),
+  "sourceStartedAt": zod.coerce.date().nullish(),
+  "sourceTranscriberProvider": zod.string().nullish(),
+  "sourceTranscriberModel": zod.string().nullish(),
+  "sourceEndedReason": zod.string().nullish(),
+  "sourceSuccessEvaluation": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Update gold-reference readiness and benchmark call metadata
  */
 export const UpdateBenchmarkCallParams = zod.object({
@@ -1519,6 +1558,16 @@ export const CreateBulkTemplateResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date().optional()
 })
+
+
+/**
+ * @summary Delete a saved template (T-50). Bulks already launched from it are untouched -- they froze their own call set and provider list at creation.
+ */
+export const DeleteBulkTemplateParams = zod.object({
+  "templateId": zod.coerce.string()
+})
+
+export const DeleteBulkTemplateResponse = zod.void()
 
 
 /**

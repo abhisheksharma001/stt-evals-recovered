@@ -75,11 +75,27 @@ export function extractProviderTimedWords(providerId: string, rawOutputJson: str
       }
       return out.length ? out : null;
     }
+    if (providerId === "elevenlabs-scribe") {
+      // T-48, verified against the real API 2026-08-29: Scribe returns
+      // words as {text, start, end, type, speaker_id, logprob} with
+      // seconds, and interleaves type "spacing" entries -- only type "word"
+      // is a word. The adapter's own response type never declared start/end,
+      // which is why this read as "no timings" before.
+      const words = (body as { words?: Array<{ text?: string; start?: number; end?: number; type?: string }> }).words;
+      if (!Array.isArray(words)) return null;
+      const out = words
+        .filter((w) => w.type === "word" && typeof w.text === "string" && isNum(w.start) && isNum(w.end))
+        .map((w) => ({ word: w.text!.trim(), start: w.start!, end: w.end! }));
+      return out.length ? out : null;
+    }
   } catch {
     return null;
   }
-  // openai-gpt-4o-transcribe (json response_format, text only),
-  // elevenlabs-scribe (words carry speaker_id only in the captured
-  // response), speechmatics: no word timings we have verified.
+  // openai-gpt-4o-transcribe: text only, and not requestable otherwise --
+  // verified 2026-08-29 against the real API: response_format=verbose_json
+  // is rejected ("response_format 'verbose_json' is not compatible with
+  // model 'gpt-4o-transcribe'. Use 'json' or 'text' instead.") and
+  // timestamp_granularities[]=word with json returns {text, usage} only.
+  // speechmatics: no captured response yet to read a shape from.
   return null;
 }

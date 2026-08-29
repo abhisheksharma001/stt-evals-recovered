@@ -21,6 +21,7 @@ import {
   CreateBulkResponse,
   CreateBulkTemplateBody,
   CreateBulkTemplateResponse,
+  DeleteBulkTemplateParams,
   GetBulkManifestParams,
   GetBulkManifestResponse,
   GetBulkParams,
@@ -704,6 +705,34 @@ router.post("/benchmark/bulk-templates", async (req, res): Promise<void> => {
   res
     .status(201)
     .json(CreateBulkTemplateResponse.parse(serializeTemplate(template)));
+});
+
+// T-50: a wrong template (bad band, wrong providers) used to be permanent
+// from the UI. Bulks launched from it are not affected: a bulk froze its own
+// call set and provider list when it was created and never reads the
+// template again (there is no FK between the two, by design).
+router.delete("/benchmark/bulk-templates/:templateId", async (req, res): Promise<void> => {
+  const params = DeleteBulkTemplateParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [deleted] = await db
+    .delete(bulkTemplatesTable)
+    .where(eq(bulkTemplatesTable.id, params.data.templateId))
+    .returning();
+  if (!deleted) {
+    res.status(404).json({ error: "Bulk template not found" });
+    return;
+  }
+  await writeAudit({
+    entityType: "bulk_template",
+    entityId: deleted.id,
+    actorLabel: actorFromRequest(req),
+    action: "delete",
+    beforeState: serializeTemplate(deleted),
+  });
+  res.status(204).end();
 });
 
 router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Promise<void> => {

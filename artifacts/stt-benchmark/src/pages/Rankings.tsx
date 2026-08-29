@@ -655,7 +655,7 @@ export default function Rankings() {
                         {r.score.cleanCallRate != null ? `${(r.score.cleanCallRate * 100).toFixed(0)}%` : <span title="Not in this snapshot">—</span>}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
-                        {r.score.latencyFinalMs != null ? `${r.score.latencyFinalMs}ms` : <span title="Not measured in this run">—</span>}
+                        {r.score.latencyFinalMs != null ? `${Math.round(r.score.latencyFinalMs)}ms` : <span title="Not measured in this run">—</span>}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {r.score.costPerMinute != null ? `$${r.score.costPerMinute.toFixed(4)}` : <span title="Not measured in this run">—</span>}

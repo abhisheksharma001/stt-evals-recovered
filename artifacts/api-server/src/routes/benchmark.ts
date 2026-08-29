@@ -48,6 +48,8 @@ import {
   PreviewVapiCallsBody,
   PreviewVapiCallsResponse,
   UpdateBenchmarkCallBody,
+  GetBenchmarkCallParams,
+  GetBenchmarkCallResponse,
   UpdateBenchmarkCallParams,
   UpdateBenchmarkCallResponse,
   UpdateBenchmarkProviderBody,
@@ -423,6 +425,26 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(CreateBenchmarkCallResponse.parse(serializeCall(call)));
+});
+
+// T-51: one call by id. The list route above is the corpus (121 calls today,
+// 1,000+ as verticals come on); nothing that wants one row should pull it.
+router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
+  const params = GetBenchmarkCallParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [call] = await db
+    .select()
+    .from(benchmarkCallsTable)
+    .where(eq(benchmarkCallsTable.id, params.data.callId))
+    .limit(1);
+  if (!call) {
+    res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  res.json(GetBenchmarkCallResponse.parse(serializeCall(call)));
 });
 
 router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
