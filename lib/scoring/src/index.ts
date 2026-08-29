@@ -180,48 +180,69 @@ export function normalizeEntity(value: string): string {
     .replace(/[^A-Z0-9]/g, "");
 }
 
+// T-33: the one CPU-bound routine in the system. Every hybrid flag, span,
+// correlation and WER goes through here, once per (provider pair, call), so
+// a bulk of N calls x P providers runs it ~N*P^2 times. The recurrence is
+// plain Levenshtein with the tie-break sub > del > ins (kept bit-for-bit
+// identical to the original -- index.test.ts proves it against a copy of
+// the old implementation). What changed is only how it is laid out:
+//   * distance lives in two Int32Array rows (the recurrence only ever
+//     looks one row back), not an array of arrays for the whole matrix;
+//   * ops live in one Uint8Array of rows*cols bytes -- needed for the
+//     backtrace, but a byte per cell instead of a JS string per cell;
+//   * the inner loop allocates nothing: the old code built three objects
+//     and sorted them for every mismatched cell.
+// Measured 2026-08-29 (tsx, M-series, see PR): 0.285 -> 0.028 ms at 32
+// words (10x), 3.0 -> 0.12 ms at 160 (24x), 607 -> 32 ms at 2,000 (19x).
+const OP_OK = 0;
+const OP_SUB = 1;
+const OP_DEL = 2;
+const OP_INS = 3;
+const OP_NAMES = ["ok", "sub", "del", "ins"] as const;
+
 function alignWords(
   reference: string[],
   hypothesis: string[],
 ): { counts: EditCounts; ops: WordDiffOp[] } {
   const rows = reference.length + 1;
   const cols = hypothesis.length + 1;
-  const distance = Array.from({ length: rows }, () =>
-    Array<number>(cols).fill(0),
-  );
-  const operation = Array.from({ length: rows }, () =>
-    Array<"ok" | "sub" | "del" | "ins">(cols).fill("ok"),
-  );
+  const operation = new Uint8Array(rows * cols);
+  let previous = new Int32Array(cols);
+  let current = new Int32Array(cols);
 
-  for (let row = 1; row < rows; row += 1) {
-    distance[row][0] = row;
-    operation[row][0] = "del";
-  }
   for (let col = 1; col < cols; col += 1) {
-    distance[0][col] = col;
-    operation[0][col] = "ins";
+    previous[col] = col;
+    operation[col] = OP_INS;
   }
 
   for (let row = 1; row < rows; row += 1) {
+    const base = row * cols;
+    current[0] = row;
+    operation[base] = OP_DEL;
+    const refWord = reference[row - 1];
     for (let col = 1; col < cols; col += 1) {
-      if (reference[row - 1] === hypothesis[col - 1]) {
-        distance[row][col] = distance[row - 1][col - 1];
-        operation[row][col] = "ok";
+      if (refWord === hypothesis[col - 1]) {
+        current[col] = previous[col - 1];
+        operation[base + col] = OP_OK;
         continue;
       }
-
-      const candidates = [
-        { cost: distance[row - 1][col - 1] + 1, op: "sub" as const, priority: 0 },
-        { cost: distance[row - 1][col] + 1, op: "del" as const, priority: 1 },
-        { cost: distance[row][col - 1] + 1, op: "ins" as const, priority: 2 },
-      ].sort((left, right) =>
-        left.cost === right.cost
-          ? left.priority - right.priority
-          : left.cost - right.cost,
-      );
-      distance[row][col] = candidates[0].cost;
-      operation[row][col] = candidates[0].op;
+      const sub = previous[col - 1] + 1;
+      const del = previous[col] + 1;
+      const ins = current[col - 1] + 1;
+      if (sub <= del && sub <= ins) {
+        current[col] = sub;
+        operation[base + col] = OP_SUB;
+      } else if (del <= ins) {
+        current[col] = del;
+        operation[base + col] = OP_DEL;
+      } else {
+        current[col] = ins;
+        operation[base + col] = OP_INS;
+      }
     }
+    const swap = previous;
+    previous = current;
+    current = swap;
   }
 
   let row = reference.length;
@@ -232,13 +253,14 @@ function alignWords(
   const opsReversed: WordDiffOp[] = [];
 
   while (row > 0 || col > 0) {
-    const op = operation[row][col];
-    if (op === "ok" || op === "sub") {
-      substitutions += op === "sub" ? 1 : 0;
+    const code = operation[row * cols + col];
+    const op = OP_NAMES[code];
+    if (code === OP_OK || code === OP_SUB) {
+      if (code === OP_SUB) substitutions += 1;
       opsReversed.push({ op, ref: reference[row - 1], hyp: hypothesis[col - 1] });
       row -= 1;
       col -= 1;
-    } else if (op === "del") {
+    } else if (code === OP_DEL) {
       deletions += 1;
       opsReversed.push({ op, ref: reference[row - 1], hyp: null });
       row -= 1;
