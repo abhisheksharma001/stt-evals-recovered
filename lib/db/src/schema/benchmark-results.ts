@@ -3,6 +3,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -63,6 +64,20 @@ export const benchmarkProviderCallResultsTable = pgTable(
       .notNull()
       .defaultNow(),
   },
+  (table) => [
+    // T-27: one row per cell, enforced by the database rather than by the
+    // executor remembering to clean up. Every writer goes through
+    // upsertResult() in run-executor.ts, so a second attempt at the same
+    // (run, call, provider) replaces the first row in place instead of
+    // stacking a duplicate next to it -- the failure mode found live on
+    // 2026-08-25, and the one a concurrent double-execution of a run
+    // (documented gap, no durable job queue) would otherwise reintroduce.
+    uniqueIndex("benchmark_provider_call_results_cell_key").on(
+      table.runId,
+      table.callId,
+      table.providerId,
+    ),
+  ],
 );
 
 export const insertBenchmarkProviderCallResultSchema = createInsertSchema(
