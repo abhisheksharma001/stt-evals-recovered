@@ -7,7 +7,7 @@
 // right after computeHybridFlagsForRun. No code path here spends money that
 // the old manual Scan button didn't already spend for a flagged call; the
 // only change is WHO calls it (the executor, not a human's click).
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 import {
   APP_SETTINGS_ID,
   appSettingsTable,
@@ -378,6 +378,11 @@ export async function runAutoAgentVerificationForRun(
         eq(benchmarkAgentScansTable.runId, runId),
         inArray(benchmarkAgentScansTable.callId, [...byCallId.keys()]),
         inArray(benchmarkAgentScansTable.status, ["clean", "flagged", "approved", "rejected"]),
+        // T-63: a `flagged` scan whose judge named nothing (pre-BAML strict-
+        // schema era) is not finished -- there is no pick to show and nothing
+        // for judge-accuracy to replay -- so re-executing the run re-judges it.
+        // A new scan row is written; the null-pick row stays as history.
+        or(ne(benchmarkAgentScansTable.status, "flagged"), isNotNull(benchmarkAgentScansTable.agentPickResultId)),
       ),
     );
   const alreadyVerified = new Set(finishedScans.map((s) => s.callId));

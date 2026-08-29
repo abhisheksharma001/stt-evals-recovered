@@ -15,16 +15,12 @@
 
 name: Deploy web (Vercel)
 
+# T-68 (2026-08-29): manual-only. No VERCEL_* secrets exist and nothing is
+# hosted on Vercel today, so the push trigger only painted main red on every
+# UI change. Re-add the `push` trigger (paths: artifacts/stt-benchmark/**,
+# lib/api-spec/**, lib/api-zod/**, lib/api-client-react/**, lib/scoring/**)
+# once the secrets are set and Vercel hosting is a deliberate decision.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "artifacts/stt-benchmark/**"
-      - "lib/api-spec/**"
-      - "lib/api-zod/**"
-      - "lib/api-client-react/**"
-      - "lib/scoring/**"
-      - ".github/workflows/deploy-web.yml"
   workflow_dispatch:
 
 concurrency:
