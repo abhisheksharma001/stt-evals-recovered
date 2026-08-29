@@ -1318,10 +1318,12 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         // 2026-08-27 (technical-fixes FIX-5/UX-7): a known, deterministic
         // failure cause (Vapi's retention window, the Supabase archive-bucket
         // 403) is surfaced here for free, with no click and no stored
-        // failureDiagnosis needed -- computed from errorMessage on every
-        // read. An operator's own "AI analysis" click (which DOES persist to
-        // failureDiagnosis) always takes priority once it exists.
-        const known = result.errorMessage ? matchKnownFailure(result.errorMessage) : null;
+        // failureDiagnosis needed. T-41: looked up from the stored
+        // failureClass (the error sentence is only consulted for rows that
+        // predate classification). An operator's own "AI analysis" click
+        // (which DOES persist to failureDiagnosis) always takes priority
+        // once it exists.
+        const known = result.status === "failed" ? matchKnownFailure(result) : null;
         return {
         id: result.id,
         runId: result.runId,
@@ -1333,11 +1335,9 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         httpStatus: result.httpStatus,
         hypothesisTranscript: result.hypothesisTranscript,
         errorMessage: result.errorMessage,
-        // T-06: the stored class, verbatim. Note the difference from
-        // `known` above -- matchKnownFailure() reads errorMessage to build
-        // a human-readable explanation and suggested fix for display;
-        // failureClass is the machine-readable cause, set where the failure
-        // happened. The two are never derived from each other.
+        // T-06: the stored class, verbatim -- the machine-readable cause,
+        // set where the failure happened. T-41: `known` above is derived
+        // FROM it (one cause of record), never the other way round.
         failureClass: result.failureClass,
         failureDiagnosis: result.failureDiagnosis ?? known?.diagnosis ?? null,
         failureSuggestedFix: result.failureSuggestedFix ?? known?.suggestedFix ?? null,
@@ -1411,6 +1411,7 @@ router.post("/benchmark/results/:resultId/analyze-failure", async (req, res): Pr
       providerName: row.provider.name,
       errorMessage: row.result.errorMessage,
       httpStatus: row.result.httpStatus,
+      failureClass: row.result.failureClass,
     });
   } catch (err) {
     if (err instanceof AgentConfigError) {

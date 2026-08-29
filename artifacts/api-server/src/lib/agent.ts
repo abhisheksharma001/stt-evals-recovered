@@ -11,6 +11,7 @@
 // of raw fetch against the provider's REST API rather than an SDK dependency.
 
 import type { BenchmarkAgentFlag } from "@workspace/db";
+import type { FailureClass } from "@workspace/stt-providers";
 import { BamlClientFinishReasonError, BamlClientHttpError, BamlValidationError, ClientRegistry, Collector, setLogLevel } from "@boundaryml/baml";
 import { b } from "../baml_client";
 import TypeBuilder from "../baml_client/type_builder";
@@ -286,46 +287,80 @@ function toAgentRequestError(err: unknown): Error {
 // currently account for over half of all live failures (Vapi's 14-day
 // retention window, and the Supabase archive-bucket 403 -- see
 // docs/backlog/good-to-have.md and docs/PRD-technical-fixes.md). Neither
-// needs an LLM call to diagnose; the error text itself already says exactly
-// what's wrong, every time. Matched before analyzeFailure ever runs, so a
-// known cause is free and instant instead of a paid, repeated OpenAI call
+// needs an LLM call to diagnose. Matched before analyzeFailure ever runs, so
+// a known cause is free and instant instead of a paid, repeated OpenAI call
 // re-discovering the same fact on every cell that hits it.
-export function matchKnownFailure(
+//
+// T-41: keyed on the stored `failureClass`, not on the error sentence. The
+// class was decided at the throw site by the code holding the real HTTP
+// status (T-06); reading the sentence again here to reach the same
+// conclusion was a second, independent cause of record that a vendor
+// rewording its error text would silently split from the first. Now there
+// is one: the class says what happened, this table says what that means.
+const KNOWN_FAILURE_BY_CLASS: Partial<
+  Record<FailureClass, { diagnosis: string; suggestedFix: string }>
+> = {
+  retention_expired: {
+    diagnosis:
+      "This call's recording is older than Vapi's plan retains (14 days), so Vapi can no longer " +
+      "issue a fresh download link for it -- this is permanent, not a transient failure, and every " +
+      "provider hits it identically for this call.",
+    suggestedFix:
+      "Not retryable. Either upgrade the Vapi plan's retention window before this happens again, or " +
+      "accept this call as permanently excluded from future runs. If it was ever transcribed " +
+      "successfully before, that cached audio is reusable -- newly-imported calls won't be if left " +
+      "unrun past day 14.",
+  },
+  audio_url_forbidden: {
+    diagnosis:
+      "This call's recording lives in the older Supabase \"archive\" storage bucket, and the link " +
+      "Vapi hands back for it was never actually signed -- every provider gets an HTTP 403 straight " +
+      "from Supabase. Confirmed as a bucket-level split, not a per-call or per-provider flake.",
+    suggestedFix:
+      "Not fixable from this app. Needs either Vapi support to fix the signing for this bucket, or " +
+      "direct read access to the Supabase archive bucket as a workaround.",
+  },
+};
+
+// T-41 legacy path, and the ONLY place left that reads an error sentence to
+// decide a cause. Applies solely to rows whose `failureClass` is null -- rows
+// written before T-06 existed. T-40's migration (`lib/db/migrations/
+// t40-backfill-failure-class.mjs`) classifies those from the same text;
+// once it has run on a database, no row reaches this branch there and it
+// can be deleted. Kept so the free diagnosis those rows show today does not
+// vanish on a database where the migration has not yet been applied
+// (2026-08-30: the local DB -- 167 failed rows, every one still null).
+function legacyKnownFailureFromMessage(
   errorMessage: string,
 ): { diagnosis: string; suggestedFix: string } | null {
-  if (errorMessage.includes("retention window")) {
-    return {
-      diagnosis:
-        "This call's recording is older than Vapi's plan retains (14 days), so Vapi can no longer " +
-        "issue a fresh download link for it -- this is permanent, not a transient failure, and every " +
-        "provider hits it identically for this call.",
-      suggestedFix:
-        "Not retryable. Either upgrade the Vapi plan's retention window before this happens again, or " +
-        "accept this call as permanently excluded from future runs. If it was ever transcribed " +
-        "successfully before, that cached audio is reusable -- newly-imported calls won't be if left " +
-        "unrun past day 14.",
-    };
-  }
+  if (errorMessage.includes("retention window")) return KNOWN_FAILURE_BY_CLASS.retention_expired ?? null;
   if (errorMessage.includes("storage.supabase.co") || errorMessage.includes("archive/")) {
-    return {
-      diagnosis:
-        "This call's recording lives in the older Supabase \"archive\" storage bucket, and the link " +
-        "Vapi hands back for it was never actually signed -- every provider gets an HTTP 403 straight " +
-        "from Supabase. Confirmed as a bucket-level split, not a per-call or per-provider flake.",
-      suggestedFix:
-        "Not fixable from this app. Needs either Vapi support to fix the signing for this bucket, or " +
-        "direct read access to the Supabase archive bucket as a workaround.",
-    };
+    return KNOWN_FAILURE_BY_CLASS.audio_url_forbidden ?? null;
   }
   return null;
+}
+
+/**
+ * The human-readable diagnosis + fix for a failure whose cause is already
+ * known deterministically, or null when it is not (and an LLM analysis is
+ * the next step). Driven by `failureClass`; falls back to the error text
+ * only when the row was never classified (see legacyKnownFailureFromMessage).
+ */
+export function matchKnownFailure(cell: {
+  failureClass: FailureClass | null;
+  errorMessage: string | null;
+}): { diagnosis: string; suggestedFix: string } | null {
+  if (cell.failureClass !== null) return KNOWN_FAILURE_BY_CLASS[cell.failureClass] ?? null;
+  return cell.errorMessage ? legacyKnownFailureFromMessage(cell.errorMessage) : null;
 }
 
 export async function analyzeFailure(params: {
   providerName: string;
   errorMessage: string;
   httpStatus: number | null;
+  failureClass: FailureClass | null;
 }): Promise<{ diagnosis: string; suggestedFix: string }> {
-  const known = matchKnownFailure(params.errorMessage);
+  const known = matchKnownFailure(params);
   if (known) return known;
 
   const { data: result } = await callOpenAi({

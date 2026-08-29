@@ -23,7 +23,7 @@ import { resolveProductionProviderId } from "./verdict";
 // 2026-08-27, per Abhishek ("let's not take the calls which are 14 days
 // back, so we never encounter this problem again"): matches the warning
 // threshold already shown in Corpus's RetentionWarning UI and the
-// "retention window" known-cause text in lib/agent.ts's matchKnownFailure --
+// `retention_expired` known-cause text in lib/agent.ts's KNOWN_FAILURE_BY_CLASS --
 // one number, not three independent guesses at the same Vapi plan limit.
 const VAPI_RETENTION_WINDOW_DAYS = 14;
 
