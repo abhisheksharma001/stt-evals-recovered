@@ -23,6 +23,7 @@ import { judgeCandidates } from "./agent";
 import { computeHybridFlagsForCandidates } from "./hybrid-flagging";
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
+import { drainWithConcurrency, envInt } from "./concurrency";
 
 /** T-37: an audit row is a record OF the scan, not the scan. If it cannot
  * be written, the scan still landed and the money is still accounted for,
@@ -41,7 +42,6 @@ async function auditOrLog(entry: Parameters<typeof writeAudit>[0], callId: strin
  * on this machine; set REDACT_TRANSCRIPT_TEXT_IN_LOGS=1 before shipping
  * logs anywhere and only the length is logged. */
 const REDACT_TRANSCRIPT_TEXT_IN_LOGS = process.env.REDACT_TRANSCRIPT_TEXT_IN_LOGS === "1";
-import { drainWithConcurrency, envInt } from "./run-executor";
 
 /** Human-readable {text, reason} restatements of the hybrid flags, for the
  * `flags` column the UI already knows how to render. Kept separate from the
@@ -407,8 +407,7 @@ export async function runAutoAgentVerificationForRun(
   // T-15: the calls have no ordering constraint and each is one OpenAI
   // round-trip, so they run through the same fixed-size worker pool the
   // provider cells did. byCallId is a Map, so each call is one item -- no
-  // call can be picked up twice. Read lazily (not at module load): this
-  // file and run-executor.ts import each other.
+  // call can be picked up twice.
   const concurrency = envInt("AGENT_CONCURRENCY", 4, 16);
   const started = Date.now();
   await drainWithConcurrency([...byCallId.entries()], concurrency, async ([callId, callRows]) => {
