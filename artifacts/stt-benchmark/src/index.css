@@ -4,6 +4,11 @@
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 
+/* One committed light surface (T-70; dark mode dropped per PRD-v4-uiux E.2
+   default). The `dark` variant is pinned to a `.dark` ancestor that nothing
+   ever adds, so the handful of `dark:` utilities in components/ui stay inert
+   instead of falling back to Tailwind's default prefers-color-scheme media
+   query and half-flipping the app on a dark OS. */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -83,85 +88,94 @@
 }
 
 :root {
-  --button-outline: rgba(255, 255, 255, 0.08);
-  --badge-outline: rgba(255, 255, 255, 0.06);
+  color-scheme: light;
+
+  /* Overlays on a light ground are ink-tinted, not white-tinted. */
+  --button-outline: rgba(43, 32, 23, 0.12);
+  --badge-outline: rgba(43, 32, 23, 0.1);
   --opaque-button-border-intensity: 10;
-  --elevate-1: rgba(255, 255, 255, 0.035);
-  --elevate-2: rgba(255, 255, 255, 0.07);
+  --elevate-1: rgba(43, 32, 23, 0.045);
+  --elevate-2: rgba(43, 32, 23, 0.09);
 
   /*
-   * Warm clay ground, one coral accent, jade for good and rose for wrong.
-   * Committed to a single dark surface: transcript correction is long-form
-   * reading work, and the previous light-body / dark-sidebar split made the
-   * two halves of the app look like two products.
+   * T-70 (PRD-v4-uiux E.2): one warm light surface. Cream/sand ground, warm
+   * near-black ink, warm greys hue-biased toward the accent (never a pure
+   * mid-grey), one terracotta accent deep enough to hold 4.5:1 on cream, jade
+   * for good and rose for wrong re-tuned for a light ground. Token-level only.
+   * Every text/ground pair below was checked >= 4.5:1 (WCAG AA) — including
+   * muted text on every surface it can sit on — with the checker in the PR.
+   * The T-32 verdict artefact (api-server lib/verdict-artefact.ts) uses the
+   * same hexes so app and artefact read as one product.
    */
-  --background: 30 21% 7%;
-  --foreground: 32 39% 94%;
-  --border: 30 18% 15%;
+  --background: 38 40% 95%;
+  --foreground: 26 30% 13%;
+  --border: 34 20% 82%;
 
-  --card: 30 19% 10%;
-  --card-foreground: 32 39% 94%;
-  --card-border: 30 17% 12%;
+  --card: 40 45% 98%;
+  --card-foreground: 26 30% 13%;
+  --card-border: 36 22% 88%;
 
-  --sidebar: 28 19% 9%;
-  --sidebar-foreground: 32 39% 94%;
-  --sidebar-border: 30 18% 15%;
-  --sidebar-primary: 12 83% 66%;
-  --sidebar-primary-foreground: 30 21% 7%;
-  --sidebar-accent: 30 20% 14%;
-  --sidebar-accent-foreground: 32 39% 94%;
-  --sidebar-ring: 12 83% 66%;
+  --sidebar: 36 30% 92%;
+  --sidebar-foreground: 26 30% 13%;
+  --sidebar-border: 34 20% 82%;
+  --sidebar-primary: 14 68% 40%;
+  --sidebar-primary-foreground: 40 45% 98%;
+  --sidebar-accent: 34 28% 86%;
+  --sidebar-accent-foreground: 26 30% 13%;
+  --sidebar-ring: 14 68% 40%;
 
-  --popover: 30 19% 10%;
-  --popover-foreground: 32 39% 94%;
-  --popover-border: 30 18% 15%;
+  --popover: 40 45% 98%;
+  --popover-foreground: 26 30% 13%;
+  --popover-border: 34 20% 82%;
 
-  --primary: 12 83% 66%;
-  --primary-foreground: 30 21% 7%;
+  --primary: 14 68% 40%;
+  --primary-foreground: 40 45% 98%;
 
-  --secondary: 30 20% 14%;
-  --secondary-foreground: 32 39% 94%;
+  --secondary: 34 28% 88%;
+  --secondary-foreground: 26 30% 13%;
 
-  --muted: 28 18% 12%;
-  /* 55% lightness (was 47%): 47% measured 4.38:1 on background -- below WCAG
-      AA -- while carrying the app's densest info layer (10px mono counts,
-      costs, model ids). UX review 2026-08-25. */
-  --muted-foreground: 33 10% 55%;
+  --muted: 36 28% 90%;
+  /* 36% lightness: 5.96:1 on background, 4.86:1 on sidebar-accent (the
+     darkest surface muted text sits on). Carries the densest info layer
+     (10px mono counts, costs, model ids), so it gets the most headroom. */
+  --muted-foreground: 28 14% 36%;
 
-  --accent: 30 20% 14%;
-  --accent-foreground: 32 39% 94%;
+  --accent: 34 28% 88%;
+  --accent-foreground: 26 30% 13%;
 
-  --destructive: 345 61% 61%;
-  --destructive-foreground: 30 21% 7%;
+  --destructive: 348 60% 40%;
+  --destructive-foreground: 40 45% 98%;
 
-  --input: 30 18% 15%;
-  --ring: 12 83% 66%;
+  --input: 34 20% 82%;
+  --ring: 14 68% 40%;
 
   /* Semantic state, kept separate from the brand accent. Every status pill
      in the app should read from these three, never a raw Tailwind color --
      that's what let green-500/amber-500/purple-500 leak in and clash with
-     the rest of the palette. */
-  --success: 152 33% 60%;
-  --success-foreground: 30 21% 7%;
-  --warning: 42 70% 58%;
-  --warning-foreground: 30 21% 7%;
+     the rest of the palette. All three are used as text directly on the
+     ground (text-success etc.), so they sit at ~30% lightness. */
+  --success: 152 45% 28%;
+  --success-foreground: 40 45% 98%;
+  --warning: 36 85% 30%;
+  --warning-foreground: 40 45% 98%;
 
-  /* Entity types: one hue each, all at a common low chroma so eight of them
-     read as a set rather than a rainbow. Referenced by the review UI. */
-  --entity-ro-number: 37 48% 69%;
-  --entity-unit-number: 147 28% 65%;
-  --entity-vin: 214 34% 71%;
-  --entity-phone-number: 322 30% 73%;
-  --entity-name: 11 52% 72%;
-  --entity-address: 178 26% 66%;
-  --entity-load-number: 76 28% 66%;
-  --entity-city: 249 32% 73%;
+  /* Entity types: one hue each, all at a common low-to-mid chroma and dark
+     enough to read as text on cream, so eight of them read as a set rather
+     than a rainbow. Referenced by the review UI. */
+  --entity-ro-number: 37 60% 33%;
+  --entity-unit-number: 147 35% 30%;
+  --entity-vin: 214 45% 40%;
+  --entity-phone-number: 322 40% 40%;
+  --entity-name: 11 55% 40%;
+  --entity-address: 178 40% 28%;
+  --entity-load-number: 76 45% 28%;
+  --entity-city: 249 40% 45%;
 
-  --chart-1: 12 83% 66%;
-  --chart-2: 152 33% 60%;
-  --chart-3: 214 34% 71%;
-  --chart-4: 37 48% 69%;
-  --chart-5: 322 30% 73%;
+  --chart-1: 14 68% 40%;
+  --chart-2: 152 45% 28%;
+  --chart-3: 214 45% 40%;
+  --chart-4: 37 60% 33%;
+  --chart-5: 322 40% 40%;
 
   --app-font-sans: 'Archivo', system-ui, sans-serif;
   /* Transcripts only -- the one place the interface face steps aside. */
@@ -170,15 +184,10 @@
 
   --radius: 0.625rem;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.26);
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 12px -6px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 20px -6px rgba(0, 0, 0, 0.5);
-}
-
-/* The app ships one committed look; `.dark` stays as an alias so any
-   component that opts into it renders identically instead of drifting. */
-.dark {
-  color-scheme: dark;
+  /* Warm-tinted shadows: on cream a neutral black shadow reads grey and dirty. */
+  --shadow-sm: 0 1px 2px rgba(60, 40, 20, 0.08);
+  --shadow: 0 1px 3px rgba(60, 40, 20, 0.1), 0 4px 12px -6px rgba(60, 40, 20, 0.14);
+  --shadow-md: 0 4px 20px -6px rgba(60, 40, 20, 0.18);
 }
 
 @layer base {

@@ -156,29 +156,31 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>STT verdict — ${esc(bulk.name)} — ${fmtDate(producedAt)}</title>
 <style>
+  /* T-70: same warm light palette as the app (stt-benchmark index.css) so the
+     artefact and a screenshot of the app read as one product. */
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 40px 48px; font: 15px/1.5 Georgia, "Times New Roman", serif; color: #1a1a1a; background: #fff; max-width: 880px; }
+  body { margin: 0; padding: 40px 48px; font: 15px/1.5 Georgia, "Times New Roman", serif; color: #2b2017; background: #f7f4ed; max-width: 880px; }
   h1 { font-size: 26px; margin: 0 0 4px; line-height: 1.2; }
   h2 { font-size: 18px; margin: 0 0 6px; }
-  .stamp { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #555; margin-bottom: 28px; }
+  .stamp { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #695b4f; margin-bottom: 28px; }
   .summary { font-size: 20px; line-height: 1.35; margin: 0 0 8px; }
-  .counts { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #555; margin: 0 0 24px; }
-  .group { border-top: 1px solid #ddd; padding: 20px 0 8px; break-inside: avoid; }
+  .counts { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #695b4f; margin: 0 0 24px; }
+  .group { border-top: 1px solid #dad2c8; padding: 20px 0 8px; break-inside: avoid; }
   .headline { font-size: 17px; margin: 0 0 4px; }
-  .sentence { margin: 0 0 8px; color: #333; }
-  .meta { margin: 0 0 4px; font-size: 13px; color: #444; }
-  .caveat { margin: 6px 0; font-size: 13px; color: #7a4b00; border-left: 3px solid #d99a2b; padding-left: 8px; }
-  .chip { display: inline-block; font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px; border-radius: 999px; border: 1px solid #999; vertical-align: middle; margin-left: 6px; }
-  .chip.winner { border-color: #2a7a3b; color: #2a7a3b; }
-  .chip.too_close { border-color: #b8860b; color: #8a6508; }
-  .tag { font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; color: #2a7a3b; border: 1px solid #2a7a3b; border-radius: 3px; padding: 2px 4px; margin-left: 4px; }
-  .tag.muted { color: #666; border-color: #999; }
+  .sentence { margin: 0 0 8px; color: #2b2017; }
+  .meta { margin: 0 0 4px; font-size: 13px; color: #695b4f; }
+  .caveat { margin: 6px 0; font-size: 13px; color: #8e5a0b; border-left: 3px solid #8e5a0b; padding-left: 8px; }
+  .chip { display: inline-block; font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px; border-radius: 999px; border: 1px solid #b3a89a; vertical-align: middle; margin-left: 6px; }
+  .chip.winner { border-color: #27684a; color: #27684a; }
+  .chip.too_close { border-color: #8e5a0b; color: #8e5a0b; }
+  .tag { font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; color: #27684a; border: 1px solid #27684a; border-radius: 3px; padding: 2px 4px; margin-left: 4px; }
+  .tag.muted { color: #695b4f; border-color: #b3a89a; }
   table { border-collapse: collapse; width: 100%; margin: 10px 0 6px; font-size: 13px; }
-  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #e5e5e5; }
-  th { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #555; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #e8e1d6; }
+  th { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #695b4f; }
   .num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .legend { margin-top: 28px; border-top: 1px solid #ddd; padding-top: 14px; font-size: 12px; color: #555; }
+  .legend { margin-top: 28px; border-top: 1px solid #dad2c8; padding-top: 14px; font-size: 12px; color: #695b4f; }
   .legend p { margin: 0 0 6px; }
   @media print { body { padding: 0; } .group { page-break-inside: avoid; } }
 </style>
