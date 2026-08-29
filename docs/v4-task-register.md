@@ -116,7 +116,7 @@ either on a date. Start it when its trigger fires.
 
 | ID | Task | Trigger |
 |---|---|---|
-| T-27 | Per-cell idempotency key `(runId, callId, providerId)`. **Not gated — this is cheap and worth doing regardless.** | Now, any time after Phase 1 |
+| T-27 | ✅ **done** (PR #40). Unique index `benchmark_provider_call_results_cell_key` on `(run_id, call_id, provider_id)`; every result write goes through one `upsertResult()` — a non-ok attempt is replaced in place (same `id`, so scores/picks never dangle; `created_at` moves to the new attempt), an `ok` row is never overwritten except by its own scoring-failure path, and a duplicate `ok` from a concurrent executor is logged and discarded instead of stacking a second row + score. Live table had 1,161 rows, 0 duplicate cells, so the index creates cleanly. **Deploy gate: index not yet pushed** — `drizzle-kit push` is a DB write the auto-mode classifier blocked; Abhishek runs `cd lib/db && set -a && . ../../artifacts/api-server/.env && set +a && pnpm run push`, **then** API rebuild + restart. Deploying the code before the index exists makes every cell write fail on `ON CONFLICT`. Live API stays on `5d19e22e5084` until then. | Now, any time after Phase 1 |
 | T-28 | Workflow DevKit, in-process. | Runs become weekly rather than monthly, **or** client count passes ~10. Below that, T-27 plus retry-failed-cells covers it. |
 | T-29 | Audio cache → blob storage. | A second machine needs to run the corpus, or T-28 lands |
 | T-30 | Failure-pattern graph + agent self-audit + the T-17 guard rails. | Client count passes ~15. Below that it is ~36 data points a year — over-structure. |
