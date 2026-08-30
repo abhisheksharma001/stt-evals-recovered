@@ -59,6 +59,18 @@ import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 
 export default function Corpus() {
   const { data: calls, isLoading, isError, error, refetch } = useListBenchmarkCalls()
+  // T-117: the latest AI-check verdict per call, for a chip on the row. Same
+  // query the expanded panel uses (react-query dedupes it); latest row wins,
+  // as in assistant-signals on Results, so a re-check never double-counts.
+  const { data: scans } = useListAgentScans()
+  const latestScanByCall = React.useMemo(() => {
+    const m = new Map<string, NonNullable<typeof scans>[number]>()
+    for (const sc of scans ?? []) {
+      const cur = m.get(sc.callId)
+      if (!cur || new Date(sc.createdAt).getTime() > new Date(cur.createdAt).getTime()) m.set(sc.callId, sc)
+    }
+    return m
+  }, [scans])
   const search = useSearch()
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   // T-72: a Results group card links here as ?call=<id>&bulk=<id> so the
@@ -184,6 +196,7 @@ export default function Corpus() {
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={call.status} />
+                            <JudgeChip scan={latestScanByCall.get(call.id) ?? null} />
                             <RetentionWarning sourceStartedAt={call.sourceStartedAt} />
                           </div>
                         </TableCell>
@@ -625,6 +638,33 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
 // uses elsewhere: not-started stays neutral, in-progress is the accent,
 // done is success. No raw Tailwind palette colors here -- that's what let
 // green-500/amber-500/purple-500 leak in and clash with the rest of the app.
+/**
+ * T-117: one small chip per row saying what the AI check made of this call
+ * and, when the judge ruled, how sure it was -- the same buckets Results
+ * shows per assistant (T-112), now findable per call. Counts and words
+ * only, never a score. No scan = no chip (the call has not been through a
+ * run); "checking" while a scan is in flight.
+ */
+function JudgeChip({ scan }: { scan: { status: string; judgeConfidence?: string | null; agentPickReasoning?: string | null } | null }) {
+  if (!scan) return null
+  const base = "inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px]"
+  if (scan.status === "scanning") return <span className={`${base} border-border bg-muted/40 text-muted-foreground`} data-testid="judge-chip" title="AI check in progress">checking</span>
+  if (scan.status === "clean") return <span className={`${base} border-border bg-muted/40 text-muted-foreground`} data-testid="judge-chip" title="Every provider agreed; the AI judge was never asked">clean</span>
+  if (scan.status === "error") return <span className={`${base} border-destructive/40 bg-destructive/10 text-destructive`} data-testid="judge-chip" title="The AI check itself failed on this call">check failed</span>
+  // flagged / approved / rejected -- the judge answered only if there is reasoning on the row (T-34).
+  if (!scan.agentPickReasoning) return <span className={`${base} border-border bg-muted/40 text-muted-foreground`} data-testid="judge-chip" title="Providers disagreed but the judge did not answer">flagged, no verdict</span>
+  const tone =
+    scan.judgeConfidence === "high" ? "border-success/40 bg-success/10 text-success"
+    : scan.judgeConfidence === "medium" ? "border-warning/40 bg-warning/10 text-warning"
+    : scan.judgeConfidence === "low" ? "border-destructive/40 bg-destructive/10 text-destructive"
+    : "border-border bg-muted/40 text-muted-foreground"
+  const word = scan.judgeConfidence ?? "not recorded"
+  const title = scan.judgeConfidence
+    ? `The AI judge ruled on this call and was ${scan.judgeConfidence} on it. Expand the row for its pick and reasoning.`
+    : "The AI judge ruled on this call before confidence was recorded (batch 8). A real verdict with no level on it."
+  return <span className={`${base} ${tone}`} data-testid="judge-chip" title={title}>judge: {word}</span>
+}
+
 function StatusBadge({ status }: { status: CallStatus }) {
   const styles: Record<CallStatus, string> = {
     needs_review: "bg-secondary text-muted-foreground border-border",
