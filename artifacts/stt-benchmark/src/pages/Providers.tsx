@@ -1,5 +1,6 @@
 import * as React from "react"
 import { formatPerMinute } from "@/lib/utils"
+import { CATALOG_RECHECK_DAYS, catalogAge } from "@/lib/catalog-age"
 import { TableStateBody, errorMessage } from "@/components/table-state"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -132,17 +133,6 @@ export default function Providers() {
 // verified against the vendor's docs on a dated day. The newest model gets
 // a one-click Enable that creates its own provider row -- old results stay
 // on the old row, so nothing is silently re-labelled.
-/** T-107: after this many days a vendor catalog (no list API) is flagged
- *  for a re-check. Deepgram and OpenAI are live and never age. */
-const CATALOG_RECHECK_DAYS = 60
-
-function catalogAge(m: { source: string; verifiedAt: string }): number | null {
-  if (m.source === "live") return null
-  const t = Date.parse(m.verifiedAt)
-  if (!Number.isFinite(t)) return null
-  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
-}
-
 function VendorModelsLine({ providers }: { providers: Provider[] }) {
   const qc = useQueryClient()
   const { toast } = useToast()
