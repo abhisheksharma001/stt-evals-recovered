@@ -224,6 +224,18 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 
 ---
 
+## Phase 14 — batch 9 (added 2026-08-30; register was drained after batch 8; set picked by Abhishek: "Apply pending backfills + recompute first")
+
+| ID | Task | Acceptance |
+|---|---|---|
+| T-111 | ~~**Apply the pending backfills and the hybrid-flag recompute**~~ ✅ **done 2026-08-30 — batch 9.** With Abhishek's go: `scripts/apply-backfills.sh --apply` then `recompute-hybrid-flags.ts --apply`. Before: T-65 cross-run pick links 106, T-63/T-66 legacy flagged scans 5, T-62 flux $0.0043/min, T-52 22 calls without a start time. After (dry run re-read): 0 / 0 / $0.0077 / 8 written, **14 stay null for good** (past Vapi's 14-day retention). 22 finished runs' hybrid flags recomputed under the T-101 equivalence rules. Database-only; `docs/runbooks/pending-backfills.md` records the date and after-counts. | Every count in the runbook reads 0 and the flux price 0.0077. |
+| T-112 | ~~**Results: how sure the AI judge was, per assistant**~~ ✅ **done 2026-08-30 — batch 9.** `GET /benchmark/assistant-signals?bulkId&assistantId` (`lib/assistant-signals.ts`, pure arithmetic in `assistant-signals-aggregate.ts` with 5 tests; scope rules = words-to-watch, latest scan per call, "judged" = T-34 rule). Each assistant card carries an "AI judge" line: verdicts / checked / clean / errored and the confidence split as counts — high, medium, low, **not recorded** (its own bucket: verdicts before T-108). Verified live (bulk `340400b2`): 56 checked, 56 judged, 56 not recorded; per-assistant 9/9/9; 404 on an unknown bulk, 400 on a non-uuid. Every verdict live predates T-108, so the first post-batch-8 bulk fills the other buckets. Mobbin: Adaline evaluator results. Lenny's: "How to do AI analysis you can actually trust" (2026-02-17). | A reader sees, per assistant, how sure the judge was — as counts, never a score. |
+| T-113 | ~~**Hard-case flags from Calls on Results**~~ ✅ **done 2026-08-30 — batch 9.** The same endpoint returns the hard-case summary for the scope (calls flagged, every tag with its call count, the flagged calls). The card shows "Flagged hard by a person" under the judge line, tags as chips, "open on Calls" → `/corpus?hard=1[&bulk=…]`; the Calls page honours `?hard=1` on load. **No call is flagged live** (121 calls, all `[]`), so the line is an empty state saying how to flag one. | A person's own judgement sits next to the machine's on the results card. |
+| T-114 | ~~**Vite sourcemap warnings**~~ ✅ **done 2026-08-30 — batch 9.** Cause: shadcn's `'use client'` directive (a React Server Components marker, meaningless in this Vite SPA) at the top of 16 `components/ui/*.tsx` files; Rollup warns through a sourcemap it cannot resolve when stripping it. Removed from all 16. Build prints 0 sourcemap warnings (was 2). The chunk-size notice is unrelated and stays. | `pnpm exec vite build` prints no "Error when using sourcemap" lines. |
+| T-115 | ~~**Q-3: pgvector on the Supabase project**~~ ✅ **done 2026-08-30 — batch 9.** Verified, not assumed: `DATABASE_URL` is the local Docker Postgres on :5433; the Supabase account has three projects, all INACTIVE, none for this tool — **no Supabase project holds this database**. Local `pg_available_extensions` has no `vector` entry, so pgvector cannot be enabled there without a different image. `PRD-v4-technical.md`'s "Postgres (Supabase)" line was stale and is fixed. Nothing to enable; T-30 phrase similarity would need a pgvector-capable Postgres first. | Q-3 has a dated, evidenced answer. |
+
+---
+
 ## Deferred, by name
 
 | ID | Task | Owner |
@@ -238,7 +250,7 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 |---|---|---|
 | Q-1 | ~~**Can the transcriber actually be switched per assistant in Vapi?**~~ ✅ **Answered 2026-08-30 (T-93, batch 5).** Yes: `transcriber` is a per-assistant field (read live on assistant `b3914788`: deepgram / flux-general-en with an AssemblyAI `fallbackPlan`), and Vapi's own OpenAPI has it on `PATCH /assistant/{id}` (`UpdateAssistantDTO.transcriber`, a oneOf over 14 providers incl. all 7 this tool benchmarks). No write was made. Detail: `docs/provider-data-samples.md`. | Phase 3 |
 | Q-2 | ~~Which providers share a base model (Whisper derivatives)? Needed for T-18.~~ ✅ **Answered 2026-08-30 (T-100, batch 6).** Of the four live providers only **Cartesia (built from `whisper-large-v3-turbo`, vendor-stated) and Gladia (Whisper-Zero lineage; Solaria-1 launch post has no architecture statement — "likely", not confirmed)** share a base. AssemblyAI (Conformer RNN-T), Deepgram, gpt-4o-transcribe (GPT-4o, not Whisper), ElevenLabs and Speechmatics are their own. Live T-18 correlation on bulk `340400b2`: cartesia↔gladia excess +0.021, third of ten pairs; assemblyai↔gladia +0.039 is highest — shared base is a weak signal here, votes stay unweighted. Table with sources in `docs/provider-data-samples.md`. | T-18 |
-| Q-3 | Is `pgvector` enabled on the Supabase project? Only matters if phrase similarity is wanted later. **Verify, don't assume.** | T-30 |
+| Q-3 | ~~Is `pgvector` enabled on the Supabase project?~~ **Answered 2026-08-30 (T-115, batch 9): no Supabase project holds this database (local Docker Postgres on :5433; the account's three Supabase projects are all INACTIVE and unrelated), and the local image has no `vector` extension available. Phrase similarity (T-30) needs a pgvector-capable Postgres first.** | T-30 |
 
 ---
 

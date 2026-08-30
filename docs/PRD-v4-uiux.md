@@ -1060,3 +1060,23 @@ disagreement colours because the two can land on the same word.
 
 Also in this batch, no new UI pattern: Setup vendor lines say how old a dated catalog is
 (T-107); T-110 is backend only.
+
+## G.8 Batch 9 (2026-08-30) — what it closed in this document
+
+**Evidence — judge confidence and hard cases on the results card (T-112, T-113)**
+**Pattern to use:** the evaluator's outcome shown as plain counts at the top of the results
+(Passed / Failed / Unknown, each its own number, "Unknown" never folded into "Failed")
+← [Adaline evaluator results](https://mobbin.com/screens/bc283f1b-d003-4ec8-950c-942a1aff9ac7).
+**Patterns to avoid:** a single confidence bar or gauge for the group — it turns three
+counts into one number a reader cannot take apart ← [Maze confidence level](https://mobbin.com/screens/fe3e2d6e-df87-4531-ab51-67b8865128dc),
+[Codecademy benchmark gauge](https://mobbin.com/screens/fc2dd380-28af-4459-95ba-a21396c65286).
+**What operators say:** an LLM judge is "a meta eval — you have to eval that eval"; its
+output is evidence about the judge as much as about the data ← "Why AI evals are the
+hottest new skill for product builders" (Hamel Husain & Shreya Shankar, 2025-09-25)
+https://www.youtube.com/watch?v=BsWxPI9UM4c. Distinguish what a signal can and cannot
+tell you ← "How to do AI analysis you can actually trust" (2026-02-17)
+https://www.lennysnewsletter.com/p/how-to-do-ai-analysis-you-can-actually.
+**Changes to the plan:** "not recorded" is its own bucket, never merged with "low"; the
+human's hard-case flags sit directly under the machine's line so the two are read together.
+**No evidence found for:** a results card that shows human flags beside an AI judge's
+confidence — the pairing is this project's own.
