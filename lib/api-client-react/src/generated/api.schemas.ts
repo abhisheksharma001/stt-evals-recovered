@@ -1339,6 +1339,9 @@ export interface BulkProgress {
   cellsPending: number;
   cellsCancelled: number;
   cellsSkippedPendingReview: number;
+  agentCallsTotal: number;
+  agentCallsChecked: number;
+  agentCallsInFlight: number;
 }
 
 export type BulkFailureGroupFailureClass = typeof BulkFailureGroupFailureClass[keyof typeof BulkFailureGroupFailureClass] | null;

@@ -1211,6 +1211,23 @@ function LiveBulkCard({ bulk }: { bulk: Bulk }) {
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div className={`h-full ${inFlight ? "bg-primary" : "bg-accent"}`} style={{ width: `${pct ?? 0}%` }} />
             </div>
+            {/* T-94 (U-15): the AI check is its own phase, paid to a different
+                vendor, so it gets its own line and bar -- never folded into
+                the STT count above. */}
+            {(p.agentCallsTotal > 0 || p.agentCallsInFlight > 0) && (
+              <div className="space-y-1 pt-1" data-testid="agent-progress">
+                <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
+                  <span>
+                    AI check: {p.agentCallsChecked}/{p.agentCallsTotal} calls verified
+                    {p.agentCallsInFlight > 0 && <> · <span className="text-primary">{p.agentCallsInFlight} in flight</span></>}
+                  </span>
+                  <span>{p.agentCallsTotal > 0 ? `${Math.round((p.agentCallsChecked / p.agentCallsTotal) * 100)}%` : "—"}</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-accent" style={{ width: `${p.agentCallsTotal > 0 ? Math.round((p.agentCallsChecked / p.agentCallsTotal) * 100) : 0}%` }} />
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">

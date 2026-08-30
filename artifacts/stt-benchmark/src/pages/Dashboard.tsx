@@ -131,6 +131,9 @@ function RunningNow({ bulk }: { bulk: NonNullable<BenchmarkDashboard["runningBul
           <>
             <span>{p.cellsOk} ok{p.cellsFailed > 0 ? `, ${p.cellsFailed} failed` : ""} of {p.cellsTotal}</span>
             <span>{p.callsRun}/{p.callsTotal} calls</span>
+            <span title="The AI check runs after the transcripts land; paid to OpenAI, not the STT vendors.">
+              AI check {p.agentCallsChecked}/{p.agentCallsTotal}{p.agentCallsInFlight > 0 ? ` · ${p.agentCallsInFlight} in flight` : ""}
+            </span>
             <span>STT so far {formatMicrocents(detail?.actualCost.sttCostMicrocents)} · AI check {formatMicrocents(detail?.actualCost.agentCostMicrocents)}</span>
           </>
         ) : (

@@ -1263,7 +1263,10 @@ export const GetBulkResponse = zod.object({
   "cellsFailed": zod.number(),
   "cellsPending": zod.number(),
   "cellsCancelled": zod.number(),
-  "cellsSkippedPendingReview": zod.number()
+  "cellsSkippedPendingReview": zod.number(),
+  "agentCallsTotal": zod.number(),
+  "agentCallsChecked": zod.number(),
+  "agentCallsInFlight": zod.number()
 }),
   "runs": zod.array(zod.object({
   "id": zod.string(),

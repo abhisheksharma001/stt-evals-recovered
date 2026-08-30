@@ -15,4 +15,7 @@ export interface BulkProgress {
   cellsPending: number;
   cellsCancelled: number;
   cellsSkippedPendingReview: number;
+  agentCallsTotal: number;
+  agentCallsChecked: number;
+  agentCallsInFlight: number;
 }

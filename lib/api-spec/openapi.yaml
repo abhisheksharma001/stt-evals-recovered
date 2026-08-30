@@ -2201,7 +2201,7 @@ components:
         sentence: { type: string }
     BulkProgress:
       type: object
-      required: [callsTotal, callsRun, cellsTotal, cellsOk, cellsFailed, cellsPending, cellsCancelled, cellsSkippedPendingReview]
+      required: [callsTotal, callsRun, cellsTotal, cellsOk, cellsFailed, cellsPending, cellsCancelled, cellsSkippedPendingReview, agentCallsTotal, agentCallsChecked, agentCallsInFlight]
       properties:
         # FR-BLK-13 structured counts.
         callsTotal: { type: number }
@@ -2212,6 +2212,12 @@ components:
         cellsPending: { type: number }
         cellsCancelled: { type: number }
         cellsSkippedPendingReview: { type: number }
+        # T-94 (U-15): the agent pass as its own phase. total = calls with an ok
+        # transcript; checked = calls whose latest scan finished; inFlight = calls
+        # the judge is on right now (this API process only).
+        agentCallsTotal: { type: number }
+        agentCallsChecked: { type: number }
+        agentCallsInFlight: { type: number }
     BulkFailureGroup:
       type: object
       required: [failureClass, cells, retryable]
