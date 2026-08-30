@@ -96,7 +96,6 @@ function Verdict({ bulk }: { bulk: BenchmarkDashboard["latestFinishedBulk"] }) {
 }
 
 function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
-  const open = data.spans ? data.spans.total - data.spans.adjudicated : null
   const attention = (n: number | null) => (n != null && n > 0 ? "attention" : "quiet")
   return (
     <Row>
@@ -104,14 +103,10 @@ function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
       <div className="flex flex-wrap gap-x-10 gap-y-4">
         <Figure value={data.callsAwaitingReview} label="calls awaiting review" href="/corpus" tone={attention(data.callsAwaitingReview)} />
         <Figure value={data.hardCaseCalls} label="hard cases" href="/corpus" tone={attention(data.hardCaseCalls)} />
-        <Figure value={open == null ? "—" : open} label="spans to rule on" href="/corpus" tone={attention(open)} />
         <Figure value={data.retryableFailedCells} label="transcripts a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
       </div>
-      <p className="text-xs text-muted-foreground">
-        {data.spans
-          ? `${data.spans.adjudicated} of ${data.spans.total} spans ruled on in the latest finished bulk; the AI judge's accuracy is unmeasured until a person rules on 10.`
-          : "No finished bulk yet, so nothing to rule on."}
-      </p>
+      {/* T-86: no human judge in this product. Nobody rules on spans; a
+          person flags a call (hard case / notes in Corpus), that is all. */}
     </Row>
   )
 }

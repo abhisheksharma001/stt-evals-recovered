@@ -20,13 +20,8 @@ import {
 } from "./judge-contract";
 
 // ---- floors ---------------------------------------------------------------
-// Human agreement: asserted only once there are enough comparable human
-// verdicts to mean something. Below MIN_HUMAN_SAMPLE the human half of the
-// contract is reported as "no sample" -- visibly, via a skipped test, never
-// as a silent pass. Raise MIN_HUMAN_AGREEMENT_RATE to the observed rate once
-// a real sample exists; it is deliberately not set from an empty sample.
-const MIN_HUMAN_SAMPLE = 10;
-const MIN_HUMAN_AGREEMENT_RATE = 0.6;
+// T-86: the human half of the contract is gone with the human judge. What
+// remains is the shape floor: a real pick from the candidate set, every time.
 // Scans: the T-25 acceptance ("a full bulk judged through BAML with zero
 // null picks") made permanent.
 const MIN_SCAN_SAMPLE = 20;
@@ -62,26 +57,6 @@ describe("judge contract fixture", () => {
     }
   });
 
-  it("records every adjudication case consistently", () => {
-    for (const a of fixture.adjudications) {
-      if (a.judgeProviderId !== null) expect(a.candidateProviderIds).toContain(a.judgeProviderId);
-      if (a.humanProviderId === null || a.judgeProviderId === null) expect(a.agrees).toBeNull();
-    }
-  });
-
-  it.skipIf(summary.adjudicationComparable < MIN_HUMAN_SAMPLE)(
-    `agrees with human adjudications at >= ${MIN_HUMAN_AGREEMENT_RATE * 100}% (sample: ${summary.adjudicationComparable} comparable)`,
-    () => {
-      expect(summary.adjudicationAgreementRate).not.toBeNull();
-      expect(summary.adjudicationAgreementRate!).toBeGreaterThanOrEqual(MIN_HUMAN_AGREEMENT_RATE);
-    },
-  );
-
-  it(`reports the human sample size honestly (${summary.adjudicationComparable} comparable of ${summary.adjudicationTotal} on file)`, () => {
-    // Not an assertion on the rate -- that is the test above. This one only
-    // exists so the sample size is printed in every CI run's test names.
-    expect(summary.adjudicationComparable).toBeGreaterThanOrEqual(0);
-  });
 });
 
 describe("judgeCandidates shape (no network)", () => {
@@ -108,11 +83,6 @@ describe("judgeCandidates shape (no network)", () => {
 describe("summarizeJudgeContract", () => {
   it("computes rates from cases, never from stored totals, and null from an empty sample", () => {
     const s = summarizeJudgeContract({
-      adjudications: [
-        { adjudicationId: "a", callId: "c", runId: "r", spanStartMs: 0, spanEndMs: 1, candidateProviderIds: ["p1", "p2"], humanProviderId: "p1", judgeProviderId: "p1", agrees: true },
-        { adjudicationId: "b", callId: "c", runId: "r", spanStartMs: 1, spanEndMs: 2, candidateProviderIds: ["p1", "p2"], humanProviderId: "p1", judgeProviderId: "p2", agrees: false },
-        { adjudicationId: "c", callId: "c", runId: "r", spanStartMs: 2, spanEndMs: 3, candidateProviderIds: ["p1", "p2"], humanProviderId: null, judgeProviderId: "p2", agrees: null },
-      ],
       scans: [
         { scanId: "s1", callId: "c", runId: "r", candidateProviderIds: ["p1", "p2"], storedPickProviderId: "p1", judgeProviderId: "p1", reasoningChars: 10, promptTokens: 1, completionTokens: 1 },
         { scanId: "s2", callId: "c", runId: "r", candidateProviderIds: ["p1", "p2"], storedPickProviderId: "p1", judgeProviderId: null, reasoningChars: 0, promptTokens: 1, completionTokens: 1 },
@@ -120,10 +90,6 @@ describe("summarizeJudgeContract", () => {
       ],
     });
     expect(s).toEqual({
-      adjudicationTotal: 3,
-      adjudicationComparable: 2,
-      adjudicationAgreements: 1,
-      adjudicationAgreementRate: 0.5,
       scanTotal: 3,
       scanNullPicks: 1,
       scanPicksOutsideCandidates: 1,
@@ -131,6 +97,6 @@ describe("summarizeJudgeContract", () => {
       scanPickMatchesStored: 1,
       scanPickMatchesStoredRate: 0.5,
     });
-    expect(summarizeJudgeContract({ adjudications: [], scans: [] }).adjudicationAgreementRate).toBeNull();
+    expect(summarizeJudgeContract({ scans: [] }).scanPickMatchesStoredRate).toBeNull();
   });
 });

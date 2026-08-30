@@ -43,12 +43,7 @@ export const GetBenchmarkDashboardResponse = zod.object({
   "needsHuman": zod.object({
   "callsAwaitingReview": zod.number(),
   "hardCaseCalls": zod.number(),
-  "retryableFailedCells": zod.number(),
-  "spans": zod.object({
-  "bulkId": zod.string(),
-  "total": zod.number(),
-  "adjudicated": zod.number()
-}).nullable()
+  "retryableFailedCells": zod.number()
 }),
   "thisMonth": zod.object({
   "monthStart": zod.coerce.date(),
@@ -169,6 +164,35 @@ export const GetCallDisagreementResponse = zod.object({
   "callId": zod.string(),
   "disagreements": zod.number().describe('Sum of peer flag counts across this call\'s scored providers. Lower is better.'),
   "providers": zod.number().describe('How many providers had a scored transcript for this call.')
+}))
+})
+
+
+/**
+ * @summary T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+ */
+export const GetWordsToWatchQueryParams = zod.object({
+  "bulkId": zod.coerce.string(),
+  "assistantId": zod.coerce.string().optional()
+})
+
+export const GetWordsToWatchResponse = zod.object({
+  "bulkId": zod.string(),
+  "assistantId": zod.string().nullable(),
+  "callsScanned": zod.number(),
+  "callsWithSpans": zod.number(),
+  "words": zod.array(zod.object({
+  "heardAs": zod.string(),
+  "kind": zod.enum(['number', 'word', 'filler']),
+  "noMajority": zod.boolean(),
+  "calls": zod.number(),
+  "spans": zod.number(),
+  "alternatives": zod.array(zod.object({
+  "text": zod.string(),
+  "count": zod.number(),
+  "providerIds": zod.array(zod.string())
+})),
+  "exampleCallIds": zod.array(zod.string())
 }))
 })
 
@@ -471,114 +495,8 @@ export const ListDisagreementSpansResponse = zod.object({
   "text": zod.string(),
   "agreesWithReference": zod.boolean(),
   "agreesWithMajority": zod.boolean()
-})),
-  "adjudication": zod.union([zod.object({
-  "id": zod.string(),
-  "callId": zod.string(),
-  "runId": zod.string(),
-  "spanStartMs": zod.number(),
-  "spanEndMs": zod.number(),
-  "correctProviderId": zod.string().nullable(),
-  "readings": zod.array(zod.object({
-  "providerId": zod.string(),
-  "text": zod.string()
-})),
-  "adjudicatedByLabel": zod.string(),
-  "adjudicatedAt": zod.string()
-}),zod.null()])
-}))
-})
-
-
-/**
- * @summary T-08 -- record a human verdict on one disagreement span. Re-adjudicating the same span in the same run replaces the earlier verdict; every verdict is audit-logged.
- */
-export const AdjudicateSpanParams = zod.object({
-  "callId": zod.coerce.string()
-})
-
-export const AdjudicateSpanBody = zod.object({
-  "runId": zod.string(),
-  "spanStartMs": zod.number(),
-  "spanEndMs": zod.number(),
-  "correctProviderId": zod.string().nullable(),
-  "readings": zod.array(zod.object({
-  "providerId": zod.string(),
-  "text": zod.string()
-}))
-})
-
-export const AdjudicateSpanResponse = zod.object({
-  "id": zod.string(),
-  "callId": zod.string(),
-  "runId": zod.string(),
-  "spanStartMs": zod.number(),
-  "spanEndMs": zod.number(),
-  "correctProviderId": zod.string().nullable(),
-  "readings": zod.array(zod.object({
-  "providerId": zod.string(),
-  "text": zod.string()
-})),
-  "adjudicatedByLabel": zod.string(),
-  "adjudicatedAt": zod.string()
-})
-
-
-/**
- * @summary T-09 -- how often the judge agrees with a human on adjudicated spans, with sample size. Free; arithmetic over stored replays.
- */
-export const GetJudgeAccuracyResponse = zod.object({
-  "totalVerdicts": zod.number(),
-  "replayed": zod.number(),
-  "pending": zod.number(),
-  "humanSaidNone": zod.number(),
-  "judgeNoPick": zod.number(),
-  "comparable": zod.number(),
-  "agreements": zod.number(),
-  "agreementRate": zod.number().nullable(),
-  "byAdjudicator": zod.array(zod.object({
-  "label": zod.string(),
-  "comparable": zod.number(),
-  "agreements": zod.number(),
-  "agreementRate": zod.number().nullable()
-})),
-  "majorityComparable": zod.number(),
-  "majorityAgreements": zod.number(),
-  "majorityAgreementRate": zod.number().nullable(),
-  "replayCostMicrocents": zod.number(),
-  "replayBatchLimit": zod.number(),
-  "items": zod.array(zod.object({
-  "adjudicationId": zod.string(),
-  "callId": zod.string(),
-  "runId": zod.string(),
-  "spanStartMs": zod.number(),
-  "spanEndMs": zod.number(),
-  "humanProviderId": zod.string().nullable(),
-  "judgeProviderId": zod.string().nullable(),
-  "agrees": zod.boolean().nullable(),
-  "judgeReasoning": zod.string().nullable(),
-  "adjudicatedByLabel": zod.string(),
-  "readings": zod.array(zod.object({
-  "providerId": zod.string(),
-  "text": zod.string()
 }))
 }))
-})
-
-
-/**
- * @summary T-09 -- replay human-adjudicated spans that the judge has not yet answered. Spends OpenAI money (one short judge call per span, capped per request); each span is replayed once, ever.
- */
-export const ReplayJudgeAccuracyBody = zod.object({
-  "limit": zod.number().nullish().describe('Max spans to replay in this request; capped server-side.')
-})
-
-export const ReplayJudgeAccuracyResponse = zod.object({
-  "replayed": zod.number(),
-  "remaining": zod.number().describe('Verdicts still not replayed after this request.'),
-  "spanNotFound": zod.number().describe('Verdicts whose span could not be rebuilt from stored results; marked replayed with no judge pick.'),
-  "judgeFailed": zod.number().describe('Judge calls that errored; left pending for a later replay.'),
-  "costMicrocents": zod.number()
 })
 
 

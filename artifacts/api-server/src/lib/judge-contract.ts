@@ -12,10 +12,9 @@
 // Two halves, deliberately split so neither can lie for the other:
 //
 //   src/judge-contract-record.ts  -- LIVE. Spends OpenAI money. Re-judges
-//                                    (a) every human-adjudicated span on
-//                                    file (T-08 rows, the only ground truth
-//                                    in the system) and (b) a fixed sample
-//                                    of saved flagged scans, with the
+//                                    a fixed sample of saved flagged scans
+//                                    (T-86: no human verdicts exist in this
+//                                    product any more), with the
 //                                    CURRENT prompt + model, and writes
 //                                    src/lib/__fixtures__/judge-contract.json.
 //   src/lib/judge-contract.test.ts -- OFFLINE, in CI. Asserts the fixture
@@ -63,23 +62,6 @@ export function judgePromptHash(model: string): string {
   return h.digest("hex");
 }
 
-/** One human-adjudicated span (T-08) re-judged with the current prompt. */
-export type ContractAdjudicationCase = {
-  adjudicationId: string;
-  callId: string;
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
-  candidateProviderIds: string[];
-  /** Human verdict; null = "none of them heard it right". */
-  humanProviderId: string | null;
-  /** Current prompt's pick; null = judge named nothing usable. */
-  judgeProviderId: string | null;
-  /** Same definition as lib/scoring judge-agreement: the two named readings
-   *  say the same words. null when not comparable. */
-  agrees: boolean | null;
-};
-
 /** One saved flagged scan re-judged with the current prompt. There is no
  *  ground truth for a whole-call pick (no gold transcript, by design), so
  *  this half checks the contract's SHAPE -- a real pick from the candidate
@@ -103,16 +85,10 @@ export type JudgeContractFixture = {
   model: string;
   promptHash: string;
   costMicrocents: number;
-  adjudications: ContractAdjudicationCase[];
   scans: ContractScanCase[];
 };
 
 export type JudgeContractSummary = {
-  adjudicationTotal: number;
-  adjudicationComparable: number;
-  adjudicationAgreements: number;
-  /** null when comparable is 0 -- never a confident 0% from nothing. */
-  adjudicationAgreementRate: number | null;
   scanTotal: number;
   scanNullPicks: number;
   scanPicksOutsideCandidates: number;
@@ -123,14 +99,7 @@ export type JudgeContractSummary = {
 
 /** Pure arithmetic over a fixture. The test recomputes this from the
  *  cases rather than trusting any total written into the file. */
-export function summarizeJudgeContract(fixture: Pick<JudgeContractFixture, "adjudications" | "scans">): JudgeContractSummary {
-  let comparable = 0;
-  let agreements = 0;
-  for (const a of fixture.adjudications) {
-    if (a.agrees === null) continue;
-    comparable += 1;
-    if (a.agrees) agreements += 1;
-  }
+export function summarizeJudgeContract(fixture: Pick<JudgeContractFixture, "scans">): JudgeContractSummary {
   let nullPicks = 0;
   let outside = 0;
   let emptyReasoning = 0;
@@ -146,10 +115,6 @@ export function summarizeJudgeContract(fixture: Pick<JudgeContractFixture, "adju
     }
   }
   return {
-    adjudicationTotal: fixture.adjudications.length,
-    adjudicationComparable: comparable,
-    adjudicationAgreements: agreements,
-    adjudicationAgreementRate: comparable === 0 ? null : agreements / comparable,
     scanTotal: fixture.scans.length,
     scanNullPicks: nullPicks,
     scanPicksOutsideCandidates: outside,

@@ -163,7 +163,7 @@ async function fetchOpenAi(
 //
 // T-25 (2026-08-29): the judge now runs through BAML (baml_src/judge.baml ->
 // generated src/baml_client). Same signature, same return shape, same
-// callers (lib/agent-verify.ts, lib/judge-accuracy.ts) -- only what is
+// callers (lib/agent-verify.ts) -- only what is
 // underneath changed:
 //
 //   * The pick is a TYPE. `PickedProvider` is a `@@dynamic` enum whose only
@@ -258,7 +258,7 @@ export async function judgeCandidates(params: {
 }
 
 /** Maps BAML's error classes onto this file's existing AgentRequestError so
- * callers' `judge_failed` handling (agent-verify.ts, judge-accuracy.ts) is
+ * callers' `judge_failed` handling (agent-verify.ts) is
  * unchanged. Status codes: the provider's own for HTTP failures; 502 for
  * "the model answered but not with a valid pick" -- that is an upstream
  * answer we refuse, not a client mistake. */

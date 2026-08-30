@@ -12,92 +12,38 @@ export interface SpanReading {
   agreesWithMajority: boolean;
 }
 
-export type AdjudicationReadingsItem = {
-  providerId: string;
+export type WordsToWatchWordsItemKind = typeof WordsToWatchWordsItemKind[keyof typeof WordsToWatchWordsItemKind];
+
+
+export const WordsToWatchWordsItemKind = {
+  number: 'number',
+  word: 'word',
+  filler: 'filler',
+} as const;
+
+export type WordsToWatchWordsItemAlternativesItem = {
   text: string;
+  count: number;
+  providerIds: string[];
 };
 
-export interface Adjudication {
-  id: string;
-  callId: string;
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
-  /** @nullable */
-  correctProviderId: string | null;
-  readings: AdjudicationReadingsItem[];
-  adjudicatedByLabel: string;
-  adjudicatedAt: string;
-}
-
-export interface JudgeAccuracyReplayRequest {
-  /**
-     * Max spans to replay in this request; capped server-side.
-     * @nullable
-     */
-  limit?: number | null;
-}
-
-export interface JudgeAccuracyReplayResponse {
-  replayed: number;
-  /** Verdicts still not replayed after this request. */
-  remaining: number;
-  /** Verdicts whose span could not be rebuilt from stored results; marked replayed with no judge pick. */
-  spanNotFound: number;
-  /** Judge calls that errored; left pending for a later replay. */
-  judgeFailed: number;
-  costMicrocents: number;
-}
-
-export type JudgeAccuracyItemReadingsItem = {
-  providerId: string;
-  text: string;
+export type WordsToWatchWordsItem = {
+  heardAs: string;
+  kind: WordsToWatchWordsItemKind;
+  noMajority: boolean;
+  calls: number;
+  spans: number;
+  alternatives: WordsToWatchWordsItemAlternativesItem[];
+  exampleCallIds: string[];
 };
 
-export interface JudgeAccuracyItem {
-  adjudicationId: string;
-  callId: string;
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
+export interface WordsToWatch {
+  bulkId: string;
   /** @nullable */
-  humanProviderId: string | null;
-  /** @nullable */
-  judgeProviderId: string | null;
-  /** @nullable */
-  agrees: boolean | null;
-  /** @nullable */
-  judgeReasoning: string | null;
-  adjudicatedByLabel: string;
-  readings: JudgeAccuracyItemReadingsItem[];
-}
-
-export type JudgeAccuracyResponseByAdjudicatorItem = {
-  label: string;
-  comparable: number;
-  agreements: number;
-  /** @nullable */
-  agreementRate: number | null;
-};
-
-export interface JudgeAccuracyResponse {
-  totalVerdicts: number;
-  replayed: number;
-  pending: number;
-  humanSaidNone: number;
-  judgeNoPick: number;
-  comparable: number;
-  agreements: number;
-  /** @nullable */
-  agreementRate: number | null;
-  byAdjudicator: JudgeAccuracyResponseByAdjudicatorItem[];
-  majorityComparable: number;
-  majorityAgreements: number;
-  /** @nullable */
-  majorityAgreementRate: number | null;
-  replayCostMicrocents: number;
-  replayBatchLimit: number;
-  items: JudgeAccuracyItem[];
+  assistantId: string | null;
+  callsScanned: number;
+  callsWithSpans: number;
+  words: WordsToWatchWordsItem[];
 }
 
 export interface DisagreementSpan {
@@ -113,7 +59,6 @@ export interface DisagreementSpan {
      */
   referencePositions: number[];
   readings: SpanReading[];
-  adjudication: Adjudication | null;
 }
 
 export type DisagreementSpansResponseUnavailableReason = typeof DisagreementSpansResponseUnavailableReason[keyof typeof DisagreementSpansResponseUnavailableReason] | null;
@@ -134,20 +79,6 @@ export interface DisagreementSpansResponse {
   referenceWords: string[];
   unavailableReason: DisagreementSpansResponseUnavailableReason;
   spans: DisagreementSpan[];
-}
-
-export type SpanAdjudicationRequestReadingsItem = {
-  providerId: string;
-  text: string;
-};
-
-export interface SpanAdjudicationRequest {
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
-  /** @nullable */
-  correctProviderId: string | null;
-  readings: SpanAdjudicationRequestReadingsItem[];
 }
 
 export interface HealthStatus {
@@ -1055,21 +986,10 @@ export type BenchmarkDashboardRunningBulk = {
   name: string;
 } | null;
 
-/**
- * @nullable
- */
-export type BenchmarkDashboardNeedsHumanSpans = {
-  bulkId: string;
-  total: number;
-  adjudicated: number;
-} | null;
-
 export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
-  /** @nullable */
-  spans: BenchmarkDashboardNeedsHumanSpans;
 };
 
 export type BenchmarkDashboardThisMonth = {
@@ -1557,6 +1477,11 @@ status?: CallStatus;
 
 export type GetCallDisagreementParams = {
 bulkId?: string;
+};
+
+export type GetWordsToWatchParams = {
+bulkId: string;
+assistantId?: string;
 };
 
 export type ListDisagreementSpansParams = {

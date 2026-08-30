@@ -6,7 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type JudgeAccuracyItemReadingsItem = {
-  providerId: string;
+export type WordsToWatchWordsItemAlternativesItem = {
   text: string;
+  count: number;
+  providerIds: string[];
 };

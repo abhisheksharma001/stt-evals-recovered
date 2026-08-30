@@ -380,7 +380,7 @@ export async function runAutoAgentVerificationForRun(
         inArray(benchmarkAgentScansTable.status, ["clean", "flagged", "approved", "rejected"]),
         // T-63: a `flagged` scan whose judge named nothing (pre-BAML strict-
         // schema era) is not finished -- there is no pick to show and nothing
-        // for judge-accuracy to replay -- so re-executing the run re-judges it.
+        // to re-judge -- so re-executing the run re-judges it.
         // A new scan row is written; the null-pick row stays as history.
         or(ne(benchmarkAgentScansTable.status, "flagged"), isNotNull(benchmarkAgentScansTable.agentPickResultId)),
       ),

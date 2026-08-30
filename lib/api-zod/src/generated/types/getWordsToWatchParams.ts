@@ -6,11 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-/**
- * @nullable
- */
-export type BenchmarkDashboardNeedsHumanSpans = {
-  bulkId: string;
-  total: number;
-  adjudicated: number;
-} | null;
+export type GetWordsToWatchParams = {
+bulkId: string;
+assistantId?: string;
+};

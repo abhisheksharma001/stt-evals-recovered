@@ -1,4 +1,4 @@
-// T-20: per-bulk headline verdicts. T-55 (2026-08-29): one per CLIENT (the
+// T-20: per-bulk headline verdicts. T-55 (2026-08-29): one per ORG (the
 // call's Vapi account label), no longer per assistant -- live bulks split
 // into 22-23 assistant groups of 1-2 calls, so no group could reach the
 // 5-shared-call floor and every card said too_few_calls. Rankings still

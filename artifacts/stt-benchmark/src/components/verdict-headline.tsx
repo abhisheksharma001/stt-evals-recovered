@@ -69,15 +69,16 @@ export function DecisionChip({ decision }: { decision: HeadlineVerdict["decision
   )
 }
 
-/** T-55: verdict groups are per client; a Rankings card (per assistant)
- *  finds the client group its assistant's calls fed. */
+/** T-55/T-89: verdict groups are per org (the Vapi account; the API field
+ *  is still named clientLabel); a Rankings card (per assistant) finds the
+ *  org its assistant's calls fed. */
 export function findGroupVerdict(data: BulkVerdicts | undefined, assistantId: string | null) {
   if (!data) return undefined
   return data.groups.find((g) => g.assistantIds.includes(assistantId))
 }
 
 export function clientGroupLabel(g: { clientLabel: string | null }): string {
-  return g.clientLabel ?? "No account label on file"
+  return g.clientLabel ?? "No org label on file"
 }
 
 export function useBulkVerdicts(bulkId: string | null | undefined) {
@@ -163,7 +164,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
     const [topId, topN] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]
     headline = (
       <>
-        <span className="font-semibold">{nameOf(data, topId)}</span> wins {topN} of {groups.length} assistant group
+        <span className="font-semibold">{nameOf(data, topId)}</span> wins {topN} of {groups.length} org
         {groups.length === 1 ? "" : "s"} outright
         {winners.length > topN ? <> ({winners.length - topN} other group{winners.length - topN === 1 ? "" : "s"} have a different winner)</> : null}.
         {counts.too_close + counts.too_few_calls + counts.insufficient > 0 && (
@@ -178,7 +179,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
     tone = "too_few_calls"
     headline = (
       <>
-        No winner in this bulk yet: {counts.too_few_calls} of {groups.length} client group
+        No winner in this bulk yet: {counts.too_few_calls} of {groups.length} org
         {groups.length === 1 ? "" : "s"} have fewer than 5 calls that both top providers ran, the minimum for a verdict.
       </>
     )
@@ -227,7 +228,7 @@ export function GroupVerdictHeadline({
   scope,
 }: {
   verdict: HeadlineVerdict | undefined
-  /** T-55: the client group this verdict was computed over, so a
+  /** T-55: the org this verdict was computed over, so a
    *  per-assistant card never implies the verdict is about that assistant
    *  alone. */
   scope?: { clientLabel: string | null; assistantCount: number; callCount: number }
@@ -255,7 +256,7 @@ export function GroupVerdictHeadline({
         <p className="text-sm text-foreground" style={{ textWrap: "balance" }}>{verdict.sentence}</p>
         {scope && (
           <p className="text-[11px] text-muted-foreground" data-testid="group-verdict-scope">
-            Verdict is for all of <span className="font-medium">{scope.clientLabel ?? "calls with no account label"}</span>'s{" "}
+            Verdict is for all of <span className="font-medium">{scope.clientLabel ?? "calls with no org label"}</span>'s{" "}
             {scope.assistantCount} assistant{scope.assistantCount === 1 ? "" : "s"} together ({scope.callCount} call{scope.callCount === 1 ? "" : "s"}).
             One assistant alone has too few calls.
           </p>

@@ -1,30 +1,16 @@
 import * as React from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import {
-  useListDisagreementSpans,
-  useAdjudicateSpan,
-  getListDisagreementSpansQueryKey,
-  type DisagreementSpan,
-} from "@workspace/api-client-react"
-import { Play, Check, Ban, Loader2 } from "lucide-react"
+import { useListDisagreementSpans, type DisagreementSpan } from "@workspace/api-client-react"
+import { Play, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { apiBase } from "@/lib/api-base"
 
 // T-08: "a disagreement is a play button" (PRD-v4-uiux D.3.2).
-//
-// Where the providers heard different words, this lists each stretch with
-// its timestamp; clicking it plays just those seconds (plus a little
-// context) from the cached audio, and the reader picks which provider heard
-// it right -- or that none did. That verdict is the only place in the tool
-// where a person, not a diff and not a model, says what was correct. It
-// feeds T-09 (how often the judge agrees with a human).
-//
-// Built for volume: everything is on the keyboard so twenty spans are a
-// couple of minutes, not a scrubbing session. J/K or arrows move, Space
-// plays, 1-9 picks a reading, 0 says "none of them", and a verdict advances
-// to the next unadjudicated span by itself.
+// T-86: listen-only. There is no human judge in this product -- nobody
+// picks who heard it right. Where the providers heard different words,
+// this lists each stretch with its timestamp; clicking it plays just those
+// seconds (plus a little context) from the cached audio, with every
+// provider's reading beside it. J/K or arrows move, Space plays.
 
 /** Seconds of audio played either side of the disputed words. */
 const CONTEXT_SECONDS = 0.75
@@ -36,13 +22,11 @@ function fmtTime(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
-// T-22: one flowing reading of the call, not six full transcripts. The
-// reference provider's words run as plain text; each stretch where the
-// providers disagree is swapped for a play button carrying its timestamp
-// and the reference's own reading. Clicking it plays those seconds and
-// selects the same span in the adjudication list below, so the eye and
-// the ear land on the same place. The reference is only the clock and the
-// alignment anchor here (T-08) -- its reading is never "the right one".
+// T-22: one flowing reading of the call. The reference provider's words
+// run as plain text; each stretch where the providers disagree is swapped
+// for a play button carrying its timestamp and the reference's own reading.
+// The reference is only the clock and the alignment anchor (T-08) -- its
+// reading is never "the right one".
 function DisagreementReading({
   referenceWords,
   spans,
@@ -76,7 +60,7 @@ function DisagreementReading({
           onPlay(index)
         }}
         title={
-          (span.majorityText !== null ? `majority: ${span.majorityText || "(nothing)"}\n` : "no majority (tie)\n") +
+          (span.majorityText !== null ? `most heard: ${span.majorityText || "(nothing)"}\n` : "no majority (tie)\n") +
           (others.length > 0
             ? others.map((r) => `${nameOf(r.providerId)}: ${r.text || "(nothing)"}`).join("\n")
             : "Providers disagree here")
@@ -87,9 +71,7 @@ function DisagreementReading({
             ? "border-primary bg-primary text-primary-foreground"
             : active
               ? "border-primary bg-primary/10 text-foreground"
-              : span.adjudication
-                ? "border-success/40 bg-success/10 text-foreground hover:bg-success/20"
-                : "border-warning/40 bg-warning/10 text-foreground hover:bg-warning/20"
+              : "border-warning/40 bg-warning/10 text-foreground hover:bg-warning/20"
         }`}
       >
         <Play className="h-2.5 w-2.5 shrink-0" />
@@ -112,7 +94,7 @@ function DisagreementReading({
   )
 }
 
-export function SpanAdjudicator({
+export function DisagreementSpans({
   callId,
   runId,
   providerNames,
@@ -122,11 +104,9 @@ export function SpanAdjudicator({
   /** providerId -> display name, from whatever the caller already has. */
   providerNames: Record<string, string>
 }) {
-  const queryClient = useQueryClient()
   const { toast } = useToast()
   const params = { callId, ...(runId ? { runId } : {}) }
   const { data, isLoading, isError } = useListDisagreementSpans(params)
-  const adjudicate = useAdjudicateSpan()
 
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
   const containerRef = React.useRef<HTMLDivElement | null>(null)
@@ -135,11 +115,9 @@ export function SpanAdjudicator({
   const [playingIndex, setPlayingIndex] = React.useState<number | null>(null)
 
   const spans: DisagreementSpan[] = data?.spans ?? []
-  const adjudicatedCount = spans.filter((s) => s.adjudication).length
 
   // Stop at the end of the span -- the <audio> element has no "play a
-  // window" API, so it's a timeupdate watch. ~250ms granularity is fine for
-  // a 3-5 second listen.
+  // window" API, so it's a timeupdate watch.
   const play = React.useCallback(
     (index: number) => {
       const span = spans[index]
@@ -151,11 +129,7 @@ export function SpanAdjudicator({
       setPlayingIndex(index)
       void audio.play().catch((err: unknown) => {
         setPlayingIndex(null)
-        // T-59: say what actually went wrong. A rejected play() is most often
-        // the browser's autoplay policy (no user gesture on the document yet,
-        // e.g. the page was reached via keyboard) -- the audio itself was
-        // served fine. Only a NotSupportedError / network failure means the
-        // recording is really unavailable.
+        // T-59: say what actually went wrong.
         const name = err instanceof DOMException ? err.name : ""
         const description =
           name === "NotAllowedError"
@@ -169,8 +143,6 @@ export function SpanAdjudicator({
     [spans, toast],
   )
 
-  // T-22: when the reading view (or J/K) moves the active span, bring its
-  // row in the list into view so the readings are right there.
   React.useEffect(() => {
     const row = containerRef.current?.querySelector<HTMLElement>(`[data-span-index="${activeIndex}"]`)
     row?.scrollIntoView({ block: "nearest" })
@@ -186,36 +158,6 @@ export function SpanAdjudicator({
     }
   }
 
-  const record = React.useCallback(
-    (index: number, correctProviderId: string | null) => {
-      const span = spans[index]
-      if (!span || !data?.runId || adjudicate.isPending) return
-      adjudicate.mutate(
-        {
-          callId,
-          data: {
-            runId: data.runId,
-            spanStartMs: span.startMs,
-            spanEndMs: span.endMs,
-            correctProviderId,
-            readings: span.readings.map((r) => ({ providerId: r.providerId, text: r.text })),
-          },
-        },
-        {
-          onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: getListDisagreementSpansQueryKey(params) })
-            // Advance to the next span that still needs a verdict, if any.
-            const next = spans.findIndex((s, i) => i > index && !s.adjudication)
-            if (next !== -1) setActiveIndex(next)
-          },
-          onError: (err) =>
-            toast({ title: "Verdict not saved", description: err instanceof Error ? err.message : String(err), variant: "destructive" }),
-        },
-      )
-    },
-    [spans, data?.runId, adjudicate, callId, queryClient, params, toast],
-  )
-
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (spans.length === 0) return
     const key = e.key
@@ -228,13 +170,6 @@ export function SpanAdjudicator({
     } else if (key === " " || key === "Enter") {
       e.preventDefault()
       play(activeIndex)
-    } else if (key === "0" || key === "n") {
-      e.preventDefault()
-      record(activeIndex, null)
-    } else if (/^[1-9]$/.test(key)) {
-      e.preventDefault()
-      const reading = spans[activeIndex]?.readings[Number(key) - 1]
-      if (reading) record(activeIndex, reading.providerId)
     }
   }
 
@@ -258,7 +193,7 @@ export function SpanAdjudicator({
     return <p className="text-xs text-muted-foreground">{unavailableCopy[data.unavailableReason] ?? data.unavailableReason}</p>
   }
   if (spans.length === 0) {
-    return <p className="text-xs text-success">Every provider heard every word the same way. Nothing to adjudicate.</p>
+    return <p className="text-xs text-success">Every provider heard every word the same way.</p>
   }
 
   const nameOf = (providerId: string) => providerNames[providerId] ?? providerId
@@ -270,7 +205,7 @@ export function SpanAdjudicator({
       onKeyDown={onKeyDown}
       onClick={() => containerRef.current?.focus()}
       className="space-y-2 rounded-md outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      aria-label="Disagreement spans -- J/K to move, Space to play, 1-9 to pick a provider, 0 for none of them"
+      aria-label="Disagreement spans -- J/K to move, Space to play"
     >
       <audio
         ref={audioRef}
@@ -285,18 +220,13 @@ export function SpanAdjudicator({
           <span className="font-medium text-foreground">
             {spans.length} span{spans.length === 1 ? "" : "s"} where providers disagree
           </span>
-          <span className="font-mono text-muted-foreground">
-            {adjudicatedCount}/{spans.length} decided
-          </span>
           {data.referenceProviderId && (
             <span className="text-muted-foreground" title="Whose word timings anchor the spans to the audio. Not a judgement about who is right.">
               timed by {nameOf(data.referenceProviderId)}
             </span>
           )}
         </div>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          J/K move · Space play · 1-9 pick · 0 none
-        </span>
+        <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play</span>
       </div>
 
       {data.referenceWords.length > 0 && (
@@ -321,7 +251,6 @@ export function SpanAdjudicator({
         {spans.map((span, index) => {
           const active = index === activeIndex
           const playing = index === playingIndex
-          const verdict = span.adjudication
           return (
             <div
               key={`${span.startMs}-${span.endMs}`}
@@ -355,58 +284,21 @@ export function SpanAdjudicator({
                     {span.contextAfter && <span> {span.contextAfter}…</span>}
                   </p>
                   <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                    {span.readings.map((reading, rIndex) => {
-                      const chosen = verdict?.correctProviderId === reading.providerId
-                      return (
-                        <button
-                          type="button"
-                          key={reading.providerId}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            record(index, reading.providerId)
-                          }}
-                          disabled={adjudicate.isPending}
-                          className={`flex items-center gap-2 rounded border px-2 py-1 text-left text-xs transition-colors hover:bg-muted/40 ${
-                            chosen ? "border-success bg-success/10" : "border-border"
-                          }`}
-                          title={`Press ${rIndex + 1}`}
-                        >
-                          <kbd className="shrink-0 rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">
-                            {rIndex + 1}
-                          </kbd>
-                          <span className="w-24 shrink-0 truncate font-medium">{nameOf(reading.providerId)}</span>
-                          <span className={`min-w-0 flex-1 truncate font-mono ${reading.text ? "" : "italic text-muted-foreground"}`}>
-                            {reading.text || "(nothing)"}
-                          </span>
-                          {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-success" />}
-                        </button>
-                      )
-                    })}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        record(index, null)
-                      }}
-                      disabled={adjudicate.isPending}
-                      className={`flex items-center gap-2 rounded border border-dashed px-2 py-1 text-left text-xs transition-colors hover:bg-muted/40 ${
-                        verdict && verdict.correctProviderId === null ? "border-warning bg-warning/10" : "border-border"
-                      }`}
-                      title="Press 0"
-                    >
-                      <kbd className="shrink-0 rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground">0</kbd>
-                      <Ban className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="text-muted-foreground">None of them heard it right</span>
-                      {verdict && verdict.correctProviderId === null && <Check className="h-3.5 w-3.5 shrink-0 text-warning" />}
-                    </button>
+                    {span.readings.map((reading) => (
+                      <div
+                        key={reading.providerId}
+                        className={`flex items-center gap-2 rounded border px-2 py-1 text-xs ${
+                          reading.agreesWithMajority ? "border-border" : "border-warning/40 bg-warning/5"
+                        }`}
+                        title={reading.agreesWithMajority ? "Same as most providers" : "Differs from most providers"}
+                      >
+                        <span className="w-24 shrink-0 truncate font-medium">{nameOf(reading.providerId)}</span>
+                        <span className={`min-w-0 flex-1 truncate font-mono ${reading.text ? "" : "italic text-muted-foreground"}`}>
+                          {reading.text || "(nothing)"}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  {verdict && (
-                    <p className="text-[10px] text-muted-foreground">
-                      <Badge variant="outline" className="mr-1 text-[9px] uppercase">decided</Badge>
-                      {verdict.correctProviderId ? nameOf(verdict.correctProviderId) : "none of them"} · by {verdict.adjudicatedByLabel} ·{" "}
-                      {new Date(verdict.adjudicatedAt).toLocaleString()}
-                    </p>
-                  )}
                 </div>
               </div>
             </div>

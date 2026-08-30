@@ -16,7 +16,8 @@ import {
   type BenchmarkRunRow,
 } from "@workspace/db";
 import { getProviderAdapter } from "@workspace/stt-providers";
-import { latestFinishedBulk, monthSpend, needsHuman, runningBulk, spanAdjudicationCounts } from "../lib/overview";
+import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
+import { wordsToWatch } from "../lib/words-to-watch";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
 import { callDisagreement } from "../lib/call-disagreement";
 import {
@@ -42,6 +43,8 @@ import {
   ListBenchmarkCallsQueryParams,
   GetCallDisagreementQueryParams,
   GetCallDisagreementResponse,
+  GetWordsToWatchQueryParams,
+  GetWordsToWatchResponse,
   ListBenchmarkCallsResponse,
   ListBenchmarkProvidersResponse,
   ListBenchmarkRankingsQueryParams,
@@ -349,7 +352,6 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
     needsHuman(),
     monthSpend(),
   ]);
-  const spans = finished ? { bulkId: finished.id, ...(await spanAdjudicationCounts(finished.id)) } : null;
 
   const latestRunStatus = latestRuns[0]?.status ?? "blocked";
   // 2026-08-27, per Abhishek: gold-transcript stage retired, then the
@@ -378,7 +380,7 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
             : "Ready for controlled benchmark run",
     latestFinishedBulk: finished,
     runningBulk: running,
-    needsHuman: { ...human, spans },
+    needsHuman: human,
     thisMonth: month,
   };
 
@@ -470,6 +472,26 @@ router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetCallDisagreementResponse.parse(await callDisagreement(query.data.bulkId ?? null)));
+});
+
+// T-87: which words keep splitting the providers, per bulk / assistant.
+router.get("/benchmark/words-to-watch", async (req, res): Promise<void> => {
+  const query = GetWordsToWatchQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  const { bulkId, assistantId } = query.data;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bulkId)) {
+    res.status(400).json({ error: "bulkId must be a uuid" });
+    return;
+  }
+  const [bulk] = await db.select({ id: benchmarkBulksTable.id }).from(benchmarkBulksTable).where(eq(benchmarkBulksTable.id, bulkId)).limit(1);
+  if (!bulk) {
+    res.status(404).json({ error: "Bulk not found" });
+    return;
+  }
+  res.json(GetWordsToWatchResponse.parse(await wordsToWatch(bulkId, assistantId?.trim() ? assistantId : null)));
 });
 
 router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {

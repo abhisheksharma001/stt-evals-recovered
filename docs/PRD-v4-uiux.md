@@ -723,9 +723,9 @@ Checked against the actual codebase (React + wouter + Tailwind v4 tokens in
 |---|---|---|
 | **View hierarchy / component tree** | Yes — core of E.1 | `Rankings.tsx` (38 KB) and `Bulks.tsx` (55 KB) are single files where page, sections and rows are one flat function. E.1 layer 1 = re-nesting them: page → section → card → row. |
 | **Nesting / parent-child** | Yes | Same as above. Rule for the agent: a section never renders a sibling's data; if a row needs the bulk id, it gets it from its parent, not a second fetch. |
-| **Information architecture (IA)** | Yes — E.1 layer 2 / D.4 | The seven → four route merge *is* the IA decision. Pending Abhishek's call. |
+| **Information architecture (IA)** | Yes — E.1 layer 2 / D.4 | The seven → four route merge *is* the IA decision. Decided and shipped as T-31 (batch 1, PR #49): Overview, Results, Calls, Bulks, Setup. |
 | **Atomic design** | Partly | shadcn primitives already are the atoms (`Button`, `Card`, `Badge`). Missing layer is **molecules/organisms**: `DecisionChip`, `GroupVerdictHeadline`, `MonthlyCostCell` exist; the "provider output row with diff + metrics + failure state" (E.4/E.5) must be built as one organism used by Corpus, Results and Runs — not three copies. |
-| **Stacking context / z-index / overlay** | Only as a check | Radix handles modals/popovers. One known risk: the sticky table header in Corpus vs. the `SpanAdjudicator` popover. Verify after T-70, no new work. |
+| **Stacking context / z-index / overlay** | Only as a check | Radix handles modals/popovers. One known risk: the sticky table header in Corpus vs. the `DisagreementSpans` list (was `SpanAdjudicator`, T-86). Verify after T-70, no new work. |
 | **Elevation** | No | Single light surface (E.2); depth comes from borders and ground tint, not shadows. |
 | **Visual hierarchy / contrast / scale** | Yes — E.2 + E.1 | Answer → evidence → controls → table is a *visual* order too: headline 20 px, evidence 13 px mono, table 13 px. Contrast ≥ 4.5:1 is T-70's acceptance. |
 | **Proximity** | Yes | The active-provider setting sits away from the provider list it affects (E.1 Providers item). Cost estimate sits away from the launch button in Bulks. |
@@ -905,3 +905,67 @@ insight), producing an evidence note that names what changed in the plan. Batch 
 (2026-08-30, PR #49) used it for T-31 (page names), T-82 (Semrush pattern) and T-84
 (Midday pattern). Batch 2 (PR #50) used it for T-83 (landing page) and T-85 (worst-first
 ordering, from Hamel & Shreya).
+
+# Part G — Batch 4 (added 2026-08-30, per Abhishek): no human judge, org hierarchy, words to watch
+
+## G.1 What Abhishek asked for, and what it changed
+
+- **"There will be no human judge."** The T-08/T-09 loop (a person rules on
+  spans, the AI judge is measured against them, T-17 would rank on it) is removed,
+  not hidden. A person can still flag a call — hard case, notes — in Corpus; that is
+  the only human input the product keeps. The judge contract keeps its shape floors
+  (a real pick from the candidate set, every time) and loses its agreement floor.
+- **"For each assistant flag which words might need some work."** Words to watch
+  (T-87): the words the providers keep splitting on, per assistant, counted in
+  calls, with every alternative reading and who said it. Tagged number / word /
+  filler because a phone number heard three ways is a different problem from
+  "um" vs nothing. The tool does not say who was right — it says where to listen.
+- **"Instead of client, divide into orgs."** The grouping unit is the org — the
+  Vapi account. Results is org → assistant. The word on screen is "org" (T-89);
+  the API keeps `clientLabel` so nothing changes on the wire.
+- **"Check if that graph is really necessary."** Per-assistant trend charts inside
+  every card: removed (three bulks per line, 22 cards). The page-level trend: kept
+  once, folded under "More evidence" with the correlation grid. The answer and the
+  words come first; charts are for the reader who wants more.
+- **"Give the option of adding call providers."** Import page step 0 (T-90): Vapi
+  connected with its orgs, how to add one (env var, never the database), and an
+  "Other call providers — not supported yet" row. Which providers come next is in
+  `docs/backlog/good-to-have.md` and nowhere else, per Abhishek.
+
+## G.2 Results page order (T-88)
+
+1. Which bulk (picker, one-bulk / all-time, share link)
+2. The verdict for the bulk — one sentence
+3. Four tiles: STT cost, AI check cost, checked by AI, orgs (or agent errors)
+4. Per org: header (name, assistants, calls) → the org's verdict, once → the
+   org's monthly cost at full volume → per assistant: ranked table, why this
+   order, production baseline, **words to watch**, per-call links
+5. More evidence, folded: provider correlation, the trend chart
+
+## G.3 Evidence — batch 4
+
+**Pattern to use:** headline → strip of tiles → ranked list, charts secondary ←
+[Peec AI overview](https://mobbin.com/screens/ea726eca-9ea2-423c-be52-181b642a04f1),
+[Maze results](https://mobbin.com/screens/28bfc8bf-418e-4f54-81ae-a0a3fe73ef2b).
+Words list as a plain frequency table, term first, count beside it ←
+[Profound similar keywords](https://mobbin.com/screens/e3b23214-75c6-4803-b235-062f3e397e15),
+[Fiverr keyword research](https://mobbin.com/screens/c6d07c18-bcda-4eda-bf3b-c15dd4964017).
+Call providers as connected card with a status chip, inactive rows with a disabled
+action ← [incident.io integrations](https://mobbin.com/screens/c24ec995-b467-42a5-97fa-92310162c211),
+[Uvodo integrations](https://mobbin.com/screens/6d011763-9979-4d55-9e96-ef747ee36894).
+**Patterns to avoid:** a stacked-area chart as the first thing on a results page
+([Vercel leaderboards](https://mobbin.com/screens/684fc9a5-8990-4f93-8fc3-28e1e0750078)) —
+it answers "how much" before "which"; word clouds for term frequency
+([Hootsuite listening](https://mobbin.com/screens/57e6c76c-e7a4-4a5d-aac6-a090fdae6c5d)) —
+size is not a count a reader can act on.
+**What operators say:** error analysis starts from the data, not from a metric —
+"look at your data" and sort by worst; a list of concrete failure modes beats a
+score on a dashboard ← "Building eval systems that improve your AI product" (Hamel
+Husain & Shreya Shankar, 2025-09-09)
+https://www.lennysnewsletter.com/p/building-eval-systems-that-improve-your-ai-product.
+Words to watch is that list for STT: the failure modes, named, counted.
+**Changes to the plan:** cost card became four tiles; per-card charts removed;
+words list gets a number / filler split (the first live result put "um" vs nothing
+on top of a list meant for phone numbers).
+**No evidence found for:** a product that groups a benchmark by customer org and
+then by agent — the org → assistant nesting is this project's own.

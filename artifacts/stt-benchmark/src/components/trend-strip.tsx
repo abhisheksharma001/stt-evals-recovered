@@ -14,7 +14,7 @@ import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
  * between two visits. The delta list under the chart says it in words:
  * last bulk vs the one before, per provider, with the evidence size.
  *
- * Scope is whatever the caller passes: a client (Vapi account label), one
+ * Scope is whatever the caller passes: an org (Vapi account label), one
  * assistant, or everything. Pooling is exact -- the API sends summed
  * totals, never rates (see @workspace/scoring buildTrend).
  */
@@ -218,10 +218,10 @@ export function TrendStrip({ scope, highlightBulkId, title = "Trend across bulks
 }
 
 /**
- * The client picker above the page-level strip. Clients are the Vapi
- * account labels seen on scored calls; a null label (calls imported before
+ * The org picker above the page-level strip. Orgs are the Vapi account
+ * labels seen on scored calls; a null label (calls imported before
  * per-account labelling, never backfilled) is its own visible bucket, not
- * folded into a named client. Defaults to the client of the bulk on screen.
+ * folded into a named org. Defaults to the org of the bulk on screen.
  */
 export function ClientTrendSection({ highlightBulkId }: { highlightBulkId: string | null }) {
   const { data } = useBenchmarkTrend()
@@ -232,9 +232,9 @@ export function ClientTrendSection({ highlightBulkId }: { highlightBulkId: strin
   }, [data])
   const [picked, setPicked] = React.useState<string | null | undefined>(undefined)
 
-  // "undefined" = every client. Default to whichever client the open bulk
+  // "undefined" = every org. Default to whichever org the open bulk
   // scored most calls for, so the strip answers the question the page is
-  // already on; fall back to every client when the bulk isn't finished yet.
+  // already on; fall back to every org when the bulk isn't finished yet.
   const defaultClient = React.useMemo<string | null | undefined>(() => {
     if (!data || !highlightBulkId) return undefined
     const tally = new Map<string | null, number>()
@@ -263,16 +263,16 @@ export function ClientTrendSection({ highlightBulkId }: { highlightBulkId: strin
   return (
     <div className="space-y-2" data-testid="client-trend">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Client</span>
+        <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Org</span>
         <div className="flex flex-wrap rounded-lg border border-border p-0.5">
-          {chip(undefined, "All clients")}
-          {clients.map((c) => chip(c, c ?? "Unlabelled account"))}
+          {chip(undefined, "All orgs")}
+          {clients.map((c) => chip(c, c ?? "Unlabelled org"))}
         </div>
       </div>
       <TrendStrip
         scope={scope}
         highlightBulkId={highlightBulkId}
-        title={active === undefined ? "Trend across bulks — all clients" : `Trend across bulks — ${active ?? "unlabelled account"}`}
+        title={active === undefined ? "Trend across bulks — all orgs" : `Trend across bulks — ${active ?? "unlabelled org"}`}
       />
     </div>
   )

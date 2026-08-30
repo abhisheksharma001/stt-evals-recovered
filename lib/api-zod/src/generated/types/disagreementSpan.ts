@@ -5,7 +5,6 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
-import type { Adjudication } from './adjudication';
 import type { SpanReading } from './spanReading';
 
 export interface DisagreementSpan {
@@ -21,5 +20,4 @@ export interface DisagreementSpan {
      */
   referencePositions: number[];
   readings: SpanReading[];
-  adjudication: Adjudication | null;
 }
