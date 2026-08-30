@@ -123,7 +123,7 @@ import { AgentConfigError, AgentRequestError, JUDGE_MODEL, analyzeFailure, match
 import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
-import { audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
+import { getOrCacheAudioBytes, audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { createHash, randomUUID } from "node:crypto";
@@ -1088,12 +1088,28 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
       afterState: serializeCall(created),
     });
 
+    // T-127: save the audio bytes to the server's disk right now, while the
+    // recording is certainly still alive at Vapi -- so a newly imported call
+    // never sits on the 14-day retention countdown at all. A cache failure
+    // must NOT fail the import (the call row is real either way); it is
+    // named in the outcome message instead of being a silent gap. This
+    // re-resolves a fresh URL via the same path every other cache write
+    // uses (getOrCacheAudioBytes), so the player, the run executor and the
+    // importer can never disagree about what "the audio" is.
+    let message: string | null = null;
+    try {
+      await getOrCacheAudioBytes(created);
+    } catch (err) {
+      req.log.warn({ err, callId: created.id }, "import: audio could not be cached at import time");
+      message = `Imported, but the audio could not be saved to the server yet (${err instanceof Error ? err.message : String(err)}). The first run, or "Save audio now" on Calls, will try again.`;
+    }
+
     return {
       vapiCallId,
       outcome: "imported",
       callId: created.id,
       label,
-      message: null,
+      message,
     };
   };
 
