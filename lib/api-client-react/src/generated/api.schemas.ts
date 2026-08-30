@@ -18,6 +18,7 @@ export type WordsToWatchWordsItemKind = typeof WordsToWatchWordsItemKind[keyof t
 export const WordsToWatchWordsItemKind = {
   number: 'number',
   word: 'word',
+  format: 'format',
   filler: 'filler',
 } as const;
 

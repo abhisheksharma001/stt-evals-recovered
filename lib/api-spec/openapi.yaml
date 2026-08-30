@@ -1064,8 +1064,8 @@ components:
             required: [heardAs, kind, noMajority, calls, spans, alternatives, exampleCallIds]
             properties:
               heardAs: { type: string }
-              # number = a digit on any side (meaning at stake); filler = every reading is empty or a filler word; word = the rest.
-              kind: { type: string, enum: [number, word, filler] }
+              # number = a digit on any side (meaning at stake); format = same words once hyphens, spacing, small number words and um/uh are normalised (T-98); filler = every reading is empty or a filler word; word = the rest.
+              kind: { type: string, enum: [number, word, format, filler] }
               noMajority: { type: boolean }
               calls: { type: number }
               spans: { type: number }

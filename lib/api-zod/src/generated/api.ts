@@ -184,7 +184,7 @@ export const GetWordsToWatchResponse = zod.object({
   "callsWithSpans": zod.number(),
   "words": zod.array(zod.object({
   "heardAs": zod.string(),
-  "kind": zod.enum(['number', 'word', 'filler']),
+  "kind": zod.enum(['number', 'word', 'format', 'filler']),
   "noMajority": zod.boolean(),
   "calls": zod.number(),
   "spans": zod.number(),
