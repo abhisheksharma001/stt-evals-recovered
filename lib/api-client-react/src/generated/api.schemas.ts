@@ -12,6 +12,45 @@ export interface SpanReading {
   agreesWithMajority: boolean;
 }
 
+export type AssistantSignalsJudge = {
+  checked: number;
+  judged: number;
+  high: number;
+  medium: number;
+  low: number;
+  notRecorded: number;
+  clean: number;
+  errored: number;
+};
+
+export type AssistantSignalsHardCasesTagsItem = {
+  tag: string;
+  calls: number;
+};
+
+export type AssistantSignalsHardCasesExamplesItem = {
+  callId: string;
+  label: string;
+  tags: string[];
+};
+
+export type AssistantSignalsHardCases = {
+  calls: number;
+  tags: AssistantSignalsHardCasesTagsItem[];
+  examples: AssistantSignalsHardCasesExamplesItem[];
+};
+
+export interface AssistantSignals {
+  /** @nullable */
+  bulkId: string | null;
+  bulksCovered: number;
+  /** @nullable */
+  assistantId: string | null;
+  callsInScope: number;
+  judge: AssistantSignalsJudge;
+  hardCases: AssistantSignalsHardCases;
+}
+
 export type WordsToWatchWordsItemKind = typeof WordsToWatchWordsItemKind[keyof typeof WordsToWatchWordsItemKind];
 
 
@@ -1611,6 +1650,11 @@ status?: CallStatus;
 
 export type GetCallDisagreementParams = {
 bulkId?: string;
+};
+
+export type GetAssistantSignalsParams = {
+bulkId?: string;
+assistantId?: string;
 };
 
 export type GetWordsToWatchParams = {

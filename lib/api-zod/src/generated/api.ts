@@ -196,6 +196,44 @@ export const GetAssistantTranscriberResponse = zod.object({
 
 
 /**
+ * @summary T-112 / T-113 -- per-assistant signals for a Results card. How sure the AI judge was (high / medium / low, or not recorded for verdicts made before batch 8) over the latest scan per call, and which calls a person flagged as hard, with the tags used. One bulk when bulkId is given; otherwise all-time (every finished bulk). Scoped to one assistant when assistantId is given.
+ */
+export const GetAssistantSignalsQueryParams = zod.object({
+  "bulkId": zod.coerce.string().optional(),
+  "assistantId": zod.coerce.string().optional()
+})
+
+export const GetAssistantSignalsResponse = zod.object({
+  "bulkId": zod.string().nullable(),
+  "bulksCovered": zod.number(),
+  "assistantId": zod.string().nullable(),
+  "callsInScope": zod.number(),
+  "judge": zod.object({
+  "checked": zod.number(),
+  "judged": zod.number(),
+  "high": zod.number(),
+  "medium": zod.number(),
+  "low": zod.number(),
+  "notRecorded": zod.number(),
+  "clean": zod.number(),
+  "errored": zod.number()
+}),
+  "hardCases": zod.object({
+  "calls": zod.number(),
+  "tags": zod.array(zod.object({
+  "tag": zod.string(),
+  "calls": zod.number()
+})),
+  "examples": zod.array(zod.object({
+  "callId": zod.string(),
+  "label": zod.string(),
+  "tags": zod.array(zod.string())
+}))
+})
+})
+
+
+/**
  * @summary T-87 -- words that keep splitting the providers, grouped by the plurality reading, most calls first. One bulk when bulkId is given; otherwise all-time (T-92 -- every finished bulk, the latest run per call). Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
  */
 export const GetWordsToWatchQueryParams = zod.object({
