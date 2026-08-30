@@ -83,6 +83,7 @@ export async function needsHuman(): Promise<NeedsHuman> {
       status: benchmarkCallsTable.status,
       hardCases: benchmarkCallsTable.hardCases,
       sourceStartedAt: benchmarkCallsTable.sourceStartedAt,
+      audioCacheLastOutcome: benchmarkCallsTable.audioCacheLastOutcome,
     })
     .from(benchmarkCallsTable);
   const awaiting = new Set<string>(AWAITING_REVIEW_STATUSES);
@@ -95,9 +96,16 @@ export async function needsHuman(): Promise<NeedsHuman> {
   // recording Vapi can still hand out. Unknown age counts (an attempt is
   // the only way to find out); calls already past the window do not -- no
   // person can save those, and Calls names them "audio gone" instead.
+  // T-131: a call whose last recorded attempt was a permanent source
+  // refusal (Vapi's retention 400 / the unsigned-bucket 403) is excluded
+  // too -- no person can clear it, so counting it kept the figure from
+  // ever reaching zero (the batch-12 residue this exists to fix).
   const cachedIds = await listCachedCallIds();
   const audioUnsavedCalls = calls.filter(
-    (c) => !cachedIds.has(c.id) && !isPastVapiRetention(c.sourceStartedAt),
+    (c) =>
+      !cachedIds.has(c.id) &&
+      !isPastVapiRetention(c.sourceStartedAt) &&
+      c.audioCacheLastOutcome !== "source_refused",
   ).length;
 
   // Cells a retry could still fix, in bulks that have stopped: the same rule

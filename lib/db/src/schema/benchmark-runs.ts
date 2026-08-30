@@ -58,6 +58,14 @@ export const benchmarkRunsTable = pgTable("benchmark_runs", {
   }),
   shardIndex: integer("shard_index"),
   manifest: jsonb("manifest").$type<BenchmarkRunManifest>(),
+  // T-134: soft archive for ad-hoc runs (bulkId null) ONLY -- the route
+  // guards this. A bad or test run could previously only be removed with a
+  // direct DB delete (docs/backlog/good-to-have.md "no delete/archive
+  // endpoint"). Archiving hides the run from the default Runs list and
+  // stops it being any group's "latest" ranking snapshot; nothing is
+  // deleted and unarchiving restores everything. Bulk shard runs are
+  // managed through their bulk (FR-BLK-10 eviction), never here.
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

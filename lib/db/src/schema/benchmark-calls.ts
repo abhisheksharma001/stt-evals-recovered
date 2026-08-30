@@ -87,6 +87,19 @@ export const benchmarkCallsTable = pgTable("benchmark_calls", {
   deIdSecondApprovedAt: timestamp("de_id_second_approved_at", {
     withTimezone: true,
   }),
+  // T-131: the last audio-cache ATTEMPT's outcome (rescue or import-time
+  // caching -- lib/audio-attempt.ts). Distinct from "is the audio cached"
+  // (a disk fact, never stored here): this exists so an uncached call whose
+  // source has permanently refused the recording ("source_refused") stops
+  // counting as a chore a person could still clear. Null = never attempted
+  // by a recorder (or predates T-131).
+  audioCacheLastOutcome: text("audio_cache_last_outcome").$type<
+    "saved" | "failed" | "source_refused"
+  >(),
+  audioCacheLastError: text("audio_cache_last_error"),
+  audioCacheLastAttemptAt: timestamp("audio_cache_last_attempt_at", {
+    withTimezone: true,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -147,6 +147,24 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 13: attempt outcomes; refused-set identity; mining tool;
+  run archive; playback speed.** `benchmark_calls` carries the last audio-cache
+  ATTEMPT outcome (`lib/audio-attempt.ts`; pure classifier split db-free) —
+  "source_refused" (Vapi retention 400 / fresh bucket 403) stops counting in
+  Overview's "audio not saved" figure and the Calls rescue button, so both now
+  read **0** (107 cached + 14 refused = whole corpus; chip: "source refuses
+  audio"). **T-132 verified call-by-call: the 5 refused 2026-08-19 calls ARE
+  the storage-bucket `audio_url_forbidden` set** — "refused at day 12" was
+  never a retention event; Vapi wraps the unsigned-bucket failure in its
+  retention message. Pair mining is a committed tool now
+  (`src/mine-reading-pairs.ts`; 63 calls → 1,060 unfolded pairs; top new fold
+  candidates: am/pm vs "a m"/"p m", villaroma vs "villa roma" — folding is
+  deliberately its own future task). Ad-hoc runs soft-archive
+  (`POST /benchmark/runs/{id}/archive`, bulk shards 409; archived runs leave
+  the default list + all "latest snapshot" picks; nothing deleted). Call audio
+  players have 1×–2× playback speed. Backlog items "statistical significance"
+  and "decision export" found already shipped (T-20 bootstrap / T-32 artefact).
+
 - **2026-08-31, batch 12: audio rescue; import auto-cache; model-list cache;
   component tests; unsaved-audio figure.** `POST /benchmark/calls/cache-audio`
   saves every uncached call's audio to the server's disk (free — a Vapi

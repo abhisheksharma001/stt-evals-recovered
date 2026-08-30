@@ -23,4 +23,6 @@ export interface BenchmarkRun {
   bulkName?: string | null;
   /** @nullable */
   shardIndex?: number | null;
+  /** @nullable */
+  archivedAt?: Date | null;
 }

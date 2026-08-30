@@ -191,6 +191,18 @@ export interface EntityReference {
   value: string;
 }
 
+/**
+ * @nullable
+ */
+export type BenchmarkCallAudioCacheLastOutcome = typeof BenchmarkCallAudioCacheLastOutcome[keyof typeof BenchmarkCallAudioCacheLastOutcome] | null;
+
+
+export const BenchmarkCallAudioCacheLastOutcome = {
+  saved: 'saved',
+  failed: 'failed',
+  source_refused: 'source_refused',
+} as const;
+
 export interface BenchmarkCall {
   id: string;
   label: string;
@@ -233,6 +245,12 @@ export interface BenchmarkCall {
   /** @nullable */
   sourceSuccessEvaluation?: string | null;
   audioCached?: boolean;
+  /** @nullable */
+  audioCacheLastOutcome?: BenchmarkCallAudioCacheLastOutcome;
+  /** @nullable */
+  audioCacheLastError?: string | null;
+  /** @nullable */
+  audioCacheLastAttemptAt?: string | null;
   createdAt: string;
 }
 
@@ -534,6 +552,12 @@ export interface BenchmarkRun {
   bulkName?: string | null;
   /** @nullable */
   shardIndex?: number | null;
+  /** @nullable */
+  archivedAt?: string | null;
+}
+
+export interface RunArchiveBody {
+  archived: boolean;
 }
 
 export interface BenchmarkRunInput {

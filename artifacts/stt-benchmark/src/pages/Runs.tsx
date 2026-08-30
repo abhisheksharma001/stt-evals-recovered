@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBenchmarkRuns,
   useExecuteBenchmarkRun,
+  useSetRunArchived,
   useListBenchmarkRunResults,
   useListBenchmarkProviders,
   useListBenchmarkCalls,
@@ -13,7 +14,7 @@ import {
   getGetBenchmarkDashboardQueryKey,
   RunStatus
 } from "@workspace/api-client-react"
-import { Rocket, Activity, Server, Database, RotateCw, ListChecks, ArrowUpRight, ChevronDown, ChevronRight, Sparkles } from "lucide-react"
+import { Rocket, Activity, Server, Database, RotateCw, ListChecks, ArrowUpRight, ChevronDown, ChevronRight, Sparkles, Archive, ArchiveRestore } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
@@ -48,7 +49,13 @@ export default function Runs({ embedded = false, onlyAdhoc = false }: { embedded
     },
   })
 
-  const runs = onlyAdhoc ? allRuns?.filter((r) => r.bulkId == null) : allRuns
+  const scopedRuns = onlyAdhoc ? allRuns?.filter((r) => r.bulkId == null) : allRuns
+  // T-134: archived runs stay listed by the API (nothing is deleted) but
+  // hidden here by default -- archiving is how a bad or test run stops
+  // cluttering this table and Results.
+  const [showArchived, setShowArchived] = React.useState(false)
+  const archivedCount = scopedRuns?.filter((r) => r.archivedAt != null).length ?? 0
+  const runs = showArchived ? scopedRuns : scopedRuns?.filter((r) => r.archivedAt == null)
 
   return (
     <div className="space-y-6">
@@ -74,6 +81,18 @@ export default function Runs({ embedded = false, onlyAdhoc = false }: { embedded
       </div>
       )}
 
+      {archivedCount > 0 && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            data-testid="toggle-archived-runs"
+          >
+            {showArchived ? "Hide archived runs" : `Show ${archivedCount} archived run${archivedCount === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      )}
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -96,9 +115,10 @@ export default function Runs({ embedded = false, onlyAdhoc = false }: { embedded
                 <TableStateRow colSpan={6} state={{ kind: "empty", message: onlyAdhoc ? "No ad-hoc runs. Every run so far belongs to a bulk -- open a bulk row above to see its runs." : "No runs yet. Runs are created when a bulk is launched." }} />
               ) : (
                 runs?.map(run => (
-                  <TableRow key={run.id}>
+                  <TableRow key={run.id} className={run.archivedAt ? "opacity-50" : undefined}>
                     <TableCell className="font-mono text-xs font-semibold">
                       {run.id.substring(0, 8)}
+                      {run.archivedAt && <span className="ml-1.5 rounded border border-border px-1 py-0.5 text-[9px] font-normal uppercase text-muted-foreground">archived</span>}
                     </TableCell>
                     <TableCell>
                       <RunStatusBadge status={run.status} />
@@ -134,8 +154,11 @@ export default function Runs({ embedded = false, onlyAdhoc = false }: { embedded
                             recovery) runs too — gating the button to
                             failed|queued made the documented retry path
                             unreachable for partial-outage runs. */}
-                        {(run.status === 'failed' || run.status === 'queued' || run.status === 'complete' || run.status === 'running') && (
+                        {!run.archivedAt && (run.status === 'failed' || run.status === 'queued' || run.status === 'complete' || run.status === 'running') && (
                           <ExecuteButton runId={run.id} />
+                        )}
+                        {run.bulkId == null && (
+                          <ArchiveButton runId={run.id} archived={run.archivedAt != null} />
                         )}
                       </div>
                     </TableCell>
@@ -193,6 +216,36 @@ export function ExecuteButton({ runId }: { runId: string }) {
       })}
     >
       <RotateCw className="w-3.5 h-3.5 mr-1.5" /> Execute
+    </Button>
+  )
+}
+
+// T-134: soft archive/unarchive for an ad-hoc run. Nothing is deleted --
+// the run leaves the default list and Results' "latest snapshot" picks;
+// unarchive restores it. Bulk shard runs never render this (guarded in the
+// row too, and the API answers 409).
+function ArchiveButton({ runId, archived }: { runId: string; archived: boolean }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const setArchived = useSetRunArchived()
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={setArchived.isPending}
+      title={archived ? "Bring this run back into the list and the latest-snapshot picks." : "Hide this run from the list and stop it being any group's latest ranking snapshot. Nothing is deleted -- undo any time."}
+      onClick={() => setArchived.mutate({ runId, data: { archived: !archived } }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListBenchmarkRunsQueryKey() })
+          queryClient.invalidateQueries({ queryKey: getGetBenchmarkDashboardQueryKey() })
+          toast({ title: archived ? "Run restored" : "Run archived", description: archived ? "It counts again everywhere it used to." : "Hidden from the default list; its ranking snapshot no longer counts as latest. Nothing was deleted." })
+        },
+        onError: () => {
+          toast({ title: "Error", description: archived ? "Could not restore the run." : "Could not archive the run.", variant: "destructive" })
+        }
+      })}
+    >
+      {archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
     </Button>
   )
 }

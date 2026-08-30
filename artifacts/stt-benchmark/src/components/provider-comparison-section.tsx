@@ -15,6 +15,7 @@ import { TranscriptSideBySide } from "@/components/transcript-side-by-side"
 import { formatMicrocents } from "@/lib/utils"
 import { apiBase } from "@/lib/api-base"
 import { useToast } from "@/hooks/use-toast"
+import { PlaybackSpeed } from "@/components/playback-speed"
 
 // ---------------------------------------------------------------------------
 // T-72 (PRD-v4-uiux E.4): the per-call provider comparison, one organism
@@ -51,6 +52,14 @@ export function ProviderComparisonSection({ callId, bulkId }: { callId: string; 
 }
 
 function ComparisonBody({ data }: { data: CallComparison }) {
+  // T-135: playbackRate resets whenever the element remounts (key= changes
+  // per call), so it is re-applied onLoadedMetadata as well as on click.
+  const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  const [playbackRate, setPlaybackRate] = React.useState(1)
+  const applyRate = (rate: number) => {
+    setPlaybackRate(rate)
+    if (audioRef.current) audioRef.current.playbackRate = rate
+  }
   const { toast } = useToast()
   const [expandedProviderId, setExpandedProviderId] = React.useState<string | null>(null)
   // T-82: "Rows" = one line per provider with metrics, expand for its diff;
@@ -116,19 +125,24 @@ function ComparisonBody({ data }: { data: CallComparison }) {
           </p>
         )}
         {data.audioAvailable ? (
-          <audio
-            key={data.callId}
-            src={`${apiBase()}/api/benchmark/calls/${data.callId}/audio`}
-            controls
-            onError={() =>
-              toast({
-                title: "Couldn't load audio",
-                description: "The recording link may have expired on Vapi's side, or no Vapi account is configured on the server.",
-                variant: "destructive",
-              })
-            }
-            className="h-9 w-full"
-          />
+          <div className="flex items-center gap-2">
+            <audio
+              key={data.callId}
+              ref={audioRef}
+              src={`${apiBase()}/api/benchmark/calls/${data.callId}/audio`}
+              controls
+              onLoadedMetadata={(e) => { e.currentTarget.playbackRate = playbackRate }}
+              onError={() =>
+                toast({
+                  title: "Couldn't load audio",
+                  description: "The recording link may have expired on Vapi's side, or no Vapi account is configured on the server.",
+                  variant: "destructive",
+                })
+              }
+              className="h-9 w-full"
+            />
+            <PlaybackSpeed value={playbackRate} onChange={applyRate} />
+          </div>
         ) : (
           <p className="text-xs text-muted-foreground">No audio URL on this call.</p>
         )}
