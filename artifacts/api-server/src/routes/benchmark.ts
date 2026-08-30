@@ -481,15 +481,19 @@ router.get("/benchmark/words-to-watch", async (req, res): Promise<void> => {
     res.status(400).json({ error: query.error.message });
     return;
   }
-  const { bulkId, assistantId } = query.data;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bulkId)) {
-    res.status(400).json({ error: "bulkId must be a uuid" });
-    return;
-  }
-  const [bulk] = await db.select({ id: benchmarkBulksTable.id }).from(benchmarkBulksTable).where(eq(benchmarkBulksTable.id, bulkId)).limit(1);
-  if (!bulk) {
-    res.status(404).json({ error: "Bulk not found" });
-    return;
+  const { assistantId } = query.data;
+  // T-92: no bulkId = all-time (every finished bulk, latest run per call).
+  const bulkId = query.data.bulkId?.trim() ? query.data.bulkId : null;
+  if (bulkId) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bulkId)) {
+      res.status(400).json({ error: "bulkId must be a uuid" });
+      return;
+    }
+    const [bulk] = await db.select({ id: benchmarkBulksTable.id }).from(benchmarkBulksTable).where(eq(benchmarkBulksTable.id, bulkId)).limit(1);
+    if (!bulk) {
+      res.status(404).json({ error: "Bulk not found" });
+      return;
+    }
   }
   res.json(GetWordsToWatchResponse.parse(await wordsToWatch(bulkId, assistantId?.trim() ? assistantId : null)));
 });

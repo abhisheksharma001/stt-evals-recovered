@@ -794,20 +794,16 @@ export default function Rankings() {
                             </div>
                           )}
                           <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
-                          {/* T-87: the words that split the providers for this
-                              assistant. Bulk-scoped: the all-time view has no
-                              single set of transcripts to build spans from. */}
-                          {viewMode === "bulk" && selectedBulkId ? (
-                            <WordsToWatch
-                              bulkId={selectedBulkId}
-                              assistantId={ranks[0]?.assistantId ?? null}
-                              providerNames={providerNames}
-                              callLabels={callLabels}
-                              compact
-                            />
-                          ) : (
-                            <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">Pick one bulk to see the words that split the providers for this assistant.</p>
-                          )}
+                          {/* T-87 / T-92: the words that split the providers for
+                              this assistant -- this bulk, or all-time (every
+                              finished bulk, latest run per call). */}
+                          <WordsToWatch
+                            bulkId={viewMode === "bulk" ? selectedBulkId : null}
+                            assistantId={ranks[0]?.assistantId ?? null}
+                            providerNames={providerNames}
+                            callLabels={callLabels}
+                            compact
+                          />
                           <PerCallComparisonLinks assistantId={ranks[0]?.assistantId ?? null} bulkId={viewMode === "bulk" ? selectedBulkId : null} />
                         </CardContent>
                       </Card>

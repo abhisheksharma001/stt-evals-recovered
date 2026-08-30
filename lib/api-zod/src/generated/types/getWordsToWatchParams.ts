@@ -7,6 +7,6 @@
  */
 
 export type GetWordsToWatchParams = {
-bulkId: string;
+bulkId?: string;
 assistantId?: string;
 };

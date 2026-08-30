@@ -17,14 +17,15 @@ export function WordsToWatch({
   callLabels,
   compact = false,
 }: {
-  bulkId: string
+  /** Null = all-time across every finished bulk (T-92). */
+  bulkId: string | null
   assistantId: string | null
   providerNames: Record<string, string>
   callLabels: Record<string, string>
   /** Fewer rows, for a card that has a table under it already. */
   compact?: boolean
 }) {
-  const params = { bulkId, ...(assistantId ? { assistantId } : {}) }
+  const params = { ...(bulkId ? { bulkId } : {}), ...(assistantId ? { assistantId } : {}) }
   const { data, isLoading, isError } = useGetWordsToWatch(params, { query: { queryKey: getGetWordsToWatchQueryKey(params) } })
   const [showAll, setShowAll] = React.useState(false)
   const [showFillers, setShowFillers] = React.useState(false)
@@ -51,6 +52,7 @@ export function WordsToWatch({
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Words to watch</h4>
         <p className="text-[11px] text-muted-foreground">
           {data.callsWithSpans} of {data.callsScanned} call{data.callsScanned === 1 ? "" : "s"} had a split
+          {bulkId === null && ` · across ${data.bulksCovered} finished bulk${data.bulksCovered === 1 ? "" : "s"}, latest run per call`}
           {data.words.length > 0 && ` · ${data.words.length} distinct`}
         </p>
       </div>
@@ -116,7 +118,7 @@ export function WordsToWatch({
                         {w.exampleCallIds.map((id) => (
                           <Link
                             key={id}
-                            href={`/corpus?call=${id}&bulk=${bulkId}`}
+                            href={bulkId ? `/corpus?call=${id}&bulk=${bulkId}` : `/corpus?call=${id}`}
                             className="inline-flex items-center gap-1 font-mono text-[11px] text-primary hover:underline"
                             title="Open this call in Corpus and hear the disagreements"
                           >

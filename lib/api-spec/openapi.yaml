@@ -97,11 +97,10 @@ paths:
     get:
       operationId: getWordsToWatch
       tags: [benchmark]
-      summary: T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+      summary: T-87 -- words that keep splitting the providers, grouped by the plurality reading, most calls first. One bulk when bulkId is given; otherwise all-time (T-92 -- every finished bulk, the latest run per call). Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
       parameters:
         - name: bulkId
           in: query
-          required: true
           schema:
             type: string
         - name: assistantId
@@ -1050,9 +1049,11 @@ components:
         agreesWithMajority: { type: boolean }
     WordsToWatch:
       type: object
-      required: [bulkId, assistantId, callsScanned, callsWithSpans, words]
+      required: [bulkId, bulksCovered, assistantId, callsScanned, callsWithSpans, words]
       properties:
-        bulkId: { type: string }
+        # Null = all-time (T-92).
+        bulkId: { type: ["string", "null"] }
+        bulksCovered: { type: number }
         assistantId: { type: ["string", "null"] }
         callsScanned: { type: number }
         callsWithSpans: { type: number }

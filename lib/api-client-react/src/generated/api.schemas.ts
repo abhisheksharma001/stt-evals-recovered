@@ -38,7 +38,9 @@ export type WordsToWatchWordsItem = {
 };
 
 export interface WordsToWatch {
-  bulkId: string;
+  /** @nullable */
+  bulkId: string | null;
+  bulksCovered: number;
   /** @nullable */
   assistantId: string | null;
   callsScanned: number;
@@ -1483,7 +1485,7 @@ bulkId?: string;
 };
 
 export type GetWordsToWatchParams = {
-bulkId: string;
+bulkId?: string;
 assistantId?: string;
 };
 
