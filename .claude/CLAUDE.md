@@ -147,6 +147,24 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 12: audio rescue; import auto-cache; model-list cache;
+  component tests; unsaved-audio figure.** `POST /benchmark/calls/cache-audio`
+  saves every uncached call's audio to the server's disk (free — a Vapi
+  download, no STT provider; cached calls skipped, so safe to repeat), with a
+  "Save audio now (N)" button on Calls. Run live: **107 of 121 calls cached
+  (was 64)**; the 14 refusals were all Vapi retention 400s — 9 date-unknown
+  pre-labeling calls + the 5 dated 2026-08-19, refused at day 12. Import now
+  caches audio the moment a call lands (failure named in the import outcome,
+  never fails the import). The 14-day constant lives once in
+  `lib/vapi-retention.ts`. Vendor model lists are served from a 30-minute
+  server cache with stale-on-error (≤24 h; `lib/model-list-cache.ts`) — the
+  51 s Deepgram wait hits at most twice an hour. `*.test.tsx` runs in jsdom
+  (per-file pragma; vitest needed the `@` alias + automatic JSX); `JudgeChip`
+  extracted to `components/judge-chip.tsx` and rendered under test — 39 web
+  tests. Overview "Needs a person" gains "calls' audio not saved on the
+  server yet" (attemptable only). Rescue outcomes are not persisted — the 14
+  refused calls keep counting there; backlog names the follow-up.
+
 - **2026-08-31, batch 11: web tests; recharts on demand; retention facts;
   T-79 progress.** The UI package runs vitest (CI too) on pure `src/lib`
   logic — `judgeChipFor()`, `paidVsListDiffers()`, `catalogAge`,
