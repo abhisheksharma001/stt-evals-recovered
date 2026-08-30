@@ -93,6 +93,7 @@ export const ListBenchmarkCallsResponseItem = zod.object({
   "sourceTranscriberModel": zod.string().nullish(),
   "sourceEndedReason": zod.string().nullish(),
   "sourceSuccessEvaluation": zod.string().nullish(),
+  "audioCached": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 export const ListBenchmarkCallsResponse = zod.array(ListBenchmarkCallsResponseItem)
@@ -147,6 +148,7 @@ export const CreateBenchmarkCallResponse = zod.object({
   "sourceTranscriberModel": zod.string().nullish(),
   "sourceEndedReason": zod.string().nullish(),
   "sourceSuccessEvaluation": zod.string().nullish(),
+  "audioCached": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -298,6 +300,7 @@ export const GetBenchmarkCallResponse = zod.object({
   "sourceTranscriberModel": zod.string().nullish(),
   "sourceEndedReason": zod.string().nullish(),
   "sourceSuccessEvaluation": zod.string().nullish(),
+  "audioCached": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -353,6 +356,7 @@ export const UpdateBenchmarkCallResponse = zod.object({
   "sourceTranscriberModel": zod.string().nullish(),
   "sourceEndedReason": zod.string().nullish(),
   "sourceSuccessEvaluation": zod.string().nullish(),
+  "audioCached": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 
@@ -631,6 +635,7 @@ export const AttestBenchmarkCallDeidResponse = zod.object({
   "sourceTranscriberModel": zod.string().nullish(),
   "sourceEndedReason": zod.string().nullish(),
   "sourceSuccessEvaluation": zod.string().nullish(),
+  "audioCached": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
 })
 

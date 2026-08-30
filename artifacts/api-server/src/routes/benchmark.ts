@@ -122,7 +122,7 @@ import { AgentConfigError, AgentRequestError, JUDGE_MODEL, analyzeFailure, match
 import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
-import { audioCachePathFor } from "../lib/audio-cache";
+import { audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -301,7 +301,7 @@ function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect
   };
 }
 
-function serializeCall(call: BenchmarkCallRow) {
+function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
   return {
     id: call.id,
     label: call.label,
@@ -327,6 +327,9 @@ function serializeCall(call: BenchmarkCallRow) {
     sourceTranscriberModel: call.sourceTranscriberModel,
     sourceEndedReason: call.sourceEndedReason,
     sourceSuccessEvaluation: call.sourceSuccessEvaluation,
+    // T-124: only the read routes pass this -- write responses leave it
+    // absent rather than claiming false without having looked.
+    audioCached,
     createdAt: call.createdAt.toISOString(),
   };
 }
@@ -426,7 +429,11 @@ router.get("/benchmark/calls", async (req, res): Promise<void> => {
           .from(benchmarkCallsTable)
           .orderBy(desc(benchmarkCallsTable.createdAt));
 
-  res.json(ListBenchmarkCallsResponse.parse(calls.map(serializeCall)));
+  // T-124: one readdir decorates every row with whether its audio bytes
+  // are already on disk -- the Corpus retention chips read this instead of
+  // guessing from age alone.
+  const cachedIds = await listCachedCallIds();
+  res.json(ListBenchmarkCallsResponse.parse(calls.map((c) => serializeCall(c, cachedIds.has(c.id)))));
 });
 
 router.post("/benchmark/calls", async (req, res): Promise<void> => {
@@ -548,7 +555,7 @@ router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  res.json(GetBenchmarkCallResponse.parse(serializeCall(call)));
+  res.json(GetBenchmarkCallResponse.parse(serializeCall(call, await isAudioCached(call.id))));
 });
 
 // T-72 (E.4): one call, every provider's output under the reference.

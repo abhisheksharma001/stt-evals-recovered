@@ -43,7 +43,7 @@ import { useToast } from "@/hooks/use-toast"
 import { DisagreementSpans } from "@/components/disagreement-spans"
 import { TableStateRow, errorMessage } from "@/components/table-state"
 import { ProviderComparisonSection } from "@/components/provider-comparison-section"
-import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
+import { retentionState } from "@/lib/retention"
 import { judgeChipFor, type JudgeChipScan, type JudgeChipTone } from "@/lib/judge-chip"
 
 // ---------------------------------------------------------------------------
@@ -140,6 +140,15 @@ export default function Corpus() {
       .sort((a, b) => rank(b.id) - rank(a.id) || a.label.localeCompare(b.label))
   }, [calls, searchText, statusFilter, verticalFilter, hardCasesOnly, disagreementOf])
 
+  // T-124: counted over the filtered view so the summary always matches the
+  // rows on screen. "Gone" = uncached past the retention window, a fact
+  // from the API's audioCached, not an age guess.
+  const audioSaved = React.useMemo(() => filteredCalls.filter((c) => c.audioCached).length, [filteredCalls])
+  const audioGone = React.useMemo(
+    () => filteredCalls.filter((c) => retentionState(c.sourceStartedAt, c.audioCached)?.kind === "gone").length,
+    [filteredCalls],
+  )
+
   type CallRow = NonNullable<typeof calls>[number]
   type AssistantGroup = { key: string; id: string | null; calls: CallRow[]; needsReview: number; hardCases: number }
   type OrgGroup = { key: string; label: string | null; calls: number; needsReview: number; hardCases: number; assistants: AssistantGroup[] }
@@ -198,7 +207,7 @@ export default function Corpus() {
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={call.status} />
                             <JudgeChip scan={latestScanByCall.get(call.id) ?? null} />
-                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} />
+                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} audioCached={call.audioCached} />
                           </div>
                         </TableCell>
                         <TableCell>
@@ -288,6 +297,9 @@ export default function Corpus() {
         <CardContent className="p-0">
           <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted-foreground" data-testid="calls-grouping-bar">
             <span>{groupBy === "org" ? "Grouped by org, then assistant. Calls inside are most disagreement first." : "One row per call, most disagreement first."}</span>
+            <span className="whitespace-nowrap" data-testid="audio-retention-summary" title="Cached audio lives on the server and outlives Vapi's 14-day retention window. 'Gone' = never cached and past the window: unfetchable now, for everyone.">
+              {audioSaved} audio saved{audioGone > 0 && <span className="text-destructive"> · {audioGone} gone for good</span>}
+            </span>
             <div className="ml-auto flex items-center gap-3">
               <div className="flex items-center rounded-md border border-border text-xs" role="group" aria-label="Group rows">
                 <button type="button" onClick={() => setGroupBy("org")} className={`px-2 py-1.5 ${groupBy === "org" ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`} title="Org, then assistant, then calls -- the same nesting as Results">
@@ -684,41 +696,45 @@ function StatusBadge({ status }: { status: CallStatus }) {
   )
 }
 
-// ux-fixes UX-9: Vapi's plan only retains a call's recording for 14 days --
-// past that, no provider can ever get a fresh copy of the audio again (see
-// docs/PRD-technical-fixes.md FIX-2). Once a run has successfully cached a
-// call's bytes, that call is no longer actually at risk -- but this page
-// doesn't know per-call cache state, so this warns from age alone. That
-// means a cached call can still show a stale warning after day 14 --
-// conservative false positive, not a false "all clear," which is the
-// direction that's safe to be wrong in for a review-effort warning.
-const RETENTION_WINDOW_DAYS = VAPI_RETENTION_WINDOW_DAYS // T-16: one number, shared with Import and Bulks defaults
-const RETENTION_WARNING_DAYS = 10
-
-function RetentionWarning({ sourceStartedAt }: { sourceStartedAt?: string | null }) {
-  if (!sourceStartedAt) return null
-  const age = differenceInCalendarDays(new Date(), new Date(sourceStartedAt))
-  if (age >= RETENTION_WINDOW_DAYS) {
+// T-124: the API now says per call whether its audio bytes are cached on
+// the server (audioCached), so this chip states facts instead of guessing
+// from age alone (the pre-T-124 version warned "expired?" on calls that
+// were long since safely cached). The mapping lives in lib/retention.ts
+// retentionState(), unit-tested; this component only owns the CSS.
+function RetentionWarning({ sourceStartedAt, audioCached }: { sourceStartedAt?: string | null; audioCached?: boolean }) {
+  const st = retentionState(sourceStartedAt, audioCached)
+  if (!st) return null
+  if (st.kind === "saved") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono uppercase text-muted-foreground"
+        title="This call's audio bytes are cached on the server -- Vapi's 14-day retention window no longer applies to it."
+        data-testid="retention-chip"
+      >
+        <TimerReset className="h-2.5 w-2.5" /> audio saved
+      </span>
+    )
+  }
+  if (st.kind === "gone") {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-destructive"
-        title={`This call's recording is ${age} days old -- past Vapi's 14-day retention window. If it hasn't already been successfully run, its audio may be permanently unfetchable now.`}
+        title={`This call's recording is ${st.age} days old and was never cached by a successful run -- past Vapi's 14-day window it cannot be fetched or played again, by anyone. Existing scores keep; new runs will fail on this call.`}
+        data-testid="retention-chip"
       >
-        <TimerReset className="h-2.5 w-2.5" /> expired?
+        <TimerReset className="h-2.5 w-2.5" /> audio gone
       </span>
     )
   }
-  if (age >= RETENTION_WARNING_DAYS) {
-    return (
-      <span
-        className="inline-flex items-center gap-1 rounded-md border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-warning"
-        title={`This call's recording is ${age} days old. Vapi stops serving it after day 14 -- review and run it soon if it hasn't been run yet.`}
-      >
-        <TimerReset className="h-2.5 w-2.5" /> {RETENTION_WINDOW_DAYS - age}d left
-      </span>
-    )
-  }
-  return null
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-warning/25 bg-warning/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-warning"
+      title={`This call's recording is ${st.age} days old and not yet cached. Vapi stops serving it after day 14 -- run it before then and its audio is saved for good.`}
+      data-testid="retention-chip"
+    >
+      <TimerReset className="h-2.5 w-2.5" /> {st.daysLeft}d left
+    </span>
+  )
 }
 
 function CreateCallDialog() {
