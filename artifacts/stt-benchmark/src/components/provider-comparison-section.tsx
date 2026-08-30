@@ -11,6 +11,7 @@ import { ChevronDown, ChevronRight, Trophy, AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { WordDiffView } from "@/components/word-diff-view"
 import { NoOutputChip, NoOutputDetail, MissingCounts, missingByProvider, type NoOutputStatus } from "@/components/no-output"
+import { TranscriptSideBySide } from "@/components/transcript-side-by-side"
 import { formatMicrocents } from "@/lib/utils"
 import { apiBase } from "@/lib/api-base"
 import { useToast } from "@/hooks/use-toast"
@@ -52,6 +53,9 @@ export function ProviderComparisonSection({ callId, bulkId }: { callId: string; 
 function ComparisonBody({ data }: { data: CallComparison }) {
   const { toast } = useToast()
   const [expandedProviderId, setExpandedProviderId] = React.useState<string | null>(null)
+  // T-82: "Rows" = one line per provider with metrics, expand for its diff;
+  // "Side by side" = every full transcript at once, reference first.
+  const [view, setView] = React.useState<"rows" | "side">("rows")
   const ref = data.reference
   const referenceLabel = ref?.kind === "gold" ? "gold" : "the draft"
   const pickName = data.judge?.pickProviderId
@@ -65,7 +69,7 @@ function ComparisonBody({ data }: { data: CallComparison }) {
   const missingCounts = missingByProvider(data.rows.map((r) => ({ providerId: r.providerId, providerName: r.providerName, ok: r.status === "ok" })))
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {/* Reference */}
       <section className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -163,12 +167,27 @@ function ComparisonBody({ data }: { data: CallComparison }) {
             {missing > 0 && <>, <span className="text-warning">{missing} without output</span></>}
             {" · "}ordered {data.ordering === "verdict_rate" ? "by this bulk's verdict rate" : "alphabetically"}
           </span>
+          <div className="ml-auto flex rounded-md border border-border p-0.5" role="tablist" aria-label="Comparison view">
+            {(["rows", "side"] as const).map((v) => (
+              <button
+                key={v}
+                role="tab"
+                aria-selected={view === v}
+                onClick={() => setView(v)}
+                className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {v === "rows" ? "Rows" : "Side by side"}
+              </button>
+            ))}
+          </div>
           <MissingCounts counts={missingCounts} className="basis-full" />
         </div>
         {data.rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No provider has transcribed this call{data.context ? " in this bulk" : ""} yet.
           </p>
+        ) : view === "side" ? (
+          <TranscriptSideBySide data={data} referenceLabel={referenceLabel} />
         ) : (
           <div className="overflow-hidden rounded-md border border-border">
             <div className="grid grid-cols-[1.2fr_5rem_5rem_5rem_5rem_5rem] items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
