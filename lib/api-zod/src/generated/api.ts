@@ -723,6 +723,63 @@ export const CreateBenchmarkProviderResponse = zod.object({
 
 
 /**
+ * @summary T-104 -- per vendor, the STT models it offers today (live from the vendor API where one exists, else verified catalog) and which already have a provider row. Read-only.
+ */
+export const ListProviderModelsResponse = zod.object({
+  "vendors": zod.array(zod.object({
+  "vendor": zod.string(),
+  "vendorLabel": zod.string(),
+  "adapterId": zod.string(),
+  "apiKeyConfigured": zod.boolean(),
+  "source": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "models": zod.array(zod.object({
+  "apiModel": zod.string(),
+  "label": zod.string(),
+  "latest": zod.boolean(),
+  "source": zod.enum(['live', 'catalog']),
+  "verifiedAt": zod.string(),
+  "note": zod.string().nullable(),
+  "providerId": zod.string(),
+  "enabled": zod.boolean(),
+  "rowStatus": zod.string().nullable()
+}))
+})),
+  "fetchedAt": zod.string()
+})
+
+
+/**
+ * @summary T-104 -- create the provider row for one (vendor, apiModel) if missing, so a newer model runs as its own candidate. Idempotent.
+ */
+
+
+
+
+export const EnableProviderModelBody = zod.object({
+  "vendor": zod.string().min(1),
+  "apiModel": zod.string().min(1)
+})
+
+export const EnableProviderModelResponse = zod.object({
+  "created": zod.boolean(),
+  "provider": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "model": zod.string(),
+  "status": zod.enum(['not_configured', 'ready', 'disabled']),
+  "supportsStreaming": zod.boolean(),
+  "supportsDiarization": zod.boolean(),
+  "costPerMinute": zod.number(),
+  "keywordBoosting": zod.boolean(),
+  "configNote": zod.string().nullish(),
+  "hasAdapter": zod.boolean(),
+  "apiKeyConfigured": zod.boolean()
+})
+})
+
+
+/**
  * @summary Manually disable/re-enable a provider or edit its cost/notes (FR-P3). Readiness itself is derived from whether its API key env var is set, not set here.
  */
 export const UpdateBenchmarkProviderParams = zod.object({
@@ -751,6 +808,27 @@ export const UpdateBenchmarkProviderResponse = zod.object({
   "configNote": zod.string().nullish(),
   "hasAdapter": zod.boolean(),
   "apiKeyConfigured": zod.boolean()
+})
+
+
+/**
+ * @summary T-103 -- judge models for the agent, read live from OpenAI with the pinned five first. Falls back to the pinned list (live=false) when OpenAI is unreachable.
+ */
+export const ListAgentModelsResponse = zod.object({
+  "defaultModel": zod.string(),
+  "pinned": zod.array(zod.object({
+  "id": zod.string(),
+  "priced": zod.boolean(),
+  "available": zod.boolean().nullable()
+})),
+  "others": zod.array(zod.object({
+  "id": zod.string(),
+  "priced": zod.boolean(),
+  "available": zod.boolean().nullable()
+})),
+  "live": zod.boolean(),
+  "fetchedAt": zod.string().nullable(),
+  "error": zod.string().nullable()
 })
 
 

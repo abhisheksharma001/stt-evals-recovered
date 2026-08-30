@@ -348,6 +348,68 @@ export interface Provider {
   apiKeyConfigured: boolean;
 }
 
+export interface AgentModelOption {
+  id: string;
+  priced: boolean;
+  available: boolean | null;
+}
+
+export interface AgentModelList {
+  defaultModel: string;
+  pinned: AgentModelOption[];
+  others: AgentModelOption[];
+  live: boolean;
+  fetchedAt: string | null;
+  error: string | null;
+}
+
+export type ProviderModelOptionSource = typeof ProviderModelOptionSource[keyof typeof ProviderModelOptionSource];
+
+
+export const ProviderModelOptionSource = {
+  live: 'live',
+  catalog: 'catalog',
+} as const;
+
+export interface ProviderModelOption {
+  apiModel: string;
+  label: string;
+  latest: boolean;
+  source: ProviderModelOptionSource;
+  verifiedAt: string;
+  note: string | null;
+  providerId: string;
+  enabled: boolean;
+  rowStatus: string | null;
+}
+
+export interface VendorModels {
+  vendor: string;
+  vendorLabel: string;
+  adapterId: string;
+  apiKeyConfigured: boolean;
+  source: string | null;
+  error: string | null;
+  models: ProviderModelOption[];
+}
+
+export interface ProviderModelList {
+  vendors: VendorModels[];
+  fetchedAt: string;
+}
+
+export interface EnableProviderModelInput {
+  /** @minLength 1 */
+  vendor: string;
+  /** @minLength 1 */
+  apiModel: string;
+}
+
+export interface EnableProviderModelResult {
+  created: boolean;
+  provider: Provider;
+}
+
 export interface ProviderUpdate {
   disabled?: boolean;
   /** @minimum 0 */

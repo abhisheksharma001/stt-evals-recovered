@@ -59,12 +59,14 @@ function deriveFlagTexts(
     const name = candidatesByProvider.get(providerId)?.providerName ?? providerId;
     if (result.crossProviderDisagreement && result.crossProviderDisagreement.disagreementRate > 0.15) {
       flags.push({
+        kind: "peer_disagreement",
         text: name,
         reason: `Disagrees with the other candidate(s) on ${Math.round(result.crossProviderDisagreement.disagreementRate * 100)}% of its words.`,
       });
     }
     for (const span of result.lowConfidenceSpans) {
       flags.push({
+        kind: "low_confidence",
         text: span.words.join(" "),
         reason: `${name} reported low confidence here (avg ${(span.avgConfidence * 100).toFixed(0)}%).`,
       });
@@ -80,6 +82,7 @@ function deriveFlagTexts(
         ? ` -- ${mismatch.missingProviderIds.map((pid) => candidatesByProvider.get(pid)?.providerName ?? pid).join(", ")} mentioned nothing of this type at all.`
         : "";
       flags.push({
+        kind: "entity_mismatch",
         text: mismatch.type.replace(/_/g, " "),
         reason: `Candidates disagree on the ${mismatch.type.replace(/_/g, " ")} itself -- ${byProviderText}.${missingText}`,
       });

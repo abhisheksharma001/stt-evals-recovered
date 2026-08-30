@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "recordedAt": "2026-08-28T21:27:49.432Z",
+  "recordedAt": "2026-08-30T12:28:49.066Z",
   "model": "gpt-4o",
-  "promptHash": "1b17b632f773b0164c56161ba580df4c6293fcac584430b4e46f2bc57a84e2b2",
-  "costMicrocents": 222115,
+  "promptHash": "1826eb7f9f8be4897477ab975b5d42a004f614292e2cd82961eeea9cf39e65a0",
+  "costMicrocents": 295744,
   "scans": [
     {
       "scanId": "4d339313-bc41-4be2-8179-9c1219098be1",
@@ -18,9 +18,9 @@
       ],
       "storedPickProviderId": "deepgram-nova-3",
       "judgeProviderId": "deepgram-nova-3",
-      "reasoningChars": 748,
-      "promptTokens": 1007,
-      "completionTokens": 170
+      "reasoningChars": 769,
+      "promptTokens": 1597,
+      "completionTokens": 230
     },
     {
       "scanId": "93c99f6c-54e2-4a07-a439-570b5d3f1878",
@@ -34,10 +34,10 @@
         "cartesia-ink-whisper"
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
-      "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 806,
-      "promptTokens": 4198,
-      "completionTokens": 167
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 875,
+      "promptTokens": 4788,
+      "completionTokens": 254
     },
     {
       "scanId": "c34969c1-4549-4387-9a68-51696b4cee5a",
@@ -52,9 +52,9 @@
       ],
       "storedPickProviderId": "deepgram-nova-3",
       "judgeProviderId": "deepgram-nova-3",
-      "reasoningChars": 898,
-      "promptTokens": 754,
-      "completionTokens": 193
+      "reasoningChars": 546,
+      "promptTokens": 1344,
+      "completionTokens": 118
     },
     {
       "scanId": "9ce0c61b-2a5e-491d-b342-053d3b8e824b",
@@ -69,9 +69,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 898,
-      "promptTokens": 1484,
-      "completionTokens": 201
+      "reasoningChars": 783,
+      "promptTokens": 2074,
+      "completionTokens": 274
     },
     {
       "scanId": "d7a718c3-b51b-4969-b2d7-d928f63bb404",
@@ -86,9 +86,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 722,
-      "promptTokens": 950,
-      "completionTokens": 172
+      "reasoningChars": 1152,
+      "promptTokens": 1540,
+      "completionTokens": 304
     },
     {
       "scanId": "f10a5201-033b-4927-a3b3-07921b8bd082",
@@ -102,27 +102,27 @@
         "cartesia-ink-whisper"
       ],
       "storedPickProviderId": "gladia-solaria",
-      "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 838,
-      "promptTokens": 1274,
-      "completionTokens": 178
+      "judgeProviderId": "gladia-solaria",
+      "reasoningChars": 1392,
+      "promptTokens": 1864,
+      "completionTokens": 375
     },
     {
       "scanId": "c2b981f0-0036-4027-a85e-f887cec1dec8",
       "callId": "20e27685-7101-4353-8500-af6f2b8245ec",
       "runId": "84a68df0-87b1-4dea-835e-637f132802a4",
       "candidateProviderIds": [
-        "deepgram-nova-3",
+        "assemblyai-universal",
         "cartesia-ink-whisper",
-        "openai-gpt-4o-transcribe",
+        "deepgram-nova-3",
         "gladia-solaria",
-        "assemblyai-universal"
+        "openai-gpt-4o-transcribe"
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
-      "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 637,
-      "promptTokens": 1384,
-      "completionTokens": 155
+      "judgeProviderId": "cartesia-ink-whisper",
+      "reasoningChars": 979,
+      "promptTokens": 1974,
+      "completionTokens": 270
     },
     {
       "scanId": "4b172f93-fe2c-4665-99a5-8fc015a7dc71",
@@ -137,9 +137,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "deepgram-nova-3",
-      "reasoningChars": 777,
-      "promptTokens": 3527,
-      "completionTokens": 156
+      "reasoningChars": 960,
+      "promptTokens": 4117,
+      "completionTokens": 294
     },
     {
       "scanId": "6d6f77b3-0627-4726-8283-f0a60f37e20f",
@@ -154,9 +154,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 967,
-      "promptTokens": 1250,
-      "completionTokens": 200
+      "reasoningChars": 746,
+      "promptTokens": 1840,
+      "completionTokens": 234
     },
     {
       "scanId": "0aa2cbd0-0302-45ac-a2c7-5dbbeb91d8ce",
@@ -171,9 +171,9 @@
       ],
       "storedPickProviderId": "gladia-solaria",
       "judgeProviderId": "gladia-solaria",
-      "reasoningChars": 860,
-      "promptTokens": 2932,
-      "completionTokens": 188
+      "reasoningChars": 882,
+      "promptTokens": 3522,
+      "completionTokens": 229
     },
     {
       "scanId": "2db9c49c-1e4b-435a-b7cf-638f45f29c7b",
@@ -187,10 +187,10 @@
         "deepgram-nova-3"
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
-      "judgeProviderId": "gladia-solaria",
-      "reasoningChars": 905,
-      "promptTokens": 1991,
-      "completionTokens": 203
+      "judgeProviderId": "cartesia-ink-whisper",
+      "reasoningChars": 929,
+      "promptTokens": 2581,
+      "completionTokens": 260
     },
     {
       "scanId": "e0bef22d-b577-4e3c-bb6a-eda848d279b8",
@@ -205,9 +205,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 849,
-      "promptTokens": 1882,
-      "completionTokens": 185
+      "reasoningChars": 932,
+      "promptTokens": 2472,
+      "completionTokens": 263
     },
     {
       "scanId": "47bb3516-bc12-4c43-935e-8bd9c7326e03",
@@ -222,9 +222,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 1132,
-      "promptTokens": 2393,
-      "completionTokens": 251
+      "reasoningChars": 1039,
+      "promptTokens": 2983,
+      "completionTokens": 435
     },
     {
       "scanId": "7fdd29db-3372-42b7-9dcc-affbc778d82e",
@@ -239,9 +239,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 812,
-      "promptTokens": 937,
-      "completionTokens": 196
+      "reasoningChars": 850,
+      "promptTokens": 1527,
+      "completionTokens": 278
     },
     {
       "scanId": "aa272bcd-b380-4b15-9d27-d25aec0f457e",
@@ -256,9 +256,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 976,
-      "promptTokens": 1351,
-      "completionTokens": 194
+      "reasoningChars": 1121,
+      "promptTokens": 1941,
+      "completionTokens": 336
     },
     {
       "scanId": "82827495-62c5-4fc3-ac0f-149b013a799a",
@@ -273,9 +273,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 808,
-      "promptTokens": 1931,
-      "completionTokens": 190
+      "reasoningChars": 790,
+      "promptTokens": 2521,
+      "completionTokens": 241
     },
     {
       "scanId": "788ec22b-32fe-4c55-b258-224dd7552514",
@@ -290,9 +290,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 1112,
-      "promptTokens": 4955,
-      "completionTokens": 234
+      "reasoningChars": 1869,
+      "promptTokens": 5545,
+      "completionTokens": 503
     },
     {
       "scanId": "49328aeb-6dc7-46bb-9b2b-60ae63e663da",
@@ -307,9 +307,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 979,
-      "promptTokens": 3385,
-      "completionTokens": 225
+      "reasoningChars": 1057,
+      "promptTokens": 3975,
+      "completionTokens": 354
     },
     {
       "scanId": "0c06afb8-3bbc-45be-bf73-68a06c22e8c6",
@@ -324,9 +324,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 951,
-      "promptTokens": 958,
-      "completionTokens": 220
+      "reasoningChars": 735,
+      "promptTokens": 1548,
+      "completionTokens": 276
     },
     {
       "scanId": "44fbcd73-77ad-4dfe-a500-717bbbc0e883",
@@ -341,9 +341,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 1074,
-      "promptTokens": 2065,
-      "completionTokens": 239
+      "reasoningChars": 1094,
+      "promptTokens": 2655,
+      "completionTokens": 349
     },
     {
       "scanId": "6ddd8373-798e-47af-8826-fd76a8f09711",
@@ -358,9 +358,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 774,
-      "promptTokens": 1221,
-      "completionTokens": 165
+      "reasoningChars": 573,
+      "promptTokens": 1811,
+      "completionTokens": 121
     },
     {
       "scanId": "ca8035c2-1925-4664-a579-dfa7bc3b9841",
@@ -375,9 +375,9 @@
       ],
       "storedPickProviderId": "deepgram-nova-3",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 1035,
-      "promptTokens": 6111,
-      "completionTokens": 226
+      "reasoningChars": 1128,
+      "promptTokens": 6701,
+      "completionTokens": 303
     },
     {
       "scanId": "4f7df928-13d8-483d-84ab-4794311e16bc",
@@ -392,9 +392,9 @@
       ],
       "storedPickProviderId": "assemblyai-universal",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 985,
-      "promptTokens": 1267,
-      "completionTokens": 214
+      "reasoningChars": 1678,
+      "promptTokens": 1857,
+      "completionTokens": 428
     },
     {
       "scanId": "dc42a877-ecf2-456e-96da-91bd7e4db937",
@@ -409,9 +409,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 1124,
-      "promptTokens": 2064,
-      "completionTokens": 255
+      "reasoningChars": 1026,
+      "promptTokens": 2654,
+      "completionTokens": 298
     },
     {
       "scanId": "1a31f470-b78e-4127-881c-2e4b09742c3a",
@@ -425,10 +425,10 @@
         "cartesia-ink-whisper"
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
-      "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 991,
-      "promptTokens": 2602,
-      "completionTokens": 234
+      "judgeProviderId": "openai-gpt-4o-transcribe",
+      "reasoningChars": 1089,
+      "promptTokens": 3192,
+      "completionTokens": 351
     },
     {
       "scanId": "a6c3a8a4-1342-4066-9bbf-c267252b2b2e",
@@ -443,9 +443,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "assemblyai-universal",
-      "reasoningChars": 716,
-      "promptTokens": 1463,
-      "completionTokens": 158
+      "reasoningChars": 766,
+      "promptTokens": 2053,
+      "completionTokens": 231
     },
     {
       "scanId": "99e7ed5f-4f82-4ab9-b254-bef926d9fe36",
@@ -460,9 +460,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 872,
-      "promptTokens": 828,
-      "completionTokens": 201
+      "reasoningChars": 994,
+      "promptTokens": 1418,
+      "completionTokens": 312
     },
     {
       "scanId": "50fa5f64-0fa4-4fce-8dd6-4b04bebbc169",
@@ -477,9 +477,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 740,
-      "promptTokens": 3764,
-      "completionTokens": 163
+      "reasoningChars": 1297,
+      "promptTokens": 4354,
+      "completionTokens": 418
     },
     {
       "scanId": "47ddeaf1-32fb-4320-9724-80611f8ce54b",
@@ -494,9 +494,9 @@
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
       "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 890,
-      "promptTokens": 3158,
-      "completionTokens": 190
+      "reasoningChars": 1064,
+      "promptTokens": 3748,
+      "completionTokens": 314
     },
     {
       "scanId": "e449e968-567c-4019-946a-13e79577bc9e",
@@ -510,10 +510,10 @@
         "cartesia-ink-whisper"
       ],
       "storedPickProviderId": "openai-gpt-4o-transcribe",
-      "judgeProviderId": "openai-gpt-4o-transcribe",
-      "reasoningChars": 875,
-      "promptTokens": 2069,
-      "completionTokens": 199
+      "judgeProviderId": "deepgram-nova-3",
+      "reasoningChars": 769,
+      "promptTokens": 2659,
+      "completionTokens": 207
     }
   ]
 }

@@ -15,7 +15,7 @@ import type { FailureClass } from "@workspace/stt-providers";
 import { BamlClientFinishReasonError, BamlClientHttpError, BamlValidationError, ClientRegistry, Collector, setLogLevel } from "@boundaryml/baml";
 import { b } from "../baml_client";
 import TypeBuilder from "../baml_client/type_builder";
-import type { JudgeVerdict } from "../baml_client/types";
+import { FlagKind, type FailureAnalysis, type JudgeVerdict } from "../baml_client/types";
 
 // T-25: BAML ships its own stdout logger that prints every prompt and parsed
 // answer at "info". pino is this server's one logger; keep BAML quiet unless
@@ -23,12 +23,9 @@ import type { JudgeVerdict } from "../baml_client/types";
 if (!process.env.BAML_LOG) setLogLevel("warn");
 
 const API_KEY_ENV_VAR = "OPENAI_API_KEY";
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
-// Cheap model for the flag pass (runs on every scan, mostly finds nothing);
-// a stronger model only for judging candidates (runs only when flags were
-// found, and picking the "most sensible" transcript is the harder call).
-// Both are easy to change in one place if the quality/cost tradeoff is wrong.
-const FLAG_MODEL = "gpt-4o-mini";
+// The judge's default model; app_settings.agentModel overrides it (T-103
+// lists the choices live). The failure-triage model is the Triage client in
+// baml_src/clients.baml (gpt-4o-mini).
 export const JUDGE_MODEL = "gpt-4o";
 
 // 2026-08-27, per Abhishek ("show the openai agent cost ... separately,
@@ -41,10 +38,24 @@ export const JUDGE_MODEL = "gpt-4o";
 // fractional values that an integer DB column rejected -- silently
 // destroying every judgement the system made. See
 // lib/db/src/schema/benchmark-agent-scans.ts for the full post-mortem.
+// T-103 (2026-08-30): rates below verified on developers.openai.com/api/docs/pricing
+// (standard tier, per 1M tokens): 4.1 $2/$8, 4.1-mini $0.40/$1.60, 5.2
+// $1.75/$14, 5.5 $5/$30, 5.6-sol $4/$20, 4o $2.50/$10, 4o-mini $0.15/$0.60.
+// $1 per 1M tokens = 1,000 microcents per 1K tokens.
 const MODEL_COST_MICROCENTS_PER_1K_TOKENS: Record<string, { prompt: number; completion: number }> = {
-  "gpt-4o-mini": { prompt: 15, completion: 60 },
+  "gpt-4o-mini": { prompt: 150, completion: 600 },
   "gpt-4o": { prompt: 2_500, completion: 10_000 },
+  "gpt-4.1": { prompt: 2_000, completion: 8_000 },
+  "gpt-4.1-mini": { prompt: 400, completion: 1_600 },
+  "gpt-5.2": { prompt: 1_750, completion: 14_000 },
+  "gpt-5.5": { prompt: 5_000, completion: 30_000 },
+  "gpt-5.6-sol": { prompt: 4_000, completion: 20_000 },
 };
+
+/** Models this file can price. Anything else records a null cost. */
+export function pricedAgentModels(): string[] {
+  return Object.keys(MODEL_COST_MICROCENTS_PER_1K_TOKENS);
+}
 
 /** Integer micro-cents, or null for a model we have no published rate for --
  * null means "not recorded", and must never be rendered as a confident 0. */
@@ -68,90 +79,6 @@ export class AgentRequestError extends Error {
     this.name = "AgentRequestError";
     this.httpStatus = httpStatus;
   }
-}
-
-type OpenAiUsage = { promptTokens: number; completionTokens: number; costMicrocents: number | null };
-
-async function callOpenAi(params: {
-  model: string;
-  system: string;
-  user: string;
-  schemaName: string;
-  schema: Record<string, unknown>;
-}): Promise<{ data: Record<string, unknown>; usage: OpenAiUsage }> {
-  const apiKey = process.env[API_KEY_ENV_VAR];
-  if (!apiKey) throw new AgentConfigError();
-
-  // T-54: same shape as the provider path (run-executor.ts): 429 and 5xx
-  // are retried with exponential back-off + jitter, up to 3 extra tries;
-  // everything else fails fast. Bounded, so a hard outage still surfaces.
-  let attempt = 0;
-  for (;;) {
-    try {
-      return await fetchOpenAi(apiKey, params);
-    } catch (err) {
-      const status = err instanceof AgentRequestError ? err.httpStatus : null;
-      const retryable = status === 429 || (status !== null && status >= 500);
-      if (!retryable || attempt >= OPENAI_MAX_RETRIES) throw err;
-      const delay = Math.min(8_000, 500 * 2 ** attempt) * (0.5 + Math.random());
-      attempt += 1;
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
-    }
-  }
-}
-
-const OPENAI_MAX_RETRIES = 3;
-
-async function fetchOpenAi(
-  apiKey: string,
-  params: Parameters<typeof callOpenAi>[0],
-): Promise<{ data: Record<string, unknown>; usage: OpenAiUsage }> {
-  const res = await fetch(OPENAI_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: params.model,
-      messages: [
-        { role: "system", content: params.system },
-        { role: "user", content: params.user },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: params.schemaName,
-          strict: true,
-          schema: params.schema,
-        },
-      },
-    }),
-  });
-
-  const body = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-    error?: { message?: string };
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
-  };
-
-  if (!res.ok) {
-    throw new AgentRequestError(res.status, body.error?.message ?? `OpenAI returned HTTP ${res.status}`);
-  }
-
-  const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new AgentRequestError(res.status, "OpenAI response had no content");
-
-  const promptTokens = body.usage?.prompt_tokens ?? 0;
-  const completionTokens = body.usage?.completion_tokens ?? 0;
-  return {
-    data: JSON.parse(content) as Record<string, unknown>,
-    usage: {
-      promptTokens,
-      completionTokens,
-      costMicrocents: costMicrocentsFor(params.model, promptTokens, completionTokens),
-    },
-  };
 }
 
 // 2026-08-27: the blind "read one transcript, guess what sounds wrong" flag
@@ -182,6 +109,37 @@ async function fetchOpenAi(
 // analyzeFailure (below) deliberately stays on the raw fetch path -- the
 // PRD's rule is "judge only, behind the existing signature; migrate nothing
 // else until a full bulk has been judged through BAML".
+function flagKindFor(kind: BenchmarkAgentFlag["kind"]): FlagKind | null {
+  switch (kind) {
+    case "peer_disagreement":
+      return FlagKind.PeerDisagreement;
+    case "low_confidence":
+      return FlagKind.LowConfidence;
+    case "entity_mismatch":
+      return FlagKind.EntityMismatch;
+    default:
+      return null;
+  }
+}
+
+/** T-102: the verdict's typed parts, rendered into the one `reasoning`
+ *  text the scan row and the UI already carry -- no schema change. The
+ *  first paragraph is the judge's own sentences; the lines after are the
+ *  structured fields, labelled, so a reader (or a later parser) can find
+ *  them. */
+export function renderReasoning(verdict: Pick<JudgeVerdict, "reasoning" | "confidence" | "keyDifferences">): string {
+  const lines = [typeof verdict.reasoning === "string" ? verdict.reasoning.trim() : ""];
+  lines.push("", `Confidence: ${String(verdict.confidence).toLowerCase()}.`);
+  const diffs = Array.isArray(verdict.keyDifferences) ? verdict.keyDifferences.slice(0, 3) : [];
+  if (diffs.length === 0) {
+    lines.push("Key differences: none that change the meaning -- the candidates differ in convention only.");
+  } else {
+    lines.push("Key differences:");
+    for (const d of diffs) lines.push(`- "${d.span}" vs ${d.alternatives} -- ${d.matters}`);
+  }
+  return lines.join("\n");
+}
+
 export async function judgeCandidates(params: {
   originalTranscript: string;
   flags: BenchmarkAgentFlag[];
@@ -233,7 +191,7 @@ export async function judgeCandidates(params: {
   try {
     verdict = await b.withOptions({ tb, clientRegistry, collector }).JudgeCandidates(
       params.originalTranscript,
-      params.flags.map((f) => ({ text: f.text, reason: f.reason })),
+      params.flags.map((f) => ({ text: f.text, reason: f.reason, kind: flagKindFor(f.kind) })),
       params.candidates.map((c) => ({ providerId: c.providerId, providerName: c.providerName, transcript: c.transcript })),
     );
   } catch (err) {
@@ -249,7 +207,7 @@ export async function judgeCandidates(params: {
     // this function's contract is "null or a real candidate ID", and that
     // contract is enforced here, not trusted to a library.
     pickedProviderId: params.candidates.some((c) => c.providerId === rawPick) ? rawPick : null,
-    reasoning: typeof verdict.reasoning === "string" ? verdict.reasoning : "",
+    reasoning: renderReasoning(verdict),
     promptTokens,
     completionTokens,
     costMicrocents:
@@ -347,35 +305,21 @@ export async function analyzeFailure(params: {
   const known = matchKnownFailure(params);
   if (known) return known;
 
-  const { data: result } = await callOpenAi({
-    model: FLAG_MODEL,
-    system:
-      "You are helping an operator of a speech-to-text benchmarking tool understand why one " +
-      "provider's transcription attempt failed for one call. Given the provider name, the HTTP " +
-      "status (if any), and the raw error message, give a short plain-English diagnosis of the " +
-      "likely cause, and a concrete, actionable suggested fix (e.g. \"rotate the API key\", " +
-      "\"the audio file may be corrupt -- re-import this call\", \"this looks like a transient " +
-      "rate limit -- retry the cell\"). Do not guess wildly beyond what the error text supports; " +
-      "say so plainly if the cause is genuinely ambiguous from the error alone.",
-    user: JSON.stringify({
-      providerName: params.providerName,
-      httpStatus: params.httpStatus,
-      errorMessage: params.errorMessage,
-    }),
-    schemaName: "failure_analysis",
-    schema: {
-      type: "object",
-      properties: {
-        diagnosis: { type: "string", description: "One or two sentences: the likely cause." },
-        suggestedFix: { type: "string", description: "One or two sentences: a concrete next step." },
-      },
-      required: ["diagnosis", "suggestedFix"],
-      additionalProperties: false,
-    },
-  });
-
+  // T-102: typed BAML function (baml_src/judge.baml AnalyzeFailure, client
+  // Triage = gpt-4o-mini with the JudgeRetry back-off). Replaces the raw
+  // fetch + JSON-schema path that lived here.
+  if (!process.env[API_KEY_ENV_VAR]) throw new AgentConfigError();
+  let result: FailureAnalysis;
+  try {
+    result = await b.AnalyzeFailure(params.providerName, params.httpStatus, params.errorMessage);
+  } catch (err) {
+    throw toAgentRequestError(err);
+  }
+  const fix = result.ambiguous && !/ambiguous|cannot tell|not clear/i.test(result.suggestedFix)
+    ? `${result.suggestedFix} (The error text alone does not say which cause it is.)`
+    : result.suggestedFix;
   return {
-    diagnosis: typeof result.diagnosis === "string" ? result.diagnosis : "Could not determine a diagnosis.",
-    suggestedFix: typeof result.suggestedFix === "string" ? result.suggestedFix : "No suggested fix available.",
+    diagnosis: result.diagnosis || "Could not determine a diagnosis.",
+    suggestedFix: fix || "No suggested fix available.",
   };
 }

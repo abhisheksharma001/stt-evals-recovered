@@ -20,7 +20,7 @@ $ pnpm add @boundaryml/baml
 
 import type { Image, Audio, Pdf, Video } from "@boundaryml/baml"
 import type { Checked, Check } from "./types"
-import type {  Candidate,  FlaggedSpan,  JudgeVerdict,  PickedProvider } from "./types"
+import type {  Candidate,  Confidence,  FailureAnalysis,  FlagKind,  FlaggedSpan,  JudgeVerdict,  KeyDifference,  PickedProvider } from "./types"
 import type * as types from "./types"
 
 /******************************************************************************
@@ -41,12 +41,25 @@ export namespace partial_types {
       providerName?: string | null
       transcript?: string | null
     }
+    export interface FailureAnalysis {
+      diagnosis?: string | null
+      suggestedFix?: string | null
+      ambiguous?: boolean | null
+    }
     export interface FlaggedSpan {
       text?: string | null
       reason?: string | null
+      kind?: types.FlagKind | null
     }
     export interface JudgeVerdict {
       pickedProviderId?: (string | types.PickedProvider) | null
+      confidence?: types.Confidence | null
+      keyDifferences: KeyDifference[]
       reasoning?: string | null
+    }
+    export interface KeyDifference {
+      span?: string | null
+      alternatives?: string | null
+      matters?: string | null
     }
 }

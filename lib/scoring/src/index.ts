@@ -397,3 +397,6 @@ export * from "./spans";
 export * from "./provider-correlation";
 export * from "./verdict";
 export * from "./trend";
+
+// T-101: the comparison form (equivalences folded in). See equivalence.ts.
+export { canonicalTranscript, sameOnceCanonical } from "./equivalence";

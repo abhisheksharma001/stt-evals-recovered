@@ -1,3 +1,37 @@
+## Mined 2026-08-30 (batch 7, T-101): the real reading pairs behind the equivalence rules
+
+72 calls, latest batch run each, 873 disagreement spans, 2,390 distinct reading
+pairs. The top of the list (count, reading A ||| reading B):
+
+```
+ 22  ||| 0                      (Deepgram inserts a 0 between spoken digits -- real, kept)
+ 17 1 bedroom ||| 1-bedroom
+ 16 1 bedroom ||| one-bedroom
+ 15 1-bedroom ||| one-bedroom
+ 12  ||| um
+ 10 2 bedroom ||| 2-bedroom
+  9 2 bedroom ||| two-bedroom
+  6 1 -bedroom ||| 1 bedroom
+  5  ||| uh
+  4 all right ||| alright
+  4 tour 2 4 ||| tour24
+  4 saint ||| st
+  4 2 6 at 10am ||| 26th at 1 0 a m
+  3 after -hours ||| after hours     3 follow up ||| follow-up
+  3 4 ||| forty                      (NOT equal -- stays a disagreement)
+  3 hill's ||| hills                 3 apartment ||| apartments   (kept as disagreements)
+  2 i'm going to ||| i'm gonna       2 yeah ||| yes     2 ok ||| okay
+  2 high priority ||| high-priority  2 in -person ||| in person
+  2 non-refundable ||| nonrefundable 2 his wi fi ||| his wi-fi
+```
+
+Everything folded by `lib/scoring/src/equivalence.ts` is on this list or was named by
+Abhishek ("fortyc / 40c", "highpriority / high-priority", slang like "sweet").
+Deliberately **not** folded: plural / possessive ("hills" / "hill's"), tense ("had" /
+"have"), and "4" / "forty" — those change meaning or could. Re-run the mining
+(the script lived in `src/_mine-pairs.ts` for one session; recreate from
+`buildSpansForCallRun`) after the next few bulks to see what rises next.
+
 ## Deferred 2026-08-30 (batch 4): more call providers
 
 Only Vapi is a call source today (`lib/vapi.ts`, one `VAPI_API_KEY*` env var per

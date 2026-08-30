@@ -4,6 +4,7 @@ import {
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
+  type ProviderModelOption,
 } from "../types";
 import {
   classifyProviderHttpStatus,
@@ -54,8 +55,18 @@ export function parseGladiaResponse(body: GladiaResultResponse): {
 const PROVIDER_ID = "gladia-solaria";
 const API_KEY_ENV_VAR = "GLADIA_API_KEY";
 
+// T-104, verified on docs.gladia.io/api-reference/v2/pre-recorded/init
+// 2026-08-30: `model` is solaria-1 (default) or solaria-3.
+const GLADIA_MODELS: ProviderModelOption[] = [
+  { apiModel: "solaria-3", label: "Solaria-3", latest: true, source: "catalog", verifiedAt: "2026-08-30" },
+  { apiModel: "solaria-1", label: "Solaria-1", latest: false, source: "catalog", verifiedAt: "2026-08-30", note: "vendor default; what gladia-solaria has always run", legacyDefault: true },
+];
+
 export const gladiaAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
+  vendor: "gladia",
+  vendorLabel: "Gladia",
+  listModels: async () => GLADIA_MODELS,
   apiKeyEnvVar: API_KEY_ENV_VAR,
   async transcribe(input: ProviderTranscribeInput): Promise<ProviderTranscribeResult> {
     const apiKey = process.env[API_KEY_ENV_VAR];
@@ -91,6 +102,7 @@ export const gladiaAdapter: ProviderAdapter = {
       body: JSON.stringify({
         audio_url: uploadBody.audio_url,
         diarization: input.diarize ?? true,
+        model: input.model,
         custom_vocabulary: input.keywordBoosts?.length ? input.keywordBoosts : undefined,
       }),
     });

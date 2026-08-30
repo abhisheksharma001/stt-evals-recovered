@@ -15,7 +15,8 @@
 // first, expensive judgment only where the deterministic layer already
 // found something worth explaining.
 
-import { diffWords, digitizeSpokenDigits, normalizeTranscript } from "./index";
+import { diffWords, digitizeSpokenDigits } from "./index";
+import { canonicalTranscript } from "./equivalence";
 
 export type HybridSeverity = "none" | "low" | "medium" | "high";
 
@@ -69,7 +70,9 @@ export function computeCrossProviderDisagreement(
 ): CrossProviderDisagreement[] {
   const tokenized = candidates.map((c) => ({
     providerId: c.providerId,
-    words: normalizeTranscript(c.transcript).split(" ").filter(Boolean),
+    // T-101: compare the canonical form -- "1-bedroom" / "one bedroom",
+    // "gonna" / "going to", a stray "um" are not disagreements.
+    words: canonicalTranscript(c.transcript).split(" ").filter(Boolean),
   }));
 
   if (tokenized.length < 2) {

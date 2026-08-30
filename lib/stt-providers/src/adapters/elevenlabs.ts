@@ -37,6 +37,12 @@ const API_KEY_ENV_VAR = "ELEVENLABS_API_KEY";
 
 export const elevenLabsAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
+  vendor: "elevenlabs",
+  vendorLabel: "ElevenLabs",
+  // T-104, verified on elevenlabs.io/docs/api-reference/speech-to-text/convert
+  // 2026-08-30: model_id is scribe_v2 (scribe_v1, which this adapter used to
+  // pin, is no longer the documented value). No key here yet, unexercised.
+  listModels: async () => [{ apiModel: "scribe_v2", label: "Scribe v2", latest: true, source: "catalog", verifiedAt: "2026-08-30", legacyDefault: true }],
   apiKeyEnvVar: API_KEY_ENV_VAR,
   async transcribe(input: ProviderTranscribeInput): Promise<ProviderTranscribeResult> {
     const apiKey = process.env[API_KEY_ENV_VAR];
@@ -46,7 +52,7 @@ export const elevenLabsAdapter: ProviderAdapter = {
 
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
-    form.append("model_id", "scribe_v1");
+    form.append("model_id", input.model ?? "scribe_v2");
     form.append("diarize", String(input.diarize ?? true));
 
     const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {

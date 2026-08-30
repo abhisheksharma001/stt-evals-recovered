@@ -1005,3 +1005,26 @@ progress line reuses the STT bar.
   is not a failure must leave it.
 - Register hygiene (T-99) and Q-2 (T-100) touch no UI.
 
+## G.6 Batch 7 (2026-08-30) — what it closed in this document
+
+**Evidence — running state (T-105)**
+**Pattern to use:** a staged checklist with a spinner on the live stage and a check on
+finished ones, beside a bar with a real count ← [Relevance AI running checks](https://mobbin.com/screens/d0dc629f-1593-4454-bc1c-2f759c5777ff),
+[Klaviyo flow creation](https://mobbin.com/screens/0eff39e1-7398-4098-a38a-55eb4f9d0bb4),
+[Vercel deployment steps](https://mobbin.com/screens/787123a5-8a85-4d1b-838f-705673a0c820),
+[Remote submitting expenses 0/2](https://mobbin.com/screens/29e02c1a-3816-4123-8b25-2b82b50d05bd),
+[Employment Hero bulk issue 16%](https://mobbin.com/screens/ed845e9e-1e6f-4e7e-b92f-2801bbc83d81).
+**Patterns to avoid:** an illustration that animates without saying where the job is ←
+[Remote uploading resume](https://mobbin.com/screens/6c60826e-31db-4ce4-b745-3f1b428db641).
+**What operators say:** no evidence found — Lenny's search for progress / loading /
+perceived performance returned keyword noise only.
+**Changes to the plan:** the STT bar and the AI-check bar became stages of one list with
+a third, Ranking, so the reader sees the whole pipeline; the sweep animates only on
+the active stage so a stalled bulk looks stalled.
+**No evidence found for:** a benchmark tool showing an LLM-judge phase as its own stage.
+
+Also in this batch, no new UI pattern: judge model select gained a Pinned group (T-103);
+provider cards gained a "Newest: X · Enable" line (T-104); Results words-to-watch and
+hybrid flags stop counting convention splits (T-101); the judge's verdict carries
+confidence and key differences inside its reasoning text (T-102).
+

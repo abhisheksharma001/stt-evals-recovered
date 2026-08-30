@@ -10,3 +10,13 @@ client<llm> Judge {
     api_key env.OPENAI_API_KEY
   }
 }
+
+// T-102: the failure-triage client. Cheap model, same back-off as the judge.
+client<llm> Triage {
+  provider openai
+  retry_policy JudgeRetry
+  options {
+    model "gpt-4o-mini"
+    api_key env.OPENAI_API_KEY
+  }
+}

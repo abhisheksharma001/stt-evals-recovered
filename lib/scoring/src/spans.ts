@@ -12,7 +12,8 @@
 // provider here is only an alignment anchor and a clock, never "the right
 // answer". Its own words appear as one reading among the others.
 
-import { diffWords, normalizeTranscript } from "./index";
+import { diffWords } from "./index";
+import { canonicalTranscript } from "./equivalence";
 
 export type TimedWord = { word: string; start: number; end: number };
 
@@ -83,8 +84,10 @@ const MERGE_GAP_POSITIONS = 2;
 const MAX_SPAN_POSITIONS = 12;
 const CONTEXT_WORDS = 3;
 
+// T-101: spans are built on the canonical form, so two providers that wrote
+// the same words in a different convention produce no span at all.
 function tokenizeWord(word: string): string[] {
-  return normalizeTranscript(word).split(" ").filter(Boolean);
+  return canonicalTranscript(word).split(" ").filter(Boolean);
 }
 
 function tokenize(candidate: SpanCandidate): Token[] {
