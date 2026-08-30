@@ -966,7 +966,8 @@ export const ListBenchmarkRunsResponseItem = zod.object({
   "notes": zod.string().nullish(),
   "bulkId": zod.string().nullish(),
   "bulkName": zod.string().nullish(),
-  "shardIndex": zod.number().nullish()
+  "shardIndex": zod.number().nullish(),
+  "archivedAt": zod.coerce.date().nullish()
 })
 export const ListBenchmarkRunsResponse = zod.array(ListBenchmarkRunsResponseItem)
 
@@ -994,7 +995,8 @@ export const CreateBenchmarkRunResponse = zod.object({
   "notes": zod.string().nullish(),
   "bulkId": zod.string().nullish(),
   "bulkName": zod.string().nullish(),
-  "shardIndex": zod.number().nullish()
+  "shardIndex": zod.number().nullish(),
+  "archivedAt": zod.coerce.date().nullish()
 })
 
 
@@ -1015,7 +1017,34 @@ export const ExecuteBenchmarkRunResponse = zod.object({
   "notes": zod.string().nullish(),
   "bulkId": zod.string().nullish(),
   "bulkName": zod.string().nullish(),
-  "shardIndex": zod.number().nullish()
+  "shardIndex": zod.number().nullish(),
+  "archivedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary T-134 -- archive (or unarchive) one ad-hoc run. Soft only -- nothing is deleted; an archived run leaves the default Runs list and stops being any group's latest ranking snapshot. Bulk shard runs are managed through their bulk and refuse this with 409.
+ */
+export const SetRunArchivedParams = zod.object({
+  "runId": zod.coerce.string()
+})
+
+export const SetRunArchivedBody = zod.object({
+  "archived": zod.boolean()
+})
+
+export const SetRunArchivedResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['queued', 'running', 'complete', 'blocked', 'failed', 'cancelled']),
+  "providerIds": zod.array(zod.string()),
+  "callCount": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "completedAt": zod.coerce.date().nullish(),
+  "notes": zod.string().nullish(),
+  "bulkId": zod.string().nullish(),
+  "bulkName": zod.string().nullish(),
+  "shardIndex": zod.number().nullish(),
+  "archivedAt": zod.coerce.date().nullish()
 })
 
 

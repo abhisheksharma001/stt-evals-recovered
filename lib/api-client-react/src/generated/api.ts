@@ -74,6 +74,7 @@ import type {
   ProviderModelList,
   ProviderUpdate,
   ResultFailureAnalysis,
+  RunArchiveBody,
   RunManifest,
   VapiAccount,
   VapiAssistant,
@@ -2398,6 +2399,78 @@ export const useExecuteBenchmarkRun = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getExecuteBenchmarkRunMutationOptions(options));
+    }
+
+export const getSetRunArchivedUrl = (runId: string,) => {
+
+
+
+
+  return `/api/benchmark/runs/${runId}/archive`
+}
+
+/**
+ * @summary T-134 -- archive (or unarchive) one ad-hoc run. Soft only -- nothing is deleted; an archived run leaves the default Runs list and stops being any group's latest ranking snapshot. Bulk shard runs are managed through their bulk and refuse this with 409.
+ */
+export const setRunArchived = async (runId: string,
+    runArchiveBody: RunArchiveBody, options?: Parameters<typeof customFetch>[1]): Promise<BenchmarkRun> => {
+
+  return customFetch<BenchmarkRun>(getSetRunArchivedUrl(runId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runArchiveBody)
+  }
+);}
+
+
+
+
+
+export const getSetRunArchivedMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setRunArchived>>, TError,{runId: string;data: BodyType<RunArchiveBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setRunArchived>>, TError,{runId: string;data: BodyType<RunArchiveBody>}, TContext> => {
+
+const mutationKey = ['setRunArchived'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setRunArchived>>, {runId: string;data: BodyType<RunArchiveBody>}> = (props) => {
+          const {runId,data} = props ?? {};
+
+          return  setRunArchived(runId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetRunArchivedMutationResult = NonNullable<Awaited<ReturnType<typeof setRunArchived>>>
+    export type SetRunArchivedMutationBody = BodyType<RunArchiveBody>
+    export type SetRunArchivedMutationError = ErrorType<void>
+
+    /**
+ * @summary T-134 -- archive (or unarchive) one ad-hoc run. Soft only -- nothing is deleted; an archived run leaves the default Runs list and stops being any group's latest ranking snapshot. Bulk shard runs are managed through their bulk and refuse this with 409.
+ */
+export const useSetRunArchived = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setRunArchived>>, TError,{runId: string;data: BodyType<RunArchiveBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setRunArchived>>,
+        TError,
+        {runId: string;data: BodyType<RunArchiveBody>},
+        TContext
+      > => {
+      return useMutation(getSetRunArchivedMutationOptions(options));
     }
 
 export const getListBenchmarkRunResultsUrl = (runId: string,) => {

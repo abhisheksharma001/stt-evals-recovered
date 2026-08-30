@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { Router, type IRouter, type Response } from "express";
 import {
   APP_SETTINGS_ID,
@@ -41,6 +41,8 @@ import {
   GetBenchmarkRunManifestResponse,
   ImportVapiCallsBody,
   CacheCorpusAudioResponse,
+  SetRunArchivedBody,
+  SetRunArchivedResponse,
   ImportVapiCallsResponse,
   ListAuditLogQueryParams,
   ListAuditLogResponse,
@@ -356,6 +358,7 @@ function serializeRun(run: BenchmarkRunRow, bulkName: string | null = null) {
     bulkId: run.bulkId ?? null,
     bulkName,
     shardIndex: run.shardIndex ?? null,
+    archivedAt: run.archivedAt?.toISOString() ?? null,
   };
 }
 
@@ -368,6 +371,8 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
     db
       .select()
       .from(benchmarkRunsTable)
+      // T-134: an archived run is not "the latest" anything.
+      .where(isNull(benchmarkRunsTable.archivedAt))
       .orderBy(desc(benchmarkRunsTable.createdAt))
       .limit(1),
     // T-71 (E.3): the Overview blocks, computed in lib/overview.ts.
@@ -1624,6 +1629,46 @@ router.get("/benchmark/runs/:runId/manifest", async (req, res): Promise<void> =>
   );
 });
 
+// T-134: soft archive for ad-hoc runs. Nothing is deleted -- results,
+// scores and audit rows all stay -- the run just leaves the default list
+// and the "latest snapshot" picks. Guarded to bulkId null: a bulk's shard
+// runs live and die with their bulk (FR-BLK-10), and archiving one shard
+// would silently unbalance the bulk's own numbers.
+router.post("/benchmark/runs/:runId/archive", async (req, res): Promise<void> => {
+  const parsed = SetRunArchivedBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [run] = await db
+    .select()
+    .from(benchmarkRunsTable)
+    .where(eq(benchmarkRunsTable.id, req.params.runId));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.bulkId !== null) {
+    res.status(409).json({ error: "This run belongs to a bulk -- manage it through the bulk, not here." });
+    return;
+  }
+  const archivedAt = parsed.data.archived ? new Date() : null;
+  const [updated] = await db
+    .update(benchmarkRunsTable)
+    .set({ archivedAt })
+    .where(eq(benchmarkRunsTable.id, run.id))
+    .returning();
+  await writeAudit({
+    entityType: "run",
+    entityId: run.id,
+    actorLabel: actorFromRequest(req),
+    action: parsed.data.archived ? "archive" : "unarchive",
+    beforeState: { archivedAt: run.archivedAt?.toISOString() ?? null },
+    afterState: { archivedAt: updated!.archivedAt?.toISOString() ?? null },
+  });
+  res.json(SetRunArchivedResponse.parse(serializeRun(updated!)));
+});
+
 router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => {
   const params = ListBenchmarkRunResultsParams.safeParse(req.params);
   if (!params.success) {
@@ -1873,6 +1918,10 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
         and(
           eq(benchmarkRunsTable.id, benchmarkRankingsTable.runId),
           eq(benchmarkRunsTable.purpose, "batch"),
+          // T-134: an archived run's snapshot must not be any group's
+          // "latest" -- archiving a bad test run is exactly how a wrong
+          // number is retired from Results.
+          isNull(benchmarkRunsTable.archivedAt),
         ),
       )
       .orderBy(benchmarkRankingsTable.rank);

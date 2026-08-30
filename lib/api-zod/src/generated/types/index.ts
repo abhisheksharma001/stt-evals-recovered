@@ -141,6 +141,7 @@ export * from './providerModelOptionSource';
 export * from './providerStatus';
 export * from './providerUpdate';
 export * from './resultFailureAnalysis';
+export * from './runArchiveBody';
 export * from './runManifest';
 export * from './runManifestCall';
 export * from './runManifestProvider';

@@ -586,6 +586,34 @@ paths:
                 $ref: "#/components/schemas/BenchmarkRun"
         "404":
           description: Run not found
+  /benchmark/runs/{runId}/archive:
+    post:
+      operationId: setRunArchived
+      tags: [benchmark]
+      summary: T-134 -- archive (or unarchive) one ad-hoc run. Soft only -- nothing is deleted; an archived run leaves the default Runs list and stops being any group's latest ranking snapshot. Bulk shard runs are managed through their bulk and refuse this with 409.
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunArchiveBody"
+      responses:
+        "200":
+          description: The run, with its new archived state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkRun"
+        "404":
+          description: Run not found
+        "409":
+          description: This run belongs to a bulk -- manage it through the bulk, not here
   /benchmark/runs/{runId}/results:
     get:
       operationId: listBenchmarkRunResults
@@ -1687,6 +1715,14 @@ components:
         bulkId: { type: ["string", "null"] }
         bulkName: { type: ["string", "null"] }
         shardIndex: { type: ["number", "null"] }
+        # T-134: non-null = soft-archived (ad-hoc runs only). Still listed;
+        # the UI hides archived runs behind a toggle.
+        archivedAt: { type: ["string", "null"], format: date-time }
+    RunArchiveBody:
+      type: object
+      required: [archived]
+      properties:
+        archived: { type: boolean }
     BenchmarkRunInput:
       type: object
       required: [providerIds, callIds]

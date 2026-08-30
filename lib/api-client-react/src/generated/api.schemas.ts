@@ -552,6 +552,12 @@ export interface BenchmarkRun {
   bulkName?: string | null;
   /** @nullable */
   shardIndex?: number | null;
+  /** @nullable */
+  archivedAt?: string | null;
+}
+
+export interface RunArchiveBody {
+  archived: boolean;
 }
 
 export interface BenchmarkRunInput {
