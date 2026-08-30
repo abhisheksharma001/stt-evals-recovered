@@ -6,6 +6,8 @@ import {
   useGetBulk,
   getGetBulkQueryKey,
   useListBenchmarkCalls,
+  useGetAssistantTranscriber,
+  getGetAssistantTranscriberQueryKey,
   useListBenchmarkProviders,
   useGetBulkManifest,
   getGetBulkManifestQueryKey,
@@ -183,13 +185,21 @@ function useProductionBaseline(assistantId: string | null) {
 function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: string | null; ranks: RankingRow[]; gv: GroupVolume }) {
   const baseline = useProductionBaseline(assistantId)
   const listPrices = useListPrices()
+  // T-97: what the assistant is *configured* with, read live from Vapi --
+  // the fallback and the boosted vocabulary are the two things production
+  // has that the benchmark runs did not.
+  const configured = useGetAssistantTranscriber(assistantId ?? "", {
+    query: { queryKey: getGetAssistantTranscriberQueryKey(assistantId ?? ""), enabled: assistantId !== null, retry: false, staleTime: 10 * 60 * 1000 },
+  })
   if (!baseline) return null
+  const cfg = configured.data
+  const specText = (x: { provider: string; model: string | null }) => `${x.provider}${x.model ? ` / ${x.model}` : ""}`
 
   const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
   const baselineRow = baseline.matchedProviderId ? ranks.find((r) => r.providerId === baseline.matchedProviderId) : null
 
   return (
-    <div className="flex items-start gap-2.5 border-t border-border bg-primary/5 px-4 py-3 text-sm">
+    <div className="flex flex-wrap items-start gap-2.5 border-t border-border bg-primary/5 px-4 py-3 text-sm">
       <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <p className="text-foreground">
         <span className="font-semibold">Production today:</span>{" "}
@@ -246,6 +256,23 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
           </>
         )}
       </p>
+      {cfg && (
+        <p className="basis-full pl-6 text-xs text-muted-foreground" data-testid="configured-transcriber">
+          Configured in Vapi for <span className="font-medium text-foreground">{cfg.name}</span>:{" "}
+          <span className="font-mono">{cfg.primary ? specText(cfg.primary) : "no transcriber set"}</span>
+          {cfg.fallback.length > 0 ? (
+            <> · fallback <span className="font-mono">{cfg.fallback.map(specText).join(", ")}</span></>
+          ) : (
+            <> · no fallback</>
+          )}
+          {cfg.keytermCount > 0 && <> · {cfg.keytermCount} boosted keyterms</>}
+          {cfg.numerals === true && <> · numerals on</>}
+          .{" "}
+          {cfg.fallback.length > 0 || cfg.keytermCount > 0
+            ? "The benchmark ran without the fallback and without the boosted vocabulary -- production has an edge the candidates were not given."
+            : "Nothing here that the benchmark did not also have."}
+        </p>
+      )}
     </div>
   )
 }

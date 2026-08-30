@@ -234,3 +234,78 @@ PATCHing a production assistant is a write with live consequences and is nobody'
 call but Abhishek's. If an "apply the verdict" button is ever wanted, this is the
 endpoint, and it must be a confirmed, audit-logged action, never automatic.
 
+
+## Which benchmarked providers share a base model? (Q-2 / T-100, researched 2026-08-30)
+
+Why it matters: two providers built on the same base model tend to make the *same*
+mistakes, so their agreement is not two independent votes (T-18's
+`excessAgreement` exists for exactly this). The question was open since T-18.
+
+| Provider id | Base model | Source (vendor's own statement unless noted) |
+|---|---|---|
+| `cartesia-ink-whisper` | **Whisper** — Cartesia says Ink-Whisper was built from OpenAI `whisper-large-v3-turbo`, optimised for streaming. | https://www.cartesia.ai/blog/introducing-ink-speech-to-text |
+| `gladia-solaria` | **Whisper lineage, likely.** Gladia's earlier production model "Whisper-Zero" is described by Gladia as "a complete rework of Whisper"; the Solaria-1 launch post gives **no** architecture statement at all. Third-party write-ups say Solaria-1 keeps the Whisper foundation + ensemble validators. Treat as "probably shared base", not confirmed. | https://www.gladia.io/blog/introducing-whisper-zero · https://www.gladia.io/blog/introducing-solaria-the-first-truly-universal-speech-to-text-model (fetched 2026-08-30: no architecture sentence) |
+| `assemblyai-universal` | **Own** — Universal-2 is a 600M-parameter Conformer encoder + RNN-T decoder, pre-trained with BEST-RQ; not Whisper. | https://www.assemblyai.com/research/universal-2 · https://arxiv.org/abs/2404.09841 |
+| `deepgram-nova-3` / `deepgram-flux-general-en` | **Own** — proprietary; Deepgram publishes no Whisper lineage. | https://www.coval.ai/blog/best-speech-to-text-providers-in-2026-independent-benchmarks-and-how-to-choose/ (lists Nova as proprietary) |
+| `openai-gpt-4o-transcribe` | **Own, not Whisper** — OpenAI states the model is GPT-4o fine-tuned for transcription (RL + audio mid-training); `whisper-1` is the separate Whisper endpoint. | https://openai.com/index/introducing-our-next-generation-audio-models/ |
+| `elevenlabs-scribe` (no key yet) | **Own** — closed model, benchmarked by ElevenLabs *against* Whisper v3. | https://elevenlabs.io/blog/meet-scribe |
+| `speechmatics` (no key yet) | **Own** — Ursa is proprietary. | https://arxiv.org/pdf/2503.06924 (lists Ursa-2 as proprietary) |
+
+So on today's four live providers the only shared-base pair is **Cartesia + Gladia**.
+
+**Does the data agree?** Live `provider-correlation` on bulk `340400b2` (56 shared
+calls, 2026-08-30):
+
+| Pair | agreement | excessAgreement |
+|---|---|---|
+| assemblyai ↔ gladia | 0.935 | **+0.039** (highest) |
+| assemblyai ↔ deepgram | 0.911 | +0.023 |
+| **cartesia ↔ gladia** | 0.912 | **+0.021** (third of ten) |
+| deepgram ↔ gladia | 0.912 | +0.018 |
+| cartesia ↔ deepgram | 0.883 | −0.000 |
+| every pair with openai | 0.83–0.88 | −0.02 to −0.04 |
+
+The Whisper pair is above average but not the outlier; the strongest excess
+agreement is between two providers with *different* bases. Read: on phone audio at
+this corpus size, shared base is a weak signal; do not weight votes by it. What the
+table does show is that gpt-4o-transcribe disagrees with everyone — it is the one
+genuinely independent reading, not the one to drop.
+
+## Vapi assistant transcriber: fallback plan and boosted vocabulary (T-97, read live 2026-08-30)
+
+Two more assistants read via `GET /assistant/{id}` (system prompt and voice
+omitted; only `transcriber` shown):
+
+```json
+// 05103255 "Rush Truck Center - Service Female" (account: Default)
+"transcriber": {
+  "provider": "deepgram", "model": "flux-general-multi", "language": "en",
+  "numerals": true, "eotThreshold": 0.7, "eotTimeoutMs": 5000, "confidenceThreshold": 0.24,
+  "keyterm": ["Peterbilt", "Freightliner", "Kenworth", "Volvo", "Mack", ... 120 terms ...]
+}
+// b3914788 "[PROD] Waterside Apartments Leasing" (account: Land And Apartment)
+"transcriber": {
+  "provider": "deepgram", "model": "flux-general-en", "language": "en",
+  "fallbackPlan": { "transcribers": [ { "provider": "assembly-ai", "language": "en", "formatTurns": true, "disablePartialTranscripts": false } ] }
+}
+```
+
+What this means for the benchmark:
+
+- **`fallbackPlan.transcribers`** is an ordered list; Vapi switches to the first
+  entry when the primary fails mid-call. The per-call `costs[].transcriber` entry
+  (what `transcriberOf()` reads) names whichever one actually ran, so a call that
+  fell over to AssemblyAI is stored with `sourceTranscriberProvider = assembly-ai`.
+  The Results baseline counts those as a different production provider — which
+  they were, for that call.
+- **`keyterm`** is Deepgram's vocabulary boost. The Rush assistant carries 120
+  truck-parts terms; every candidate provider in the benchmark, *including
+  Deepgram itself*, ran without them. "Production Deepgram beat benchmark
+  Deepgram" is therefore expected on Rush calls and is not evidence about the
+  model. `numerals: true` likewise formats spoken numbers as digits in
+  production only.
+- Read on the Results page as "Configured in Vapi: … · fallback … · N boosted
+  keyterms" under the production baseline (`GET
+  /benchmark/assistants/{id}/transcriber`, live, 10-minute cache, read-only).
+  The account that owns the assistant is not stored; it is the org label most
+  of the assistant's imported calls carry.

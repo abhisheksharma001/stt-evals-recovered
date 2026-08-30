@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateWordsToWatch, classifyWatchKind } from "./words-to-watch-aggregate";
+import { aggregateWordsToWatch, canonicalReading, classifyWatchKind, trimCommonEdges } from "./words-to-watch-aggregate";
 
 const r = (providerId: string, text: string) => ({ providerId, text });
 
@@ -66,5 +66,43 @@ describe("aggregateWordsToWatch (T-87)", () => {
 
   it("returns nothing from nothing -- never a made-up row", () => {
     expect(aggregateWordsToWatch([])).toEqual([]);
+  });
+
+  // T-98: from the first live lists (2026-08-30). These were the top rows
+  // for three assistants and none of them is a disagreement about meaning.
+  it("calls a split 'format' when the readings differ only in convention", () => {
+    expect(canonicalReading("in -person")).toBe("in person");
+    expect(canonicalReading("One-Bedroom, uh")).toBe("1 bedroom");
+    expect(canonicalReading("you ma 'am")).toBe("you ma'am");
+    expect(classifyWatchKind(["1-bedroom", "one-bedroom", "1 -bedroom"])).toBe("format");
+    expect(classifyWatchKind(["in -person", "in person"])).toBe("format");
+    expect(classifyWatchKind(["his wi fi", "his wi-fi", "his wifi", "uh his wi-fi-"])).toBe("format");
+    expect(classifyWatchKind(["you um", "you"])).toBe("format");
+    expect(classifyWatchKind(["nonrefundable", "non -refundable"])).toBe("format");
+    expect(classifyWatchKind(["thirty day", "30-day"])).toBe("format");
+    // Still real: a digit inserted, a different word, an empty side.
+    expect(classifyWatchKind(["1 8 5 9", "1 0 8 5 0 9"])).toBe("number");
+    expect(classifyWatchKind(["lessee", "lissy"])).toBe("word");
+    expect(classifyWatchKind(["", "in person"])).toBe("word");
+    expect(classifyWatchKind(["you", "you'd"])).toBe("word");
+  });
+
+  it("trims the words every reading shares at both ends", () => {
+    expect(trimCommonEdges(["you can forward me to corporate do you", "you can forward me the corporate do you"])).toEqual(["to", "the"]);
+    expect(trimCommonEdges(["let's say august probably", "in say august probably"])).toEqual(["let's", "in"]);
+    // Nothing shared: untouched. Short spans: untouched, context is worth more.
+    expect(trimCommonEdges(["peterbilt", "peter built"])).toEqual(["peterbilt", "peter built"]);
+    expect(trimCommonEdges(["main street", "main st"])).toEqual(["main street", "main st"]);
+    expect(trimCommonEdges(["", "0"])).toEqual(["", "0"]);
+  });
+
+  it("groups on the trimmed text and sinks format rows below words, above fillers", () => {
+    const out = aggregateWordsToWatch([
+      { callId: "c1", majorityText: "in -person tour", readings: [r("a", "in -person tour"), r("b", "in -person tour"), r("c", "in person tour")] },
+      { callId: "c2", majorityText: "book an in person tour today", readings: [r("a", "book an in person tour today"), r("b", "book an in -person tour today"), r("c", "book an in person tour today")] },
+      { callId: "c1", majorityText: "", readings: [r("a", ""), r("b", "um")] },
+      { callId: "c1", majorityText: "lessee", readings: [r("a", "lessee"), r("b", "lissy")] },
+    ]);
+    expect(out.map((w) => [w.heardAs, w.kind, w.calls])).toEqual([["lessee", "word", 1], ["in -person tour", "format", 1], ["person", "format", 1], ["", "filler", 1]]);
   });
 });

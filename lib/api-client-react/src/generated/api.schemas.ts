@@ -18,6 +18,7 @@ export type WordsToWatchWordsItemKind = typeof WordsToWatchWordsItemKind[keyof t
 export const WordsToWatchWordsItemKind = {
   number: 'number',
   word: 'word',
+  format: 'format',
   filler: 'filler',
 } as const;
 
@@ -229,6 +230,24 @@ export interface VapiAssistant {
   name: string;
   accountId: string;
   accountLabel: string;
+}
+
+export interface TranscriberSpec {
+  provider: string;
+  model: string | null;
+}
+
+export interface AssistantTranscriber {
+  assistantId: string;
+  name: string;
+  accountId: string;
+  accountLabel: string;
+  primary: TranscriberSpec | null;
+  fallback: TranscriberSpec[];
+  keytermCount: number;
+  numerals: boolean | null;
+  language: string | null;
+  fetchedAt: string;
 }
 
 export interface VapiPreviewInput {

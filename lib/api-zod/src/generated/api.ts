@@ -169,6 +169,33 @@ export const GetCallDisagreementResponse = zod.object({
 
 
 /**
+ * @summary T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
+ */
+export const GetAssistantTranscriberParams = zod.object({
+  "assistantId": zod.coerce.string()
+})
+
+export const GetAssistantTranscriberResponse = zod.object({
+  "assistantId": zod.string(),
+  "name": zod.string(),
+  "accountId": zod.string(),
+  "accountLabel": zod.string(),
+  "primary": zod.object({
+  "provider": zod.string(),
+  "model": zod.string().nullable()
+}).nullable(),
+  "fallback": zod.array(zod.object({
+  "provider": zod.string(),
+  "model": zod.string().nullable()
+})),
+  "keytermCount": zod.number(),
+  "numerals": zod.boolean().nullable(),
+  "language": zod.string().nullable(),
+  "fetchedAt": zod.string()
+})
+
+
+/**
  * @summary T-87 -- words that keep splitting the providers, grouped by the plurality reading, most calls first. One bulk when bulkId is given; otherwise all-time (T-92 -- every finished bulk, the latest run per call). Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
  */
 export const GetWordsToWatchQueryParams = zod.object({
@@ -184,7 +211,7 @@ export const GetWordsToWatchResponse = zod.object({
   "callsWithSpans": zod.number(),
   "words": zod.array(zod.object({
   "heardAs": zod.string(),
-  "kind": zod.enum(['number', 'word', 'filler']),
+  "kind": zod.enum(['number', 'word', 'format', 'filler']),
   "noMajority": zod.boolean(),
   "calls": zod.number(),
   "spans": zod.number(),

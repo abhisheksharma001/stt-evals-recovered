@@ -40,7 +40,9 @@ export function WordsToWatch({
   }
   if (isError || !data) return <p className="px-4 py-3 text-xs text-destructive">Could not load words to watch.</p>
 
-  const meaningful = data.words.filter((w) => w.kind !== "filler")
+  // T-98: format-only splits (hyphens, spacing, "one" vs "1", a stray "um")
+  // hide with the fillers -- nothing is at stake in either.
+  const meaningful = data.words.filter((w) => w.kind !== "filler" && w.kind !== "format")
   const fillers = data.words.length - meaningful.length
   const visible = showFillers ? data.words : meaningful
   const limit = compact && !showAll ? 8 : visible.length
@@ -86,6 +88,11 @@ export function WordsToWatch({
                       {w.kind === "number" && (
                         <span className="mr-1.5 rounded border border-warning/40 bg-warning/10 px-1 font-sans text-[9px] uppercase tracking-wide text-foreground" title="A digit is involved: phone number, date, amount, unit -- the meaning of the call is at stake">
                           number
+                        </span>
+                      )}
+                      {w.kind === "format" && (
+                        <span className="mr-1.5 rounded border border-border bg-muted px-1 font-sans text-[9px] uppercase tracking-wide text-muted-foreground" title="Same words, different convention: hyphen vs space, 'one' vs '1', a stray um. Nothing at stake.">
+                          format
                         </span>
                       )}
                       {w.heardAs || <span className="italic text-muted-foreground">(nothing)</span>}
@@ -139,8 +146,8 @@ export function WordsToWatch({
               </button>
             )}
             {fillers > 0 && (
-              <button type="button" onClick={() => setShowFillers((v) => !v)} className="text-muted-foreground hover:underline" title="Splits where every reading is empty or a filler word (um, uh, yeah). Real disagreement, nothing at stake.">
-                {showFillers ? "Hide" : "Show"} {fillers} filler-only split{fillers === 1 ? "" : "s"}
+              <button type="button" onClick={() => setShowFillers((v) => !v)} className="text-muted-foreground hover:underline" title="Splits where every reading is empty or a filler word (um, uh, yeah), or where the readings differ only in convention (1-bedroom / one-bedroom, in-person / in person). Real disagreement, nothing at stake.">
+                {showFillers ? "Hide" : "Show"} {fillers} filler / format-only split{fillers === 1 ? "" : "s"}
               </button>
             )}
           </div>
