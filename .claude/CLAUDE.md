@@ -56,7 +56,9 @@ with its own UI page (Corpus, Review, Runs, Rankings).
 - **Word-level diff view** shipped — see exactly which words a provider got wrong,
   not just an aggregate WER number.
 - **Confidence scores**: 3 of 4 live providers return them (AssemblyAI, Deepgram,
-  Gladia); Cartesia doesn't. Scoped, not built — see `docs/backlog/good-to-have.md`.
+  Gladia); Cartesia doesn't. Extracted since 2026-08-27 (hybrid signal 2,
+  `lib/provider-confidence.ts`, keyed by vendor since T-110) and, since batch 8,
+  underlined in the word diff (T-109).
 - **2026-08-25: full launch-readiness pass done** — typecheck, both unit suites,
   a production UI build, and live traffic through the real run-executor (not a
   bypass). Found and fixed 4 real bugs (retry race condition, duplicate result
@@ -121,6 +123,17 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   newest model is one click on Setup, as its **own provider row** (`<vendor>-<apiModel>`).
   Re-check the dated catalogs (AssemblyAI, Gladia, Cartesia, ElevenLabs) when a
   vendor announces a model — they have no list API.
+
+- **2026-08-30, batch 8: bulk → runs nesting; catalog age; judge fields; unsure
+  words; vendor-keyed extraction.** Bulks rows expand to their shard runs; the
+  bottom section is ad-hoc runs only. Setup says how old each dated catalog is
+  (warns past 60 days). `benchmark_agent_scans.judge_confidence` /
+  `judge_key_differences` are real columns (from the BAML verdict, never parsed
+  from prose), shown as a chip + list on the call comparison. The diff underlines
+  a provider's own low-confidence words. **Anything provider-specific must key
+  on `vendorOfProviderId()`**, never an exact id — T-104 model rows
+  (`gladia-solaria-3`) got no confidence/timings/slots until T-110.
+  `assemblyai-universal` is pinned to `universal-3-5-pro`.
 
 ## Standing rules for this project specifically
 

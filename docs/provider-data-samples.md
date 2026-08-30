@@ -322,6 +322,7 @@ What this means for the benchmark:
 | ElevenLabs | no | docs: `model_id` = `scribe_v2` (this repo's adapter sent `scribe_v1` until today) | multipart `model_id` |
 | Speechmatics | not checked (no key) | — | — |
 
-Consequence for the benchmark: `assemblyai-universal` has always sent **no** model, so
-it runs whatever AssemblyAI's default is on the day (newest first). That is a moving
-target and is now visible on the Setup page as "vendor default today".
+Consequence for the benchmark: `assemblyai-universal` used to send **no** model, so it
+ran whatever AssemblyAI's default was on the day (newest first) — a moving target.
+**T-110 (batch 8) pinned it to `universal-3-5-pro`** (the verified default 2026-08-30);
+a newer model gets its own row via T-104, never a silent swap under the old id.
