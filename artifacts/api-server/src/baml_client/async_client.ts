@@ -24,7 +24,7 @@ import { toBamlError, BamlStream, BamlAbortError, Collector, ClientRegistry } fr
 import type { Checked, Check, RecursivePartialNull as MovedRecursivePartialNull } from "./types"
 import type { partial_types } from "./partial_types"
 import type * as types from "./types"
-import type {Candidate, FlaggedSpan, JudgeVerdict, PickedProvider} from "./types"
+import type {Candidate, Confidence, FailureAnalysis, FlagKind, FlaggedSpan, JudgeVerdict, KeyDifference, PickedProvider} from "./types"
 import type TypeBuilder from "./type_builder"
 import { AsyncHttpRequest, AsyncHttpStreamRequest } from "./async_request"
 import { LlmResponseParser, LlmStreamParser } from "./parser"
@@ -97,6 +97,62 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
         }
 
         
+        async AnalyzeFailure(
+        providerName: string,httpStatus?: number | null,errorMessage: string,
+        __baml_options__?: BamlCallOptions<never>
+        ): Promise<types.FailureAnalysis> {
+          try {
+          const __options__ = { ...this.bamlOptions, ...(__baml_options__ || {}), env: { ...(this.bamlOptions.env || {}), ...(__baml_options__?.env || {}) } }
+          const __signal__ = __options__.signal;
+
+          if (__signal__?.aborted) {
+          throw new BamlAbortError('Operation was aborted', __signal__.reason);
+          }
+
+          // Check if onTick is provided - route through streaming if so
+          if (__options__.onTick) {
+          const __stream__ = this.stream.AnalyzeFailure(
+          providerName,httpStatus,errorMessage,
+          __baml_options__
+          );
+
+          return await __stream__.getFinalResponse();
+          }
+
+          const __collector__ = __options__.collector ? (Array.isArray(__options__.collector) ? __options__.collector :
+          [__options__.collector]) : [];
+          const __rawEnv__ = __options__.env ? { ...process.env, ...__options__.env } : { ...process.env };
+          const __env__: Record<string, string> = Object.fromEntries(
+            Object.entries(__rawEnv__).filter(([_, value]) => value !== undefined) as [string, string][]
+            );
+
+            // Resolve client option to clientRegistry (client takes precedence)
+            let __clientRegistry__ = __options__.clientRegistry;
+            if (__options__.client) {
+              __clientRegistry__ = __clientRegistry__ || new ClientRegistry();
+              __clientRegistry__.setPrimary(__options__.client);
+            }
+
+            const __raw__ = await this.runtime.callFunction(
+            "AnalyzeFailure",
+            {
+            "providerName": providerName,"httpStatus": httpStatus?? null,"errorMessage": errorMessage
+            },
+            this.ctxManager.cloneContext(),
+            __options__.tb?.__tb(),
+            __clientRegistry__,
+            __collector__,
+            __options__.tags || {},
+            __env__,
+            __signal__,
+            __options__.watchers,
+            )
+            return __raw__.parsed(false) as types.FailureAnalysis
+            } catch (error) {
+            throw toBamlError(error);
+            }
+            }
+            
         async JudgeCandidates(
         originalTranscript: string,flaggedSpans: types.FlaggedSpan[],candidates: types.Candidate[],
         __baml_options__?: BamlCallOptions<never>
@@ -167,6 +223,80 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
             }
 
             
+            AnalyzeFailure(
+            providerName: string,httpStatus?: number | null,errorMessage: string,
+            __baml_options__?: BamlCallOptions<never>
+            ): BamlStream<partial_types.FailureAnalysis, types.FailureAnalysis>
+              {
+              try {
+              const __options__ = { ...this.bamlOptions, ...(__baml_options__ || {}), env: { ...(this.bamlOptions.env || {}), ...(__baml_options__?.env || {}) } }
+              const __signal__ = __options__.signal;
+
+              if (__signal__?.aborted) {
+              throw new BamlAbortError('Operation was aborted', __signal__.reason);
+              }
+
+              let __collector__ = __options__.collector ? (Array.isArray(__options__.collector) ? __options__.collector :
+              [__options__.collector]) : [];
+
+              let __onTickWrapper__: (() => void) | undefined;
+
+              // Create collector and wrap onTick if provided
+              if (__options__.onTick) {
+              const __tickCollector__ = new Collector("on-tick-collector");
+              __collector__ = [...__collector__, __tickCollector__];
+
+              __onTickWrapper__ = () => {
+              const __log__ = __tickCollector__.last;
+              if (__log__) {
+              try {
+              __options__.onTick!("Unknown", __log__);
+              } catch (error) {
+              console.error("Error in onTick callback for AnalyzeFailure", error);
+              }
+              }
+              };
+              }
+
+              const __rawEnv__ = __options__.env ? { ...process.env, ...__options__.env } : { ...process.env };
+              const __env__: Record<string, string> = Object.fromEntries(
+                Object.entries(__rawEnv__).filter(([_, value]) => value !== undefined) as [string, string][]
+                );
+
+                // Resolve client option to clientRegistry (client takes precedence)
+                let __clientRegistry__ = __options__.clientRegistry;
+                if (__options__.client) {
+                  __clientRegistry__ = __clientRegistry__ || new ClientRegistry();
+                  __clientRegistry__.setPrimary(__options__.client);
+                }
+
+                const __raw__ = this.runtime.streamFunction(
+                "AnalyzeFailure",
+                {
+                "providerName": providerName,"httpStatus": httpStatus ?? null,"errorMessage": errorMessage
+                },
+                undefined,
+                this.ctxManager.cloneContext(),
+                __options__.tb?.__tb(),
+                __clientRegistry__,
+                __collector__,
+                __options__.tags || {},
+                __env__,
+                __signal__,
+                __onTickWrapper__,
+                )
+                return new BamlStream<partial_types.FailureAnalysis, types.FailureAnalysis>(
+                  __raw__,
+                  (a): partial_types.FailureAnalysis => a,
+                  (a): types.FailureAnalysis => a,
+                  this.ctxManager.cloneContext(),
+                  __options__.signal,
+                  )
+                  } catch (error) {
+                  throw toBamlError(error);
+                  }
+                  }
+                  
             JudgeCandidates(
             originalTranscript: string,flaggedSpans: types.FlaggedSpan[],candidates: types.Candidate[],
             __baml_options__?: BamlCallOptions<never>

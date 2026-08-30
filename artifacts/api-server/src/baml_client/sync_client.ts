@@ -22,7 +22,7 @@ import type { BamlRuntime, FunctionResult, BamlCtxManager, Image, Audio, Pdf, Vi
 import { toBamlError, BamlAbortError, ClientRegistry, type HTTPRequest } from "@boundaryml/baml"
 import type { Checked, Check, RecursivePartialNull as MovedRecursivePartialNull } from "./types"
 import type * as types from "./types"
-import type {Candidate, FlaggedSpan, JudgeVerdict, PickedProvider} from "./types"
+import type {Candidate, Confidence, FailureAnalysis, FlagKind, FlaggedSpan, JudgeVerdict, KeyDifference, PickedProvider} from "./types"
 import type TypeBuilder from "./type_builder"
 import { HttpRequest, HttpStreamRequest } from "./sync_request"
 import { LlmResponseParser, LlmStreamParser } from "./parser"
@@ -96,6 +96,56 @@ export class BamlSyncClient {
     return this.llmStreamParser
   }
 
+  
+  AnalyzeFailure(
+      providerName: string,httpStatus?: number | null,errorMessage: string,
+      __baml_options__?: BamlCallOptions<never>
+  ): types.FailureAnalysis {
+    try {
+      const __options__ = { ...this.bamlOptions, ...(__baml_options__ || {}), env: { ...(this.bamlOptions.env || {}), ...(__baml_options__?.env || {}) } }
+      const __signal__ = __options__.signal;
+
+      if (__signal__?.aborted) {
+        throw new BamlAbortError('Operation was aborted', __signal__.reason);
+      }
+
+      // Check if onTick is provided and reject for sync operations
+      if (__options__.onTick) {
+        throw new Error("onTick is not supported for synchronous functions. Please use the async client instead.");
+      }
+
+      const __collector__ = __options__.collector ? (Array.isArray(__options__.collector) ? __options__.collector : [__options__.collector]) : [];
+      const __rawEnv__ = __options__.env ? { ...process.env, ...__options__.env } : { ...process.env };
+      const __env__: Record<string, string> = Object.fromEntries(
+        Object.entries(__rawEnv__).filter(([_, value]) => value !== undefined) as [string, string][]
+      );
+
+      // Resolve client option to clientRegistry (client takes precedence)
+      let __clientRegistry__ = __options__.clientRegistry;
+      if (__options__.client) {
+        __clientRegistry__ = __clientRegistry__ || new ClientRegistry();
+        __clientRegistry__.setPrimary(__options__.client);
+      }
+
+      const __raw__ = this.runtime.callFunctionSync(
+        "AnalyzeFailure",
+        {
+          "providerName": providerName,"httpStatus": httpStatus?? null,"errorMessage": errorMessage
+        },
+        this.ctxManager.cloneContext(),
+        __options__.tb?.__tb(),
+        __clientRegistry__,
+        __collector__,
+        __options__.tags || {},
+        __env__,
+        __signal__,
+        __options__.watchers,
+      )
+      return __raw__.parsed(false) as types.FailureAnalysis
+    } catch (error: any) {
+      throw toBamlError(error);
+    }
+  }
   
   JudgeCandidates(
       originalTranscript: string,flaggedSpans: types.FlaggedSpan[],candidates: types.Candidate[],

@@ -29,10 +29,18 @@ export default class TypeBuilder {
     
     Candidate: ClassViewer<'Candidate', "providerId" | "providerName" | "transcript">;
     
-    FlaggedSpan: ClassViewer<'FlaggedSpan', "text" | "reason">;
+    FailureAnalysis: ClassViewer<'FailureAnalysis', "diagnosis" | "suggestedFix" | "ambiguous">;
     
-    JudgeVerdict: ClassViewer<'JudgeVerdict', "pickedProviderId" | "reasoning">;
+    FlaggedSpan: ClassViewer<'FlaggedSpan', "text" | "reason" | "kind">;
     
+    JudgeVerdict: ClassViewer<'JudgeVerdict', "pickedProviderId" | "confidence" | "keyDifferences" | "reasoning">;
+    
+    KeyDifference: ClassViewer<'KeyDifference', "span" | "alternatives" | "matters">;
+    
+    
+    Confidence: EnumViewer<'Confidence', "High" | "Medium" | "Low">;
+    
+    FlagKind: EnumViewer<'FlagKind', "PeerDisagreement" | "LowConfidence" | "EntityMismatch">;
     
     PickedProvider: EnumBuilder<'PickedProvider'>;
     
@@ -40,10 +48,10 @@ export default class TypeBuilder {
     constructor() {
         this.tb = new _TypeBuilder({
           classes: new Set([
-            "Candidate","FlaggedSpan","JudgeVerdict",
+            "Candidate","FailureAnalysis","FlaggedSpan","JudgeVerdict","KeyDifference",
           ]),
           enums: new Set([
-            "PickedProvider",
+            "Confidence","FlagKind","PickedProvider",
           ]),
           runtime: DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME
         });
@@ -52,14 +60,30 @@ export default class TypeBuilder {
           "providerId","providerName","transcript",
         ]);
         
+        this.FailureAnalysis = this.tb.classViewer("FailureAnalysis", [
+          "diagnosis","suggestedFix","ambiguous",
+        ]);
+        
         this.FlaggedSpan = this.tb.classViewer("FlaggedSpan", [
-          "text","reason",
+          "text","reason","kind",
         ]);
         
         this.JudgeVerdict = this.tb.classViewer("JudgeVerdict", [
-          "pickedProviderId","reasoning",
+          "pickedProviderId","confidence","keyDifferences","reasoning",
         ]);
         
+        this.KeyDifference = this.tb.classViewer("KeyDifference", [
+          "span","alternatives","matters",
+        ]);
+        
+        
+        this.Confidence = this.tb.enumViewer("Confidence", [
+          "High","Medium","Low",
+        ]);
+        
+        this.FlagKind = this.tb.enumViewer("FlagKind", [
+          "PeerDisagreement","LowConfidence","EntityMismatch",
+        ]);
         
         this.PickedProvider = this.tb.enumBuilder("PickedProvider", [
           

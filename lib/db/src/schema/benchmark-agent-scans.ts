@@ -15,6 +15,8 @@ import { benchmarkRunsTable } from "./benchmark-runs";
 export type BenchmarkAgentFlag = {
   text: string;
   reason: string;
+  /** T-102: which hybrid signal raised it, so the judge can weigh it. Absent on rows written before 2026-08-30. */
+  kind?: "peer_disagreement" | "low_confidence" | "entity_mismatch";
 };
 
 // 2026-08-27, per Abhishek ("we don't need a gold transcript any more ...

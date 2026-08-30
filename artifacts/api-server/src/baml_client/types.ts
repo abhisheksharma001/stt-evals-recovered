@@ -47,6 +47,18 @@ export function all_succeeded<CheckName extends string>(checks: Record<CheckName
 export function get_checks<CheckName extends string>(checks: Record<CheckName, Check>): Check[] {
     return Object.values(checks)
 }
+export enum Confidence {
+  High = "High",
+  Medium = "Medium",
+  Low = "Low",
+}
+
+export enum FlagKind {
+  PeerDisagreement = "PeerDisagreement",
+  LowConfidence = "LowConfidence",
+  EntityMismatch = "EntityMismatch",
+}
+
 export enum PickedProvider {
 }
 
@@ -57,14 +69,31 @@ export interface Candidate {
   
 }
 
+export interface FailureAnalysis {
+  diagnosis: string
+  suggestedFix: string
+  ambiguous: boolean
+  
+}
+
 export interface FlaggedSpan {
   text: string
   reason: string
+  kind?: FlagKind | null
   
 }
 
 export interface JudgeVerdict {
   pickedProviderId: (string | PickedProvider)
+  confidence: Confidence
+  keyDifferences: KeyDifference[]
   reasoning: string
+  
+}
+
+export interface KeyDifference {
+  span: string
+  alternatives: string
+  matters: string
   
 }
