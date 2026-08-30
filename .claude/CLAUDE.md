@@ -147,6 +147,20 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 11: web tests; recharts on demand; retention facts;
+  T-79 progress.** The UI package runs vitest (CI too) on pure `src/lib`
+  logic — `judgeChipFor()`, `paidVsListDiffers()`, `catalogAge`,
+  `retentionState()` extracted and tested (23 tests); pages keep the live
+  browser pass. recharts loads only when Results' "More evidence" opens
+  (Rankings chunk 453 kB → 47 kB). `BenchmarkCall.audioCached` (read routes
+  only) says whose audio bytes are on the server's disk: Calls chips read
+  "audio saved" / "Nd left" / "audio gone" as facts — an uncached call past
+  day 14 is gone for everyone — and the grouping bar counts both. A clean
+  `pnpm install` on this machine drops platform-optional binaries; the
+  darwin pins (esbuild, rollup, lightningcss, tailwind oxide) in the root
+  package.json are the standing fix. `GET /benchmark/calls`'s query lives
+  in `lib/calls.ts` now (T-79 tracks handler moves in its register row).
+
 - **2026-08-30, batch 9: backfills applied; judge confidence + hard cases on
   Results; Vite warnings; Q-3.** All pending backfills and the hybrid-flag
   recompute are applied (T-111). `GET /benchmark/assistant-signals` feeds two
