@@ -76,6 +76,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BenchmarkCall"
+  /benchmark/calls/cache-audio:
+    post:
+      operationId: cacheCorpusAudio
+      tags: [benchmark]
+      summary: T-126 -- download and save to the server's disk the audio of every uncached corpus call still inside Vapi's 14-day retention window. Free (no STT provider is called); safe to repeat (already-cached calls are skipped).
+      responses:
+        "200":
+          description: Per-call rescue outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheAudioResult"
   /benchmark/calls/disagreement:
     get:
       operationId: getCallDisagreement
@@ -1507,6 +1519,27 @@ components:
         results:
           type: array
           items: { $ref: "#/components/schemas/VapiImportOutcome" }
+    CacheAudioOutcome:
+      type: object
+      required: [callId, label, outcome, error]
+      properties:
+        callId: { type: string }
+        label: { type: string }
+        # expired = past the 14-day window and never cached: not attempted,
+        # because the recording is gone at the source.
+        outcome: { type: string, enum: [saved, failed, expired] }
+        error: { type: ["string", "null"] }
+    CacheAudioResult:
+      type: object
+      required: [alreadyCachedCount, savedCount, failedCount, expiredCount, results]
+      properties:
+        alreadyCachedCount: { type: number }
+        savedCount: { type: number }
+        failedCount: { type: number }
+        expiredCount: { type: number }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/CacheAudioOutcome" }
     AttestDeidBody:
       type: object
       required: [approverLabel]

@@ -15,6 +15,7 @@ import {
   useGetCallDisagreement,
   getGetCallDisagreementQueryKey,
   useListVapiAssistants,
+  useCacheCorpusAudio,
 } from "@workspace/api-client-react"
 import {
   Plus,
@@ -99,6 +100,25 @@ export default function Corpus() {
   const { data: assistants } = useListVapiAssistants()
   const assistantName = React.useMemo(() => new Map((assistants ?? []).map((a) => [a.id, a.name])), [assistants])
 
+  // T-126: one click saves every uncached call's audio to the server's
+  // disk while Vapi still has it. Free (a download, no STT provider); the
+  // server skips cached calls, so clicking twice is safe.
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const rescueAudio = useCacheCorpusAudio({
+    mutation: {
+      onSuccess: (r) => {
+        toast({
+          title: "Audio rescue finished",
+          description: `${r.savedCount} saved · ${r.failedCount} failed · ${r.expiredCount} already past retention · ${r.alreadyCachedCount} were already safe.`,
+          variant: r.failedCount > 0 ? "destructive" : undefined,
+        })
+        queryClient.invalidateQueries({ queryKey: getListBenchmarkCallsQueryKey() })
+      },
+      onError: (err) => toast({ title: "Audio rescue failed", description: errorMessage(err), variant: "destructive" }),
+    },
+  })
+
   // Deep link support (replaces the old /review?call=<id> link): "expand
   // this call and scroll to it" from anywhere that still passes ?call=<id>.
   const appliedDeepLink = React.useRef(false)
@@ -147,6 +167,13 @@ export default function Corpus() {
   const audioGone = React.useMemo(
     () => filteredCalls.filter((c) => retentionState(c.sourceStartedAt, c.audioCached)?.kind === "gone").length,
     [filteredCalls],
+  )
+
+  // T-126: corpus-wide (not filtered) because the rescue endpoint acts on
+  // the whole corpus -- the button's count must match what a click does.
+  const audioUnsaved = React.useMemo(
+    () => (calls ?? []).filter((c) => !c.audioCached && retentionState(c.sourceStartedAt, c.audioCached)?.kind !== "gone").length,
+    [calls],
   )
 
   type CallRow = NonNullable<typeof calls>[number]
@@ -300,6 +327,19 @@ export default function Corpus() {
             <span className="whitespace-nowrap" data-testid="audio-retention-summary" title="Cached audio lives on the server and outlives Vapi's 14-day retention window. 'Gone' = never cached and past the window: unfetchable now, for everyone.">
               {audioSaved} audio saved{audioGone > 0 && <span className="text-destructive"> · {audioGone} gone for good</span>}
             </span>
+            {audioUnsaved > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                disabled={rescueAudio.isPending}
+                onClick={() => rescueAudio.mutate()}
+                data-testid="rescue-audio-button"
+                title="Download every uncached call's audio to the server now, while Vapi still has it. Free -- no STT provider is called; already-saved calls are skipped."
+              >
+                {rescueAudio.isPending ? "Saving audio…" : `Save audio now (${audioUnsaved})`}
+              </Button>
+            )}
             <div className="ml-auto flex items-center gap-3">
               <div className="flex items-center rounded-md border border-border text-xs" role="group" aria-label="Group rows">
                 <button type="button" onClick={() => setGroupBy("org")} className={`px-2 py-1.5 ${groupBy === "org" ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`} title="Org, then assistant, then calls -- the same nesting as Results">

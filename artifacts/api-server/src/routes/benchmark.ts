@@ -40,6 +40,7 @@ import {
   GetBenchmarkRunManifestParams,
   GetBenchmarkRunManifestResponse,
   ImportVapiCallsBody,
+  CacheCorpusAudioResponse,
   ImportVapiCallsResponse,
   ListAuditLogQueryParams,
   ListAuditLogResponse,
@@ -124,6 +125,7 @@ import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
 import { audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
+import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -454,6 +456,16 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(CreateBenchmarkCallResponse.parse(serializeCall(call)));
+});
+
+// T-126: save every uncached call's audio to the server's disk while Vapi
+// still has it (free -- only a download, no STT provider call). Cached
+// calls are skipped, per-call failures are reported not thrown, and calls
+// already past the 14-day window are named as expired instead of silently
+// attempted.
+router.post("/benchmark/calls/cache-audio", async (_req, res): Promise<void> => {
+  const result = await rescueUncachedAudio();
+  res.json(CacheCorpusAudioResponse.parse(result));
 });
 
 // T-51: one call by id. The list route above is the corpus (121 calls today,

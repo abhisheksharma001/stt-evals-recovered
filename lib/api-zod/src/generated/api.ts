@@ -154,6 +154,23 @@ export const CreateBenchmarkCallResponse = zod.object({
 
 
 /**
+ * @summary T-126 -- download and save to the server's disk the audio of every uncached corpus call still inside Vapi's 14-day retention window. Free (no STT provider is called); safe to repeat (already-cached calls are skipped).
+ */
+export const CacheCorpusAudioResponse = zod.object({
+  "alreadyCachedCount": zod.number(),
+  "savedCount": zod.number(),
+  "failedCount": zod.number(),
+  "expiredCount": zod.number(),
+  "results": zod.array(zod.object({
+  "callId": zod.string(),
+  "label": zod.string(),
+  "outcome": zod.enum(['saved', 'failed', 'expired']),
+  "error": zod.string().nullable()
+}))
+})
+
+
+/**
  * @summary T-85 -- one number per call, how much the providers disagreed on it (sum of peer flag counts over ok scored cells), most disagreement first. Scoped to one bulk when bulkId is given, else every benchmark run. Calls with no scored cell are absent, never zero.
  */
 export const GetCallDisagreementQueryParams = zod.object({
