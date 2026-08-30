@@ -1,4 +1,6 @@
 import * as React from "react"
+import { useLocation } from "wouter"
+import Runs from "@/pages/Runs"
 import { formatMicrocents } from "@/lib/utils"
 import { failureCopy } from "@/components/no-output"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -33,7 +35,7 @@ import {
   type Provider,
   type VapiAssistant,
 } from "@workspace/api-client-react"
-import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2 } from "lucide-react"
+import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2, GitMerge } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1247,6 +1249,9 @@ export default function Bulks() {
   // first) is the page's headline; creation and templates collapse while
   // something is running so the live status is what the first screen shows.
   const anyRunning = !!bulks?.some((b) => b.status === "running" || b.status === "estimating")
+  // T-31: /runs redirects here; open the runs section when it does.
+  const [location] = useLocation()
+  const runsOpen = location.split("?")[0].replace(/\/+$/, "") === "/runs"
   const headline = bulks?.find((b) => b.status === "running" || b.status === "estimating") ?? bulks?.[0] ?? null
 
   return (
@@ -1365,6 +1370,19 @@ export default function Bulks() {
           </Table>
         </CardContent>
       </Card>
+        </div>
+      </details>
+
+      {/* T-31 (D.4): runs live inside Bulks now -- a bulk is a group of runs.
+          Collapsed by default; the old /runs route lands here expanded. */}
+      <details id="runs" open={runsOpen} className="group rounded-lg border border-border">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 px-4 py-3">
+          <GitMerge className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-semibold">Individual runs</span>
+          <span className="text-xs text-muted-foreground">Every run, bulk shards and ad-hoc alike, with per-call results and retry.</span>
+        </summary>
+        <div className="border-t border-border p-4">
+          <Runs embedded />
         </div>
       </details>
     </div>

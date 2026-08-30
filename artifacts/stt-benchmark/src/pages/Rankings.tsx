@@ -665,7 +665,7 @@ export default function Rankings() {
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-foreground">{r.providerName}</span>
                           {r.providerId === activeProviderId && (
-                            <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set as the active production provider in Providers -> System settings">
+                            <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set as the provider in production on the Setup page">
                               <Star className="h-2.5 w-2.5" /> Active
                             </Badge>
                           )}

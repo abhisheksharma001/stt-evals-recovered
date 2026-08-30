@@ -659,7 +659,7 @@ function ProductionTranscriberPanel({ call }: { call: any }) {
       {!benchmarked && (
         <p className="text-xs text-warning">
           No enabled provider matches this model, so every candidate is being compared against a
-          baseline this benchmark never measures. Add or enable it on the Providers page to make the
+          baseline this benchmark never measures. Add or enable it on the Setup page to make the
           comparison meaningful.
         </p>
       )}

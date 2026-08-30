@@ -232,7 +232,7 @@ export default function Import() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Import Calls</h1>
+        <h2 className="text-xl font-semibold tracking-tight">Import calls</h2>
         <p className="mt-1 text-muted-foreground">
           Pull real recordings from Vapi into the corpus. Step 1 of the benchmark pipeline.
         </p>

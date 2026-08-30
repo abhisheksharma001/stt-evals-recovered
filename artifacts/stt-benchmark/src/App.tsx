@@ -7,9 +7,7 @@ import { Toaster } from "@/components/ui/toaster"
 
 import Dashboard from "@/pages/Dashboard"
 import Corpus from "@/pages/Corpus"
-import Sources from "@/pages/Import"
-import Providers from "@/pages/Providers"
-import Runs from "@/pages/Runs"
+import Setup from "@/pages/Setup"
 import Bulks from "@/pages/Bulks"
 import Results from "@/pages/Rankings"
 import NotFound from "@/pages/not-found"
@@ -36,12 +34,16 @@ const queryClient = new QueryClient({
 // string, so "/review?call=<id>" deep links previously matched NO page and
 // rendered a blank main area; unknown paths now render NotFound instead of
 // nothing (review finding #22).
+// T-31 (D.4): five pages. /runs, /providers and /sources stay as aliases so
+// bookmarks and deep links keep working -- Runs renders inside Bulks,
+// Providers and Sources are tabs of Setup.
 const KNOWN_ROUTES = new Set([
   "/",
   "/corpus",
-  "/runs",
   "/bulks",
+  "/runs",
   "/results",
+  "/setup",
   "/providers",
   "/sources",
 ])
@@ -58,11 +60,11 @@ export default function App() {
         <ErrorBoundary resetKey={location}>
           {path === "/" && <Dashboard />}
           {path === "/corpus" && <Corpus />}
-          {path === "/runs" && <Runs />}
-          {path === "/bulks" && <Bulks />}
+          {(path === "/bulks" || path === "/runs") && <Bulks />}
           {path === "/results" && <Results />}
-          {path === "/providers" && <Providers />}
-          {path === "/sources" && <Sources />}
+          {path === "/setup" && <Setup />}
+          {path === "/providers" && <Setup defaultTab="providers" />}
+          {path === "/sources" && <Setup defaultTab="sources" />}
           {!KNOWN_ROUTES.has(path) && <NotFound />}
         </ErrorBoundary>
         <Toaster />

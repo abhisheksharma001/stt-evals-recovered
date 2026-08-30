@@ -345,7 +345,7 @@ export default function Dashboard() {
       {data.corpusCount === 0 && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Layers className="h-4 w-4" /> No calls imported yet.{" "}
-          <Link href="/sources" className="text-primary hover:underline">Import from Vapi →</Link>
+          <Link href="/setup?tab=sources" className="text-primary hover:underline">Import from Vapi →</Link>
         </p>
       )}
     </div>
