@@ -19,13 +19,11 @@ describe("matchKnownFailure", () => {
     expect(matchKnownFailure({ failureClass: "unknown", errorMessage: "storage.supabase.co/archive/x" })).toBeNull();
   });
 
-  it("falls back to the error text only when failureClass is null (legacy rows)", () => {
+  it("never reads the error text: a null failureClass is null, whatever the message says (T-69)", () => {
+    expect(matchKnownFailure({ failureClass: null, errorMessage: "call exceeds your retention window" })).toBeNull();
     expect(
-      matchKnownFailure({ failureClass: null, errorMessage: "call exceeds your retention window" })?.diagnosis,
-    ).toContain("14 days");
-    expect(
-      matchKnownFailure({ failureClass: null, errorMessage: "Failed to fetch https://x.storage.supabase.co/archive/a.wav" })?.diagnosis,
-    ).toContain("403");
+      matchKnownFailure({ failureClass: null, errorMessage: "Failed to fetch https://x.storage.supabase.co/archive/a.wav" }),
+    ).toBeNull();
     expect(matchKnownFailure({ failureClass: null, errorMessage: "Deepgram returned HTTP 400" })).toBeNull();
     expect(matchKnownFailure({ failureClass: null, errorMessage: null })).toBeNull();
   });

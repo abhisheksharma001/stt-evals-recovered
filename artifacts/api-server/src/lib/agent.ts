@@ -322,36 +322,20 @@ const KNOWN_FAILURE_BY_CLASS: Partial<
   },
 };
 
-// T-41 legacy path, and the ONLY place left that reads an error sentence to
-// decide a cause. Applies solely to rows whose `failureClass` is null -- rows
-// written before T-06 existed. T-40's migration (`lib/db/migrations/
-// t40-backfill-failure-class.mjs`) classifies those from the same text;
-// once it has run on a database, no row reaches this branch there and it
-// can be deleted. Kept so the free diagnosis those rows show today does not
-// vanish on a database where the migration has not yet been applied
-// (2026-08-30: the local DB -- 167 failed rows, every one still null).
-function legacyKnownFailureFromMessage(
-  errorMessage: string,
-): { diagnosis: string; suggestedFix: string } | null {
-  if (errorMessage.includes("retention window")) return KNOWN_FAILURE_BY_CLASS.retention_expired ?? null;
-  if (errorMessage.includes("storage.supabase.co") || errorMessage.includes("archive/")) {
-    return KNOWN_FAILURE_BY_CLASS.audio_url_forbidden ?? null;
-  }
-  return null;
-}
-
 /**
  * The human-readable diagnosis + fix for a failure whose cause is already
  * known deterministically, or null when it is not (and an LLM analysis is
- * the next step). Driven by `failureClass`; falls back to the error text
- * only when the row was never classified (see legacyKnownFailureFromMessage).
+ * the next step). Driven by `failureClass` only. Error text is never read
+ * here: T-40's backfill (run 2026-08-30, T-69) classified every legacy row
+ * whose text named a cause; the 25 it left null say nothing a pattern could
+ * use ("Gladia submit returned HTTP 400", "Deepgram returned HTTP 400").
  */
 export function matchKnownFailure(cell: {
   failureClass: FailureClass | null;
   errorMessage: string | null;
 }): { diagnosis: string; suggestedFix: string } | null {
-  if (cell.failureClass !== null) return KNOWN_FAILURE_BY_CLASS[cell.failureClass] ?? null;
-  return cell.errorMessage ? legacyKnownFailureFromMessage(cell.errorMessage) : null;
+  if (cell.failureClass === null) return null;
+  return KNOWN_FAILURE_BY_CLASS[cell.failureClass] ?? null;
 }
 
 export async function analyzeFailure(params: {
