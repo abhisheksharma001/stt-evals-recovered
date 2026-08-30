@@ -270,6 +270,18 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 
 ---
 
+## Phase 18 — batch 13 (added 2026-08-31; register was drained after batch 12; five free tasks from the backlog's named follow-ups, zero provider spend)
+
+| ID | Task | Status |
+|---|---|---|
+| T-131 | **Persist per-call audio-cache attempt outcome** — three nullable columns on `benchmark_calls` (`audio_cache_last_outcome`/`_error`/`_attempt_at`), written by rescue + import-time caching via `artifacts/api-server/src/lib/audio-attempt.ts` (pure classifier in `audio-attempt-classify.ts`, unit-tested). "source_refused" = Vapi retention 400 or fresh storage-bucket 403 (evidence: T-132). Overview figure + Calls rescue button exclude refused; retention chip gains "source refuses audio". | ✅ done — batch 13. Live: rescue re-run wrote `source_refused` on all 14; `audioUnsavedCalls` reads **0**; rescue button gone; 107 saved / 14 refused chips on Calls. |
+| T-132 | **Refused-call identity check** — are the 5 refused 2026-08-19 calls the storage-bucket set? | ✅ done — batch 13. **Yes, exactly** (call-by-call against DB + cache dir): the 5 uncached dated calls = the 5 `audio_url_forbidden` calls; other 2 of that date cached, clean. Remaining 9 refusals = the 9 uncached null-date calls. "Refused at day 12" dissolves — never fetchable at any age. Recorded in the backlog. |
+| T-133 | **Reading-pair mining as a committed tool** — `artifacts/api-server/src/mine-reading-pairs.ts` (read-only; words-to-watch scope; canonical-form spans, so every pair is unfolded). | ✅ done — batch 13. Fresh run: 63 calls, 738 spans, 1,060 distinct unfolded pairs. New fold candidates recorded (am/pm vs "a m"/"p m" ~80 hits; villaroma vs villa roma 15). No rule change — folding shifts scores, own task. |
+| T-134 | **Soft archive for ad-hoc runs** — `POST /benchmark/runs/{id}/archive`, `archived_at` on `benchmark_runs`, ad-hoc only (bulk shards 409). Archived runs leave the default Runs list, the Overview latest-run, and the all-time Results "latest snapshot" picks. Audit-logged both ways. | ✅ done — batch 13. Live: archive→restore round-trip on a real run; 409 on a shard run; rankings intact (115 rows). |
+| T-135 | **Variable playback speed** (backlog "review workspace polish") — `components/playback-speed.tsx` (1×/1.25×/1.5×/2×), wired into the provider-comparison player and the disagreement-spans listener; re-applied `onLoadedMetadata` (browser resets rate per load). 3 jsdom tests. | ✅ done — batch 13. Live: control renders in an expanded call; clicking 1.5× set `audio.playbackRate` to 1.5. |
+
+Also checked this batch: backlog items #3 (statistical significance) and #4 (decision export) turned out already shipped — the T-20 verdict has a seeded paired bootstrap (95% CI, `withinNoise`, `callsToSettle`) and T-32 renders the shareable verdict artefact. Both stay closed under their own rows.
+
 ## Deferred, by name
 
 | ID | Task | Owner |
