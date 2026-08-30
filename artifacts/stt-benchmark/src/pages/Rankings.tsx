@@ -10,6 +10,8 @@ import {
   useGetBulkManifest,
   getGetBulkManifestQueryKey,
   type VerticalRanking,
+  useGetCallDisagreement,
+  getGetCallDisagreementQueryKey,
 } from "@workspace/api-client-react"
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText } from "lucide-react"
@@ -266,15 +268,25 @@ function PerCallComparisonLinks({ assistantId, bulkId }: { assistantId: string |
   const { data: manifest } = useGetBulkManifest(bulkId ?? "", {
     query: { queryKey: getGetBulkManifestQueryKey(bulkId ?? ""), enabled: !!bulkId },
   })
+  // T-85: worst first. The call the providers disagreed on most opens
+  // first; calls with no scored transcript sort last, never as "zero".
+  const { data: disagreement } = useGetCallDisagreement(bulkId ? { bulkId } : undefined, {
+    query: { queryKey: getGetCallDisagreementQueryKey(bulkId ? { bulkId } : undefined) },
+  })
+  const disagreementOf = React.useMemo(
+    () => new Map((disagreement?.calls ?? []).map((c) => [c.callId, c.disagreements])),
+    [disagreement],
+  )
   const groupCalls = React.useMemo(() => {
     if (!calls) return []
     const inBulk = bulkId
       ? new Set((manifest?.runs ?? []).flatMap((r) => r.calls.map((c) => c.id)))
       : null
+    const rank = (id: string) => disagreementOf.get(id) ?? -1
     return calls
       .filter((c) => (c.sourceAssistantId ?? null) === assistantId && (!inBulk || inBulk.has(c.id)))
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [calls, manifest, assistantId, bulkId])
+      .sort((a, b) => rank(b.id) - rank(a.id) || a.label.localeCompare(b.label))
+  }, [calls, manifest, assistantId, bulkId, disagreementOf])
   if (bulkId && !manifest) return null
   if (groupCalls.length === 0) return null
   return (
@@ -282,6 +294,7 @@ function PerCallComparisonLinks({ assistantId, bulkId }: { assistantId: string |
       <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
         <FileText className="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" />
         Compare providers per call ({groupCalls.length} call{groupCalls.length === 1 ? "" : "s"})
+        <span className="ml-2 text-xs" title="Sum of disagreements across every provider's transcript of the call. Calls with no scored transcript are last.">· most disagreement first</span>
       </summary>
       <ul className="mt-2 grid max-h-56 grid-cols-1 gap-x-6 gap-y-1 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
         {groupCalls.map((c) => (
@@ -293,6 +306,11 @@ function PerCallComparisonLinks({ assistantId, bulkId }: { assistantId: string |
             >
               {c.label}
             </Link>
+            {disagreementOf.has(c.id) && (
+              <span className="ml-1.5 font-mono text-[10px] text-muted-foreground" title="Disagreements across providers on this call">
+                {disagreementOf.get(c.id)}
+              </span>
+            )}
           </li>
         ))}
       </ul>

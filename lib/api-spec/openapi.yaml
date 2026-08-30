@@ -76,6 +76,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BenchmarkCall"
+  /benchmark/calls/disagreement:
+    get:
+      operationId: getCallDisagreement
+      tags: [benchmark]
+      summary: T-85 -- one number per call, how much the providers disagreed on it (sum of peer flag counts over ok scored cells), most disagreement first. Scoped to one bulk when bulkId is given, else every benchmark run. Calls with no scored cell are absent, never zero.
+      parameters:
+        - name: bulkId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Calls ordered worst-first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallDisagreement"
   /benchmark/calls/{callId}:
     get:
       operationId: getBenchmarkCall
@@ -2169,6 +2186,20 @@ components:
               calls: { type: number }
               minutes: { type: number }
         fetchedAt: { type: string, format: date-time }
+    CallDisagreement:
+      type: object
+      required: [bulkId, calls]
+      properties:
+        bulkId: { type: ["string", "null"] }
+        calls:
+          type: array
+          items:
+            type: object
+            required: [callId, disagreements, providers]
+            properties:
+              callId: { type: string }
+              disagreements: { type: number, description: "Sum of peer flag counts across this call's scored providers. Lower is better." }
+              providers: { type: number, description: "How many providers had a scored transcript for this call." }
     BulkVerdicts:
       type: object
       required: [bulkId, providers, groups]
