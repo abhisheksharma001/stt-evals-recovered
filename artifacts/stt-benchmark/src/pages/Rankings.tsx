@@ -23,7 +23,7 @@ import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdi
 import { WordsToWatch } from "@/components/words-to-watch"
 import { ClientTrendSection } from "@/components/trend-strip"
 import { apiBase } from "@/lib/api-base"
-import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupAccountLabel, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
+import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
