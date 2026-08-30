@@ -201,7 +201,7 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 | # | Question | Blocks |
 |---|---|---|
 | Q-1 | ~~**Can the transcriber actually be switched per assistant in Vapi?**~~ ✅ **Answered 2026-08-30 (T-93, batch 5).** Yes: `transcriber` is a per-assistant field (read live on assistant `b3914788`: deepgram / flux-general-en with an AssemblyAI `fallbackPlan`), and Vapi's own OpenAPI has it on `PATCH /assistant/{id}` (`UpdateAssistantDTO.transcriber`, a oneOf over 14 providers incl. all 7 this tool benchmarks). No write was made. Detail: `docs/provider-data-samples.md`. | Phase 3 |
-| Q-2 | Which providers share a base model (Whisper derivatives)? Needed for T-18. | T-18 |
+| Q-2 | ~~Which providers share a base model (Whisper derivatives)? Needed for T-18.~~ ✅ **Answered 2026-08-30 (T-100, batch 6).** Of the four live providers only **Cartesia (built from `whisper-large-v3-turbo`, vendor-stated) and Gladia (Whisper-Zero lineage; Solaria-1 launch post has no architecture statement — "likely", not confirmed)** share a base. AssemblyAI (Conformer RNN-T), Deepgram, gpt-4o-transcribe (GPT-4o, not Whisper), ElevenLabs and Speechmatics are their own. Live T-18 correlation on bulk `340400b2`: cartesia↔gladia excess +0.021, third of ten pairs; assemblyai↔gladia +0.039 is highest — shared base is a weak signal here, votes stay unweighted. Table with sources in `docs/provider-data-samples.md`. | T-18 |
 | Q-3 | Is `pgvector` enabled on the Supabase project? Only matters if phrase similarity is wanted later. **Verify, don't assume.** | T-30 |
 
 ---
