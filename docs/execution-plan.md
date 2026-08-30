@@ -1,5 +1,11 @@
 # STT Benchmark — Execution Plan
 
+> **Historical document (banner added 2026-08-30, T-120).** Written while the
+> tool was being planned; file paths, task statuses and module names in here
+> describe that plan, not today's tree. `scripts/check-doc-paths.sh` does not
+> check this file. Current state: `.claude/CLAUDE.md` → `docs/PRD-v4-*.md` →
+> `docs/v4-task-register.md`.
+
 **Traceability:** Every task ID maps to one or more PRD requirements (§6–§9).  
 **Logic gates:** Tasks marked `LOGIC: YES` have a decision embedded. The decision question is stated explicitly — do not build until resolved.  
 **Status field** in `tasks.yaml` is the machine-readable counterpart.

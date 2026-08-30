@@ -1,5 +1,11 @@
 # STT Benchmark — Reproducibility Specification
 
+> **Historical document (banner added 2026-08-30, T-120).** Written while the
+> tool was being planned; file paths, task statuses and module names in here
+> describe that plan, not today's tree. `scripts/check-doc-paths.sh` does not
+> check this file. Current state: `.claude/CLAUDE.md` → `docs/PRD-v4-*.md` →
+> `docs/v4-task-register.md`.
+
 **Goal:** Given a run ID and the scoring codebase at a pinned commit, any engineer can reproduce bit-identical scores without re-calling any provider.
 
 **Guarantee scope:** Score reproducibility is guaranteed. Raw provider output reproducibility is not guaranteed (providers may change their models) — which is why raw outputs are stored immutably at run time.

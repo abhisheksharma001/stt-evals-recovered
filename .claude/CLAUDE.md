@@ -81,18 +81,17 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   blind backfill.
 - **OpenAI key added** — also lit up the `openai-gpt-4o-transcribe` STT
   provider adapter for free (same env var both use).
-- **Transcript-quality agent shipped** (`/agent` page, `routes/agent.ts`,
-  `lib/agent.ts`) — on-demand only, per Abhishek's explicit choice, not
-  automatic on import. Reads a call's current transcript (gold if reviewed,
-  else draft), flags likely mis-transcriptions via OpenAI, and — if any are
-  found — re-transcribes the call across every other configured provider
-  (reusing the exact run-executor pipeline, `purpose: "agent_scan"` so it
-  never pollutes the real Runs/Rankings views) and picks whichever candidate
-  reads most sensibly, with reasoning. **The pick is a suggestion, never
-  gold on its own** — approving it drives the exact same PATCH
-  /benchmark/calls logic and de-id gate as manual review. Verified live
-  end-to-end: flag pass, judge pass, approve (wrote gold transcript,
-  audit-logged), reject, and the already-decided guard.
+- **AI check (transcript-quality agent) runs on every run** — it started
+  as an on-demand `/agent` page (2026-08-26); on 2026-08-27 (`e0399cc`) the
+  page was removed and the check folded into the run executor, so every bulk
+  and ad-hoc run scans each call automatically (`lib/agent.ts`,
+  `lib/run-executor.ts`; `routes/agent.ts` keeps only list / approve /
+  reject). Per call: the hybrid flags (cross-provider disagreement, entity
+  mismatch, low confidence) decide whether the OpenAI judge is asked at all;
+  when it is, it picks whichever provider's transcript reads most sensibly,
+  with reasoning and (since batch 8) a typed confidence. **The pick is a
+  suggestion, never gold on its own.** Results and Calls show the verdicts
+  read-only (T-112, T-117).
 
 - **2026-08-30, batch 4 (PR #52): no human judge.** Span adjudication, the
   judge-accuracy report and the `benchmark_adjudications` table are gone; a
@@ -134,6 +133,19 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   on `vendorOfProviderId()`**, never an exact id — T-104 model rows
   (`gladia-solaria-3`) got no confidence/timings/slots until T-110.
   `assemblyai-universal` is pinned to `universal-3-5-pro`.
+
+- **2026-08-30, batch 10: paid vs list price; judge chip on Calls; pages
+  code-split; catalog age on Overview; doc-path check.** Results' `$/min`
+  column is **what the bulk paid** (each cell's recorded cost over audio
+  minutes, `aggregateRankingRows`), not the Setup list price -- re-ranking
+  never changes it; a `list $x` chip appears when Setup's price differs >2%
+  (T-116). Every Calls row carries the latest AI-check verdict (T-117).
+  Pages load lazily -- entry chunk 1.05 MB → 350 kB, Vite's chunk notice
+  gone (T-118). Overview counts vendor catalogs older than 60 days (T-119).
+  `scripts/check-doc-paths.sh` (CI) fails on a backticked path that does
+  not exist in the live docs; four planning-era docs carry a "historical"
+  banner instead (T-120). **Convention: backticks around a path = it
+  exists**; a planned or deleted name is written plain.
 
 - **2026-08-30, batch 9: backfills applied; judge confidence + hard cases on
   Results; Vite warnings; Q-3.** All pending backfills and the hybrid-flag
@@ -178,6 +190,7 @@ with its own UI page (Corpus, Review, Runs, Rankings).
 - `pnpm --filter @workspace/api-spec run codegen` — after editing `lib/api-spec/openapi.yaml`
 - `pnpm --filter @workspace/db run push` — push schema changes (needs `DATABASE_URL`)
 - `pnpm run typecheck` — full typecheck, all packages
+- `pnpm run check:doc-paths` — every backticked path in the live docs exists (CI runs it)
 - `artifacts/stt-benchmark` — the UI (Vite dev server, port 5173)
 - `artifacts/api-server` — the API (port 8177 in local dev)
 

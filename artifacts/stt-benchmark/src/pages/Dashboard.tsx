@@ -6,6 +6,8 @@ import {
   useGetBenchmarkDashboard,
   useGetBulk,
   useHealthCheck,
+  getListProviderModelsQueryKey,
+  useListProviderModels,
   type BenchmarkDashboard,
 } from "@workspace/api-client-react"
 import { AlertCircle } from "lucide-react"
@@ -14,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { DecisionChip, summarizeBulkVerdicts, useBulkVerdicts } from "@/components/verdict-headline"
 import { apiBase } from "@/lib/api-base"
 import { formatMicrocents } from "@/lib/utils"
+import { CATALOG_RECHECK_DAYS, staleCatalogVendors } from "@/lib/catalog-age"
 
 // ---------------------------------------------------------------------------
 // T-84 (per Abhishek 2026-08-30: "redesign the overview page, minimalist").
@@ -105,11 +108,35 @@ function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
         <Figure value={data.callsAwaitingReview} label="calls awaiting review" href="/corpus" tone={attention(data.callsAwaitingReview)} />
         <Figure value={data.hardCaseCalls} label="hard cases" href="/corpus" tone={attention(data.hardCaseCalls)} />
         <Figure value={data.retryableFailedCells} label="transcripts a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
+        <CatalogFigure />
       </div>
       {/* T-86: no human judge in this product. Nobody rules on spans; a
           person flags a call (hard case / notes in Corpus), that is all. */}
     </Row>
   )
+}
+
+/**
+ * T-119: the dated vendor catalogs (T-104/T-107) age silently on Setup,
+ * where nobody looks between bulks. One figure here, same shape as the
+ * others in "Needs a person": how many vendors' model lists are older than
+ * the re-check window. Live vendors (Deepgram, OpenAI) never count. Reads
+ * the same endpoint Setup does; `retry: false` and a 5-minute staleTime so
+ * an unreachable vendor API never stalls the Overview -- it just says so.
+ */
+function CatalogFigure() {
+  const { data, isError } = useListProviderModels({ query: { queryKey: getListProviderModelsQueryKey(), staleTime: 5 * 60 * 1000, retry: false } })
+  if (isError) return <Figure value="?" label="vendor catalogs (model lists unreachable)" href="/setup?tab=providers" />
+  if (!data) return <Figure value="…" label="vendor catalogs to re-check" href="/setup?tab=providers" />
+  const stale = staleCatalogVendors(data.vendors)
+  // A vendor whose list did not answer is neither fresh nor stale -- say so
+  // rather than fold it into "all verified".
+  const unreachable = data.vendors.filter((v) => v.error).map((v) => v.vendorLabel)
+  const base = stale.length === 0
+    ? `vendor catalogs to re-check (all verified within ${CATALOG_RECHECK_DAYS} days)`
+    : `vendor catalog${stale.length === 1 ? "" : "s"} to re-check: ${stale.join(", ")}`
+  const label = unreachable.length === 0 ? base : `${base} · ${unreachable.join(", ")} not answering`
+  return <Figure value={stale.length} label={label} href="/setup?tab=providers" tone={stale.length > 0 || unreachable.length > 0 ? "attention" : "quiet"} />
 }
 
 function RunningNow({ bulk }: { bulk: NonNullable<BenchmarkDashboard["runningBulk"]> }) {

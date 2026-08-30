@@ -7,6 +7,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "check:cycles": "node scripts/check-import-cycles.mjs artifacts/api-server/src",
+    "check:doc-paths": "bash scripts/check-doc-paths.sh",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,

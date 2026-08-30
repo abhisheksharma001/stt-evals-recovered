@@ -63,7 +63,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   peerFlagsPer100Words: "Disagreements / 100 words",
   cleanCallRate: "Clean calls",
   latencyFinalMs: "Speed",
-  costPerMinute: "Price / min",
+  costPerMinute: "Paid / min",
   diarizationScore: "Speakers told apart",
 }
 
@@ -74,7 +74,7 @@ const SORT_TITLES: Record<SortKey, string> = {
   peerFlagsPer100Words: "Disagreements with the other providers plus wrong entities, per 100 words transcribed. Confidence excluded, so it is comparable across all providers and call lengths.",
   cleanCallRate: "Share of this provider's scored calls with zero disagreements.",
   latencyFinalMs: "Time from sending the audio to the final transcript.",
-  costPerMinute: "List price per audio minute, as entered on the Setup page.",
+  costPerMinute: "What this bulk actually paid per audio minute, from each transcript's recorded cost -- not today's list price. When the Setup list price differs by more than 2%, the cell says so.",
   diarizationScore: "Share of calls where this provider told more than one speaker apart.",
 }
 
@@ -89,6 +89,31 @@ const DIRECTION: Record<SortKey, "↓" | "↑"> = {
   latencyFinalMs: "↓",
   costPerMinute: "↓",
   diarizationScore: "↑",
+}
+
+/**
+ * T-116: the ranking's $/min is what the bulk PAID (each cell's recorded
+ * cost over the group's audio minutes, computed in run-executor
+ * aggregateRankingRows). It is not the Setup list price, and re-ranking
+ * would not change it. So a price edit on Setup (T-62 moved flux from
+ * $0.0043 to $0.0077) must show up here as a note, or a reader compares a
+ * stale paid rate against today's price without knowing. Only speaks when
+ * the two differ by more than 2% -- rounding noise on short calls stays
+ * quiet.
+ */
+const PAID_VS_LIST_TOLERANCE = 0.02
+function PaidVsListNote({ paid, list }: { paid: number | null; list: number | undefined }) {
+  if (paid == null || list === undefined || list <= 0) return null
+  if (Math.abs(paid - list) / list <= PAID_VS_LIST_TOLERANCE) return null
+  return (
+    <span
+      className="ml-1 rounded border border-warning/40 bg-warning/10 px-1 py-px text-[10px] text-warning"
+      title={`This bulk paid ${formatPerMinute(paid)}; the list price on Setup is ${formatPerMinute(list)} today. The $/month column and the switch sentence use today's price.`}
+      data-testid="paid-vs-list"
+    >
+      list {formatPerMinute(list).replace("/min", "")}
+    </span>
+  )
 }
 
 type RankingRow = VerticalRanking
@@ -492,6 +517,7 @@ function RankingTable({
             </TableCell>
             <TableCell className="text-right font-mono text-muted-foreground">
               {r.score.costPerMinute != null ? formatPerMinute(r.score.costPerMinute).replace("/min", "") : <span title="Not measured in this run">—</span>}
+              <PaidVsListNote paid={r.score.costPerMinute} list={listPrices.get(r.providerId)} />
             </TableCell>
             <TableCell className="text-right font-mono" title="Share of calls where more than one speaker was detected">
               {r.score.diarizationScore != null ? `${(r.score.diarizationScore * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}

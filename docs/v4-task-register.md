@@ -236,6 +236,18 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 
 ---
 
+## Phase 15 — batch 10 (added 2026-08-30; register drained after batch 9; set picked by Abhishek: "Free polish set")
+
+| ID | Task | Acceptance |
+|---|---|---|
+| T-116 | ~~**Re-rank old bulks so stored $/min matches the T-62 price**~~ ✅ **done 2026-08-30 — batch 10, reframed.** Read the code before writing a script: `aggregateRankingRows` derives a ranking's `costPerMinute` from each cell's *recorded* cost over the group's audio minutes, never from the provider's list price -- a re-rank is a no-op for a price edit, and flux has no ranking rows at all (SQL: paid rate == list price for every provider in bulk `340400b2`). So the honest fix was the label: the Results column is now **Paid / min** with a tooltip saying so, plus a `list $x` chip when Setup's price differs from what was paid by more than 2% (`PaidVsListNote`, `Rankings.tsx`). The $/month column and the switch sentence already used the list price. CSV column name `cost_per_minute` unchanged. | Column reads "Paid / min"; no chip live (every stored rate equals its list price today); chip logic exercised by review, no UI test runner. |
+| T-117 | ~~**Judge-confidence chip on Calls rows**~~ ✅ **done 2026-08-30 — batch 10.** `JudgeChip` next to the status badge on every Calls row: the call's latest scan (same `useListAgentScans` the expanded panel uses; latest per call, as T-112) as `clean` / `checking` / `check failed` / `flagged, no verdict` / `judge: high|medium|low|not recorded`, colours matching Results' chips, hover text saying what each means. No scan, no chip. | Live: every scanned call shows `judge: not recorded` or `clean`; unscanned calls show nothing. |
+| T-118 | ~~**Vite chunk-size notice**~~ ✅ **done 2026-08-30 — batch 10.** `React.lazy` for Corpus, Bulks, Results, Setup, Landing (Overview stays eager -- it is the landing route) behind one `Suspense` with the pages' own skeleton. Entry chunk 1,053 kB → 350 kB; Results carries recharts (453 kB) and loads on first visit. Build prints no chunk-size notice. | `pnpm exec vite build` prints no "larger than 500 kB" notice for the entry chunk; every route renders after navigation. |
+| T-119 | ~~**Catalog-age reminder on Overview**~~ ✅ **done 2026-08-30 — batch 10.** `catalogAge` / `CATALOG_RECHECK_DAYS` moved to `lib/catalog-age.ts` (shared with Setup, T-107) plus `staleCatalogVendors()`. Overview "Needs a person" gets a fourth figure: how many vendors' dated catalogs are older than 60 days, naming them, linking to Setup; live vendors never count; an unreachable model list reads `?`, never 0. | Live: `0 vendor catalogs to re-check (all verified within 60 days)`. |
+| T-120 | ~~**Dead-link + stale-doc sweep**~~ ✅ **done 2026-08-30 — batch 10.** `scripts/check-doc-paths.sh` (also `pnpm run check:doc-paths`, and a CI step) fails on any backticked repo path in the live docs that exists nowhere in the tree. First run found three (`lib/stt-providers/poll.ts` → `src/poll.ts`; a planned component name; a deleted one-session script) -- fixed. `.claude/CLAUDE.md` still described the `/agent` page removed on 2026-08-27 -- rewritten. `execution-plan.md`, `reproducibility.md`, `logic-register.md`, `PRD-v3-uiux.md` carry a "historical document" banner and are not checked. Convention from here: backticks = the path exists. | `bash scripts/check-doc-paths.sh` exits 0; CI green with the new step. |
+
+---
+
 ## Deferred, by name
 
 | ID | Task | Owner |

@@ -1182,6 +1182,20 @@ router.post("/benchmark/providers", async (req, res): Promise<void> => {
 // dated day -- and which of them already have a provider row here. The
 // route never writes; enabling is the POST below, one row per model, so a
 // newer model never silently replaces the results of the old one.
+// T-119: a live vendor list (Deepgram, OpenAI) that does not answer must not
+// hang the page reading it -- on 2026-08-30 Deepgram's /v1/models took 51 s
+// and the Overview figure sat on "..." for as long. Past this many
+// milliseconds the vendor reports an error and the others still render; the
+// browser caches the answer for five minutes and asks again.
+const VENDOR_MODEL_LIST_TIMEOUT_MS = 8_000;
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not answer within ${Math.round(ms / 1000)} s.`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
 router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
   const rows = await db.select({ id: benchmarkProvidersTable.id, status: benchmarkProvidersTable.status }).from(benchmarkProvidersTable);
   const rowById = new Map(rows.map((r) => [r.id, r.status]));
@@ -1193,7 +1207,7 @@ router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
         let models: ProviderModelOption[] = [];
         let error: string | null = null;
         try {
-          models = await adapter.listModels!();
+          models = await withTimeout(adapter.listModels!(), VENDOR_MODEL_LIST_TIMEOUT_MS, `${adapter.vendorLabel ?? vendor}'s model list`);
         } catch (err) {
           error = err instanceof Error ? err.message : String(err);
         }

@@ -29,7 +29,7 @@ Everything folded by `lib/scoring/src/equivalence.ts` is on this list or was nam
 Abhishek ("fortyc / 40c", "highpriority / high-priority", slang like "sweet").
 Deliberately **not** folded: plural / possessive ("hills" / "hill's"), tense ("had" /
 "have"), and "4" / "forty" — those change meaning or could. Re-run the mining
-(the script lived in `src/_mine-pairs.ts` for one session; recreate from
+(the script lived in src/_mine-pairs.ts -- deleted, never committed -- for one session; recreate from
 `buildSpansForCallRun`) after the next few bulks to see what rises next.
 
 ## Deferred 2026-08-30 (batch 4): more call providers
