@@ -1,3 +1,16 @@
+## Verified 2026-08-31 (batch 13, T-132): the refused calls, identified call-by-call
+
+Closes the open identity question below. Against the live DB + cache dir:
+the 5 uncached calls dated 2026-08-19 (vapi-1f63f6dc, -8bdde2b1, -98ae047b,
+-b6268aa6, -ce529415) are **exactly** the 5 calls with historical
+`audio_url_forbidden` (Supabase `archive`-bucket 403) failures -- the other
+2 calls of that date are cached and have no forbidden history. The other 9
+refusals are the 9 uncached null-date calls (14 null-date exist, 5 cached).
+The "refused at day 12" anomaly therefore dissolves: those 5 were never
+fetchable at any age; Vapi wraps the unsigned-bucket failure in its
+retention message. T-131 persists `source_refused` per call so these 14
+stop counting as saveable; its classifier cites this check as evidence.
+
 ## Found 2026-08-31 (batch 12, T-126): what the audio rescue could and could not save
 
 First full rescue over the corpus (121 calls, 57 uncached): 43 saved, 0
@@ -6,14 +19,15 @@ plan only covers the last 14 days of call history". The 14: nine calls with
 no `sourceStartedAt` at all (pre-labeling era, genuinely old), and the five
 dated 2026-08-19 — refused at day 12, i.e. before day 14. Whether those five
 are the same five calls as the known storage-bucket failure set was not
-verified; the counts match, the identity was not checked call-by-call.
+verified at the time; **batch 13 (T-132) verified it call-by-call -- they
+are the same five, see the section above.**
 
 Residue, deferred (not silently ignored): neither the rescue endpoint nor
 import-time caching persists a per-call attempt outcome, so the Overview's
 "audio not saved" figure and the "Save audio now (N)" button keep counting
 the 14 calls Vapi has already refused. Follow-up when it matters: store the
 last attempt outcome per call and split "never tried" from "Vapi refused",
-so the figure can reach a true zero.
+so the figure can reach a true zero. **Done in batch 13 (T-131).**
 
 ## Mined 2026-08-30 (batch 7, T-101): the real reading pairs behind the equivalence rules
 
