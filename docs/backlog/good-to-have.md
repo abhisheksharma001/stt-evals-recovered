@@ -1,3 +1,22 @@
+## Deferred 2026-08-30 (batch 4): more call providers
+
+Only Vapi is a call source today (`lib/vapi.ts`, one `VAPI_API_KEY*` env var per
+org). Abhishek named the ones that will come later, in this order of mention:
+**Retell, ElevenLabs (conversational), LiveKit, Bland.ai, Telnyx.** Per his
+instruction they live here and nowhere else -- not in the PRD, not on the
+screen (the Import page's "Other call providers" row says "not supported yet"
+and names nobody).
+
+What adding one takes, from the Vapi adapter's shape: a `list/preview calls`
+call with paging on the oldest `createdAt` (T-60's lesson), a working
+recording URL (Vapi's `presignedMonoUrl`, not `recordingUrl` -- verify against
+the real API, `docs/provider-data-samples.md`), the draft transcript and the
+transcriber the provider used live (`sourceTranscriberProvider/Model`, for the
+production-baseline line), assistant id + name, and an `accountLabel` per key so
+the org grouping (T-88/T-89) works without change. `sourceProvider` on
+`benchmark_calls` is already a column, defaulting to `"vapi"`, so the schema
+needs nothing new for the first extra provider.
+
 ## Fixed 2026-08-25, full end-to-end launch-readiness pass
 
 Ran the whole system for real: typecheck, both unit suites, a production UI

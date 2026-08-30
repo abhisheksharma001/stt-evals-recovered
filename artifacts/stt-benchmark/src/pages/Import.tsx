@@ -17,6 +17,8 @@ import {
   CloudDownload,
   Copy,
   KeyRound,
+  PhoneCall,
+  PlugZap,
   ListChecks,
   Play,
   Search,
@@ -237,6 +239,80 @@ export default function Import() {
           Pull real recordings from Vapi into the corpus. Step 1 of the benchmark pipeline.
         </p>
       </div>
+
+      {/* T-90: where calls come from. One call provider today (Vapi), with
+          the orgs connected under it; adding an org is an env var on the
+          API server, never a key in the database or the browser. Other
+          call providers are listed as not supported yet -- which ones come
+          next lives in docs/backlog/good-to-have.md, not on the screen.
+          Evidence (Mobbin): incident.io and Uvodo integrations pages --
+          connected card with a status chip, inactive ones with a disabled
+          action. */}
+      <Card data-testid="call-providers">
+        <CardHeader className="pb-3">
+          <StepHeading step={0} title="Call providers" hint="Where the recordings come from. Each connected org is one account on the provider." />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border p-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <PhoneCall className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">Vapi</span>
+                  {accountsLoading ? (
+                    <Badge variant="outline" className="font-mono text-[10px]">checking…</Badge>
+                  ) : (accounts?.length ?? 0) > 0 ? (
+                    <Badge variant="outline" className="border-success/40 bg-success/10 font-mono text-[10px] text-foreground">
+                      <Check className="mr-1 h-3 w-3 text-success" /> connected · {accounts!.length} org{accounts!.length === 1 ? "" : "s"}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-warning/40 bg-warning/10 font-mono text-[10px]">not connected</Badge>
+                  )}
+                </div>
+                {(accounts?.length ?? 0) > 0 && (
+                  <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {accounts!.map((a) => (
+                      <li key={a.id} className="flex items-center gap-1.5" title={`Key from ${a.envVar} (fingerprint ${a.keyFingerprint})`}>
+                        <KeyRound className="h-3 w-3" /> {a.label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none font-medium text-primary hover:underline">Add an org</summary>
+              <div className="mt-2 max-w-md space-y-1.5">
+                <p>
+                  One env var per org on the API server, then restart it. The key is read from the environment only --
+                  never stored in the database, never sent to the browser.
+                </p>
+                <pre className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-[11px]">
+{`VAPI_API_KEY_LAND_AND_APARTMENT=...  # shows up as "Land And Apartment"`}
+                </pre>
+                <p>
+                  Calls imported before a second org existed carry no org label; the first time a third org is added,
+                  anything unlabelled needs a real decision, not a blind backfill.
+                </p>
+              </div>
+            </details>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border p-3 text-sm">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                <PlugZap className="h-4 w-4" />
+              </div>
+              <span>Other call providers</span>
+              <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">not supported yet</Badge>
+            </div>
+            <Button variant="outline" size="sm" disabled title="Only Vapi is supported today.">
+              Add
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {noAccounts && (
         <Card className="border-warning/40 bg-warning/5">
