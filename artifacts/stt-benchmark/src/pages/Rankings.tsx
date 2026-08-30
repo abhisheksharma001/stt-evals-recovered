@@ -19,12 +19,22 @@ import {
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
 import { formatCents, formatMicrocents, formatPerMinute } from "@/lib/utils"
+import { paidVsListDiffers } from "@/lib/paid-vs-list"
+
+// T-123: recharts (~450 kB minified) rides only in the trend strip, and the
+// trend strip lives behind the closed-by-default "More evidence" fold. A
+// <details> renders its children even while closed, so a static import put
+// the whole charting library in this page's chunk for every visitor who
+// never opened the fold. Lazy + render-only-when-open keeps it out until
+// someone actually asks for the chart.
+const ClientTrendSection = React.lazy(() =>
+  import("@/components/trend-strip").then((m) => ({ default: m.ClientTrendSection })),
+)
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { WordsToWatch } from "@/components/words-to-watch"
 import { AssistantSignals } from "@/components/assistant-signals"
-import { ClientTrendSection } from "@/components/trend-strip"
 import { apiBase } from "@/lib/api-base"
 import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -101,10 +111,10 @@ const DIRECTION: Record<SortKey, "↓" | "↑"> = {
  * the two differ by more than 2% -- rounding noise on short calls stays
  * quiet.
  */
-const PAID_VS_LIST_TOLERANCE = 0.02
 function PaidVsListNote({ paid, list }: { paid: number | null; list: number | undefined }) {
-  if (paid == null || list === undefined || list <= 0) return null
-  if (Math.abs(paid - list) / list <= PAID_VS_LIST_TOLERANCE) return null
+  // T-122: the threshold logic lives in lib/paid-vs-list.ts, unit-tested.
+  if (!paidVsListDiffers(paid, list)) return null
+  if (paid == null || list === undefined) return null // narrowing only; differs() already guaranteed both
   return (
     <span
       className="ml-1 rounded border border-warning/40 bg-warning/10 px-1 py-px text-[10px] text-warning"
@@ -548,6 +558,7 @@ export default function Rankings() {
   const listPrices = useListPrices()
   const { data: bulks } = useListBulks()
   const [viewMode, setViewMode] = React.useState<"bulk" | "overall">("bulk")
+  const [evidenceOpen, setEvidenceOpen] = React.useState(false)
   const [selectedBulkId, setSelectedBulkId] = React.useState<string | null>(null)
 
   // useListBulks returns newest-first -- default to the most recent one the
@@ -879,15 +890,23 @@ export default function Rankings() {
           once, here (the per-assistant copies inside every card were
           noise at three bulks per line). */}
       {(orgs.length > 0 || viewMode === "overall") && (
-        <details className="rounded-lg border border-border" data-testid="more-evidence">
+        <details
+          className="rounded-lg border border-border"
+          data-testid="more-evidence"
+          onToggle={(e) => setEvidenceOpen(e.currentTarget.open)}
+        >
           <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/40">
             More evidence
             <span className="ml-2 text-xs font-normal text-muted-foreground">how independent the providers' votes are · the trend, bulk over bulk</span>
           </summary>
-          <div className="space-y-4 border-t border-border p-4">
-            {viewMode === "bulk" && selectedBulkId && <ProviderCorrelationCard bulkId={selectedBulkId} />}
-            <ClientTrendSection highlightBulkId={viewMode === "bulk" ? selectedBulkId : null} />
-          </div>
+          {evidenceOpen && (
+            <div className="space-y-4 border-t border-border p-4">
+              {viewMode === "bulk" && selectedBulkId && <ProviderCorrelationCard bulkId={selectedBulkId} />}
+              <React.Suspense fallback={<div className="text-sm text-muted-foreground">Loading the trend chart...</div>}>
+                <ClientTrendSection highlightBulkId={viewMode === "bulk" ? selectedBulkId : null} />
+              </React.Suspense>
+            </div>
+          )}
         </details>
       )}
     </div>

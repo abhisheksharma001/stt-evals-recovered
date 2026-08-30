@@ -69,6 +69,11 @@ jobs:
       - name: Unit tests (stt-providers parsers)
         run: pnpm --filter @workspace/stt-providers test
 
+      # T-121: pure logic under the web app's src/lib (chip buckets, catalog
+      # age, retention state). Node environment; no DOM, no API.
+      - name: Unit tests (stt-benchmark lib)
+        run: pnpm --filter @workspace/stt-benchmark test
+
       # T-26: judge contract. Offline: pins baml_src/judge.baml + JUDGE_MODEL
       # to a fixture recorded by running the judge locally against the saved
       # scans and human adjudications. A prompt edit without a re-record, or

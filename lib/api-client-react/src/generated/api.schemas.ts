@@ -232,6 +232,7 @@ export interface BenchmarkCall {
   sourceEndedReason?: string | null;
   /** @nullable */
   sourceSuccessEvaluation?: string | null;
+  audioCached?: boolean;
   createdAt: string;
 }
 

@@ -1365,6 +1365,12 @@ components:
         # Null = not captured; never "normal call".
         sourceEndedReason: { type: ["string", "null"] }
         sourceSuccessEvaluation: { type: ["string", "null"] }
+        # T-124: whether this call's audio bytes are cached on the server's
+        # disk (lib/audio-cache.ts). A cached call no longer depends on
+        # Vapi's 14-day retention window; an uncached call past that window
+        # can never be fetched again, by anyone. Only the read routes
+        # compute it; absent (not false) on write responses.
+        audioCached: { type: "boolean" }
         createdAt: { type: string, format: date-time }
     BenchmarkCallInput:
       type: object

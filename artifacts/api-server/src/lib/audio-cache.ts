@@ -94,3 +94,16 @@ export async function isAudioCached(callId: string): Promise<boolean> {
 export async function readCachedAudioBytes(callId: string): Promise<Buffer> {
   return fs.readFile(cachePathFor(callId));
 }
+
+/** T-124: every call id with audio bytes on disk, from one directory read.
+ * The calls-list route decorates 100+ calls per response, so a single
+ * readdir replaces per-call stat calls. A missing cache dir is an empty
+ * set -- a fresh checkout has simply cached nothing yet, not an error. */
+export async function listCachedCallIds(): Promise<Set<string>> {
+  try {
+    const entries = await fs.readdir(CACHE_DIR);
+    return new Set(entries.filter((e) => e.endsWith(".audio")).map((e) => e.slice(0, -".audio".length)));
+  } catch {
+    return new Set();
+  }
+}
