@@ -9,6 +9,7 @@ import {
   type BenchmarkDashboard,
 } from "@workspace/api-client-react"
 import { AlertCircle } from "lucide-react"
+import { RunStages } from "@/components/run-stages"
 import { Button } from "@/components/ui/button"
 import { DecisionChip, summarizeBulkVerdicts, useBulkVerdicts } from "@/components/verdict-headline"
 import { apiBase } from "@/lib/api-base"
@@ -123,22 +124,11 @@ function RunningNow({ bulk }: { bulk: NonNullable<BenchmarkDashboard["runningBul
         <span className="font-semibold">{bulk.name}</span>
         {p && <span className="text-muted-foreground"> · {pct}%</span>}
       </p>
-      <div className="h-px w-full bg-border">
-        <div className="h-px bg-primary transition-[width]" style={{ width: `${pct}%` }} />
-      </div>
+      {/* T-105: the same three stages as the Bulks card, so both pages
+          agree on where the job is. */}
+      {p ? <RunStages p={p} inFlight={detail ? detail.status === "running" || detail.status === "estimating" : true} compact /> : <p className="text-sm text-muted-foreground">Loading…</p>}
       <p className="flex flex-wrap gap-x-4 text-sm text-muted-foreground">
-        {p ? (
-          <>
-            <span>{p.cellsOk} ok{p.cellsFailed > 0 ? `, ${p.cellsFailed} failed` : ""} of {p.cellsTotal}</span>
-            <span>{p.callsRun}/{p.callsTotal} calls</span>
-            <span title="The AI check runs after the transcripts land; paid to OpenAI, not the STT vendors.">
-              AI check {p.agentCallsChecked}/{p.agentCallsTotal}{p.agentCallsInFlight > 0 ? ` · ${p.agentCallsInFlight} in flight` : ""}
-            </span>
-            <span>STT so far {formatMicrocents(detail?.actualCost.sttCostMicrocents)} · AI check {formatMicrocents(detail?.actualCost.agentCostMicrocents)}</span>
-          </>
-        ) : (
-          <span>Loading…</span>
-        )}
+        {p && <span>STT so far {formatMicrocents(detail?.actualCost.sttCostMicrocents)} · AI check {formatMicrocents(detail?.actualCost.agentCostMicrocents)}</span>}
         <Link href="/bulks" className="text-primary hover:underline">Open Bulks →</Link>
       </p>
     </Row>

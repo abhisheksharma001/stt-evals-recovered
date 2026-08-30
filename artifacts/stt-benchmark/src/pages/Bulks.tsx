@@ -35,6 +35,7 @@ import {
   type Provider,
   type VapiAssistant,
 } from "@workspace/api-client-react"
+import { RunStages } from "@/components/run-stages"
 import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2, GitMerge } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -1199,38 +1200,8 @@ function LiveBulkCard({ bulk }: { bulk: Bulk }) {
             </BulkDetailDialog>
           </div>
         </div>
-        {p && (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
-              <span>
-                {p.cellsOk} ok · {p.cellsFailed} failed · {p.cellsPending} pending
-                {p.cellsSkippedPendingReview > 0 && <> · {p.cellsSkippedPendingReview} skipped</>}
-                {p.cellsCancelled > 0 && <> · {p.cellsCancelled} cancelled</>}
-              </span>
-              <span>{pct == null ? "—" : `${pct}%`} of {p.cellsTotal} cells · {p.callsRun}/{p.callsTotal} calls</span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div className={`h-full ${inFlight ? "bg-primary" : "bg-accent"}`} style={{ width: `${pct ?? 0}%` }} />
-            </div>
-            {/* T-94 (U-15): the AI check is its own phase, paid to a different
-                vendor, so it gets its own line and bar -- never folded into
-                the STT count above. */}
-            {(p.agentCallsTotal > 0 || p.agentCallsInFlight > 0) && (
-              <div className="space-y-1 pt-1" data-testid="agent-progress">
-                <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
-                  <span>
-                    AI check: {p.agentCallsChecked}/{p.agentCallsTotal} calls verified
-                    {p.agentCallsInFlight > 0 && <> · <span className="text-primary">{p.agentCallsInFlight} in flight</span></>}
-                  </span>
-                  <span>{p.agentCallsTotal > 0 ? `${Math.round((p.agentCallsChecked / p.agentCallsTotal) * 100)}%` : "—"}</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-accent" style={{ width: `${p.agentCallsTotal > 0 ? Math.round((p.agentCallsChecked / p.agentCallsTotal) * 100) : 0}%` }} />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* T-105: three stages, spinner on the live one, real counts. */}
+        {p && <RunStages p={p} inFlight={inFlight} />}
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
           <div>
             <div className="text-[10px] font-mono uppercase text-muted-foreground">STT cost{hasActual ? "" : " (estimate)"}</div>

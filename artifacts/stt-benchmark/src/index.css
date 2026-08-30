@@ -251,3 +251,15 @@
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
+
+/* T-105: the band that sweeps across an active stage bar (components/run-stages.tsx). */
+@keyframes stt-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+.stt-sweep {
+  animation: stt-sweep 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stt-sweep { animation: none; }
+}
