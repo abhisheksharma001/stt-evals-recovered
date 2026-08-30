@@ -123,6 +123,7 @@ import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
 import { audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
+import { listBenchmarkCallRows } from "../lib/calls";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -408,26 +409,9 @@ router.get("/benchmark/calls", async (req, res): Promise<void> => {
     return;
   }
 
-  const conditions = [
-    parsed.data.vertical
-      ? eq(benchmarkCallsTable.vertical, parsed.data.vertical)
-      : undefined,
-    parsed.data.status
-      ? eq(benchmarkCallsTable.status, parsed.data.status)
-      : undefined,
-  ].filter((condition) => condition !== undefined);
-
-  const calls =
-    conditions.length > 0
-      ? await db
-          .select()
-          .from(benchmarkCallsTable)
-          .where(and(...conditions))
-          .orderBy(desc(benchmarkCallsTable.createdAt))
-      : await db
-          .select()
-          .from(benchmarkCallsTable)
-          .orderBy(desc(benchmarkCallsTable.createdAt));
+  // T-79 (J.1): the query lives in lib/calls.ts, moved while T-124 touched
+  // this handler.
+  const calls = await listBenchmarkCallRows(parsed.data);
 
   // T-124: one readdir decorates every row with whether its audio bytes
   // are already on disk -- the Corpus retention chips read this instead of
