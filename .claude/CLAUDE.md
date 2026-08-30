@@ -92,6 +92,16 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   end-to-end: flag pass, judge pass, approve (wrote gold transcript,
   audit-logged), reject, and the already-decided guard.
 
+- **2026-08-30, batch 4 (PR #52): no human judge.** Span adjudication, the
+  judge-accuracy report and the `benchmark_adjudications` table are gone; a
+  person only flags a whole call (hard case / notes). Results is **org →
+  assistant** ("org" = the Vapi account; the API field is still `clientLabel`),
+  with **words to watch** per assistant (`GET /benchmark/words-to-watch`) — the
+  words providers keep splitting on, tagged number / word / filler, linking to
+  the call to listen. Per-card trend charts removed; one trend chart folded
+  under "More evidence". Import page shows call providers (Vapi only; future
+  ones named in `docs/backlog/good-to-have.md` only).
+
 ## Standing rules for this project specifically
 
 - **API keys**: ephemeral env-vars only. Never in the database, never sent to the
