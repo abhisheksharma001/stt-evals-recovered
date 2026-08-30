@@ -1051,7 +1051,7 @@ type CellResultFields = Pick<
 // `id` is kept on update so nothing that already references the row (a
 // score, an agent pick) dangles; `created_at` is moved to the new attempt's
 // time so "latest attempt" reads stay meaningful.
-async function upsertResult(
+export async function upsertResult(
   runId: string,
   callId: string,
   providerId: string,
