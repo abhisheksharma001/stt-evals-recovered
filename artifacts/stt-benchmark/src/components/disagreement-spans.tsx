@@ -4,6 +4,7 @@ import { Play, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { apiBase } from "@/lib/api-base"
+import { PlaybackSpeed } from "@/components/playback-speed"
 
 // T-08: "a disagreement is a play button" (PRD-v4-uiux D.3.2).
 // T-86: listen-only. There is no human judge in this product -- nobody
@@ -109,6 +110,13 @@ export function DisagreementSpans({
   const { data, isLoading, isError } = useListDisagreementSpans(params)
 
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  // T-135: kept across span clicks; re-applied onLoadedMetadata because the
+  // browser resets playbackRate when the element (re)loads its source.
+  const [playbackRate, setPlaybackRate] = React.useState(1)
+  const applyRate = (rate: number) => {
+    setPlaybackRate(rate)
+    if (audioRef.current) audioRef.current.playbackRate = rate
+  }
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const stopAtRef = React.useRef<number | null>(null)
   const [activeIndex, setActiveIndex] = React.useState(0)
@@ -211,6 +219,7 @@ export function DisagreementSpans({
         ref={audioRef}
         preload="metadata"
         src={`${apiBase()}/api/benchmark/calls/${callId}/audio`}
+        onLoadedMetadata={(e) => { e.currentTarget.playbackRate = playbackRate }}
         onTimeUpdate={onTimeUpdate}
         onEnded={() => setPlayingIndex(null)}
         onPause={() => setPlayingIndex(null)}
@@ -226,7 +235,10 @@ export function DisagreementSpans({
             </span>
           )}
         </div>
-        <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play</span>
+        <div className="flex items-center gap-2">
+          <PlaybackSpeed value={playbackRate} onChange={applyRate} />
+          <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play</span>
+        </div>
       </div>
 
       {data.referenceWords.length > 0 && (
