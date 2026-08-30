@@ -497,7 +497,7 @@ export function useGetCallDisagreement<TData = Awaited<ReturnType<typeof getCall
 
 
 
-export const getGetWordsToWatchUrl = (params: GetWordsToWatchParams,) => {
+export const getGetWordsToWatchUrl = (params?: GetWordsToWatchParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -513,9 +513,9 @@ export const getGetWordsToWatchUrl = (params: GetWordsToWatchParams,) => {
 }
 
 /**
- * @summary T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+ * @summary T-87 -- words that keep splitting the providers, grouped by the plurality reading, most calls first. One bulk when bulkId is given; otherwise all-time (T-92 -- every finished bulk, the latest run per call). Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
  */
-export const getWordsToWatch = async (params: GetWordsToWatchParams, options?: Parameters<typeof customFetch>[1]): Promise<WordsToWatch> => {
+export const getWordsToWatch = async (params?: GetWordsToWatchParams, options?: Parameters<typeof customFetch>[1]): Promise<WordsToWatch> => {
 
   return customFetch<WordsToWatch>(getGetWordsToWatchUrl(params),
   {
@@ -537,7 +537,7 @@ export const getGetWordsToWatchQueryKey = (params?: GetWordsToWatchParams,) => {
     }
 
 
-export const getGetWordsToWatchQueryOptions = <TData = Awaited<ReturnType<typeof getWordsToWatch>>, TError = ErrorType<void>>(params: GetWordsToWatchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetWordsToWatchQueryOptions = <TData = Awaited<ReturnType<typeof getWordsToWatch>>, TError = ErrorType<void>>(params?: GetWordsToWatchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -560,11 +560,11 @@ export type GetWordsToWatchQueryError = ErrorType<void>
 
 
 /**
- * @summary T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+ * @summary T-87 -- words that keep splitting the providers, grouped by the plurality reading, most calls first. One bulk when bulkId is given; otherwise all-time (T-92 -- every finished bulk, the latest run per call). Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
  */
 
 export function useGetWordsToWatch<TData = Awaited<ReturnType<typeof getWordsToWatch>>, TError = ErrorType<void>>(
- params: GetWordsToWatchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetWordsToWatchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 

@@ -1,5 +1,6 @@
 import { and, asc, count, countDistinct, desc, eq, inArray } from "drizzle-orm";
 import { Router, type IRouter } from "express";
+import { agentInFlightForRuns } from "../lib/agent-verify";
 import {
   benchmarkAgentScansTable,
   benchmarkBulksTable,
@@ -450,6 +451,13 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
         cellsCancelled: byStatus.get("cancelled")?.cells ?? 0,
         cellsSkippedPendingReview:
           byStatus.get("skipped_pending_review")?.cells ?? 0,
+        // T-94 (U-15): the agent pass, separately from the STT cells above.
+        // "Total" = calls with at least one ok transcript (the only calls the
+        // agent can look at); "checked" = calls whose latest scan finished;
+        // "in flight" = calls the judge is on right now, this process.
+        agentCallsTotal: byStatus.get("ok")?.calls ?? 0,
+        agentCallsChecked,
+        agentCallsInFlight: agentInFlightForRuns(runs.map((run) => run.id)),
       },
       failureBreakdown,
       runs: runs.map((run) => ({

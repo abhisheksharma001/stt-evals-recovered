@@ -16,7 +16,7 @@ import {
 } from "@workspace/api-client-react"
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
-import { formatMicrocents } from "@/lib/utils"
+import { formatCents, formatMicrocents, formatPerMinute } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
@@ -148,10 +148,6 @@ function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url)
 }
 
-function formatCents(cents: number | null | undefined): string {
-  if (cents == null) return "—"
-  return `$${(cents / 100).toFixed(2)}`
-}
 
 /**
  * 2026-08-27, per Abhishek: "redesign the whole ranking and result ... with
@@ -207,7 +203,7 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
               <> -- {(baselineRow.score.avgFlagCount - winner.score.avgFlagCount).toFixed(2)} fewer flags/call</>
             )}
             {baselineRow.score.costPerMinute != null && winner.score.costPerMinute != null && (
-              <>, ${Math.abs(baselineRow.score.costPerMinute - winner.score.costPerMinute).toFixed(4)}/min {winner.score.costPerMinute < baselineRow.score.costPerMinute ? "cheaper" : "more expensive"}</>
+              <>, {formatPerMinute(Math.abs(baselineRow.score.costPerMinute - winner.score.costPerMinute))} {winner.score.costPerMinute < baselineRow.score.costPerMinute ? "cheaper" : "more expensive"}</>
             )}
             .
             {/* T-24: the switch stated in money at this assistant's own
@@ -467,7 +463,7 @@ function RankingTable({
               {r.score.latencyFinalMs != null ? `${Math.round(r.score.latencyFinalMs)}ms` : <span title="Not measured in this run">—</span>}
             </TableCell>
             <TableCell className="text-right font-mono text-muted-foreground">
-              {r.score.costPerMinute != null ? `$${r.score.costPerMinute.toFixed(4)}` : <span title="Not measured in this run">—</span>}
+              {r.score.costPerMinute != null ? formatPerMinute(r.score.costPerMinute).replace("/min", "") : <span title="Not measured in this run">—</span>}
             </TableCell>
             <TableCell className="text-right font-mono" title="Share of calls where more than one speaker was detected">
               {r.score.diarizationScore != null ? `${(r.score.diarizationScore * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
@@ -798,20 +794,16 @@ export default function Rankings() {
                             </div>
                           )}
                           <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
-                          {/* T-87: the words that split the providers for this
-                              assistant. Bulk-scoped: the all-time view has no
-                              single set of transcripts to build spans from. */}
-                          {viewMode === "bulk" && selectedBulkId ? (
-                            <WordsToWatch
-                              bulkId={selectedBulkId}
-                              assistantId={ranks[0]?.assistantId ?? null}
-                              providerNames={providerNames}
-                              callLabels={callLabels}
-                              compact
-                            />
-                          ) : (
-                            <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">Pick one bulk to see the words that split the providers for this assistant.</p>
-                          )}
+                          {/* T-87 / T-92: the words that split the providers for
+                              this assistant -- this bulk, or all-time (every
+                              finished bulk, latest run per call). */}
+                          <WordsToWatch
+                            bulkId={viewMode === "bulk" ? selectedBulkId : null}
+                            assistantId={ranks[0]?.assistantId ?? null}
+                            providerNames={providerNames}
+                            callLabels={callLabels}
+                            compact
+                          />
                           <PerCallComparisonLinks assistantId={ranks[0]?.assistantId ?? null} bulkId={viewMode === "bulk" ? selectedBulkId : null} />
                         </CardContent>
                       </Card>

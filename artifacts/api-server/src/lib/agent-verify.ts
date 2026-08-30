@@ -337,6 +337,22 @@ export async function verifyCallWithAgent(params: {
  * "ok" cell in THIS run. Never re-verifies work another run already covered
  * (each run's own results are the only scope), so a bulk's shards each pay
  * for their own calls exactly once. */
+// T-94 (PRD-v4 U-15): how many calls the agent pass has in flight right
+// now, per run. In-memory, this process only -- the same scope as the
+// executor's own runningRuns set. Read by GET /bulks/{id} so the live card
+// can say "k in flight" next to "n / total verified".
+const agentInFlightByRun = new Map<string, number>();
+function bumpInFlight(runId: string, delta: number): void {
+  const next = (agentInFlightByRun.get(runId) ?? 0) + delta;
+  if (next <= 0) agentInFlightByRun.delete(runId);
+  else agentInFlightByRun.set(runId, next);
+}
+export function agentInFlightForRuns(runIds: readonly string[]): number {
+  let n = 0;
+  for (const id of runIds) n += agentInFlightByRun.get(id) ?? 0;
+  return n;
+}
+
 export async function runAutoAgentVerificationForRun(
   runId: string,
   requestedByLabel: string,
@@ -411,6 +427,7 @@ export async function runAutoAgentVerificationForRun(
   const concurrency = envInt("AGENT_CONCURRENCY", 4, 16);
   const started = Date.now();
   await drainWithConcurrency([...byCallId.entries()], concurrency, async ([callId, callRows]) => {
+    bumpInFlight(runId, 1);
     try {
       await verifyCallWithAgent({
         callId,
@@ -428,6 +445,8 @@ export async function runAutoAgentVerificationForRun(
       // One call's verification must never take the whole run down --
       // the STT results themselves already landed regardless.
       logger.error({ err, runId, callId }, "auto agent verification crashed for a call");
+    } finally {
+      bumpInFlight(runId, -1);
     }
   });
   logger.info(

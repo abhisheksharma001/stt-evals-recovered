@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useLocation } from "wouter"
 import Runs from "@/pages/Runs"
-import { formatMicrocents } from "@/lib/utils"
+import { formatMicrocents, formatCents } from "@/lib/utils"
 import { failureCopy } from "@/components/no-output"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -40,6 +40,7 @@ import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { TableStateRow, errorMessage } from "@/components/table-state"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -173,9 +174,8 @@ function useSelectionPreview(criteria: CriteriaDraft, providerIds: string[]): Se
   }
 }
 
-function cents(n: number): string {
-  return `$${(n / 100).toFixed(2)}`
-}
+// T-95: one money rule (lib/utils). Name kept; callers unchanged.
+const cents = formatCents
 
 /**
  * The count first, then every excluded bucket by name, then -- only once
@@ -606,7 +606,7 @@ function CreateBulkDialog() {
           // detail dialog's Launch button is the explicit confirmation.
           toast({
             title: "Cost gate",
-            description: `Estimate $${((bulk.estimatedCostCents ?? 0) / 100).toFixed(2)} exceeds the threshold. Open the bulk and confirm launch.`,
+            description: `Estimate ${formatCents(bulk.estimatedCostCents ?? 0)} exceeds the threshold. Open the bulk and confirm launch.`,
           })
         } else {
           toast({ title: "Bulk launched", description: `"${bulk.name}" is running.` })
@@ -925,8 +925,8 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
             <div>
               <div className="text-[10px] font-mono uppercase text-muted-foreground">Estimated cost</div>
               <div className="font-mono font-semibold">
-                {current.estimatedSttCostCents != null ? `STT $${(current.estimatedSttCostCents / 100).toFixed(2)}` : "STT —"}
-                {current.estimatedAgentCostCents != null && <> + agent ${(current.estimatedAgentCostCents / 100).toFixed(2)}</>}
+                {current.estimatedSttCostCents != null ? `STT ${formatCents(current.estimatedSttCostCents)}` : "STT —"}
+                {current.estimatedAgentCostCents != null && <> + agent {formatCents(current.estimatedAgentCostCents)}</>}
               </div>
             </div>
             {current.status === "awaiting_confirmation" && (
@@ -1212,6 +1212,23 @@ function LiveBulkCard({ bulk }: { bulk: Bulk }) {
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div className={`h-full ${inFlight ? "bg-primary" : "bg-accent"}`} style={{ width: `${pct ?? 0}%` }} />
             </div>
+            {/* T-94 (U-15): the AI check is its own phase, paid to a different
+                vendor, so it gets its own line and bar -- never folded into
+                the STT count above. */}
+            {(p.agentCallsTotal > 0 || p.agentCallsInFlight > 0) && (
+              <div className="space-y-1 pt-1" data-testid="agent-progress">
+                <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
+                  <span>
+                    AI check: {p.agentCallsChecked}/{p.agentCallsTotal} calls verified
+                    {p.agentCallsInFlight > 0 && <> · <span className="text-primary">{p.agentCallsInFlight} in flight</span></>}
+                  </span>
+                  <span>{p.agentCallsTotal > 0 ? `${Math.round((p.agentCallsChecked / p.agentCallsTotal) * 100)}%` : "—"}</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-accent" style={{ width: `${p.agentCallsTotal > 0 ? Math.round((p.agentCallsChecked / p.agentCallsTotal) * 100) : 0}%` }} />
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
@@ -1249,14 +1266,14 @@ function LiveBulkCard({ bulk }: { bulk: Bulk }) {
 
 export default function Bulks() {
   // Poll while any bulk is in flight (same reasoning as the Runs page).
-  const { data: bulks, isLoading, isError, error } = useListBulks(undefined, {
+  const { data: bulks, isLoading, isError, error, refetch } = useListBulks(undefined, {
     query: {
       queryKey: getListBulksQueryKey(),
       refetchInterval: (query) =>
         query.state.data?.some((b) => b.status === "running" || b.status === "estimating") ? 3000 : false,
     },
   })
-  const { data: templates } = useListBulkTemplates()
+  const { data: templates, isLoading: templatesLoading, isError: templatesError, error: templatesErr, refetch: refetchTemplates } = useListBulkTemplates()
   // T-74 (E.1): the running bulk (else the newest -- the list is newest-
   // first) is the page's headline; creation and templates collapse while
   // something is running so the live status is what the first screen shows.
@@ -1292,21 +1309,11 @@ export default function Bulks() {
             </TableHeader>
             <TableBody>
               {isError ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-sm text-destructive">
-                    Failed to load bulks: {error instanceof Error ? error.message : String(error)}
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
               ) : isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading bulks...</TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "loading", message: "Loading bulks…" }} />
               ) : bulks?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                    No bulks yet. Create one to evaluate a large call slice.
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "empty", message: "No bulks yet. Create one above to run every provider over a slice of calls." }} />
               ) : (
                 bulks?.map((bulk) => (
                   <TableRow key={bulk.id}>
@@ -1369,12 +1376,14 @@ export default function Bulks() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {templates?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                    No templates. Save one to re-run the same slice (e.g. "last 7 days") on a schedule.
-                  </TableCell>
-                </TableRow>
+              {/* T-91: templates had no loading or failed row at all -- an API
+                  error rendered as an empty table. */}
+              {templatesError ? (
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "error", message: errorMessage(templatesErr), onRetry: () => void refetchTemplates() }} />
+              ) : templatesLoading ? (
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "loading", message: "Loading templates…" }} />
+              ) : templates?.length === 0 ? (
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "empty", message: 'No templates. Save one to re-run the same slice (e.g. "last 7 days") on a schedule.' }} />
               ) : (
                 templates?.map((template) => <TemplateRow key={template.id} template={template} />)
               )}

@@ -8,7 +8,9 @@
 import type { WordsToWatchWordsItem } from './wordsToWatchWordsItem';
 
 export interface WordsToWatch {
-  bulkId: string;
+  /** @nullable */
+  bulkId: string | null;
+  bulksCovered: number;
   /** @nullable */
   assistantId: string | null;
   callsScanned: number;

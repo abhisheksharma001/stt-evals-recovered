@@ -969,3 +969,18 @@ words list gets a number / filler split (the first live result put "um" vs nothi
 on top of a list meant for phone numbers).
 **No evidence found for:** a product that groups a benchmark by customer org and
 then by agent — the org → assistant nesting is this project's own.
+
+## G.4 Batch 5 (2026-08-30, PR #53) — what it closed in this document
+
+- **U-8** (Part C): three table states everywhere → T-91.
+- **U-10** (Part C): one `formatDollars` rule → T-95.
+- **U-14** (Part B-2): the memory view's *list* reading shipped as all-time words to
+  watch (T-92). The graph half is **not built** and stays P2: the list is complete on
+  its own, which U-14 itself required before any graph.
+- **U-15** (Part B-2): agent progress as its own phase → T-94.
+- **Q-1** (register): answered, yes, per assistant, via `PATCH /assistant/{id}` → T-93.
+
+No new UI pattern was introduced in this batch, so no Mobbin pass was run; the
+table-state rows reuse the existing Results error/retry pattern, and the agent
+progress line reuses the STT bar.
+

@@ -38,7 +38,9 @@ export type WordsToWatchWordsItem = {
 };
 
 export interface WordsToWatch {
-  bulkId: string;
+  /** @nullable */
+  bulkId: string | null;
+  bulksCovered: number;
   /** @nullable */
   assistantId: string | null;
   callsScanned: number;
@@ -1339,6 +1341,9 @@ export interface BulkProgress {
   cellsPending: number;
   cellsCancelled: number;
   cellsSkippedPendingReview: number;
+  agentCallsTotal: number;
+  agentCallsChecked: number;
+  agentCallsInFlight: number;
 }
 
 export type BulkFailureGroupFailureClass = typeof BulkFailureGroupFailureClass[keyof typeof BulkFailureGroupFailureClass] | null;
@@ -1480,7 +1485,7 @@ bulkId?: string;
 };
 
 export type GetWordsToWatchParams = {
-bulkId: string;
+bulkId?: string;
 assistantId?: string;
 };
 
