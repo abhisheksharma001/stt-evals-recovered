@@ -44,10 +44,10 @@ export function esc(s: string): string {
 }
 
 const DECISION_LABEL: Record<HeadlineVerdict["decision"], string> = {
-  winner: "Clear winner",
+  winner: "Winner",
   too_close: "Too close to call",
-  too_few_calls: "Too few calls",
-  insufficient: "Not enough providers",
+  too_few_calls: "Not enough calls",
+  insufficient: "Only one provider",
 };
 
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -67,16 +67,16 @@ export function costDeltaLine(
   const wp = price[winner];
   if (wp === undefined) return `No cost delta: no list price on file for ${nameOf(winner)}.`;
   if (!v.productionProviderId) {
-    return `${nameOf(winner)} list price ${fmtRate(wp)}. No delta: the production transcriber for these calls is unknown or was not benchmarked in this bulk.`;
+    return `${nameOf(winner)} list price ${fmtRate(wp)}. No delta: the provider in production today for these calls is unknown or was not benchmarked in this bulk.`;
   }
   if (v.productionIsLeader || v.productionProviderId === winner) {
-    return `${nameOf(winner)} is already the production transcriber (${fmtRate(wp)}); switching changes nothing.`;
+    return `${nameOf(winner)} is already in production today (${fmtRate(wp)}); switching changes nothing.`;
   }
   const pp = price[v.productionProviderId];
   if (pp === undefined) return `${nameOf(winner)} list price ${fmtRate(wp)}. No delta: no list price on file for production (${nameOf(v.productionProviderId)}).`;
   if (pp === 0) return `${nameOf(winner)} ${fmtRate(wp)} vs production ${nameOf(v.productionProviderId)} ${fmtRate(pp)}: production has no list price entered, so no percentage.`;
   const pct = ((wp - pp) / pp) * 100;
-  const dir = pct === 0 ? "same list price as" : pct < 0 ? `${Math.abs(pct).toFixed(0)}% cheaper per minute than` : `${pct.toFixed(0)}% dearer per minute than`;
+  const dir = pct === 0 ? "same list price as" : pct < 0 ? `${Math.abs(pct).toFixed(0)}% cheaper per minute than` : `${pct.toFixed(0)}% more expensive per minute than`;
   return `${nameOf(winner)} ${fmtRate(wp)} is ${dir} production ${nameOf(v.productionProviderId)} ${fmtRate(pp)}.`;
 }
 
@@ -85,25 +85,26 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   const label = g.clientLabel ?? "Calls with no account label on file";
   const headline =
     v.decision === "winner" && v.winnerProviderId
-      ? `${esc(nameOf(v.winnerProviderId))} wins${v.marginPct != null ? ` by ${v.marginPct.toFixed(0)}% fewer flags per 100 words than ${esc(nameOf(v.runnerUpProviderId))}` : ""}.`
+      ? `${esc(nameOf(v.winnerProviderId))} wins${v.marginPct != null ? ` by ${v.marginPct.toFixed(0)}% fewer disagreements per 100 words than ${esc(nameOf(v.runnerUpProviderId))}` : ""}.`
       : v.leaderProviderId
-        ? `No winner named. Current leader: ${esc(nameOf(v.leaderProviderId))} (not a verdict).`
+        ? `Ahead, not a winner: ${esc(nameOf(v.leaderProviderId))}.`
         : "No winner named.";
-  const evidence: string[] = [`${n(v.evidenceCalls)} evidence call${v.evidenceCalls === 1 ? "" : "s"}`, `${n(g.callCount)} call${g.callCount === 1 ? "" : "s"} in group`];
+  const evidence: string[] = [`${n(v.evidenceCalls)} call${v.evidenceCalls === 1 ? "" : "s"} scored`, `${n(g.callCount)} call${g.callCount === 1 ? "" : "s"} in group`];
   if (v.noiseFloor) {
-    evidence.push(`${n(v.noiseFloor.sharedCalls)} shared by top two`);
-    evidence.push(`95% CI of gap [${v.noiseFloor.ci95[0].toFixed(2)}, ${v.noiseFloor.ci95[1].toFixed(2)}] flags/100 words`);
+    // T-81: the 95% CI interval stays in the JSON API; the share page says
+    // "margin of error" and leaves the numbers to the engineers' endpoint.
+    evidence.push(`${n(v.noiseFloor.sharedCalls)} calls both ran`);
   } else {
-    evidence.push("no noise floor (fewer than 5 shared calls)");
+    evidence.push("not enough calls both ran (need 5)");
   }
-  if (v.callsToSettle != null) evidence.push(`~${n(v.callsToSettle)} more shared calls would settle it`);
+  if (v.callsToSettle != null) evidence.push(`about ${n(v.callsToSettle)} calls both ran would decide it`);
   const production = g.production
-    ? `Production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — winner is ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% cleaner than` : `${Math.abs(v.vsProductionPct).toFixed(0)}% worse than`} production` : ""}.`
-    : "Production today: unknown (no call in this group recorded its live transcriber).";
+    ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — winner has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} disagreements than production` : ""}.`
+    : "In production today: unknown (no call in this group recorded its live provider).";
   const caveats: string[] = [];
-  if (v.provisional) caveats.push(`Provisional: fewer than 20 evidence calls. Treat the direction, not the size, as the finding.`);
+  if (v.provisional) caveats.push(`Early read (under 20 calls): trust the direction, not the size.`);
   if (v.confidenceComparable.total > 0 && v.confidenceComparable.reporting < v.confidenceComparable.total)
-    caveats.push(`Only ${v.confidenceComparable.reporting} of ${v.confidenceComparable.total} providers report per-word confidence; confidence spans are excluded from this metric so the comparison stays like-for-like.`);
+    caveats.push(`Only ${v.confidenceComparable.reporting} of ${v.confidenceComparable.total} providers report per-word confidence; those unsure-word spans are left out of this metric so the comparison stays like-for-like.`);
   const rates = [...v.rates]
     .sort((a, b) => a.flagsPer100Words - b.flagsPer100Words)
     .map(
@@ -121,7 +122,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   <p class="meta">Cost: ${esc(costDeltaLine(v, nameOf, price))}</p>
   ${caveats.map((c) => `<p class="caveat">${esc(c)}</p>`).join("")}
   <table>
-    <thead><tr><th>Provider</th><th class="num">Flags / 100 words</th><th class="num">Calls</th><th class="num">Flags</th><th class="num">Words</th><th class="num">List price</th></tr></thead>
+    <thead><tr><th>Provider</th><th class="num">Disagreements / 100 words ↓</th><th class="num">Calls</th><th class="num">Flags</th><th class="num">Words</th><th class="num">List price</th></tr></thead>
     <tbody>${rates}</tbody>
   </table>
 </section>`;
@@ -192,10 +193,10 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
   Bulk launched ${fmtDate(bulk.createdAt)}${bulk.completedAt ? `, completed ${fmtDate(bulk.completedAt)}` : ""} · status: ${esc(status)}
 </div>
 <p class="summary">${summary}</p>
-<p class="counts">${groups.length} client group${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} evidence call${totalEvidence === 1 ? "" : "s"} · ${counts.winner} winner${counts.winner === 1 ? "" : "s"} · ${counts.too_close} too close · ${counts.too_few_calls} too few calls${counts.insufficient ? ` · ${counts.insufficient} not enough providers` : ""}</p>
+<p class="counts">${groups.length} client group${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} call${totalEvidence === 1 ? "" : "s"} scored · ${counts.winner} winner${counts.winner === 1 ? "" : "s"} · ${counts.too_close} too close · ${counts.too_few_calls} not enough calls${counts.insufficient ? ` · ${counts.insufficient} only one provider` : ""}</p>
 ${groups.map((g) => groupSection(g, nameOf, price)).join("\n")}
 <div class="legend">
-  <p><strong>What "winner" means.</strong> Fewer cross-provider flags per 100 words (confidence spans excluded), and the gap to the runner-up survived 1,000 reshuffles of the calls both providers scored (95% interval excludes zero). Anything else is undecided, not a tie. Fewer than 20 evidence calls is provisional.</p>
+  <p><strong>Winner</strong> = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie. Under 20 calls is an early read.<br><span class="muted">Mechanism: disagreements are cross-provider word disagreements plus entity mismatches (a provider's own low-confidence spans excluded); the margin of error is a 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored.</span></p>
   <p><strong>Cost figures</strong> are operator-entered list prices per minute at the time this page was produced. Verify against the provider's current pricing page and any contract before making a financial decision.</p>
   <p><strong>This is a dated snapshot.</strong> It was computed from the scores stored for this bulk at the time above. Re-generating it later on a different build or after retries may give different figures; compare the stamp.</p>
 </div>

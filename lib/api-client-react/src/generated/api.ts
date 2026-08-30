@@ -47,8 +47,10 @@ import type {
   BulkTemplateLaunchInput,
   BulkVerdicts,
   CallComparison,
+  CallDisagreement,
   ClientVolume,
   DisagreementSpansResponse,
+  GetCallDisagreementParams,
   GetClientVolumeParams,
   HealthStatus,
   JudgeAccuracyReplayRequest,
@@ -413,6 +415,90 @@ export const useCreateBenchmarkCall = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getCreateBenchmarkCallMutationOptions(options));
     }
+
+export const getGetCallDisagreementUrl = (params?: GetCallDisagreementParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/calls/disagreement?${stringifiedParams}` : `/api/benchmark/calls/disagreement`
+}
+
+/**
+ * @summary T-85 -- one number per call, how much the providers disagreed on it (sum of peer flag counts over ok scored cells), most disagreement first. Scoped to one bulk when bulkId is given, else every benchmark run. Calls with no scored cell are absent, never zero.
+ */
+export const getCallDisagreement = async (params?: GetCallDisagreementParams, options?: Parameters<typeof customFetch>[1]): Promise<CallDisagreement> => {
+
+  return customFetch<CallDisagreement>(getGetCallDisagreementUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCallDisagreementQueryKey = (params?: GetCallDisagreementParams,) => {
+    return [
+    `/api/benchmark/calls/disagreement`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCallDisagreementQueryOptions = <TData = Awaited<ReturnType<typeof getCallDisagreement>>, TError = ErrorType<unknown>>(params?: GetCallDisagreementParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCallDisagreement>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCallDisagreementQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCallDisagreement>>> = ({ signal }) => getCallDisagreement(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCallDisagreement>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCallDisagreementQueryResult = NonNullable<Awaited<ReturnType<typeof getCallDisagreement>>>
+export type GetCallDisagreementQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary T-85 -- one number per call, how much the providers disagreed on it (sum of peer flag counts over ok scored cells), most disagreement first. Scoped to one bulk when bulkId is given, else every benchmark run. Calls with no scored cell are absent, never zero.
+ */
+
+export function useGetCallDisagreement<TData = Awaited<ReturnType<typeof getCallDisagreement>>, TError = ErrorType<unknown>>(
+ params?: GetCallDisagreementParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCallDisagreement>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCallDisagreementQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetBenchmarkCallUrl = (callId: string,) => {
 

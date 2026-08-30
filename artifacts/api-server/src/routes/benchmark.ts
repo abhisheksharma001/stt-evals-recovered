@@ -18,6 +18,7 @@ import {
 import { getProviderAdapter } from "@workspace/stt-providers";
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk, spanAdjudicationCounts } from "../lib/overview";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
+import { callDisagreement } from "../lib/call-disagreement";
 import {
   AttestBenchmarkCallDeidBody,
   AttestBenchmarkCallDeidParams,
@@ -39,6 +40,8 @@ import {
   ListAuditLogQueryParams,
   ListAuditLogResponse,
   ListBenchmarkCallsQueryParams,
+  GetCallDisagreementQueryParams,
+  GetCallDisagreementResponse,
   ListBenchmarkCallsResponse,
   ListBenchmarkProvidersResponse,
   ListBenchmarkRankingsQueryParams,
@@ -451,6 +454,24 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
 
 // T-51: one call by id. The list route above is the corpus (121 calls today,
 // 1,000+ as verticals come on); nothing that wants one row should pull it.
+// T-85: worst-first ordering for the Corpus table and the per-call list on
+// Results. Registered before the /:callId routes so "disagreement" is never
+// read as a call id.
+router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
+  const query = GetCallDisagreementQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  // A non-uuid bulkId would surface as a Postgres cast error (500); say
+  // 400 instead.
+  if (query.data.bulkId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.data.bulkId)) {
+    res.status(400).json({ error: "bulkId must be a uuid" });
+    return;
+  }
+  res.json(GetCallDisagreementResponse.parse(await callDisagreement(query.data.bulkId ?? null)));
+});
+
 router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   const params = GetBenchmarkCallParams.safeParse(req.params);
   if (!params.success) {

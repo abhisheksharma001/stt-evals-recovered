@@ -13,6 +13,23 @@ jobs:
   verify:
     name: Typecheck, unit tests, build
     runs-on: ubuntu-latest
+    # T-77: a throwaway Postgres for the route-level tests. Schema is pushed
+    # by drizzle-kit right before they run; nothing else in the job uses it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stt_evals_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/stt_evals_test
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +71,18 @@ jobs:
       # a re-record below the floors, fails here. No OpenAI key in CI.
       - name: Judge contract tests (api-server)
         run: pnpm --filter @workspace/api-server test
+
+      # T-77: route-level tests for the three riskiest endpoints (T-27
+      # upsert, bulk launch twice, verdicts/verdict.html) with supertest
+      # against the service container above. Offline: the seeded call has
+      # no audio, so no provider is ever called.
+      - name: Push schema to the throwaway database
+        run: pnpm --filter @workspace/db run push
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      - name: Route tests (api-server, throwaway database)
+        run: pnpm --filter @workspace/api-server run test:integration
 
       - name: Build web app
         run: pnpm --filter @workspace/stt-benchmark run build

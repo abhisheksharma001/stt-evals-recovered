@@ -253,8 +253,8 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
       leaderProviderId: only?.providerId ?? null,
       productionIsLeader: !!only && only.providerId === productionProviderId,
       sentence: only
-        ? `Only ${name(only.providerId)} has scored evidence in this group (${evidenceCalls} call${evidenceCalls === 1 ? "" : "s"}) -- nothing to compare it against yet.`
-        : "No scored evidence in this group yet.",
+        ? `Only ${name(only.providerId)} ran here (${evidenceCalls} call${evidenceCalls === 1 ? "" : "s"}) -- nothing to compare.`
+        : "No scored calls yet.",
     };
   }
 
@@ -282,11 +282,10 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
     productionRate && !productionIsLeader
       ? relativeImprovementPct(leader.flagsPer100Words, productionRate.flagsPer100Words)
       : null;
-  const evidence = `Based on ${evidenceCalls} call${evidenceCalls === 1 ? "" : "s"}${provisional ? " -- provisional, fewer than " + PROVISIONAL_EVIDENCE_CALLS : ""}.`;
-  const confidenceNote =
-    confidenceComparable.total > 0 && confidenceComparable.reporting < confidenceComparable.total
-      ? ` ${confidenceComparable.reporting} of ${confidenceComparable.total} providers report confidence, so the confidence-inclusive column is not comparable across all of them.`
-      : "";
+  // T-81 copy: the confidence-comparability caveat is no longer appended to
+  // the sentence (it describes a column the sentence does not use); the
+  // `confidenceComparable` field still carries it for the tooltip.
+  const evidence = `${evidenceCalls} call${evidenceCalls === 1 ? "" : "s"}${provisional ? ` (early read, under ${PROVISIONAL_EVIDENCE_CALLS})` : ""}.`;
 
   if (tooFewCalls) {
     return {
@@ -297,7 +296,7 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
       vsProductionPct,
       productionIsLeader,
       sentence:
-        `No winner on this evidence: ${name(leader.providerId)} (${fmtRate(leader.flagsPer100Words)} flags per 100 words) leads ${name(runnerUp.providerId)} (${fmtRate(runnerUp.flagsPer100Words)}), but they share only ${pairs.length} call${pairs.length === 1 ? "" : "s"} -- at least ${MIN_SHARED_CALLS_FOR_VERDICT} are needed before a noise floor can be drawn. ${evidence}${confidenceNote}`,
+        `Not enough calls: ${name(leader.providerId)} (${fmtRate(leader.flagsPer100Words)} disagreements per 100 words) is ahead of ${name(runnerUp.providerId)} (${fmtRate(runnerUp.flagsPer100Words)}), but only ${pairs.length} call${pairs.length === 1 ? "" : "s"} ran on both. Need ${MIN_SHARED_CALLS_FOR_VERDICT}. ${evidence}`,
     };
   }
 
@@ -312,8 +311,8 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
     }
     const settle =
       callsToSettle !== null
-        ? ` Roughly ${callsToSettle} shared calls would be needed to settle it at the current gap.`
-        : " They are effectively tied on this evidence; the same kind of evidence will not separate them.";
+        ? ` About ${callsToSettle} calls run on both would decide it.`
+        : " Effectively tied. More calls won't separate them.";
     return {
       ...base,
       decision: "too_close",
@@ -324,24 +323,29 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
       callsToSettle,
       noiseFloor,
       sentence:
-        `Too close to call on this evidence: ${name(leader.providerId)} (${fmtRate(leader.flagsPer100Words)} flags per 100 words) and ${name(runnerUp.providerId)} (${fmtRate(runnerUp.flagsPer100Words)}) are within the noise floor. ${evidence}${settle}${confidenceNote}`,
+        `Too close to call: ${name(leader.providerId)} (${fmtRate(leader.flagsPer100Words)} disagreements per 100 words) and ${name(runnerUp.providerId)} (${fmtRate(runnerUp.flagsPer100Words)}) are inside the margin of error. ${evidence}${settle}`,
     };
   }
 
   const marginPct = relativeImprovementPct(leader.flagsPer100Words, runnerUp.flagsPer100Words);
-  const vsProd =
+  // Comparative clause (same sentence) vs. a follow-on sentence.
+  const vsProdClause =
     vsProductionPct === null
-      ? productionIsLeader
-        ? " It is also the provider running in production today."
-        : productionProviderId
-          ? ` The production provider (${name(productionProviderId)}) was not benchmarked in this group.`
-          : ""
+      ? ""
       : vsProductionPct >= 0
-        ? `, and ${fmtPct(vsProductionPct)} cleaner than the provider running in production today (${name(productionProviderId)}).`
-        : `, but ${fmtPct(vsProductionPct)} worse than the provider running in production today (${name(productionProviderId)}).`;
-  const marginText = marginPct === null ? "" : ` -- ${fmtPct(marginPct)} cleaner than the runner-up (${name(runnerUp.providerId)})`;
+        ? `, ${fmtPct(vsProductionPct)} fewer than ${name(productionProviderId)} (in production today)`
+        : `, but ${fmtPct(vsProductionPct)} more than ${name(productionProviderId)} (in production today)`;
+  const vsProdSentence =
+    vsProductionPct !== null
+      ? ""
+      : productionIsLeader
+        ? " It is also in production today."
+        : productionProviderId
+          ? ` ${name(productionProviderId)} (in production today) was not benchmarked in this group.`
+          : "";
+  const marginText = marginPct === null ? "" : `, ${fmtPct(marginPct)} fewer than ${name(runnerUp.providerId)}`;
   const sentence =
-    `${name(leader.providerId)} is the best fit for this group: ${fmtRate(leader.flagsPer100Words)} flags per 100 words${marginText}${vsProductionPct === null ? "." : ""}${vsProd} ${evidence}${confidenceNote}`;
+    `${name(leader.providerId)} wins: ${fmtRate(leader.flagsPer100Words)} disagreements per 100 words${marginText}${vsProdClause}.${vsProdSentence} ${evidence}`;
 
   return {
     ...base,

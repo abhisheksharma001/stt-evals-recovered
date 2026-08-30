@@ -157,6 +157,23 @@ export const CreateBenchmarkCallResponse = zod.object({
 
 
 /**
+ * @summary T-85 -- one number per call, how much the providers disagreed on it (sum of peer flag counts over ok scored cells), most disagreement first. Scoped to one bulk when bulkId is given, else every benchmark run. Calls with no scored cell are absent, never zero.
+ */
+export const GetCallDisagreementQueryParams = zod.object({
+  "bulkId": zod.coerce.string().optional()
+})
+
+export const GetCallDisagreementResponse = zod.object({
+  "bulkId": zod.string().nullable(),
+  "calls": zod.array(zod.object({
+  "callId": zod.string(),
+  "disagreements": zod.number().describe('Sum of peer flag counts across this call\'s scored providers. Lower is better.'),
+  "providers": zod.number().describe('How many providers had a scored transcript for this call.')
+}))
+})
+
+
+/**
  * @summary One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
  */
 export const GetBenchmarkCallParams = zod.object({

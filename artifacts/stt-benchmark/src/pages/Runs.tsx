@@ -504,11 +504,11 @@ function ResultsDialog({ runId, providerIds, runStatus }: { runId: string; provi
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm"><ListChecks className="w-3.5 h-3.5 mr-1.5" /> Cell detail</Button>
+        <Button variant="ghost" size="sm"><ListChecks className="w-3.5 h-3.5 mr-1.5" /> Per-call results</Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Cell detail</DialogTitle>
+          <DialogTitle>Per-call results</DialogTitle>
         </DialogHeader>
         {missingCounts.some((c) => c.missing > 0) && (
           <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">

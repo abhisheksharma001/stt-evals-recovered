@@ -318,7 +318,7 @@ export function MissingCounts({ counts, className = "" }: { counts: MissingCount
   const withMissing = counts.filter((c) => c.missing > 0)
   if (withMissing.length === 0) return null
   return (
-    <span className={`inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono ${className}`} title="Cells with no output, per provider">
+    <span className={`inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono ${className}`} title="Transcripts with no output, per provider">
       {withMissing.map((c) => (
         <span key={c.providerId} className="text-warning">
           {c.providerName}: {c.missing} of {c.total} missing

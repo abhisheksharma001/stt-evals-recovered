@@ -12,6 +12,8 @@ import {
   getGetBenchmarkDashboardQueryKey,
   CallStatus,
   Vertical,
+  useGetCallDisagreement,
+  getGetCallDisagreementQueryKey,
 } from "@workspace/api-client-react"
 import {
   Plus,
@@ -84,16 +86,31 @@ export default function Corpus() {
     }
   }, [calls, search])
 
+  // T-85: worst first. Scoped to the deep-linked bulk when there is one,
+  // otherwise every real run. A call with no scored transcript has no
+  // number and sorts last -- it is unknown, not clean.
+  const disagreementScope = deepLinkBulkId ? { bulkId: deepLinkBulkId } : undefined
+  const { data: disagreement } = useGetCallDisagreement(disagreementScope, {
+    query: { queryKey: getGetCallDisagreementQueryKey(disagreementScope) },
+  })
+  const disagreementOf = React.useMemo(
+    () => new Map((disagreement?.calls ?? []).map((c) => [c.callId, c.disagreements])),
+    [disagreement],
+  )
+
   const filteredCalls = React.useMemo(() => {
     if (!calls) return []
     const q = searchText.toLowerCase()
-    return calls.filter(c =>
-      (c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) &&
-      (statusFilter === "all" || c.status === statusFilter) &&
-      (verticalFilter === "all" || c.vertical === verticalFilter) &&
-      (!hardCasesOnly || c.hardCases.length > 0)
-    )
-  }, [calls, searchText, statusFilter, verticalFilter, hardCasesOnly])
+    const rank = (id: string) => disagreementOf.get(id) ?? -1
+    return calls
+      .filter(c =>
+        (c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) &&
+        (statusFilter === "all" || c.status === statusFilter) &&
+        (verticalFilter === "all" || c.vertical === verticalFilter) &&
+        (!hardCasesOnly || c.hardCases.length > 0)
+      )
+      .sort((a, b) => rank(b.id) - rank(a.id) || a.label.localeCompare(b.label))
+  }, [calls, searchText, statusFilter, verticalFilter, hardCasesOnly, disagreementOf])
 
   return (
     <div className="space-y-6">
@@ -151,6 +168,10 @@ export default function Corpus() {
               <TableRow>
                 <TableHead className="w-8" />
                 <TableHead>Call ID / Label</TableHead>
+                <TableHead className="text-right" title="Sum of disagreements across every provider's transcript of this call. Lower is better; blank means no scored transcript yet. The table is sorted by this, most disagreement first.">
+                  Disagreements ↓
+                  <div className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground">most first</div>
+                </TableHead>
                 <TableHead>Vertical</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Status</TableHead>
@@ -161,17 +182,17 @@ export default function Corpus() {
             <TableBody>
               {isError ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-destructive text-sm">
+                  <TableCell colSpan={8} className="h-32 text-center text-destructive text-sm">
                     Failed to load corpus: {error instanceof Error ? error.message : String(error)}
                   </TableCell>
                 </TableRow>
               ) : isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
+                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
                 </TableRow>
               ) : filteredCalls.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
+                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
                 </TableRow>
               ) : (
                 filteredCalls.map(call => {
@@ -191,6 +212,9 @@ export default function Corpus() {
                         <TableCell>
                           <div className="font-medium text-foreground">{call.label}</div>
                           <div className="text-xs font-mono text-muted-foreground">{call.id.substring(0, 8)}...</div>
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {disagreementOf.has(call.id) ? disagreementOf.get(call.id) : <span className="text-muted-foreground" title="No scored transcript yet">—</span>}
                         </TableCell>
                         <TableCell>
                           <span className="capitalize text-xs font-mono px-2 py-0.5 rounded-md border border-border bg-secondary text-secondary-foreground">
@@ -231,7 +255,7 @@ export default function Corpus() {
                       </TableRow>
                       {expanded && (
                         <TableRow>
-                          <TableCell colSpan={7} className="bg-muted/10 p-0">
+                          <TableCell colSpan={8} className="bg-muted/10 p-0">
                             <ExpandedCallDetail call={call} bulkId={deepLinkBulkId} />
                           </TableCell>
                         </TableRow>

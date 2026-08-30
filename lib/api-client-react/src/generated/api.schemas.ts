@@ -1297,6 +1297,20 @@ export interface ClientVolume {
   fetchedAt: string;
 }
 
+export type CallDisagreementCallsItem = {
+  callId: string;
+  /** Sum of peer flag counts across this call's scored providers. Lower is better. */
+  disagreements: number;
+  /** How many providers had a scored transcript for this call. */
+  providers: number;
+};
+
+export interface CallDisagreement {
+  /** @nullable */
+  bulkId: string | null;
+  calls: CallDisagreementCallsItem[];
+}
+
 export type BulkVerdictsProvidersItem = {
   id: string;
   name: string;
@@ -1539,6 +1553,10 @@ export interface BulkManifest {
 export type ListBenchmarkCallsParams = {
 vertical?: Vertical;
 status?: CallStatus;
+};
+
+export type GetCallDisagreementParams = {
+bulkId?: string;
 };
 
 export type ListDisagreementSpansParams = {

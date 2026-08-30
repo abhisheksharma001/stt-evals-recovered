@@ -31,7 +31,7 @@ const DECISION_META: Record<
   { label: string; Icon: React.ComponentType<{ className?: string }>; chip: string; border: string }
 > = {
   winner: {
-    label: "Clear winner",
+    label: "Winner",
     Icon: Trophy,
     chip: "bg-success/15 text-success border-success/30",
     border: "border-l-success",
@@ -43,13 +43,13 @@ const DECISION_META: Record<
     border: "border-l-warning",
   },
   too_few_calls: {
-    label: "Too few calls",
+    label: "Not enough calls",
     Icon: Hourglass,
     chip: "bg-muted text-muted-foreground border-border",
     border: "border-l-muted-foreground/40",
   },
   insufficient: {
-    label: "Not enough providers",
+    label: "Only one provider",
     Icon: CircleOff,
     chip: "bg-muted text-muted-foreground border-border",
     border: "border-l-muted-foreground/40",
@@ -167,19 +167,19 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
         {groups.length === 1 ? "" : "s"} outright
         {winners.length > topN ? <> ({winners.length - topN} other group{winners.length - topN === 1 ? "" : "s"} have a different winner)</> : null}.
         {counts.too_close + counts.too_few_calls + counts.insufficient > 0 && (
-          <> The remaining {groups.length - winners.length} have no clear winner on this evidence.</>
+          <> The remaining {groups.length - winners.length} have no winner yet.</>
         )}
       </>
     )
   } else if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls) {
     tone = "too_close"
-    headline = <>No clear winner in this bulk: the top providers are inside the noise in every group that has enough calls to judge.</>
+    headline = <>No winner in this bulk: the top providers are inside the margin of error in every group with enough calls.</>
   } else {
     tone = "too_few_calls"
     headline = (
       <>
-        No clear winner in this bulk yet: {counts.too_few_calls} of {groups.length} client group
-        {groups.length === 1 ? "" : "s"} have fewer than 5 calls shared by the top two providers, which is the minimum before a noise floor can be drawn.
+        No winner in this bulk yet: {counts.too_few_calls} of {groups.length} client group
+        {groups.length === 1 ? "" : "s"} have fewer than 5 calls that both top providers ran, the minimum for a verdict.
       </>
     )
   }
@@ -195,11 +195,11 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
         </div>
         <p className="text-lg leading-snug text-foreground" style={{ textWrap: "balance" }}>{headline}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground font-mono">
-          <span>{groups.length} group{groups.length === 1 ? "" : "s"} · {totalCalls} scored call{totalCalls === 1 ? "" : "s"}</span>
-          <span title="Groups where the 95% noise floor excludes zero">{counts.winner} winner{counts.winner === 1 ? "" : "s"}</span>
-          <span title="Groups with 5+ shared calls whose gap is inside the noise">{counts.too_close} too close</span>
-          <span title="Groups with fewer than 5 calls shared by the top two providers">{counts.too_few_calls} too few calls</span>
-          {counts.insufficient > 0 && <span title="Groups with fewer than two providers scored">{counts.insufficient} not enough providers</span>}
+          <span>{groups.length} group{groups.length === 1 ? "" : "s"} · {totalCalls} call{totalCalls === 1 ? "" : "s"} scored</span>
+          <span title="Gap to the runner-up is bigger than the margin of error (95% bootstrap interval excludes zero)">{counts.winner} winner{counts.winner === 1 ? "" : "s"}</span>
+          <span title="Gap to the runner-up is inside the margin of error">{counts.too_close} too close</span>
+          <span title="Fewer than 5 calls that both top providers ran">{counts.too_few_calls} not enough calls</span>
+          {counts.insufficient > 0 && <span title="Fewer than two providers scored">{counts.insufficient} only one provider</span>}
         </div>
         {winners.length > 0 && (
           <ul className="space-y-1 text-sm">
@@ -211,8 +211,11 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
             ))}
           </ul>
         )}
-        <p className="text-xs text-muted-foreground">
-          Winner means: fewer cross-provider flags per 100 words, and the gap to the runner-up survived 1,000 reshuffles of the shared calls. Anything else is honestly undecided, not a tie.
+        <p
+          className="text-xs text-muted-foreground"
+          title="Mechanism: disagreements = cross-provider word disagreements + entity mismatches, a provider's own low-confidence spans excluded. Margin of error = 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored."
+        >
+          Winner = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie.
         </p>
       </CardContent>
     </Card>
@@ -232,7 +235,7 @@ export function GroupVerdictHeadline({
   if (!verdict) {
     return (
       <div className="border-b bg-muted/20 px-4 py-3 text-sm text-muted-foreground" data-testid="group-verdict-headline">
-        No verdict computed for this group in this bulk.
+        No verdict for this group in this bulk.
       </div>
     )
   }
@@ -243,18 +246,18 @@ export function GroupVerdictHeadline({
         <div className="flex flex-wrap items-center gap-2">
           <DecisionChip decision={verdict.decision} />
           <span className="text-[11px] font-mono text-muted-foreground">
-            {verdict.evidenceCalls} call{verdict.evidenceCalls === 1 ? "" : "s"}
-            {verdict.provisional ? " · provisional" : ""}
-            {verdict.noiseFloor ? ` · ${verdict.noiseFloor.sharedCalls} shared by top two` : ""}
-            {verdict.callsToSettle != null ? ` · ~${verdict.callsToSettle} would settle it` : ""}
+            {verdict.evidenceCalls} call{verdict.evidenceCalls === 1 ? "" : "s"} scored
+            {verdict.provisional ? " · early read (under 20)" : ""}
+            {verdict.noiseFloor ? ` · ${verdict.noiseFloor.sharedCalls} calls both ran` : ""}
+            {verdict.callsToSettle != null ? ` · about ${verdict.callsToSettle} calls both ran would decide it` : ""}
           </span>
         </div>
         <p className="text-sm text-foreground" style={{ textWrap: "balance" }}>{verdict.sentence}</p>
         {scope && (
           <p className="text-[11px] text-muted-foreground" data-testid="group-verdict-scope">
-            Client-level verdict for <span className="font-medium">{scope.clientLabel ?? "calls with no account label"}</span>:{" "}
-            {scope.callCount} call{scope.callCount === 1 ? "" : "s"} across {scope.assistantCount} assistant{scope.assistantCount === 1 ? "" : "s"}.
-            One assistant alone rarely has enough shared calls to draw a noise floor (T-55).
+            Verdict is for all of <span className="font-medium">{scope.clientLabel ?? "calls with no account label"}</span>'s{" "}
+            {scope.assistantCount} assistant{scope.assistantCount === 1 ? "" : "s"} together ({scope.callCount} call{scope.callCount === 1 ? "" : "s"}).
+            One assistant alone has too few calls.
           </p>
         )}
       </div>

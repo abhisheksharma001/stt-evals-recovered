@@ -85,7 +85,7 @@ export function TrendStrip({ scope, highlightBulkId, title = "Trend across bulks
         </p>
       )
     if (trend.series.length === 0)
-      return <p className="text-sm text-muted-foreground">No flag-scored calls in this scope on any finished bulk.</p>
+      return <p className="text-sm text-muted-foreground">No scored calls yet.</p>
 
     const config: ChartConfig = Object.fromEntries(
       trend.series.map((s, i) => [s.providerId, { label: s.providerName, color: seriesColor(i) }]),
@@ -208,7 +208,7 @@ export function TrendStrip({ scope, highlightBulkId, title = "Trend across bulks
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{title}</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Peer flags per 100 words, per provider, on every finished bulk, oldest to newest. Lower is better. A line
+          Disagreements per 100 words (↓ lower is better), per provider, on every finished bulk, oldest to newest. A line
           that rises between two bulks is a regression; the list below says by how much and on how many calls.
         </p>
       </CardHeader>

@@ -105,7 +105,7 @@ function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
         <Figure value={data.callsAwaitingReview} label="calls awaiting review" href="/corpus" tone={attention(data.callsAwaitingReview)} />
         <Figure value={data.hardCaseCalls} label="hard cases" href="/corpus" tone={attention(data.hardCaseCalls)} />
         <Figure value={open == null ? "—" : open} label="spans to rule on" href="/corpus" tone={attention(open)} />
-        <Figure value={data.retryableFailedCells} label="cells a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
+        <Figure value={data.retryableFailedCells} label="transcripts a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
       </div>
       <p className="text-xs text-muted-foreground">
         {data.spans
