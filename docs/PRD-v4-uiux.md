@@ -867,7 +867,8 @@ nothing); every numeric column carries ↓ better / ↑ better and each page wit
 rating carries one legend line at the top; no ticket ids, spec ids or dates in
 user-facing text; the T-57 rule stands (only the verdict's winner gets the badge) —
 its wording changes to the vocabulary above. The full 50-row decision table is in
-the session log of 2026-08-30 and is applied by T-81.
+the session log of 2026-08-30 and was applied in full by T-81 (PR #50, 2026-08-30 —
+no exceptions named).
 
 **Evidence:** Hamel Husain & Shreya Shankar, "Building eval systems that improve your
 AI product" (Lenny's, 2025-09-09) — binary labels over 1–5 scales, nuance in the
@@ -881,6 +882,20 @@ Abhishek chose **B: a public marketing page** for the tool (2026-08-30). Not the
 Overview (a) and not the share page (c). Static, outside the app shell, same design
 tokens. Reference pass via the `visual-and-research` skill before building.
 
+Built as `/welcome` (T-83, PR #50). Structure, top to bottom: the question the tool
+answers as the headline; one sentence; one primary button (latest verdict) and one
+secondary (run a comparison); an example verdict rendered with the app's own chip,
+sentence and legend, labelled as placeholder names; four numbered steps (pull real
+calls → run every provider on the same audio → count where they disagree → verdict
+with its margin of error); three honesty points ("too close to call" is a real
+answer; never a number without its call count; compared against what runs today);
+closing CTA; footer. No claim on the page that the tool does not compute.
+
+Evidence: 1Password Developer and Frontify heroes (headline + sentence + button +
+product view), Railway and Grammarly Business numbered steps (Mobbin); Lenny's
+"Craft your pitch" (2022-07-19), Gina Gotthilf (2023-10-19: message and button above
+the fold), Zoelle Egner (2023-01-29: the customer is the hero).
+
 ## F.3 The batch loop and the evidence habit
 
 Five register tasks per iteration, one PR with one commit per task, one deploy at
@@ -888,4 +903,5 @@ the end. Before any UI or product decision, the global `visual-and-research` ski
 runs: 1–3 Mobbin screen searches (visual pattern) and 1–3 Lenny's searches (operator
 insight), producing an evidence note that names what changed in the plan. Batch 1
 (2026-08-30, PR #49) used it for T-31 (page names), T-82 (Semrush pattern) and T-84
-(Midday pattern).
+(Midday pattern). Batch 2 (PR #50) used it for T-83 (landing page) and T-85 (worst-first
+ordering, from Hamel & Shreya).
