@@ -713,6 +713,12 @@ export const ComparisonRowStatus = {
   missing: 'missing',
 } as const;
 
+export type ComparisonRowHybridFlagsLowConfidenceWordSpansItem = {
+  words: string[];
+  avgConfidence: number;
+  severity: string;
+};
+
 /**
  * @nullable
  */
@@ -720,6 +726,7 @@ export type ComparisonRowHybridFlags = {
   /** @nullable */
   disagreementRate: number | null;
   lowConfidenceSpans: number;
+  lowConfidenceWordSpans: ComparisonRowHybridFlagsLowConfidenceWordSpansItem[];
   confidenceAvailable: boolean;
   entityMismatches: number;
 } | null;

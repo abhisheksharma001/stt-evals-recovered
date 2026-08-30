@@ -276,7 +276,7 @@ function ProviderRow({
       {expanded && ok && (
         <div className="space-y-2 border-t border-border bg-muted/20 p-3">
           {row.diff ? (
-            <WordDiffView wordDiff={row.diff.wordDiff} referenceLabel={referenceLabel} />
+            <WordDiffView wordDiff={row.diff.wordDiff} referenceLabel={referenceLabel} lowConfidence={row.hybridFlags?.lowConfidenceWordSpans} />
           ) : (
             <p className="whitespace-pre-wrap font-serif text-sm leading-relaxed">{row.hypothesisTranscript}</p>
           )}

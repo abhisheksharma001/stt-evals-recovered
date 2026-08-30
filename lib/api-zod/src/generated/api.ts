@@ -390,6 +390,11 @@ export const GetCallComparisonResponse = zod.object({
   "hybridFlags": zod.object({
   "disagreementRate": zod.number().nullable(),
   "lowConfidenceSpans": zod.number(),
+  "lowConfidenceWordSpans": zod.array(zod.object({
+  "words": zod.array(zod.string()),
+  "avgConfidence": zod.number(),
+  "severity": zod.string()
+})),
   "confidenceAvailable": zod.boolean(),
   "entityMismatches": zod.number()
 }).nullable(),
@@ -477,6 +482,11 @@ export const GetBulkCallComparisonResponse = zod.object({
   "hybridFlags": zod.object({
   "disagreementRate": zod.number().nullable(),
   "lowConfidenceSpans": zod.number(),
+  "lowConfidenceWordSpans": zod.array(zod.object({
+  "words": zod.array(zod.string()),
+  "avgConfidence": zod.number(),
+  "severity": zod.string()
+})),
   "confidenceAvailable": zod.boolean(),
   "entityMismatches": zod.number()
 }).nullable(),

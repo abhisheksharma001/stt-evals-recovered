@@ -1707,10 +1707,21 @@ components:
         flagSeverity: { type: ["string", "null"] }
         hybridFlags:
           type: ["object", "null"]
-          required: [disagreementRate, lowConfidenceSpans, confidenceAvailable, entityMismatches]
+          required: [disagreementRate, lowConfidenceSpans, lowConfidenceWordSpans, confidenceAvailable, entityMismatches]
           properties:
             disagreementRate: { type: ["number", "null"] }
             lowConfidenceSpans: { type: number }
+            # T-109 -- the spans behind the count, so the diff can underline
+            # the words the provider itself was unsure of.
+            lowConfidenceWordSpans:
+              type: array
+              items:
+                type: object
+                required: [words, avgConfidence, severity]
+                properties:
+                  words: { type: array, items: { type: string } }
+                  avgConfidence: { type: number }
+                  severity: { type: string }
             confidenceAvailable: { type: boolean }
             entityMismatches: { type: number }
         latencyFinalMs: { type: ["number", "null"] }

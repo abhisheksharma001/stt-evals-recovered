@@ -78,6 +78,7 @@ export * from './comparisonDiff';
 export * from './comparisonRow';
 export * from './comparisonRowFailureClass';
 export * from './comparisonRowHybridFlags';
+export * from './comparisonRowHybridFlagsLowConfidenceWordSpansItem';
 export * from './comparisonRowStatus';
 export * from './disagreementSpan';
 export * from './disagreementSpansResponse';
