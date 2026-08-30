@@ -102,6 +102,16 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   under "More evidence". Import page shows call providers (Vapi only; future
   ones named in `docs/backlog/good-to-have.md` only).
 
+- **2026-08-30, batch 6: Calls grouped org → assistant; production config
+  shown; words-to-watch noise cut.** Results baseline now reads the assistant's
+  live Vapi transcriber config (`GET /benchmark/assistants/{id}/transcriber`,
+  read-only) — fallback plan and Deepgram `keyterm` boosts that the benchmark
+  never gets (Rush: 120 keyterms + numerals). Words to watch has a `format`
+  kind (hyphen / spacing / "one" vs "1" / stray um) hidden with fillers. Q-2
+  answered (only Cartesia + Gladia share a Whisper base; weak signal live).
+  **Four data backfills are still unapplied** — `bash
+  scripts/apply-backfills.sh --apply`, see `docs/runbooks/pending-backfills.md`.
+
 ## Standing rules for this project specifically
 
 - **API keys**: ephemeral env-vars only. Never in the database, never sent to the

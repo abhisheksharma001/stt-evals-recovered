@@ -984,3 +984,24 @@ No new UI pattern was introduced in this batch, so no Mobbin pass was run; the
 table-state rows reuse the existing Results error/retry pattern, and the agent
 progress line reuses the STT bar.
 
+## G.5 Batch 6 (2026-08-30) — what it closed in this document
+
+- **E.1 layer 1, Calls** (T-96): the one page T-74 left flat. Org → assistant →
+  call, collapsible, Flat toggle. Mobbin evidence for the group-header-row
+  pattern: Xero duplicate bill review
+  (https://mobbin.com/screens/0ebb4550-77d0-448c-a0ba-4f9f48e2fc36), Airtable
+  grouped grid with collapse/expand all
+  (https://mobbin.com/screens/7612f4c4-4104-4dbc-8e5f-579dde687f2b), Deputy
+  timesheets "Group by / Expand All / Collapse All"
+  (https://mobbin.com/screens/f521bc48-ceac-4c03-af24-7c680a1bc324). Pattern kept:
+  a header row carries the count and its own chevron; the grouping control and
+  expand/collapse-all sit together in a bar above the table, not in the page header.
+- **Production baseline honesty** (T-97): the baseline line now says what production
+  has that the benchmark did not — fallback transcriber, boosted keyterms, numerals.
+  Not a new pattern; one more sentence under an existing note.
+- **Words to watch, second pass** (T-98): the list's first live reading (G.3) put
+  convention splits on top; they are now a hidden `format` kind. Same Hamel Husain /
+  Shreya Shankar principle as G.3 — the list is the failure modes, so anything that
+  is not a failure must leave it.
+- Register hygiene (T-99) and Q-2 (T-100) touch no UI.
+
