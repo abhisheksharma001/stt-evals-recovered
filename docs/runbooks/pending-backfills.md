@@ -10,6 +10,7 @@ the agent, and that is the right default). As of 2026-08-30 (batch 6, T-99)
 | T-65 | 106 flagged scans link `agent_pick_result_id` to a result row from a *different* run than the scan's own | `backfill-t65-t66.ts` |
 | T-63 / T-66 | 5 legacy "flagged" scans with no pick and no ok cell (nothing was ever transcribed) still count as real findings | same script |
 | T-62 | `deepgram-flux-general-en` list price is still $0.0043/min, should be $0.0077 (Deepgram pay-as-you-go streaming, verified 2026-08-29) | same script |
+| T-101 | Stored hybrid flags on the 22 finished runs predate the equivalence rules (hyphen vs space, "gonna" / "going to", a stray "um" still count as disagreement there) | `recompute-hybrid-flags.ts` — free, no provider or LLM call; `pnpm --filter @workspace/api-server exec tsx --env-file-if-exists=.env ./src/recompute-hybrid-flags.ts --apply` |
 | T-52 | 22 original calls have `source_started_at = null` and `source_provider = 'manual'`; 8 are recoverable from Vapi, 14 are past retention and stay null | `backfill-t52-started-at.ts` |
 
 How they were found again: dry-running both scripts on 2026-08-30 printed

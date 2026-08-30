@@ -309,3 +309,19 @@ What this means for the benchmark:
   /benchmark/assistants/{id}/transcriber`, live, 10-minute cache, read-only).
   The account that owns the assistant is not stored; it is the org label most
   of the assistant's imported calls carry.
+
+## Which STT models each vendor offers, and how to ask (T-104, verified 2026-08-30)
+
+| Vendor | List API? | Verified today | Request parameter |
+|---|---|---|---|
+| Deepgram | **yes** — `GET https://api.deepgram.com/v1/models` (443 STT entries: `canonical_name`, `architecture`, `version`, `batch`, `streaming`); `nova-3-general` is what plain `model=nova-3` means | live | `model` query param |
+| OpenAI | **yes** — `GET /v1/models`; STT ids 2026-08-30: `gpt-transcribe`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe-diarize`, `whisper-1` (+ realtime variants) | live | multipart `model` |
+| AssemblyAI | no | docs: `speech_models` array, values `universal-3-5-pro`, `universal-2`; omitted = both, newest first. `speech_model` (singular, what old docs showed) is deprecated | `speech_models: [..]` |
+| Gladia | no (`/v2/models` → 404) | docs: `model` = `solaria-1` (default) or `solaria-3` | `model` |
+| Cartesia | no (`/models` → 404) | docs: only `ink-whisper` | `model` query param on the WebSocket URL |
+| ElevenLabs | no | docs: `model_id` = `scribe_v2` (this repo's adapter sent `scribe_v1` until today) | multipart `model_id` |
+| Speechmatics | not checked (no key) | — | — |
+
+Consequence for the benchmark: `assemblyai-universal` has always sent **no** model, so
+it runs whatever AssemblyAI's default is on the day (newest first). That is a moving
+target and is now visible on the Setup page as "vendor default today".

@@ -112,6 +112,16 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   **Four data backfills are still unapplied** — `bash
   scripts/apply-backfills.sh --apply`, see `docs/runbooks/pending-backfills.md`.
 
+- **2026-08-30, batch 7: convention ≠ disagreement; judge prompt v2; live model
+  lists.** `lib/scoring/src/equivalence.ts` `canonicalTranscript()` is what flags,
+  spans and words-to-watch compare on (WER/diff untouched). `judge.baml` has the
+  rules and a typed verdict (confidence, key differences); `AnalyzeFailure` is BAML
+  too; **any prompt edit needs `pnpm run judge:contract:record`** (paid). Judge
+  models come live from OpenAI with the pinned five first. Each STT vendor's
+  newest model is one click on Setup, as its **own provider row** (`<vendor>-<apiModel>`).
+  Re-check the dated catalogs (AssemblyAI, Gladia, Cartesia, ElevenLabs) when a
+  vendor announces a model — they have no list API.
+
 ## Standing rules for this project specifically
 
 - **API keys**: ephemeral env-vars only. Never in the database, never sent to the
