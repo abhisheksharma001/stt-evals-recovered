@@ -55,9 +55,9 @@ describe("computeVerdict", () => {
     expect(v.marginPct).toBe(50);
     expect(v.evidenceCalls).toBe(25);
     expect(v.provisional).toBe(false);
-    expect(v.sentence).toContain("A is the best fit");
-    expect(v.sentence).toContain("50% cleaner than the runner-up (B)");
-    expect(v.sentence).toContain("Based on 25 calls");
+    expect(v.sentence).toContain("A wins: ");
+    expect(v.sentence).toContain("50% fewer than B");
+    expect(v.sentence).toContain("25 calls.");
   });
 
   it("refuses to name a winner inside the noise floor and estimates what would settle it", () => {
@@ -73,8 +73,8 @@ describe("computeVerdict", () => {
     expect(v.runnerUpProviderId).toBe("b");
     expect(v.noiseFloor?.withinNoise).toBe(true);
     expect(v.callsToSettle).toBeGreaterThan(24);
-    expect(v.sentence).toMatch(/^Too close to call on this evidence/);
-    expect(v.sentence).toContain("Based on 24 calls");
+    expect(v.sentence).toMatch(/^Too close to call: /);
+    expect(v.sentence).toContain("24 calls.");
   });
 
   it("marks the verdict provisional below 20 calls and still attaches the count", () => {
@@ -83,7 +83,7 @@ describe("computeVerdict", () => {
     expect(v.decision).toBe("winner");
     expect(v.evidenceCalls).toBe(6);
     expect(v.provisional).toBe(true);
-    expect(v.sentence).toContain("Based on 6 calls -- provisional");
+    expect(v.sentence).toContain("6 calls (early read, under 20)");
   });
 
   it("names no winner when the top two share fewer than 5 calls, however big the gap", () => {
@@ -94,8 +94,8 @@ describe("computeVerdict", () => {
     expect(v.marginPct).toBeNull();
     expect(v.noiseFloor).toBeNull();
     expect(v.leaderProviderId).toBe("a");
-    expect(v.sentence).toMatch(/^No winner on this evidence/);
-    expect(v.sentence).toContain("share only 4 calls");
+    expect(v.sentence).toMatch(/^Not enough calls: /);
+    expect(v.sentence).toContain("only 4 calls ran on both");
   });
 
   it("calls a near-zero gap effectively tied instead of quoting thousands of calls", () => {
@@ -106,7 +106,7 @@ describe("computeVerdict", () => {
     const v = computeVerdict(cells);
     expect(v.decision).toBe("too_close");
     expect(v.callsToSettle).toBeNull();
-    expect(v.sentence).toContain("effectively tied");
+    expect(v.sentence).toContain("Effectively tied");
   });
 
   it("compares against production when it was benchmarked and isn't the leader", () => {
@@ -118,7 +118,7 @@ describe("computeVerdict", () => {
     const v = computeVerdict(cells, { productionProviderId: "prod" });
     expect(v.vsProductionPct).toBe(75);
     expect(v.productionIsLeader).toBe(false);
-    expect(v.sentence).toContain("75% cleaner than the provider running in production today (prod)");
+    expect(v.sentence).toContain("75% fewer than prod (in production today)");
   });
 
   it("says so when production is already the leader", () => {
@@ -126,7 +126,7 @@ describe("computeVerdict", () => {
     const v = computeVerdict(cells, { productionProviderId: "prod" });
     expect(v.productionIsLeader).toBe(true);
     expect(v.vsProductionPct).toBeNull();
-    expect(v.sentence).toContain("also the provider running in production today");
+    expect(v.sentence).toContain("also in production today");
   });
 
   it("reports insufficient with one provider and excludes never-flagged cells", () => {
@@ -144,6 +144,6 @@ describe("computeVerdict", () => {
     const cells = [...cellsFor("a", Array.from({ length: 25 }, () => 0)), ...cellsFor("b", Array.from({ length: 25 }, () => 3))];
     const v = computeVerdict(cells, { confidenceReportingProviderIds: ["a", "zzz-not-in-group"] });
     expect(v.confidenceComparable).toEqual({ reporting: 1, total: 2 });
-    expect(v.sentence).toContain("1 of 2 providers report confidence");
+    expect(v.sentence).not.toContain("report confidence");
   });
 });

@@ -64,19 +64,19 @@ describe("renderVerdictArtefact", () => {
   it("names the leader as leader, not winner, when the decision is too_close", () => {
     const html = render(base);
     expect(html).toContain("Too close to call");
-    expect(html).toContain("Current leader: Alpha (not a verdict)");
+    expect(html).toContain("Ahead, not a winner: Alpha.");
     expect(html).not.toContain("Alpha wins");
     expect(html).not.toContain('class="tag">winner');
-    expect(html).toContain("Provisional: fewer than 20 evidence calls");
+    expect(html).toContain("Early read (under 20 calls)");
     expect(html).toContain("Only 1 of 2 providers report per-word confidence");
   });
 
   it("renders the winner, margin and cost delta vs production when a winner is named", () => {
     const html = render({ ...base, decision: "winner", winnerProviderId: "a", marginPct: 25, vsProductionPct: 25, provisional: false, evidenceCalls: 30 });
-    expect(html).toContain("Alpha wins by 25% fewer flags per 100 words than Bravo.");
+    expect(html).toContain("Alpha wins by 25% fewer disagreements per 100 words than Bravo.");
     expect(html).toContain("Alpha $0.0040/min is 50% cheaper per minute than production Bravo $0.0080/min.");
-    expect(html).toContain("winner is 25% cleaner than production");
-    expect(html).not.toContain("Provisional:");
+    expect(html).toContain("winner has 25% fewer disagreements than production");
+    expect(html).not.toContain("Early read");
   });
 });
 
@@ -84,11 +84,11 @@ describe("costDeltaLine", () => {
   it("explains every missing delta instead of printing a number", () => {
     expect(costDeltaLine(base, nameOf, price)).toContain("no winner is named");
     const won = { ...base, decision: "winner" as const, winnerProviderId: "a" };
-    expect(costDeltaLine({ ...won, productionProviderId: null }, nameOf, price)).toContain("production transcriber for these calls is unknown");
+    expect(costDeltaLine({ ...won, productionProviderId: null }, nameOf, price)).toContain("provider in production today for these calls is unknown");
     expect(costDeltaLine(won, nameOf, { a: 0.004 })).toContain("no list price on file for production (Bravo)");
     expect(costDeltaLine(won, nameOf, { a: 0.004, b: 0 })).toContain("no list price entered");
-    expect(costDeltaLine({ ...won, productionProviderId: "a", productionIsLeader: true }, nameOf, price)).toContain("already the production transcriber");
-    expect(costDeltaLine({ ...won, productionProviderId: "b" }, nameOf, { a: 0.012, b: 0.008 })).toContain("50% dearer per minute than production Bravo");
+    expect(costDeltaLine({ ...won, productionProviderId: "a", productionIsLeader: true }, nameOf, price)).toContain("already in production today");
+    expect(costDeltaLine({ ...won, productionProviderId: "b" }, nameOf, { a: 0.012, b: 0.008 })).toContain("50% more expensive per minute than production Bravo");
   });
 });
 

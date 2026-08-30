@@ -53,7 +53,7 @@ export function JudgeAccuracyCard({ providerNames }: { providerNames: Record<str
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Scale className="h-4 w-4" />
-          Judge vs. human
+          AI judge vs. a person
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -84,7 +84,7 @@ export function JudgeAccuracyCard({ providerNames }: { providerNames: Record<str
             </div>
             {/* T-47: the free baseline the judge has to beat. */}
             <div className="text-sm text-muted-foreground tabular-nums" data-testid="majority-vs-human">
-              Majority vote (no LLM) vs human: <span className="font-semibold text-foreground">{pct(data.majorityAgreementRate)}</span>
+              Simple majority vs. a person: <span className="font-semibold text-foreground">{pct(data.majorityAgreementRate)}</span>
               {" "}({data.majorityAgreements}/{data.majorityComparable}; ties excluded)
             </div>
             <p className="text-xs text-muted-foreground">

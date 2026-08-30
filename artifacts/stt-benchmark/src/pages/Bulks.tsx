@@ -48,6 +48,18 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { useToast } from "@/hooks/use-toast"
 import { VAPI_RETENTION_WINDOW_DAYS, RETENTION_DEFAULT_REASON } from "@/lib/retention"
 
+// T-81 copy: what the state means to the person waiting on it.
+const BULK_STATUS_LABEL: Record<BulkStatus, string> = {
+  draft: "draft",
+  estimating: "estimating cost",
+  awaiting_confirmation: "needs your OK",
+  running: "running",
+  complete: "complete",
+  partial: "finished with failures",
+  failed: "failed",
+  cancelled: "cancelled",
+}
+
 function BulkStatusBadge({ status }: { status: BulkStatus }) {
   const styles: Record<BulkStatus, string> = {
     draft: "bg-secondary text-muted-foreground border-border",
@@ -61,7 +73,7 @@ function BulkStatusBadge({ status }: { status: BulkStatus }) {
   }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-widest border ${styles[status]}`}>
-      {status.replaceAll("_", " ")}
+      {BULK_STATUS_LABEL[status]}
     </span>
   )
 }
@@ -425,7 +437,7 @@ function CriteriaFields({
           />
         </div>
         <div className="space-y-2">
-          <Label>Shard size (calls per run)</Label>
+          <Label>Calls per run</Label>
           <Input
             type="number"
             min={1}
@@ -497,7 +509,7 @@ function OutcomeFilter({ criteria, setCriteria }: { criteria: CriteriaDraft; set
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <Label>Call outcome (Vapi endedReason)</Label>
+        <Label title="Vapi's endedReason field">How the call ended</Label>
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -537,7 +549,7 @@ function OutcomeFilter({ criteria, setCriteria }: { criteria: CriteriaDraft; set
       </p>
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Vapi success evaluation</Label>
+          <Label title="Vapi's successEvaluation field">Vapi marked call successful</Label>
           <Select value={criteria.successEvaluation || "__any__"} onValueChange={(v) => setCriteria({ ...criteria, successEvaluation: v === "__any__" ? "" : v })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -692,7 +704,7 @@ function CreateTemplateDialog() {
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Save a reusable template (FR-BLK-9)</DialogTitle>
+          <DialogTitle>Save a reusable template</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -796,7 +808,7 @@ function FailureBreakdown({
     <div className="rounded-md border border-border">
       <div className="flex items-baseline justify-between border-b border-border px-3 py-2">
         <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Why {cellsFailed} cell(s) failed
+          Why {cellsFailed} transcript{cellsFailed === 1 ? "" : "s"} failed
         </div>
         <div className="font-mono text-xs tabular-nums text-muted-foreground">
           {retryableCells} retryable
@@ -894,7 +906,7 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
 
         <div className="space-y-5">
           <div className="text-sm text-muted-foreground">
-            {criteriaSummary(current.selectionCriteria)} · shard size {current.shardSize} ·{" "}
+            {criteriaSummary(current.selectionCriteria)} · {current.shardSize} calls per run ·{" "}
             {current.providerIds.length} provider(s)
           </div>
 
@@ -942,9 +954,9 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
                 <div className="font-mono font-semibold">{formatMicrocents(detail.actualCost.agentCostMicrocents)}</div>
               </div>
               <div>
-                <div className="text-[10px] font-mono uppercase text-muted-foreground">Agent coverage</div>
+                <div className="text-[10px] font-mono uppercase text-muted-foreground">Checked by AI</div>
                 <div className="font-mono font-semibold">
-                  {detail.actualCost.agentCallsChecked} checked, {detail.actualCost.agentCallsFlagged} flagged
+                  {detail.actualCost.agentCallsChecked} calls, {detail.actualCost.agentCallsFlagged} flagged
                   {detail.actualCost.agentCallsResolved > 0 && <>, {detail.actualCost.agentCallsResolved} resolved</>}
                   {detail.actualCost.agentCallsErrored > 0 && (
                     <span className="text-destructive">, {detail.actualCost.agentCallsErrored} errored</span>
@@ -994,12 +1006,12 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
               {[
                 ["Calls in bulk", p.callsTotal],
                 ["Calls run", p.callsRun],
-                ["Skipped pending review", p.cellsSkippedPendingReview],
-                ["Cells total", p.cellsTotal],
-                ["Cells ok", p.cellsOk],
-                ["Cells failed", p.cellsFailed],
-                ["Cells pending", p.cellsPending],
-                ["Cells cancelled", p.cellsCancelled],
+                ["Skipped (call not reviewed)", p.cellsSkippedPendingReview],
+                ["Transcripts total", p.cellsTotal],
+                ["Transcripts OK", p.cellsOk],
+                ["Transcripts failed", p.cellsFailed],
+                ["Transcripts waiting", p.cellsPending],
+                ["Transcripts cancelled", p.cellsCancelled],
               ].map(([label, value]) => (
                 <div key={label as string} className="rounded-md border border-border px-3 py-2">
                   <div className="font-mono text-lg font-semibold tabular-nums">{value}</div>
@@ -1066,10 +1078,10 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
                 variant="outline"
                 onClick={() => retry.mutate({ bulkId: bulk.id })}
                 disabled={retry.isPending || !detail || retryTargets === 0}
-                title="Upper bound: retryable failures plus cells with no verdict yet. Not a cost estimate -- the executor decides cell by cell."
+                title="At most this many. The run decides one transcript at a time; permanent failures are skipped."
               >
                 <RotateCw className="mr-2 h-4 w-4" />
-                {detail ? `Retry up to ${retryTargets} cell(s)` : "Retry failed cells"}
+                {detail ? `Retry up to ${retryTargets} transcript${retryTargets === 1 ? "" : "s"}` : "Retry failed transcripts"}
               </Button>
             </div>
           )}
@@ -1259,7 +1271,7 @@ export default function Bulks() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Bulk Evaluations</h1>
         <p className="mt-1 text-muted-foreground">
-          Shard large call slices into runs, with cost gates, retry and cancel. Max 3 live bulks -- the oldest is evicted.
+          Split a large set of calls into runs, with a cost check, retry and cancel. Keeps the 3 newest bulks; older ones are removed.
         </p>
       </div>
 

@@ -131,7 +131,7 @@ export function GroupVolumeLine({ gv }: { gv: GroupVolume }) {
       <span>
         <span className="font-medium text-foreground">Volume:</span> {gv.calls.toLocaleString()} calls, {Math.round(gv.minutes).toLocaleString()} min in the last {v.windowDays} days on Vapi
         {" "}→ <span className="font-medium text-foreground">≈ {Math.round(gv.monthlyMinutes ?? 0).toLocaleString()} min/month</span> projected.
-        {v.truncated && <span className="text-destructive"> Vapi page cap hit — read as "at least".</span>}
+        {v.truncated && <span className="text-destructive"> Vapi stopped counting — the real number is at least this.</span>}
         {" "}$/month below = list $/min × that.
       </span>
     </div>
@@ -179,7 +179,7 @@ export function ClientMonthlyCostLine({ accountLabel, providerIds }: { accountLa
       <span className="flex items-center gap-1.5 text-muted-foreground">
         <Wallet className="h-3.5 w-3.5 text-primary" />
         <span className="font-medium text-foreground">{accountLabel}, whole account:</span> {data.calls.toLocaleString()} calls, {Math.round(data.minutes).toLocaleString()} min in {data.windowDays} days
-        {" "}→ ≈ {Math.round(monthly).toLocaleString()} min/month{data.truncated ? " (at least — page cap hit)" : ""}.
+        {" "}→ ≈ {Math.round(monthly).toLocaleString()} min/month{data.truncated ? " (at least — Vapi stopped counting)" : ""}.
       </span>
       {rows.map((r) => (
         <span key={r.id} className="font-mono tabular-nums" title={`list $/min × projected monthly minutes`}>

@@ -49,15 +49,40 @@ const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
   diarizationScore: false,
 }
 
+// T-81 copy: plain label on screen, exact mechanism in the title tooltip.
 const SORT_LABELS: Record<SortKey, string> = {
-  rank: "Composite",
-  avgFlagCount: "Avg Flags",
-  avgFlagSeverityScore: "Flag Severity",
-  peerFlagsPer100Words: "Flags / 100 words",
+  rank: "Rank",
+  avgFlagCount: "Flags per call",
+  avgFlagSeverityScore: "How serious (0–3)",
+  peerFlagsPer100Words: "Disagreements / 100 words",
   cleanCallRate: "Clean calls",
-  latencyFinalMs: "Latency (Final)",
-  costPerMinute: "Cost/Min",
-  diarizationScore: "Diarization",
+  latencyFinalMs: "Speed",
+  costPerMinute: "Price / min",
+  diarizationScore: "Speakers told apart",
+}
+
+const SORT_TITLES: Record<SortKey, string> = {
+  rank: "From disagreements (cross-provider disagreement + wrong entities only), price and speed. Not from Flags per call, which includes a provider's own low-confidence words.",
+  avgFlagCount: "Average flags per call, including a provider's own low-confidence words. Only providers that report confidence add those, so compare with care; the small 'peer' number below is what Rank uses.",
+  avgFlagSeverityScore: "How serious the flags were, 0 = none .. 3 = high, averaged over this provider's transcripts in this group.",
+  peerFlagsPer100Words: "Disagreements with the other providers plus wrong entities, per 100 words transcribed. Confidence excluded, so it is comparable across all providers and call lengths.",
+  cleanCallRate: "Share of this provider's scored calls with zero disagreements.",
+  latencyFinalMs: "Time from sending the audio to the final transcript.",
+  costPerMinute: "List price per audio minute, as entered on the Setup page.",
+  diarizationScore: "Share of calls where this provider told more than one speaker apart.",
+}
+
+/** ↓ = lower is better, ↑ = higher is better (T-81: every numeric column
+ *  says its direction; the page-top legend says it once in words). */
+const DIRECTION: Record<SortKey, "↓" | "↑"> = {
+  rank: "↓",
+  avgFlagCount: "↓",
+  avgFlagSeverityScore: "↓",
+  peerFlagsPer100Words: "↓",
+  cleanCallRate: "↑",
+  latencyFinalMs: "↓",
+  costPerMinute: "↓",
+  diarizationScore: "↑",
 }
 
 type RankingRow = VerticalRanking
@@ -200,7 +225,7 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
             })()}
           </>
         ) : baselineRow && winner && baselineRow.providerId === winner.providerId ? (
-          <>Production's own provider is already this group's top candidate.</>
+          <>The provider in production today is already ahead.</>
         ) : (
           <>
             Not benchmarked in this bulk, so no quality comparison yet.
@@ -389,8 +414,12 @@ export default function Rankings() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Results</h1>
         <p className="text-muted-foreground mt-1">
-          Provider scores and recommendations, grouped by assistant. Pick one bulk to see just that
-          run's evidence with full detail, or switch to the all-time view to see every bulk combined.
+          Provider scores, grouped by assistant. Pick one bulk for its verdict and full detail, or
+          switch to all-time to see every bulk combined.
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="results-legend">
+          <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags, speed and price
+          (↓). Higher is better for clean calls and speakers told apart (↑). Hover a column for exactly what it measures.
         </p>
       </div>
 
@@ -475,7 +504,7 @@ export default function Rankings() {
               </div>
             </div>
             <div>
-              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Agent verification cost</div>
+              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">AI check cost</div>
               <div className="font-mono text-base font-semibold">
                 {formatMicrocents(bulkDetail.actualCost.agentCostMicrocents)}
                 {bulkDetail.estimatedAgentCostCents != null && (
@@ -486,11 +515,11 @@ export default function Rankings() {
               </div>
             </div>
             <div>
-              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Agent coverage</div>
+              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Checked by AI</div>
               <div className="font-mono text-base font-semibold">
-                {bulkDetail.actualCost.agentCallsChecked} checked
+                {bulkDetail.actualCost.agentCallsChecked} calls
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                  {bulkDetail.actualCost.agentCallsFlagged} flagged, {bulkDetail.actualCost.agentCallsJudged} judged by OpenAI
+                  {bulkDetail.actualCost.agentCallsFlagged} flagged, {bulkDetail.actualCost.agentCallsJudged} judged
                   {bulkDetail.actualCost.agentCallsResolved > 0 && <>, {bulkDetail.actualCost.agentCallsResolved} resolved by a human</>}
                 </span>
               </div>
@@ -590,7 +619,7 @@ export default function Rankings() {
                 </CardTitle>
                 <div className="flex items-center gap-4">
                   <div className="flex gap-4 text-sm font-mono text-muted-foreground">
-                    <span>Official order: <span className="text-foreground font-semibold">composite</span></span>
+                    <span title="Rank = disagreements, then price and speed. Sorting a column changes the view, not the rank.">Ranked by: <span className="text-foreground font-semibold">disagreements, price, speed</span></span>
                   </div>
                   {/* FR-R3 decision export; run id in the filename so
                       spreadsheets from different runs can't be confused
@@ -632,9 +661,9 @@ export default function Rankings() {
                       aria-sort={sortAria("rank")}
                       className="w-16 text-center cursor-pointer select-none hover:text-foreground"
                       onClick={() => toggleSort("rank")}
-                      title="Computed from peer flags (cross-provider disagreement + wrong entities only) plus cost and latency -- NOT the Avg Flags column, which includes a provider's own self-reported low confidence and is only fairly comparable among providers that report it at all. See the small 'peer' number under Avg Flags for the figure Rank actually uses."
+                      title={SORT_TITLES.rank}
                     >
-                      Rank{renderSortIcon("rank")}
+                      Rank {DIRECTION.rank}{renderSortIcon("rank")}
                     </TableHead>
                     <TableHead>Provider</TableHead>
                     {(Object.keys(SORT_ASC_DEFAULT) as SortKey[])
@@ -645,13 +674,14 @@ export default function Rankings() {
                           aria-sort={sortAria(key)}
                           className="text-right cursor-pointer select-none hover:text-foreground"
                           onClick={() => toggleSort(key)}
+                          title={SORT_TITLES[key]}
                         >
-                          {SORT_LABELS[key]}
+                          {SORT_LABELS[key]} <span aria-label={DIRECTION[key] === "↓" ? "lower is better" : "higher is better"}>{DIRECTION[key]}</span>
                           {renderSortIcon(key)}
                         </TableHead>
                       ))}
                     <TableHead className="text-right" title="List $/min x this assistant's projected monthly minutes (Vapi, last 14 days x 30/14). Not sortable: it is price x one shared volume, so its order is the list-price order.">
-                      $/month
+                      $/month ↓
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -665,8 +695,8 @@ export default function Rankings() {
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-foreground">{r.providerName}</span>
                           {r.providerId === activeProviderId && (
-                            <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set as the provider in production on the Setup page">
-                              <Star className="h-2.5 w-2.5" /> Active
+                            <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set on the Setup page">
+                              <Star className="h-2.5 w-2.5" /> In production
                             </Badge>
                           )}
                         </div>
@@ -675,12 +705,12 @@ export default function Rankings() {
                             verdict named; rank 1 without a verdict win is
                             "leading", not decided. */}
                         {verdictWinnerId === r.providerId ? (
-                          <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named winner by this group's verdict: the gap to the runner-up survived the noise floor.">
-                            <CheckCircle2 className="w-3 h-3 mr-1" /> Recommended
+                          <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named by this group's verdict: the gap to the runner-up is bigger than the margin of error.">
+                            <CheckCircle2 className="w-3 h-3 mr-1" /> Winner
                           </div>
                         ) : r.rank === 1 ? (
-                          <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best composite score, but the verdict above did not name a winner -- not decision-grade." : "Best composite score across all bulks. The all-time view has no noise-floor verdict, so nothing here is decision-grade."}>
-                            Leading, not decided
+                          <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above did not name a winner: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
+                            Ahead, not a winner
                           </div>
                         ) : null}
                       </TableCell>
@@ -700,7 +730,7 @@ export default function Rankings() {
                           const better = delta < 0
                           return (
                             <div className={`text-[10px] font-normal ${better ? "text-success" : delta > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {better ? "" : "+"}{delta.toFixed(2)} vs active
+                              {better ? "" : "+"}{delta.toFixed(2)} vs production
                             </div>
                           )
                         })()}
@@ -714,15 +744,15 @@ export default function Rankings() {
                             rank on directly. Shown small and separate so
                             the two are never confused for the same thing. */}
                         {r.score.avgPeerFlagCount != null && (
-                          <div className="text-[10px] font-normal text-muted-foreground" title="Cross-provider disagreement + wrong entities only, excluding self-reported confidence -- this is the number Rank is actually computed from.">
+                          <div className="text-[10px] font-normal text-muted-foreground" title="Disagreements with other providers + wrong entities only, a provider's own low-confidence words excluded. This is the number Rank uses.">
                             peer: {r.score.avgPeerFlagCount.toFixed(2)}
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-mono" title="0=none .. 3=high, averaged across this provider's cells in this group">
+                      <TableCell className="text-right font-mono" title="0 = none .. 3 = high, averaged over this provider's transcripts in this group">
                         {r.score.avgFlagSeverityScore != null ? r.score.avgFlagSeverityScore.toFixed(2) : <span title="Not measured in this run">—</span>}
                         {r.score.avgPeerFlagSeverityScore != null && (
-                          <div className="text-[10px] font-normal text-muted-foreground" title="Severity of peer-only flags -- what Rank actually uses.">
+                          <div className="text-[10px] font-normal text-muted-foreground" title="How serious the disagreements were (own low-confidence words excluded). This is what Rank uses.">
                             peer: {r.score.avgPeerFlagSeverityScore.toFixed(2)}
                           </div>
                         )}
@@ -730,10 +760,10 @@ export default function Rankings() {
                       {/* T-19: rates computed by the API when the snapshot was
                           written. Peer-only basis, same as Rank. A snapshot
                           from before T-19 shows "—" until recomputed. */}
-                      <TableCell className="text-right font-mono" title="Peer-only flags per 100 words this provider transcribed in this group -- comparable across call lengths">
+                      <TableCell className="text-right font-mono" title="Disagreements per 100 words this provider transcribed in this group. Comparable across call lengths.">
                         {r.score.peerFlagsPer100Words != null ? r.score.peerFlagsPer100Words.toFixed(2) : <span title="Not in this snapshot">—</span>}
                       </TableCell>
-                      <TableCell className="text-right font-mono" title="Share of this provider's scored calls with zero peer flags">
+                      <TableCell className="text-right font-mono" title="Share of this provider's scored calls with zero disagreements">
                         {r.score.cleanCallRate != null ? `${(r.score.cleanCallRate * 100).toFixed(0)}%` : <span title="Not in this snapshot">—</span>}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
@@ -760,7 +790,7 @@ export default function Rankings() {
                   {/* T-57: this footer explains the composite ORDER; the
                       decision itself is the verdict headline at the top. */}
                   <p className="text-foreground">
-                    <span className="font-semibold mr-1">{verdictWinnerId ? "Decision Logic:" : "Composite order (not the decision):"}</span>
+                    <span className="font-semibold mr-1">Why this order:</span>
                     {winner.recommendation}
                   </p>
                 </div>

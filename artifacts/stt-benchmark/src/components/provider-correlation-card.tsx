@@ -44,7 +44,7 @@ export function ProviderCorrelationCard({ bulkId }: { bulkId: string }) {
     return (
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Provider correlation</CardTitle>
+          <CardTitle className="text-base">Which providers agree too much</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           Needs at least two providers with successful transcripts on the same calls. This bulk has{" "}
@@ -57,12 +57,10 @@ export function ProviderCorrelationCard({ bulkId }: { bulkId: string }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Provider correlation</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Share of words each pair transcribed identically, over {data.callCount} call
-          {data.callCount === 1 ? "" : "s"}. Most pairs agree a lot because most words are right; what marks a
-          shared engine is a pair agreeing with each other more than either does with everyone else (shown as
-          points above that baseline). Such a pair is one witness, not two.
+        <CardTitle className="text-base">Which providers agree too much</CardTitle>
+        <p className="text-xs text-muted-foreground" title="Share of words each pair transcribed identically, over the calls both ran. Points shown are above the pair's average agreement with everyone else.">
+          A pair that agrees more with each other than with everyone else counts as one opinion, not two.
+          Over {data.callCount} call{data.callCount === 1 ? "" : "s"}.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">

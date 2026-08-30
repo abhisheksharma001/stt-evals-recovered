@@ -161,7 +161,7 @@ function ComparisonBody({ data }: { data: CallComparison }) {
       {/* Rows */}
       <section className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Provider outputs</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground" title="Lower is better on every number in this table">Provider outputs · lower is better</h4>
           <span className="text-[10px] font-mono text-muted-foreground">
             {data.rows.length} provider{data.rows.length === 1 ? "" : "s"}
             {missing > 0 && <>, <span className="text-warning">{missing} without output</span></>}
@@ -193,10 +193,10 @@ function ComparisonBody({ data }: { data: CallComparison }) {
             <div className="grid grid-cols-[1.2fr_5rem_5rem_5rem_5rem_5rem] items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <span>Provider</span>
               <span className="text-right" title={`Words that differ from ${referenceLabel} / words in the reference. Can exceed the reference length when a transcript is much longer than it.`}>Differ / ref</span>
-              <span className="text-right" title="Peer flags: cross-provider disagreement + entity mismatches only (confidence excluded, comparable across all providers)">Peer flags</span>
-              <span className="text-right" title="Low-confidence spans this provider reported itself (only providers that report confidence)">Low-conf</span>
-              <span className="text-right" title="Time to the final transcript">Latency</span>
-              <span className="text-right" title="Recorded cost of this cell">Cost</span>
+              <span className="text-right" title="Disagreements with the other providers + entity mismatches only (confidence excluded, comparable across all providers). Lower is better.">Disagreements ↓</span>
+              <span className="text-right" title="Low-confidence spans this provider reported itself (only providers that report confidence). Lower is better.">Unsure words ↓</span>
+              <span className="text-right" title="Time to the final transcript. Lower is better.">Speed ↓</span>
+              <span className="text-right" title="Recorded cost of this transcript. Lower is better.">Cost ↓</span>
             </div>
             {data.productionRow && (
               <ProductionRow text={data.productionRow.text} diff={data.productionRow.diff} production={data.production} />
