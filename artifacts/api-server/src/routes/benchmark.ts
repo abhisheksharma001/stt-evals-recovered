@@ -16,7 +16,7 @@ import {
   type BenchmarkRunRow,
 } from "@workspace/db";
 import { getProviderAdapter } from "@workspace/stt-providers";
-import { latestFinishedBulk, monthSpend, needsHuman, runningBulk, spanAdjudicationCounts } from "../lib/overview";
+import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
 import { callDisagreement } from "../lib/call-disagreement";
 import {
@@ -349,7 +349,6 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
     needsHuman(),
     monthSpend(),
   ]);
-  const spans = finished ? { bulkId: finished.id, ...(await spanAdjudicationCounts(finished.id)) } : null;
 
   const latestRunStatus = latestRuns[0]?.status ?? "blocked";
   // 2026-08-27, per Abhishek: gold-transcript stage retired, then the
@@ -378,7 +377,7 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
             : "Ready for controlled benchmark run",
     latestFinishedBulk: finished,
     runningBulk: running,
-    needsHuman: { ...human, spans },
+    needsHuman: human,
     thisMonth: month,
   };
 

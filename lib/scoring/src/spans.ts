@@ -3,7 +3,7 @@
 //
 // The hybrid pass (hybrid.ts) already knows THAT providers disagree and how
 // much; it works on normalized word positions and never touches time. This
-// module turns those positions into something a human can adjudicate by
+// module turns those positions into something a person can check by
 // ear: a list of short spans, each with a start/end in seconds taken from a
 // provider that returned word-level timings, and every provider's reading
 // of that stretch side by side.
@@ -41,7 +41,7 @@ export type SpanReading = {
 
 export type DisagreementSpan = {
   /** Start/end of the disputed words, in milliseconds, from the reference
-   *  provider's timings. Integers so they can key an adjudication row. */
+   *  provider's timings. Integers so they can key a span. */
   startMs: number;
   endMs: number;
   /** A couple of reference words either side, for reading in context. */

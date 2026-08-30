@@ -6,7 +6,6 @@
 // field says so with null / a separate "unpriced" count.
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import {
-  benchmarkAdjudicationsTable,
   benchmarkAgentScansTable,
   benchmarkBulksTable,
   benchmarkCallsTable,
@@ -16,7 +15,6 @@ import {
   db,
 } from "@workspace/db";
 import { isFailureClass, isRetryableFailureClass } from "@workspace/stt-providers";
-import { buildSpansForCallRun } from "./disagreement-spans";
 
 /** Bulks that have finished executing. `partial` is finished-with-failures,
  *  not in-flight, so it counts: its verdict is as real as a `complete` one. */
@@ -67,72 +65,6 @@ export async function runningBulk(): Promise<{ id: string; name: string } | null
     .orderBy(desc(benchmarkBulksTable.createdAt))
     .limit(1);
   return row ?? null;
-}
-
-// Spans are a pure function of stored, immutable result rows (see
-// lib/disagreement-spans.ts), so the set of span keys for a (call, run) never
-// changes once computed. Cache it per process: the first Overview load after
-// a restart pays for the build, every later one is a Map lookup plus one
-// cheap adjudications query. Adjudications are NOT cached -- they change.
-const spanKeysByCellRun = new Map<string, string[]>();
-const spanKey = (startMs: number, endMs: number) => `${startMs}-${endMs}`;
-
-async function spanKeysFor(callId: string, runId: string): Promise<string[]> {
-  const key = `${callId}::${runId}`;
-  const cached = spanKeysByCellRun.get(key);
-  if (cached) return cached;
-  const built = await buildSpansForCallRun(callId, runId);
-  const keys = built.spans.map((s) => spanKey(s.startMs, s.endMs));
-  spanKeysByCellRun.set(key, keys);
-  return keys;
-}
-
-export type SpanAdjudicationCounts = { total: number; adjudicated: number };
-
-/** Disagreement spans in a finished bulk, and how many a human has already
- *  ruled on (T-67's gap). One (call, run) pair per call: the run in this
- *  bulk that holds the call's successful cells -- the same default the
- *  adjudication page uses when no run is named. */
-export async function spanAdjudicationCounts(bulkId: string): Promise<SpanAdjudicationCounts> {
-  const runs = await db
-    .select({ id: benchmarkRunsTable.id })
-    .from(benchmarkRunsTable)
-    .where(eq(benchmarkRunsTable.bulkId, bulkId));
-  if (runs.length === 0) return { total: 0, adjudicated: 0 };
-  const runIds = runs.map((r) => r.id);
-
-  const cells = await db
-    .selectDistinct({
-      callId: benchmarkProviderCallResultsTable.callId,
-      runId: benchmarkProviderCallResultsTable.runId,
-    })
-    .from(benchmarkProviderCallResultsTable)
-    .where(
-      and(
-        inArray(benchmarkProviderCallResultsTable.runId, runIds),
-        eq(benchmarkProviderCallResultsTable.status, "ok"),
-      ),
-    );
-
-  const adjudications = await db
-    .select({
-      callId: benchmarkAdjudicationsTable.callId,
-      runId: benchmarkAdjudicationsTable.runId,
-      startMs: benchmarkAdjudicationsTable.spanStartMs,
-      endMs: benchmarkAdjudicationsTable.spanEndMs,
-    })
-    .from(benchmarkAdjudicationsTable)
-    .where(inArray(benchmarkAdjudicationsTable.runId, runIds));
-  const adjudicated = new Set(adjudications.map((a) => `${a.callId}::${a.runId}::${spanKey(a.startMs, a.endMs)}`));
-
-  let total = 0;
-  let adjudicatedCount = 0;
-  for (const cell of cells) {
-    const keys = await spanKeysFor(cell.callId, cell.runId);
-    total += keys.length;
-    for (const k of keys) if (adjudicated.has(`${cell.callId}::${cell.runId}::${k}`)) adjudicatedCount += 1;
-  }
-  return { total, adjudicated: adjudicatedCount };
 }
 
 export type NeedsHuman = {
@@ -195,8 +127,7 @@ export type MonthSpend = {
   sttMicrocents: number;
   sttCellsPriced: number;
   sttCellsUnpriced: number;
-  /** OpenAI judge spend this month: agent scans plus judge replays on
-   *  adjudicated spans. Same unpriced rule. */
+  /** OpenAI judge spend this month: agent scans. Same unpriced rule. */
   agentMicrocents: number;
   agentJudgementsPriced: number;
   agentJudgementsUnpriced: number;
@@ -212,7 +143,7 @@ export async function monthSpend(now = new Date()): Promise<MonthSpend> {
   const unpriced = (col: unknown) => sql<number>`count(*) filter (where ${col} is null)::int`;
   const total = (col: unknown) => sql<number>`coalesce(sum(${col}), 0)::bigint`;
 
-  const [[stt], [scans], [replays]] = await Promise.all([
+  const [[stt], [scans]] = await Promise.all([
     db
       .select({
         micro: total(benchmarkScoresTable.costMicrocents),
@@ -237,14 +168,6 @@ export async function monthSpend(now = new Date()): Promise<MonthSpend> {
           sql`${benchmarkAgentScansTable.judgePromptTokens} is not null`,
         ),
       ),
-    db
-      .select({
-        micro: total(benchmarkAdjudicationsTable.judgeCostMicrocents),
-        priced: priced(benchmarkAdjudicationsTable.judgeCostMicrocents),
-        unpriced: unpriced(benchmarkAdjudicationsTable.judgeCostMicrocents),
-      })
-      .from(benchmarkAdjudicationsTable)
-      .where(gte(benchmarkAdjudicationsTable.judgeReplayedAt, start)),
   ]);
 
   return {
@@ -252,8 +175,8 @@ export async function monthSpend(now = new Date()): Promise<MonthSpend> {
     sttMicrocents: Number(stt?.micro ?? 0),
     sttCellsPriced: stt?.priced ?? 0,
     sttCellsUnpriced: stt?.unpriced ?? 0,
-    agentMicrocents: Number(scans?.micro ?? 0) + Number(replays?.micro ?? 0),
-    agentJudgementsPriced: (scans?.priced ?? 0) + (replays?.priced ?? 0),
-    agentJudgementsUnpriced: (scans?.unpriced ?? 0) + (replays?.unpriced ?? 0),
+    agentMicrocents: Number(scans?.micro ?? 0),
+    agentJudgementsPriced: scans?.priced ?? 0,
+    agentJudgementsUnpriced: scans?.unpriced ?? 0,
   };
 }

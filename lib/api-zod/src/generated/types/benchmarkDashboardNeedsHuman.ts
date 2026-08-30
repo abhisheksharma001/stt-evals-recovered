@@ -5,12 +5,9 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
-import type { BenchmarkDashboardNeedsHumanSpans } from './benchmarkDashboardNeedsHumanSpans';
 
 export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
-  /** @nullable */
-  spans: BenchmarkDashboardNeedsHumanSpans;
 };

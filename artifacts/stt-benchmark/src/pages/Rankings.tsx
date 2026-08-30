@@ -17,7 +17,6 @@ import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText } from "lucide-react"
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { JudgeAccuracyCard } from "@/components/judge-accuracy-card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { ClientTrendSection, TrendStrip } from "@/components/trend-strip"
@@ -363,12 +362,6 @@ export default function Rankings() {
   // it, so setting it actually changes what the page tells you.
   const { data: settings } = useGetAppSettings()
   const activeProviderId = settings?.activeProviderId ?? null
-  // T-09: provider display names for the judge-vs-human card.
-  const { data: providerList } = useListBenchmarkProviders()
-  const providerNames = React.useMemo(
-    () => Object.fromEntries((providerList ?? []).map((p) => [p.id, p.name])),
-    [providerList],
-  )
   // T-21: one verdict fetch per bulk, shared by the banner and every group
   // card. Only meaningful for a single bulk -- the all-time view has no
   // noise floor of its own and shows no verdict rather than a wrong one.
@@ -557,13 +550,6 @@ export default function Rankings() {
           </CardContent>
         </Card>
       )}
-
-      {/* T-09: the one number that says whether the judge can be trusted
-          to stand in for a listening human -- and its sample size. T-74
-          (E.1): moved from above the bulk picker to here -- a reader now
-          meets the verdict and its cost before this trust metric, and
-          knows which bulk it is about. Still above every "agent pick". */}
-      <JudgeAccuracyCard providerNames={providerNames} />
 
       {/* T-18: how independent the providers' votes are. Sits right under
           the cost line so it is read before the table it qualifies. */}

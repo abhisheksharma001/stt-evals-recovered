@@ -52,7 +52,7 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
 }
 
-// T-49: who is acting. The API attributes every write (adjudications, bulk
+// T-49: who is acting. The API attributes every write (call edits, bulk
 // launches, audit rows) to the `x-actor` header and falls back to "unknown"
 // when it is missing -- which it always was, because nothing here sent it.
 // One label, set once at app start, attached to every request.

@@ -2,10 +2,7 @@
  * T-26: record the judge contract fixture. LIVE -- spends OpenAI money.
  *
  * Re-judges, with the CURRENT prompt (baml_src/judge.baml) and JUDGE_MODEL:
- *   1. every human-adjudicated span in benchmark_adjudications (T-08), the
- *      same question T-09's replay asks, so the fixture's agreement rate is
- *      "judge vs. human" and nothing softer;
- *   2. a fixed, deterministic sample of saved flagged scans (latest scan per
+ *   a fixed, deterministic sample of saved flagged scans (latest scan per
  *      call, ordered by call id, first --scans N), rebuilt from the same
  *      inputs agent-verify.ts gave the judge the first time.
  *
@@ -22,7 +19,7 @@
  * calling OpenAI or writing the fixture.
  */
 import { writeFileSync } from "node:fs";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 const args = process.argv.slice(2);
 function argValue(flag: string, fallback: number): number {
@@ -34,27 +31,20 @@ const DRY_RUN = args.includes("--dry-run");
 
 async function main() {
   const {
-    benchmarkAdjudicationsTable,
     benchmarkAgentScansTable,
     benchmarkProviderCallResultsTable,
     benchmarkProvidersTable,
     db,
     pool,
   } = await import("@workspace/db");
-  const { picksAgree } = await import("@workspace/scoring");
   const { JUDGE_MODEL, judgeCandidates } = await import("./lib/agent");
-  const { buildSpansForCallRun } = await import("./lib/disagreement-spans");
-  const { judgeInputForSpan } = await import("./lib/judge-accuracy");
   const { fixturePath, judgePromptHash, summarizeJudgeContract } = await import("./lib/judge-contract");
   type Fixture = import("./lib/judge-contract").JudgeContractFixture;
 
   const providerRows = await db.select({ id: benchmarkProvidersTable.id, name: benchmarkProvidersTable.name }).from(benchmarkProvidersTable);
   const providerNames = new Map(providerRows.map((p) => [p.id, p.name]));
 
-  // ---- 1. human-adjudicated spans (all of them) ----------------------------
-  const adjudications = await db.select().from(benchmarkAdjudicationsTable).orderBy(asc(benchmarkAdjudicationsTable.adjudicatedAt), asc(benchmarkAdjudicationsTable.id));
-
-  // ---- 2. saved flagged scans: latest per call, deterministic sample -------
+  // ---- saved flagged scans: latest per call, deterministic sample -------
   const flaggedScans = await db
     .select({
       id: benchmarkAgentScansTable.id,
@@ -77,7 +67,6 @@ async function main() {
   // runs with every cell failed) are skipped and the next call fills in.
   const scanCandidates = [...latestPerCall.values()].sort((a, b) => a.callId.localeCompare(b.callId));
 
-  console.log(`adjudicated spans on file: ${adjudications.length}`);
   console.log(`flagged scans (latest per call, with a run and flags): ${latestPerCall.size}; sampling up to ${SCAN_SAMPLE}`);
   console.log(`model: ${JUDGE_MODEL}; prompt hash: ${judgePromptHash(JUDGE_MODEL)}`);
   if (DRY_RUN) {
@@ -93,41 +82,8 @@ async function main() {
     model: JUDGE_MODEL,
     promptHash: judgePromptHash(JUDGE_MODEL),
     costMicrocents: 0,
-    adjudications: [],
     scans: [],
   };
-
-  const spansByCallRun = new Map<string, Map<string, Awaited<ReturnType<typeof buildSpansForCallRun>>["spans"][number]>>();
-  for (const row of adjudications) {
-    const key = `${row.callId}::${row.runId}`;
-    let spans = spansByCallRun.get(key);
-    if (!spans) {
-      const built = await buildSpansForCallRun(row.callId, row.runId);
-      spans = new Map(built.spans.map((s) => [`${s.startMs}-${s.endMs}`, s]));
-      spansByCallRun.set(key, spans);
-    }
-    const span = spans.get(`${row.spanStartMs}-${row.spanEndMs}`);
-    const candidateProviderIds = row.readings.map((r) => r.providerId);
-    if (!span) {
-      console.warn(`adjudication ${row.id}: span not rebuildable from stored results -- recorded as judge null`);
-      fixture.adjudications.push({
-        adjudicationId: row.id, callId: row.callId, runId: row.runId, spanStartMs: row.spanStartMs, spanEndMs: row.spanEndMs,
-        candidateProviderIds, humanProviderId: row.correctProviderId, judgeProviderId: null, agrees: null,
-      });
-      continue;
-    }
-    // Model deliberately NOT overridden from app_settings: the contract is
-    // for JUDGE_MODEL, the code default, which is what the hash pins.
-    const result = await judgeCandidates(judgeInputForSpan(span, row.readings, providerNames));
-    fixture.costMicrocents += result.costMicrocents ?? 0;
-    const judgeProviderId = result.pickedProviderId && candidateProviderIds.includes(result.pickedProviderId) ? result.pickedProviderId : null;
-    fixture.adjudications.push({
-      adjudicationId: row.id, callId: row.callId, runId: row.runId, spanStartMs: row.spanStartMs, spanEndMs: row.spanEndMs,
-      candidateProviderIds, humanProviderId: row.correctProviderId, judgeProviderId,
-      agrees: picksAgree({ readings: row.readings, humanProviderId: row.correctProviderId, judgeProviderId, adjudicatedByLabel: row.adjudicatedByLabel }),
-    });
-    console.log(`adjudication ${row.id.slice(0, 8)}: human=${row.correctProviderId} judge=${judgeProviderId}`);
-  }
 
   for (const scan of scanCandidates) {
     if (fixture.scans.length >= SCAN_SAMPLE) break;

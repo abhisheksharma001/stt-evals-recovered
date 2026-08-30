@@ -27,7 +27,6 @@ import {
   Loader2,
   Users,
   AlertCircle,
-  Gavel,
 } from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -38,7 +37,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { SpanAdjudicator } from "@/components/span-adjudicator"
+import { DisagreementSpans } from "@/components/disagreement-spans"
 import { ProviderComparisonSection } from "@/components/provider-comparison-section"
 import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 
@@ -277,11 +276,10 @@ export default function Corpus() {
 // every expanded row rather than one query per row (corpus-sized dataset,
 // cheap either way, and avoids a waterfall as rows expand).
 // T-74 (E.1): the Corpus page's first screen answers "what needs a human?"
-// -- calls awaiting review, calls a person tagged as hard, and disagreement
-// spans nobody has ruled on yet. Same numbers as the Overview's needs-a-human
-// block (one endpoint, GET /benchmark/dashboard), so the two never disagree.
-// The first two chips are filters on the table below; spans are ruled on
-// inside a flagged call's expanded row ("Hear the disagreements").
+// -- calls awaiting review and calls a person tagged as hard. Same numbers
+// as the Overview's needs-a-human block (one endpoint, GET
+// /benchmark/dashboard), so the two never disagree. Both chips are filters
+// on the table below. T-86: no span verdicts -- there is no human judge.
 function NeedsHumanStrip({
   data,
   statusFilter,
@@ -289,13 +287,12 @@ function NeedsHumanStrip({
   onAwaitingReview,
   onHardCases,
 }: {
-  data: { callsAwaitingReview: number; hardCaseCalls: number; spans: { total: number; adjudicated: number } | null } | undefined
+  data: { callsAwaitingReview: number; hardCaseCalls: number } | undefined
   statusFilter: string
   hardCasesOnly: boolean
   onAwaitingReview: () => void
   onHardCases: () => void
 }) {
-  const openSpans = data?.spans ? data.spans.total - data.spans.adjudicated : null
   const chip = (active: boolean, attention: boolean) =>
     `flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left transition-colors ${
       active ? "border-primary bg-primary/10" : attention ? "border-warning/30 bg-warning/5 hover:bg-warning/10" : "border-border hover:bg-muted/40"
@@ -304,7 +301,7 @@ function NeedsHumanStrip({
   return (
     <section aria-label="Needs a human" className="space-y-1.5">
       <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Needs a human</h2>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         <button className={chip(statusFilter === "needs_review", (data?.callsAwaitingReview ?? 0) > 0)} onClick={onAwaitingReview} aria-pressed={statusFilter === "needs_review"}>
           <Users className={`h-4 w-4 shrink-0 ${(data?.callsAwaitingReview ?? 0) > 0 ? "text-warning" : "text-muted-foreground"}`} />
           <span className="min-w-0">
@@ -321,18 +318,6 @@ function NeedsHumanStrip({
             <span className="block text-[11px] text-muted-foreground">Unusually hard audio per a person. Click to show only these.</span>
           </span>
         </button>
-        <div className={chip(false, (openSpans ?? 0) > 0).replace("hover:bg-warning/10", "").replace("hover:bg-muted/40", "")}>
-          <Gavel className={`h-4 w-4 shrink-0 ${(openSpans ?? 0) > 0 ? "text-warning" : "text-muted-foreground"}`} />
-          <span className="min-w-0">
-            <span className="font-mono text-lg font-semibold tabular-nums leading-none">{num(openSpans)}</span>
-            <span className="ml-2 text-sm font-medium">spans not yet ruled on</span>
-            <span className="block text-[11px] text-muted-foreground">
-              {data?.spans
-                ? `${data.spans.adjudicated} of ${data.spans.total} adjudicated in the latest finished bulk. Expand a flagged call → "Hear the disagreements".`
-                : "No finished bulk yet, so nothing to rule on."}
-            </span>
-          </span>
-        </div>
       </div>
     </section>
   )
@@ -480,14 +465,14 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
       {/* T-72: the per-candidate rows (transcript, low-confidence spans,
           disagreement share) moved into ProviderComparisonSection above,
           where each provider's output is diffed against the reference. */}
-      {/* T-08: the audio-anchored evidence view (D.3.2). Shown for clean
-          scans too -- "clean" is the hybrid pass's threshold, and a reader
-          may still want to hear the handful of words that differed. */}
+      {/* T-08 / T-86: the audio-anchored evidence view (D.3.2), listen-only.
+          Shown for clean scans too -- a reader may still want to hear the
+          handful of words that differed. Nobody records a verdict here. */}
       <div className="pt-1">
         <h5 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
           Hear the disagreements
         </h5>
-        <SpanAdjudicator
+        <DisagreementSpans
           callId={scan.callId}
           runId={scan.runId ?? null}
           providerNames={Object.fromEntries(candidates.map((c) => [c.providerId, c.providerName]))}

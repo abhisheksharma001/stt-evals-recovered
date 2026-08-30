@@ -12,94 +12,6 @@ export interface SpanReading {
   agreesWithMajority: boolean;
 }
 
-export type AdjudicationReadingsItem = {
-  providerId: string;
-  text: string;
-};
-
-export interface Adjudication {
-  id: string;
-  callId: string;
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
-  /** @nullable */
-  correctProviderId: string | null;
-  readings: AdjudicationReadingsItem[];
-  adjudicatedByLabel: string;
-  adjudicatedAt: string;
-}
-
-export interface JudgeAccuracyReplayRequest {
-  /**
-     * Max spans to replay in this request; capped server-side.
-     * @nullable
-     */
-  limit?: number | null;
-}
-
-export interface JudgeAccuracyReplayResponse {
-  replayed: number;
-  /** Verdicts still not replayed after this request. */
-  remaining: number;
-  /** Verdicts whose span could not be rebuilt from stored results; marked replayed with no judge pick. */
-  spanNotFound: number;
-  /** Judge calls that errored; left pending for a later replay. */
-  judgeFailed: number;
-  costMicrocents: number;
-}
-
-export type JudgeAccuracyItemReadingsItem = {
-  providerId: string;
-  text: string;
-};
-
-export interface JudgeAccuracyItem {
-  adjudicationId: string;
-  callId: string;
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
-  /** @nullable */
-  humanProviderId: string | null;
-  /** @nullable */
-  judgeProviderId: string | null;
-  /** @nullable */
-  agrees: boolean | null;
-  /** @nullable */
-  judgeReasoning: string | null;
-  adjudicatedByLabel: string;
-  readings: JudgeAccuracyItemReadingsItem[];
-}
-
-export type JudgeAccuracyResponseByAdjudicatorItem = {
-  label: string;
-  comparable: number;
-  agreements: number;
-  /** @nullable */
-  agreementRate: number | null;
-};
-
-export interface JudgeAccuracyResponse {
-  totalVerdicts: number;
-  replayed: number;
-  pending: number;
-  humanSaidNone: number;
-  judgeNoPick: number;
-  comparable: number;
-  agreements: number;
-  /** @nullable */
-  agreementRate: number | null;
-  byAdjudicator: JudgeAccuracyResponseByAdjudicatorItem[];
-  majorityComparable: number;
-  majorityAgreements: number;
-  /** @nullable */
-  majorityAgreementRate: number | null;
-  replayCostMicrocents: number;
-  replayBatchLimit: number;
-  items: JudgeAccuracyItem[];
-}
-
 export interface DisagreementSpan {
   startMs: number;
   endMs: number;
@@ -113,7 +25,6 @@ export interface DisagreementSpan {
      */
   referencePositions: number[];
   readings: SpanReading[];
-  adjudication: Adjudication | null;
 }
 
 export type DisagreementSpansResponseUnavailableReason = typeof DisagreementSpansResponseUnavailableReason[keyof typeof DisagreementSpansResponseUnavailableReason] | null;
@@ -134,20 +45,6 @@ export interface DisagreementSpansResponse {
   referenceWords: string[];
   unavailableReason: DisagreementSpansResponseUnavailableReason;
   spans: DisagreementSpan[];
-}
-
-export type SpanAdjudicationRequestReadingsItem = {
-  providerId: string;
-  text: string;
-};
-
-export interface SpanAdjudicationRequest {
-  runId: string;
-  spanStartMs: number;
-  spanEndMs: number;
-  /** @nullable */
-  correctProviderId: string | null;
-  readings: SpanAdjudicationRequestReadingsItem[];
 }
 
 export interface HealthStatus {
@@ -1055,21 +952,10 @@ export type BenchmarkDashboardRunningBulk = {
   name: string;
 } | null;
 
-/**
- * @nullable
- */
-export type BenchmarkDashboardNeedsHumanSpans = {
-  bulkId: string;
-  total: number;
-  adjudicated: number;
-} | null;
-
 export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
-  /** @nullable */
-  spans: BenchmarkDashboardNeedsHumanSpans;
 };
 
 export type BenchmarkDashboardThisMonth = {

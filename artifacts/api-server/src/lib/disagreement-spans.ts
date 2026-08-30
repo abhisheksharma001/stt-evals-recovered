@@ -1,6 +1,5 @@
-// T-09: the span builder that routes/adjudications.ts used to inline, pulled
-// out so the judge replay (lib/judge-accuracy.ts) rebuilds a span from the
-// exact same inputs the human saw. Spans are a pure function of stored,
+// T-09 / T-86: the span builder shared by routes/disagreement-spans.ts and
+// lib/words-to-watch.ts, so both read a span from the exact same inputs. Spans are a pure function of stored,
 // immutable results, so rebuilding is how a (call, run, startMs, endMs) key
 // is turned back into words and context -- nothing about a span is stored.
 import { and, eq } from "drizzle-orm";
