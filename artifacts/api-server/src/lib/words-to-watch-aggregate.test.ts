@@ -73,7 +73,7 @@ describe("aggregateWordsToWatch (T-87)", () => {
   it("calls a split 'format' when the readings differ only in convention", () => {
     expect(canonicalReading("in -person")).toBe("in person");
     expect(canonicalReading("One-Bedroom, uh")).toBe("1 bedroom");
-    expect(canonicalReading("you ma 'am")).toBe("you ma'am");
+    expect(canonicalReading("you ma 'am")).toBe("you maam");
     expect(classifyWatchKind(["1-bedroom", "one-bedroom", "1 -bedroom"])).toBe("format");
     expect(classifyWatchKind(["in -person", "in person"])).toBe("format");
     expect(classifyWatchKind(["his wi fi", "his wi-fi", "his wifi", "uh his wi-fi-"])).toBe("format");

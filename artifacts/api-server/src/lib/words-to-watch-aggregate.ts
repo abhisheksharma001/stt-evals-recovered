@@ -11,6 +11,8 @@
 //
 // Nobody here decides which reading is right (T-86: no human judge). The
 // list says where the providers split; a person listens if they care.
+import { canonicalTranscript } from "@workspace/scoring";
+
 export type WatchSpanInput = {
   callId: string;
   majorityText: string | null;
@@ -33,30 +35,11 @@ export type WatchKind = "number" | "word" | "format" | "filler";
 const FILLERS = new Set(["", "um", "uh", "umm", "uhh", "hmm", "mm", "mhm", "yeah", "yep", "okay", "ok", "oh", "ah", "like", "so", "well", "right", "huh"]);
 const isFillerText = (t: string) => t.split(/\s+/).every((w) => FILLERS.has(w.replace(/[^a-z0-9']/g, "")));
 
-/** Disfluencies dropped before comparing readings for `format`. Narrower
- *  than FILLERS on purpose: "yeah" / "okay" / "right" carry an answer. */
-const DISFLUENCIES = new Set(["um", "uh", "umm", "uhh", "hmm", "mm", "mhm", "ah"]);
-const NUMBER_WORDS: Record<string, string> = {
-  zero: "0", one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10",
-  eleven: "11", twelve: "12", thirteen: "13", fourteen: "14", fifteen: "15", sixteen: "16", seventeen: "17", eighteen: "18", nineteen: "19",
-  twenty: "20", thirty: "30", forty: "40", fifty: "50", sixty: "60", seventy: "70", eighty: "80", ninety: "90",
-};
-
-/** One reading reduced to what it says: lower-case, hyphens and stray
- *  hyphen spacing become plain spaces, apostrophe spacing closed ("ma 'am"),
- *  punctuation dropped, disfluencies dropped, "one".."ninety" as digits.
- *  Two readings with the same canonical form differ in convention only. */
-export function canonicalReading(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\s*-+\s*/g, " ")
-    .replace(/\s*'\s*/g, "'")
-    .split(/\s+/)
-    .map((w) => w.replace(/[^a-z0-9']/g, ""))
-    .filter((w) => w !== "" && !DISFLUENCIES.has(w))
-    .map((w) => NUMBER_WORDS[w] ?? w)
-    .join(" ");
-}
+/** T-101: the comparison form now lives in the scoring lib
+ *  (`canonicalTranscript`), shared with the hybrid flags and the spans, so
+ *  what does not flag a call cannot appear here either. Kept as a named
+ *  export for the tests. */
+export const canonicalReading = (text: string): string => canonicalTranscript(text);
 
 export function classifyWatchKind(texts: readonly string[]): WatchKind {
   if (texts.some((t) => /\d/.test(t))) {
