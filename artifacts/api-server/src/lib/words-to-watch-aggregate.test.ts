@@ -51,7 +51,17 @@ describe("aggregateWordsToWatch (T-87)", () => {
       { callId: "c3", majorityText: "", readings: [r("a", ""), r("b", "uh")] },
       { callId: "c1", majorityText: "unit 4", readings: [r("a", "unit 4"), r("b", "unit for")] },
     ]);
-    expect(out.map((w) => [w.heardAs, w.kind])).toEqual([["unit 4", "number"], ["", "filler"]]);
+    // "" spans split by what the odd provider heard ("um" x2 calls, "uh" x1), both filler, both last.
+    expect(out.map((w) => [w.heardAs, w.kind, w.calls])).toEqual([["unit 4", "number", 1], ["", "filler", 2], ["", "filler", 1]]);
+  });
+
+  it("splits 'most heard nothing' spans by what the odd provider heard", () => {
+    const out = aggregateWordsToWatch([
+      { callId: "c1", majorityText: "", readings: [r("a", ""), r("b", ""), r("d", "0")] },
+      { callId: "c2", majorityText: "", readings: [r("a", ""), r("b", ""), r("d", "0")] },
+      { callId: "c1", majorityText: "", readings: [r("a", ""), r("b", ""), r("c", "sweet")] },
+    ]);
+    expect(out.map((w) => [w.heardAs, w.calls, w.alternatives[0]!.text])).toEqual([["", 2, "0"], ["", 1, "sweet"]]);
   });
 
   it("returns nothing from nothing -- never a made-up row", () => {

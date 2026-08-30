@@ -55,6 +55,7 @@ const DEFAULT_LIMIT = 30;
 
 export function aggregateWordsToWatch(spans: WatchSpanInput[], limit = DEFAULT_LIMIT): WatchWord[] {
   type Entry = {
+    heardAs: string;
     noMajorityAll: boolean;
     calls: Map<string, number>;
     spans: number;
@@ -65,7 +66,12 @@ export function aggregateWordsToWatch(spans: WatchSpanInput[], limit = DEFAULT_L
     if (span.readings.length === 0) continue;
     const tie = span.majorityText === null;
     const heardAs = tie ? [...span.readings].map((r) => r.text).sort()[0]! : span.majorityText!;
-    const entry = byText.get(heardAs) ?? { noMajorityAll: true, calls: new Map(), spans: 0, alternatives: new Map() };
+    // "Most heard nothing" spans are grouped by what the odd provider DID
+    // hear, not lumped into one "(nothing)" row: "Deepgram hears 0 where
+    // the others hear nothing" is a finding; "(nothing) vs 22 different
+    // things" is not.
+    const groupKey = heardAs === "" ? `\u0000${[...span.readings].map((r) => r.text).filter((t) => t !== "").sort()[0] ?? ""}` : heardAs;
+    const entry = byText.get(groupKey) ?? { heardAs, noMajorityAll: true, calls: new Map(), spans: 0, alternatives: new Map() };
     if (!tie) entry.noMajorityAll = false;
     entry.calls.set(span.callId, (entry.calls.get(span.callId) ?? 0) + 1);
     entry.spans += 1;
@@ -76,12 +82,12 @@ export function aggregateWordsToWatch(spans: WatchSpanInput[], limit = DEFAULT_L
       alt.providerIds.add(r.providerId);
       entry.alternatives.set(r.text, alt);
     }
-    byText.set(heardAs, entry);
+    byText.set(groupKey, entry);
   }
   return [...byText.entries()]
-    .map(([heardAs, e]) => ({
-      heardAs,
-      kind: classifyWatchKind([heardAs, ...e.alternatives.keys()]),
+    .map(([, e]) => ({
+      heardAs: e.heardAs,
+      kind: classifyWatchKind([e.heardAs, ...e.alternatives.keys()]),
       noMajority: e.noMajorityAll,
       calls: e.calls.size,
       spans: e.spans,

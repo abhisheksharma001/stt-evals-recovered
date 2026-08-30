@@ -27,6 +27,7 @@ export function WordsToWatch({
   const params = { bulkId, ...(assistantId ? { assistantId } : {}) }
   const { data, isLoading, isError } = useGetWordsToWatch(params, { query: { queryKey: getGetWordsToWatchQueryKey(params) } })
   const [showAll, setShowAll] = React.useState(false)
+  const [showFillers, setShowFillers] = React.useState(false)
   const nameOf = (id: string) => providerNames[id] ?? id
 
   if (isLoading) {
@@ -38,7 +39,6 @@ export function WordsToWatch({
   }
   if (isError || !data) return <p className="px-4 py-3 text-xs text-destructive">Could not load words to watch.</p>
 
-  const [showFillers, setShowFillers] = React.useState(false)
   const meaningful = data.words.filter((w) => w.kind !== "filler")
   const fillers = data.words.length - meaningful.length
   const visible = showFillers ? data.words : meaningful
@@ -79,7 +79,7 @@ export function WordsToWatch({
               </thead>
               <tbody>
                 {rows.map((w) => (
-                  <tr key={w.heardAs} className="border-t border-border/60 align-top">
+                  <tr key={`${w.heardAs}|${w.alternatives[0]?.text ?? ""}`} className="border-t border-border/60 align-top">
                     <td className="px-4 py-1.5 font-mono">
                       {w.kind === "number" && (
                         <span className="mr-1.5 rounded border border-warning/40 bg-warning/10 px-1 font-sans text-[9px] uppercase tracking-wide text-foreground" title="A digit is involved: phone number, date, amount, unit -- the meaning of the call is at stake">

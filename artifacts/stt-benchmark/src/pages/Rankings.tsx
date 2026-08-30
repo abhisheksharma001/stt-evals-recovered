@@ -10,16 +10,18 @@ import {
   useGetBulkManifest,
   getGetBulkManifestQueryKey,
   type VerticalRanking,
+  type BulkVerdicts,
   useGetCallDisagreement,
   getGetCallDisagreementQueryKey,
 } from "@workspace/api-client-react"
 import { Link } from "wouter"
-import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText } from "lucide-react"
+import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
 import { formatMicrocents } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
-import { ClientTrendSection, TrendStrip } from "@/components/trend-strip"
+import { WordsToWatch } from "@/components/words-to-watch"
+import { ClientTrendSection } from "@/components/trend-strip"
 import { apiBase } from "@/lib/api-base"
 import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupAccountLabel, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -322,6 +324,176 @@ function WithGroupVolume({ assistantId, children }: { assistantId: string | null
   return <>{children(gv)}</>
 }
 
+/** The ranked table for one assistant. Markup unchanged from before T-88;
+ *  pulled out so the page body reads as its hierarchy, not as one 400-line
+ *  expression. */
+function RankingTable({
+  sorted, sortKey, asc, toggleSort, activeProviderId, activeRow, verdictWinnerId, viewMode, listPrices, gv,
+}: {
+  sorted: RankingRow[]
+  sortKey: SortKey
+  asc: boolean
+  toggleSort: (key: SortKey) => void
+  activeProviderId: string | null
+  activeRow: RankingRow | undefined
+  verdictWinnerId: string | null
+  viewMode: "bulk" | "overall"
+  listPrices: Map<string, number>
+  gv: GroupVolume
+}) {
+  const sortAria = (key: SortKey) => (sortKey === key ? (asc ? "ascending" : "descending") : "none")
+  const renderSortIcon = (key: SortKey) =>
+    sortKey !== key ? (
+      <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-40" />
+    ) : asc ? (
+      <ArrowUp className="ml-1 inline h-3 w-3" />
+    ) : (
+      <ArrowDown className="ml-1 inline h-3 w-3" />
+    )
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead
+            aria-sort={sortAria("rank")}
+            className="w-16 text-center cursor-pointer select-none hover:text-foreground"
+            onClick={() => toggleSort("rank")}
+            title={SORT_TITLES.rank}
+          >
+            Rank {DIRECTION.rank}{renderSortIcon("rank")}
+          </TableHead>
+          <TableHead>Provider</TableHead>
+          {(Object.keys(SORT_ASC_DEFAULT) as SortKey[])
+            .filter((k) => k !== "rank")
+            .map((key) => (
+              <TableHead
+                key={key}
+                aria-sort={sortAria(key)}
+                className="text-right cursor-pointer select-none hover:text-foreground"
+                onClick={() => toggleSort(key)}
+                title={SORT_TITLES[key]}
+              >
+                {SORT_LABELS[key]} <span aria-label={DIRECTION[key] === "↓" ? "lower is better" : "higher is better"}>{DIRECTION[key]}</span>
+                {renderSortIcon(key)}
+              </TableHead>
+            ))}
+          <TableHead className="text-right" title="List $/min x this assistant's projected monthly minutes (Vapi, last 14 days x 30/14). Not sortable: it is price x one shared volume, so its order is the list-price order.">
+            $/month ↓
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sorted.map((r) => (
+          <TableRow key={r.providerId} className={r.rank === 1 ? "bg-primary/5" : ""}>
+            <TableCell className="text-center font-mono font-medium">
+              {r.rank === 1 ? <span className="text-primary flex items-center justify-center gap-1 text-lg font-bold"><Trophy className="w-4 h-4" /> 1</span> : r.rank}
+            </TableCell>
+            <TableCell title={r.recommendation ?? undefined}>
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-foreground">{r.providerName}</span>
+                {r.providerId === activeProviderId && (
+                  <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set on the Setup page">
+                    <Star className="h-2.5 w-2.5" /> In production
+                  </Badge>
+                )}
+              </div>
+              {/* T-57: "Recommended" is the verdict's word. The badge
+                  appears only on the provider the T-20 noise-floor
+                  verdict named; rank 1 without a verdict win is
+                  "leading", not decided. */}
+              {verdictWinnerId === r.providerId ? (
+                <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named by this group's verdict: the gap to the runner-up is bigger than the margin of error.">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Winner
+                </div>
+              ) : r.rank === 1 ? (
+                <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above did not name a winner: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
+                  Ahead, not a winner
+                </div>
+              ) : null}
+            </TableCell>
+            {/* Null "—" means "not measured in this run" (spec:
+                distinct from a true zero) -- title says so instead
+                of leaving the dash ambiguous (UX review). 2026-08-27:
+                gold-free -- avgFlagCount replaces WER as the
+                primary metric. FIX-4/UX-6: a non-active row shows
+                its delta against the active provider's flag count
+                right underneath -- lower is better, so a negative
+                (green) delta means this candidate beats the active
+                provider. */}
+            <TableCell className="text-right font-mono font-medium" title={r.recommendation ?? undefined}>
+              {r.score.avgFlagCount != null ? r.score.avgFlagCount.toFixed(2) : <span title="Not measured in this run">—</span>}
+              {activeRow && r.providerId !== activeProviderId && r.score.avgFlagCount != null && activeRow.score.avgFlagCount != null && (() => {
+                const delta = r.score.avgFlagCount! - activeRow.score.avgFlagCount!
+                const better = delta < 0
+                return (
+                  <div className={`text-[10px] font-normal ${better ? "text-success" : delta > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                    {better ? "" : "+"}{delta.toFixed(2)} vs production
+                  </div>
+                )
+              })()}
+              {/* 2026-08-27, found live ("for this call why its
+                  different then?" -- Rank contradicted this
+                  column with no visible reason): Rank is actually
+                  sorted by THIS number, not the one above --
+                  avgFlagCount includes a provider's own self-
+                  reported low confidence, which only 3 of 7
+                  providers report at all, so it isn't fair to
+                  rank on directly. Shown small and separate so
+                  the two are never confused for the same thing. */}
+              {r.score.avgPeerFlagCount != null && (
+                <div className="text-[10px] font-normal text-muted-foreground" title="Disagreements with other providers + wrong entities only, a provider's own low-confidence words excluded. This is the number Rank uses.">
+                  peer: {r.score.avgPeerFlagCount.toFixed(2)}
+                </div>
+              )}
+            </TableCell>
+            <TableCell className="text-right font-mono" title="0 = none .. 3 = high, averaged over this provider's transcripts in this group">
+              {r.score.avgFlagSeverityScore != null ? r.score.avgFlagSeverityScore.toFixed(2) : <span title="Not measured in this run">—</span>}
+              {r.score.avgPeerFlagSeverityScore != null && (
+                <div className="text-[10px] font-normal text-muted-foreground" title="How serious the disagreements were (own low-confidence words excluded). This is what Rank uses.">
+                  peer: {r.score.avgPeerFlagSeverityScore.toFixed(2)}
+                </div>
+              )}
+            </TableCell>
+            {/* T-19: rates computed by the API when the snapshot was
+                written. Peer-only basis, same as Rank. A snapshot
+                from before T-19 shows "—" until recomputed. */}
+            <TableCell className="text-right font-mono" title="Disagreements per 100 words this provider transcribed in this group. Comparable across call lengths.">
+              {r.score.peerFlagsPer100Words != null ? r.score.peerFlagsPer100Words.toFixed(2) : <span title="Not in this snapshot">—</span>}
+            </TableCell>
+            <TableCell className="text-right font-mono" title="Share of this provider's scored calls with zero disagreements">
+              {r.score.cleanCallRate != null ? `${(r.score.cleanCallRate * 100).toFixed(0)}%` : <span title="Not in this snapshot">—</span>}
+            </TableCell>
+            <TableCell className="text-right font-mono text-muted-foreground">
+              {r.score.latencyFinalMs != null ? `${Math.round(r.score.latencyFinalMs)}ms` : <span title="Not measured in this run">—</span>}
+            </TableCell>
+            <TableCell className="text-right font-mono text-muted-foreground">
+              {r.score.costPerMinute != null ? `$${r.score.costPerMinute.toFixed(4)}` : <span title="Not measured in this run">—</span>}
+            </TableCell>
+            <TableCell className="text-right font-mono" title="Share of calls where more than one speaker was detected">
+              {r.score.diarizationScore != null ? `${(r.score.diarizationScore * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
+            </TableCell>
+            <TableCell className="text-right font-mono" data-testid="monthly-cost">
+              <MonthlyCostCell listPrice={listPrices.get(r.providerId)} gv={gv} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+/** T-88: one org (a Vapi account -- "Land And Apartment", "Default"), the
+ *  assistants under it, and the org-level verdict those assistants share
+ *  (T-55: verdicts are computed per org because one assistant alone has
+ *  too few calls). */
+type OrgGroup = {
+  key: string
+  label: string | null
+  assistantKeys: string[]
+  calls: number
+  verdict: BulkVerdicts["groups"][number] | undefined
+}
+
 export default function Rankings() {
   const listPrices = useListPrices()
   const { data: bulks } = useListBulks()
@@ -329,8 +501,7 @@ export default function Rankings() {
   const [selectedBulkId, setSelectedBulkId] = React.useState<string | null>(null)
 
   // useListBulks returns newest-first -- default to the most recent one the
-  // first time bulks load, so there's never an empty "pick a bulk" state
-  // for the common case of "what did the run I just launched find."
+  // first time bulks load, so there's never an empty "pick a bulk" state.
   React.useEffect(() => {
     if (!selectedBulkId && bulks && bulks.length > 0) setSelectedBulkId(bulks[0].id)
   }, [bulks, selectedBulkId])
@@ -339,45 +510,28 @@ export default function Rankings() {
   const { data: rankings, isLoading, isError, error, refetch } = useListBenchmarkRankings(
     activeBulkId ? { bulkId: activeBulkId } : undefined,
   )
-  // T-24: the account behind the biggest assistant group on the page, for
-  // the client-wide cost line. Groups from a second account (rare) still
-  // get their own per-group volume line.
-  const pageAssistantId = React.useMemo(() => {
-    const tally = new Map<string | null, number>()
-    for (const r of rankings ?? []) tally.set(r.assistantId, (tally.get(r.assistantId) ?? 0) + 1)
-    return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
-  }, [rankings])
-  const pageAccountLabel = useGroupAccountLabel(pageAssistantId)
   const { data: bulkDetail } = useGetBulk(selectedBulkId ?? "", {
     query: {
       queryKey: getGetBulkQueryKey(selectedBulkId ?? ""),
       enabled: viewMode === "bulk" && !!selectedBulkId,
     },
   })
-
-  // technical-fixes FIX-4 / ux-fixes UX-6: "active provider" (Providers ->
-  // System settings) previously fed nothing downstream -- an operator could
-  // set it and never see it do anything. This is the decision-support use:
-  // highlight that provider's row and show every other row's delta against
-  // it, so setting it actually changes what the page tells you.
   const { data: settings } = useGetAppSettings()
   const activeProviderId = settings?.activeProviderId ?? null
-  // T-21: one verdict fetch per bulk, shared by the banner and every group
-  // card. Only meaningful for a single bulk -- the all-time view has no
+  const { data: providerList } = useListBenchmarkProviders()
+  const providerNames = React.useMemo(
+    () => Object.fromEntries((providerList ?? []).map((p) => [p.id, p.name])),
+    [providerList],
+  )
+  // T-21: one verdict fetch per bulk, shared by the banner and every org
+  // section. Only meaningful for a single bulk -- the all-time view has no
   // noise floor of its own and shows no verdict rather than a wrong one.
   const { data: verdicts } = useBulkVerdicts(viewMode === "bulk" ? selectedBulkId : null)
   const [sortKey, setSortKey] = React.useState<SortKey>("rank")
-  // Direction starts at each metric's sensible default (lower-is-better for
-  // WER/cost/latency, higher for accuracy) and clicking the active column
-  // flips it -- UX review 2026-08-25: direction was locked before, so
-  // "most expensive provider" was unreachable.
   const [asc, setAsc] = React.useState<boolean>(SORT_ASC_DEFAULT.rank)
 
-  // 2026-08-27, per Abhishek: grouped by real assistant instead of vertical
-  // (same reasoning as the Bulks picker) -- keyed by assistantId, null
-  // bucketed under "Unassigned" rather than dropped. assistantLabel is
-  // resolved server-side from a live Vapi lookup, so it's already a real
-  // name here.
+  // Grouped by real assistant (2026-08-27, per Abhishek), keyed by
+  // assistantId; null bucketed under "Unassigned" rather than dropped.
   const groupedRankings = React.useMemo(() => {
     if (!rankings) return {}
     return rankings.reduce((acc, curr) => {
@@ -388,23 +542,50 @@ export default function Rankings() {
     }, {} as Record<string, typeof rankings>)
   }, [rankings])
 
+  // T-88: assistant -> org. The verdict group is authoritative in bulk mode
+  // (it lists the assistant ids it pooled); otherwise the org is the account
+  // label most of the assistant's calls carry.
+  const { data: calls } = useListBenchmarkCalls()
+  const assistantOrg = React.useMemo(() => {
+    const tally = new Map<string, Map<string | null, number>>()
+    for (const c of calls ?? []) {
+      const aKey = c.sourceAssistantId ?? "__other__"
+      const per = tally.get(aKey) ?? new Map<string | null, number>()
+      per.set(c.sourceAccountLabel ?? null, (per.get(c.sourceAccountLabel ?? null) ?? 0) + 1)
+      tally.set(aKey, per)
+    }
+    const out = new Map<string, string | null>()
+    for (const [aKey, per] of tally) out.set(aKey, [...per.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null)
+    return out
+  }, [calls])
+  const callLabels = React.useMemo(() => Object.fromEntries((calls ?? []).map((c) => [c.id, c.label])), [calls])
+
+  const orgs = React.useMemo<OrgGroup[]>(() => {
+    const byKey = new Map<string, OrgGroup>()
+    for (const aKey of Object.keys(groupedRankings)) {
+      const aId = aKey === "__other__" ? null : aKey
+      const vg = viewMode === "bulk" ? findGroupVerdict(verdicts, aId) : undefined
+      const label = vg ? vg.clientLabel : (assistantOrg.get(aKey) ?? null)
+      const key = label ?? "__no_org__"
+      const org = byKey.get(key) ?? { key, label, assistantKeys: [], calls: 0, verdict: vg ?? verdicts?.groups.find((g) => g.clientLabel === label) }
+      org.assistantKeys.push(aKey)
+      byKey.set(key, org)
+    }
+    for (const org of byKey.values()) {
+      org.calls = org.verdict?.callCount ?? (calls ?? []).filter((c) => (c.sourceAccountLabel ?? null) === org.label && org.assistantKeys.includes(c.sourceAssistantId ?? "__other__")).length
+      // Biggest assistant first inside the org.
+      org.assistantKeys.sort((a, b) => (calls ?? []).filter((c) => (c.sourceAssistantId ?? "__other__") === b).length - (calls ?? []).filter((c) => (c.sourceAssistantId ?? "__other__") === a).length)
+    }
+    return [...byKey.values()].sort((a, b) => b.calls - a.calls || (a.label ?? "~").localeCompare(b.label ?? "~"))
+  }, [groupedRankings, verdicts, assistantOrg, calls, viewMode])
+
   const toggleSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setAsc((v) => !v)
-    } else {
+    if (key === sortKey) setAsc((v) => !v)
+    else {
       setSortKey(key)
       setAsc(SORT_ASC_DEFAULT[key])
     }
   }
-
-  const renderSortIcon = (key: SortKey) =>
-    sortKey !== key ? (
-      <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-40" />
-    ) : asc ? (
-      <ArrowUp className="ml-1 inline h-3 w-3" />
-    ) : (
-      <ArrowDown className="ml-1 inline h-3 w-3" />
-    )
 
   if (isError) {
     return (
@@ -420,13 +601,27 @@ export default function Rankings() {
     )
   }
 
+  const tile = (label: string, value: React.ReactNode, sub?: React.ReactNode, tone: "normal" | "destructive" = "normal") => (
+    <div className={`rounded-lg border px-4 py-3 ${tone === "destructive" ? "border-destructive/40 bg-destructive/5" : "border-border bg-card"}`}>
+      <div className={`text-[10px] font-mono uppercase tracking-wide ${tone === "destructive" ? "text-destructive" : "text-muted-foreground"}`}>{label}</div>
+      <div className={`mt-1 font-mono text-lg font-semibold tabular-nums ${tone === "destructive" ? "text-destructive" : ""}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
+    </div>
+  )
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* T-88 (PRD-v4 Part G) page order, top to bottom: which bulk? -> the
+          answer (verdict) -> what it cost -> per org: the org's verdict, its
+          monthly cost, then each assistant's ranked table and the words
+          that split the providers -> "more evidence" folded at the end
+          (correlation, the one trend graph). Evidence: Peec AI overview,
+          Maze results (Mobbin) -- headline, a strip of tiles, ranked list;
+          charts secondary. */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Results</h1>
         <p className="text-muted-foreground mt-1">
-          Provider scores, grouped by assistant. Pick one bulk for its verdict and full detail, or
-          switch to all-time to see every bulk combined.
+          Which provider should each org's assistants run on. One bulk at a time, or every bulk combined.
         </p>
         <p className="mt-2 text-xs text-muted-foreground" data-testid="results-legend">
           <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags, speed and price
@@ -434,15 +629,6 @@ export default function Rankings() {
         </p>
       </div>
 
-      {/* T-74 (E.1) page order: picker (which bulk?) -> verdict (the
-          answer) -> cost -> judge accuracy -> correlation -> trend ->
-          monthly cost -> group cards (the raw table). Answer, evidence,
-          controls, table -- in that order. */}
-      {/* view switcher + bulk picker -- 2026-08-27, per Abhishek: "for each
-          run then it should show the ranking for each, and for bulk overall
-          ranking for all the call" -- "run" here means one launched Bulk,
-          not the internal shard-run concept; "overall" is every bulk ever,
-          combined, same as this page's old (only) behavior. */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex rounded-lg border border-border p-0.5">
           <button
@@ -470,10 +656,6 @@ export default function Rankings() {
             </SelectContent>
           </Select>
         )}
-        {/* T-32: the dated, print-clean verdict page for this bulk -- a
-            file someone can attach to an email, produced by the API from
-            the same numbers the banner below shows. Opens in a new tab;
-            "Save as PDF" from there. */}
         {viewMode === "bulk" && selectedBulkId && (
           <a
             href={`${apiBase()}/api/benchmark/bulks/${selectedBulkId}/verdict.html`}
@@ -488,90 +670,22 @@ export default function Rankings() {
         )}
       </div>
 
-      {/* T-21: the answer first. One sentence for the whole bulk, above
-          cost, correlation and every table -- a non-technical reader is
-          done here. Per-group sentences repeat inside each card. */}
-      {/* T-55: verdict groups are per client (account label); the banner
-          names them by that label directly. */}
+      {/* T-21: the answer first. */}
       {viewMode === "bulk" && selectedBulkId && <BulkVerdictBanner bulkId={selectedBulkId} groupLabels={{}} />}
 
-      {/* cost + coverage summary -- 2026-08-27, per Abhishek: "does the
-          estimation show cost of each run and the openai agent cost and stt
-          cost separately." Real (post-run) numbers when available, split
-          the same way estimates are: STT and agent spend are different
+      {/* Cost + coverage as tiles. STT and agent spend are different
           budgets, never combined into one figure. */}
       {viewMode === "bulk" && bulkDetail && (
-        <Card>
-          <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 p-4 text-sm">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">STT cost</div>
-              <div className="font-mono text-base font-semibold">
-                {formatMicrocents(bulkDetail.actualCost.sttCostMicrocents)}
-                {bulkDetail.estimatedSttCostCents != null && (
-                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                    est. {formatCents(bulkDetail.estimatedSttCostCents)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">AI check cost</div>
-              <div className="font-mono text-base font-semibold">
-                {formatMicrocents(bulkDetail.actualCost.agentCostMicrocents)}
-                {bulkDetail.estimatedAgentCostCents != null && (
-                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                    est. {formatCents(bulkDetail.estimatedAgentCostCents)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Checked by AI</div>
-              <div className="font-mono text-base font-semibold">
-                {bulkDetail.actualCost.agentCallsChecked} calls
-                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                  {bulkDetail.actualCost.agentCallsFlagged} flagged, {bulkDetail.actualCost.agentCallsJudged} judged
-                  {bulkDetail.actualCost.agentCallsResolved > 0 && <>, {bulkDetail.actualCost.agentCallsResolved} resolved by a human</>}
-                </span>
-              </div>
-            </div>
-            {/* T-03 (2026-08-28): errored scans get their own cell, in
-                destructive colour, never folded into the flagged count.
-                A crash is a hole in the coverage, not a finding. */}
-            {bulkDetail.actualCost.agentCallsErrored > 0 && (
-              <div>
-                <div className="text-[10px] font-mono uppercase tracking-wide text-destructive">Agent errors</div>
-                <div className="font-mono text-base font-semibold text-destructive">
-                  {bulkDetail.actualCost.agentCallsErrored} errored
-                  <span className="ml-1.5 text-xs font-normal">unchecked, not clean</span>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="cost-tiles">
+          {tile("STT cost", formatMicrocents(bulkDetail.actualCost.sttCostMicrocents), bulkDetail.estimatedSttCostCents != null ? <>est. {formatCents(bulkDetail.estimatedSttCostCents)}</> : undefined)}
+          {tile("AI check cost", formatMicrocents(bulkDetail.actualCost.agentCostMicrocents), bulkDetail.estimatedAgentCostCents != null ? <>est. {formatCents(bulkDetail.estimatedAgentCostCents)}</> : undefined)}
+          {tile("Checked by AI", `${bulkDetail.actualCost.agentCallsChecked} calls`, <>{bulkDetail.actualCost.agentCallsFlagged} flagged, {bulkDetail.actualCost.agentCallsJudged} judged{bulkDetail.actualCost.agentCallsResolved > 0 && <>, {bulkDetail.actualCost.agentCallsResolved} resolved by a person</>}</>)}
+          {bulkDetail.actualCost.agentCallsErrored > 0
+            ? tile("Agent errors", `${bulkDetail.actualCost.agentCallsErrored} errored`, "unchecked, not clean", "destructive")
+            : tile("Orgs", orgs.length, <>{Object.keys(groupedRankings).length} assistant{Object.keys(groupedRankings).length === 1 ? "" : "s"}</>)}
+        </div>
       )}
 
-      {/* T-18: how independent the providers' votes are. Sits right under
-          the cost line so it is read before the table it qualifies. */}
-      {viewMode === "bulk" && selectedBulkId && <ProviderCorrelationCard bulkId={selectedBulkId} />}
-
-      {/* T-23: the same providers, bulk over bulk. Sits under the
-          single-bulk evidence so "is this bulk's answer the same answer as
-          last time" is on the page, not in someone's memory. Shown in both
-          views -- it is the one thing here that is inherently cross-bulk. */}
-      <ClientTrendSection highlightBulkId={viewMode === "bulk" ? selectedBulkId : null} />
-
-      {/* T-24: the client as a whole -- every candidate's list price at the
-          account's full projected monthly volume. */}
-      <ClientMonthlyCostLine
-        accountLabel={pageAccountLabel}
-        providerIds={[...new Set((rankings ?? []).map((r) => r.providerId))]}
-      />
-
-      {/* The ranking cards below are scored from transcripts, not from the
-          agent, so an agent failure cannot move them. Say that explicitly
-          rather than leaving a red number next to a table and letting the
-          reader guess whether the table is compromised. */}
       {viewMode === "bulk" && bulkDetail && bulkDetail.actualCost.agentCallsErrored > 0 && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -586,9 +700,9 @@ export default function Rankings() {
 
       {isLoading ? (
         <div className="space-y-6">
-          {[1,2].map(i => <Card key={i} className="h-64 animate-pulse bg-muted/20" />)}
+          {[1, 2].map((i) => <Card key={i} className="h-64 animate-pulse bg-muted/20" />)}
         </div>
-      ) : Object.keys(groupedRankings).length === 0 ? (
+      ) : orgs.length === 0 ? (
         <div className="text-center py-24 border rounded-md border-dashed border-muted-foreground/30">
           <Trophy className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
           <h3 className="text-lg font-semibold">No rankings available</h3>
@@ -597,216 +711,134 @@ export default function Rankings() {
           </p>
         </div>
       ) : (
-        Object.entries(groupedRankings).map(([groupKey, ranks]) => (
-          <WithGroupVolume key={groupKey} assistantId={ranks[0]?.assistantId ?? null}>
-            {(gv) => {
-          const sorted = [...ranks].sort((a, b) => compareRows(a, b, sortKey, asc))
-          const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
-          const sortAria = (key: SortKey) => (sortKey === key ? (asc ? "ascending" : "descending") : "none")
-          const groupLabel = ranks[0]?.assistantLabel ?? "Unassigned (no assistant ID captured at import)"
-          // FIX-4/UX-6: the active provider might not have been benchmarked
-          // in this particular group (e.g. it errored out entirely) -- undefined
-          // is handled the same as "no active provider set" below.
-          const activeRow = activeProviderId ? ranks.find((r) => r.providerId === activeProviderId) : undefined
-          // T-55/T-57: the verdict this card sits under (client group in bulk
-          // mode; none in the all-time view). The verdict owns the word
-          // "Recommended" -- the composite rank only ever says "leading".
-          const groupVerdict = viewMode === "bulk" ? findGroupVerdict(verdicts, ranks[0]?.assistantId ?? null) : undefined
-          const verdictWinnerId = groupVerdict?.verdict.decision === "winner" ? groupVerdict.verdict.winnerProviderId : null
-          return (
-          <Card className="overflow-hidden border-t-4 border-t-primary shadow-sm">
-            <CardHeader className="bg-muted/10 pb-4 border-b">
-              <div className="flex flex-wrap justify-between items-center gap-3">
-                <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
-                  {groupLabel}
-                  <Badge variant="outline" className="ml-2 font-mono">{ranks.length} Providers</Badge>
-                </CardTitle>
-                <div className="flex items-center gap-4">
-                  <div className="flex gap-4 text-sm font-mono text-muted-foreground">
-                    <span title="Rank = disagreements, then price and speed. Sorting a column changes the view, not the rank.">Ranked by: <span className="text-foreground font-semibold">disagreements, price, speed</span></span>
-                  </div>
-                  {/* FR-R3 decision export; run id in the filename so
-                      spreadsheets from different runs can't be confused
-                      (UX review 2026-08-25). */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => downloadCsv(`rankings-${groupLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${winner?.runId?.slice(0, 8) ?? "unknown"}.csv`, buildCsv(groupLabel, sorted))}
-                  >
-                    <Download className="mr-2 h-4 w-4" /> Export CSV
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {/* T-21: this group's verdict sentence sits above its table so
-                  the decision is read before the numbers that back it. */}
-              {viewMode === "bulk" && (
+        orgs.map((org) => (
+          <section key={org.key} className="space-y-4" data-testid="org-section">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border pb-2">
+              <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+                <Building2 className="h-5 w-5 text-muted-foreground" />
+                {org.label ?? "No org label on file"}
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                {org.assistantKeys.length} assistant{org.assistantKeys.length === 1 ? "" : "s"}
+                {org.calls > 0 && <> · {org.calls} call{org.calls === 1 ? "" : "s"}{viewMode === "bulk" ? " in this bulk" : ""}</>}
+              </span>
+            </div>
+            {/* T-55/T-88: the verdict is the org's, computed over all its
+                assistants together, so it sits at org level once -- not
+                repeated under every assistant. */}
+            {viewMode === "bulk" && (
+              <div className="overflow-hidden rounded-lg border border-border">
                 <GroupVerdictHeadline
-                  verdict={groupVerdict?.verdict}
-                  scope={groupVerdict ? { clientLabel: groupVerdict.clientLabel, assistantCount: groupVerdict.assistantIds.length, callCount: groupVerdict.callCount } : undefined}
+                  verdict={org.verdict?.verdict}
+                  scope={org.verdict ? { clientLabel: org.verdict.clientLabel, assistantCount: org.verdict.assistantIds.length, callCount: org.verdict.callCount } : undefined}
                 />
-              )}
-              {/* T-23: this assistant's own trend, so a regression for one
-                  client's agent is visible even when the client-level line
-                  averages it away. */}
-              <TrendStrip
-                compact
-                scope={{ assistantId: ranks[0]?.assistantId ?? null }}
-                highlightBulkId={viewMode === "bulk" ? selectedBulkId : null}
-                title="Trend for this assistant, bulk over bulk"
-              />
-              {/* T-24: the volume basis for every $/month in the table. */}
-              <GroupVolumeLine gv={gv} />
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead
-                      aria-sort={sortAria("rank")}
-                      className="w-16 text-center cursor-pointer select-none hover:text-foreground"
-                      onClick={() => toggleSort("rank")}
-                      title={SORT_TITLES.rank}
-                    >
-                      Rank {DIRECTION.rank}{renderSortIcon("rank")}
-                    </TableHead>
-                    <TableHead>Provider</TableHead>
-                    {(Object.keys(SORT_ASC_DEFAULT) as SortKey[])
-                      .filter((k) => k !== "rank")
-                      .map((key) => (
-                        <TableHead
-                          key={key}
-                          aria-sort={sortAria(key)}
-                          className="text-right cursor-pointer select-none hover:text-foreground"
-                          onClick={() => toggleSort(key)}
-                          title={SORT_TITLES[key]}
-                        >
-                          {SORT_LABELS[key]} <span aria-label={DIRECTION[key] === "↓" ? "lower is better" : "higher is better"}>{DIRECTION[key]}</span>
-                          {renderSortIcon(key)}
-                        </TableHead>
-                      ))}
-                    <TableHead className="text-right" title="List $/min x this assistant's projected monthly minutes (Vapi, last 14 days x 30/14). Not sortable: it is price x one shared volume, so its order is the list-price order.">
-                      $/month ↓
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sorted.map((r) => (
-                    <TableRow key={r.providerId} className={r.rank === 1 ? "bg-primary/5" : ""}>
-                      <TableCell className="text-center font-mono font-medium">
-                        {r.rank === 1 ? <span className="text-primary flex items-center justify-center gap-1 text-lg font-bold"><Trophy className="w-4 h-4" /> 1</span> : r.rank}
-                      </TableCell>
-                      <TableCell title={r.recommendation ?? undefined}>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-foreground">{r.providerName}</span>
-                          {r.providerId === activeProviderId && (
-                            <Badge variant="outline" className="gap-1 text-[10px] font-mono uppercase" title="Set on the Setup page">
-                              <Star className="h-2.5 w-2.5" /> In production
-                            </Badge>
-                          )}
-                        </div>
-                        {/* T-57: "Recommended" is the verdict's word. The badge
-                            appears only on the provider the T-20 noise-floor
-                            verdict named; rank 1 without a verdict win is
-                            "leading", not decided. */}
-                        {verdictWinnerId === r.providerId ? (
-                          <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named by this group's verdict: the gap to the runner-up is bigger than the margin of error.">
-                            <CheckCircle2 className="w-3 h-3 mr-1" /> Winner
-                          </div>
-                        ) : r.rank === 1 ? (
-                          <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above did not name a winner: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
-                            Ahead, not a winner
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      {/* Null "—" means "not measured in this run" (spec:
-                          distinct from a true zero) -- title says so instead
-                          of leaving the dash ambiguous (UX review). 2026-08-27:
-                          gold-free -- avgFlagCount replaces WER as the
-                          primary metric. FIX-4/UX-6: a non-active row shows
-                          its delta against the active provider's flag count
-                          right underneath -- lower is better, so a negative
-                          (green) delta means this candidate beats the active
-                          provider. */}
-                      <TableCell className="text-right font-mono font-medium" title={r.recommendation ?? undefined}>
-                        {r.score.avgFlagCount != null ? r.score.avgFlagCount.toFixed(2) : <span title="Not measured in this run">—</span>}
-                        {activeRow && r.providerId !== activeProviderId && r.score.avgFlagCount != null && activeRow.score.avgFlagCount != null && (() => {
-                          const delta = r.score.avgFlagCount! - activeRow.score.avgFlagCount!
-                          const better = delta < 0
-                          return (
-                            <div className={`text-[10px] font-normal ${better ? "text-success" : delta > 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {better ? "" : "+"}{delta.toFixed(2)} vs production
-                            </div>
-                          )
-                        })()}
-                        {/* 2026-08-27, found live ("for this call why its
-                            different then?" -- Rank contradicted this
-                            column with no visible reason): Rank is actually
-                            sorted by THIS number, not the one above --
-                            avgFlagCount includes a provider's own self-
-                            reported low confidence, which only 3 of 7
-                            providers report at all, so it isn't fair to
-                            rank on directly. Shown small and separate so
-                            the two are never confused for the same thing. */}
-                        {r.score.avgPeerFlagCount != null && (
-                          <div className="text-[10px] font-normal text-muted-foreground" title="Disagreements with other providers + wrong entities only, a provider's own low-confidence words excluded. This is the number Rank uses.">
-                            peer: {r.score.avgPeerFlagCount.toFixed(2)}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono" title="0 = none .. 3 = high, averaged over this provider's transcripts in this group">
-                        {r.score.avgFlagSeverityScore != null ? r.score.avgFlagSeverityScore.toFixed(2) : <span title="Not measured in this run">—</span>}
-                        {r.score.avgPeerFlagSeverityScore != null && (
-                          <div className="text-[10px] font-normal text-muted-foreground" title="How serious the disagreements were (own low-confidence words excluded). This is what Rank uses.">
-                            peer: {r.score.avgPeerFlagSeverityScore.toFixed(2)}
-                          </div>
-                        )}
-                      </TableCell>
-                      {/* T-19: rates computed by the API when the snapshot was
-                          written. Peer-only basis, same as Rank. A snapshot
-                          from before T-19 shows "—" until recomputed. */}
-                      <TableCell className="text-right font-mono" title="Disagreements per 100 words this provider transcribed in this group. Comparable across call lengths.">
-                        {r.score.peerFlagsPer100Words != null ? r.score.peerFlagsPer100Words.toFixed(2) : <span title="Not in this snapshot">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono" title="Share of this provider's scored calls with zero disagreements">
-                        {r.score.cleanCallRate != null ? `${(r.score.cleanCallRate * 100).toFixed(0)}%` : <span title="Not in this snapshot">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">
-                        {r.score.latencyFinalMs != null ? `${Math.round(r.score.latencyFinalMs)}ms` : <span title="Not measured in this run">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">
-                        {r.score.costPerMinute != null ? `$${r.score.costPerMinute.toFixed(4)}` : <span title="Not measured in this run">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono" title="Share of calls where more than one speaker was detected">
-                        {r.score.diarizationScore != null ? `${(r.score.diarizationScore * 100).toFixed(1)}%` : <span title="Not measured in this run">—</span>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono" data-testid="monthly-cost">
-                        <MonthlyCostCell listPrice={listPrices.get(r.providerId)} gv={gv} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              </div>
+            )}
+            {/* T-24: the org as a whole -- every candidate's list price at
+                the account's full projected monthly volume. */}
+            <ClientMonthlyCostLine
+              accountLabel={org.label}
+              providerIds={[...new Set(org.assistantKeys.flatMap((k) => (groupedRankings[k] ?? []).map((r) => r.providerId)))]}
+            />
 
-              {/* Context / Recommendation note */}
-              {winner?.recommendation && (
-                <div className="p-4 bg-muted/30 border-t flex gap-3 text-sm">
-                  <ArrowUpRight className="w-5 h-5 text-primary shrink-0" />
-                  {/* T-57: this footer explains the composite ORDER; the
-                      decision itself is the verdict headline at the top. */}
-                  <p className="text-foreground">
-                    <span className="font-semibold mr-1">Why this order:</span>
-                    {winner.recommendation}
-                  </p>
-                </div>
-              )}
-              <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
-              <PerCallComparisonLinks assistantId={ranks[0]?.assistantId ?? null} bulkId={viewMode === "bulk" ? selectedBulkId : null} />
-            </CardContent>
-          </Card>
-          )
-            }}
-          </WithGroupVolume>
+            {org.assistantKeys.map((aKey) => {
+              const ranks = groupedRankings[aKey] ?? []
+              return (
+                <WithGroupVolume key={aKey} assistantId={ranks[0]?.assistantId ?? null}>
+                  {(gv) => {
+                    const sorted = [...ranks].sort((a, b) => compareRows(a, b, sortKey, asc))
+                    const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
+                    const groupLabel = ranks[0]?.assistantLabel ?? "Unassigned (no assistant ID captured at import)"
+                    const activeRow = activeProviderId ? ranks.find((r) => r.providerId === activeProviderId) : undefined
+                    // T-57: the verdict owns the word "Winner" -- the composite rank only ever says "ahead".
+                    const verdictWinnerId = viewMode === "bulk" && org.verdict?.verdict.decision === "winner" ? org.verdict.verdict.winnerProviderId : null
+                    return (
+                      <Card className="overflow-hidden shadow-sm">
+                        <CardHeader className="bg-muted/10 pb-3 border-b">
+                          <div className="flex flex-wrap justify-between items-center gap-3">
+                            <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                              {groupLabel}
+                              <Badge variant="outline" className="font-mono font-normal">{ranks.length} providers</Badge>
+                            </CardTitle>
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs font-mono text-muted-foreground" title="Rank = disagreements, then price and speed. Sorting a column changes the view, not the rank.">
+                                Ranked by <span className="text-foreground font-semibold">disagreements, price, speed</span>
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => downloadCsv(`rankings-${groupLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${winner?.runId?.slice(0, 8) ?? "unknown"}.csv`, buildCsv(groupLabel, sorted))}
+                              >
+                                <Download className="mr-2 h-4 w-4" /> Export CSV
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                          <GroupVolumeLine gv={gv} />
+                          <RankingTable
+                            sorted={sorted}
+                            sortKey={sortKey}
+                            asc={asc}
+                            toggleSort={toggleSort}
+                            activeProviderId={activeProviderId}
+                            activeRow={activeRow}
+                            verdictWinnerId={verdictWinnerId}
+                            viewMode={viewMode}
+                            listPrices={listPrices}
+                            gv={gv}
+                          />
+                          {winner?.recommendation && (
+                            <div className="p-4 bg-muted/30 border-t flex gap-3 text-sm">
+                              <ArrowUpRight className="w-5 h-5 text-primary shrink-0" />
+                              <p className="text-foreground">
+                                <span className="font-semibold mr-1">Why this order:</span>
+                                {winner.recommendation}
+                              </p>
+                            </div>
+                          )}
+                          <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
+                          {/* T-87: the words that split the providers for this
+                              assistant. Bulk-scoped: the all-time view has no
+                              single set of transcripts to build spans from. */}
+                          {viewMode === "bulk" && selectedBulkId ? (
+                            <WordsToWatch
+                              bulkId={selectedBulkId}
+                              assistantId={ranks[0]?.assistantId ?? null}
+                              providerNames={providerNames}
+                              callLabels={callLabels}
+                              compact
+                            />
+                          ) : (
+                            <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">Pick one bulk to see the words that split the providers for this assistant.</p>
+                          )}
+                          <PerCallComparisonLinks assistantId={ranks[0]?.assistantId ?? null} bulkId={viewMode === "bulk" ? selectedBulkId : null} />
+                        </CardContent>
+                      </Card>
+                    )
+                  }}
+                </WithGroupVolume>
+              )
+            })}
+          </section>
         ))
+      )}
+
+      {/* T-88: the supporting evidence, folded. T-18 correlation qualifies
+          the votes above; T-23 trend is the one chart on the page -- kept,
+          once, here (the per-assistant copies inside every card were
+          noise at three bulks per line). */}
+      {(orgs.length > 0 || viewMode === "overall") && (
+        <details className="rounded-lg border border-border" data-testid="more-evidence">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/40">
+            More evidence
+            <span className="ml-2 text-xs font-normal text-muted-foreground">how independent the providers' votes are · the trend, bulk over bulk</span>
+          </summary>
+          <div className="space-y-4 border-t border-border p-4">
+            {viewMode === "bulk" && selectedBulkId && <ProviderCorrelationCard bulkId={selectedBulkId} />}
+            <ClientTrendSection highlightBulkId={viewMode === "bulk" ? selectedBulkId : null} />
+          </div>
+        </details>
       )}
     </div>
   )
