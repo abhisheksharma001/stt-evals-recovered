@@ -18,6 +18,7 @@ import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { TableStateRow, errorMessage } from "@/components/table-state"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
@@ -33,7 +34,7 @@ export default function Runs({ embedded = false }: { embedded?: boolean } = {}) 
   // short of manually reloading the page. Poll while anything is actually
   // in flight; stop polling the moment nothing is (avoids hammering the API
   // once every run has settled).
-  const { data: runs, isLoading, isError, error } = useListBenchmarkRuns({
+  const { data: runs, isLoading, isError, error, refetch } = useListBenchmarkRuns({
     query: {
       queryKey: getListBenchmarkRunsQueryKey(),
       refetchInterval: (query) => {
@@ -84,19 +85,11 @@ export default function Runs({ embedded = false }: { embedded?: boolean } = {}) 
             </TableHeader>
             <TableBody>
               {isError ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-destructive text-sm">
-                    Failed to load runs: {error instanceof Error ? error.message : String(error)}
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
               ) : isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading run history...</TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "loading", message: "Loading run history…" }} />
               ) : runs?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No benchmark runs recorded.</TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "empty", message: "No runs yet. Runs are created when a bulk is launched." }} />
               ) : (
                 runs?.map(run => (
                   <TableRow key={run.id}>
@@ -533,16 +526,11 @@ function ResultsDialog({ runId, providerIds, runStatus }: { runId: string; provi
             </TableHeader>
             <TableBody>
               {isError ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-destructive text-sm">
-                    Failed to load results: {error instanceof Error ? error.message : String(error)}{" "}
-                    <Button variant="outline" size="sm" className="ml-2" onClick={() => void refetch()}>Retry</Button>
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
               ) : isLoading ? (
-                <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "loading", message: "Loading results…" }} />
               ) : !results?.length ? (
-                <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No cells executed yet.</TableCell></TableRow>
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "empty", message: "No cells executed yet." }} />
               ) : (
                 <>
                   {attemptedGroups.length === 0 ? (

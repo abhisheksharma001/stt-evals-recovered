@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useSearch } from "wouter"
+import { useSearch, Link } from "wouter"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBenchmarkCalls,
@@ -38,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { DisagreementSpans } from "@/components/disagreement-spans"
+import { TableStateRow, errorMessage } from "@/components/table-state"
 import { ProviderComparisonSection } from "@/components/provider-comparison-section"
 import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 
@@ -54,7 +55,7 @@ import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
 // ---------------------------------------------------------------------------
 
 export default function Corpus() {
-  const { data: calls, isLoading, isError, error } = useListBenchmarkCalls()
+  const { data: calls, isLoading, isError, error, refetch } = useListBenchmarkCalls()
   const search = useSearch()
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   // T-72: a Results group card links here as ?call=<id>&bulk=<id> so the
@@ -179,20 +180,45 @@ export default function Corpus() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* T-91 (U-8): loading, failed and empty are three different
+                  rows -- and "nothing matches these filters" is not the same
+                  as "nothing has been imported". */}
               {isError ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-destructive text-sm">
-                    Failed to load corpus: {error instanceof Error ? error.message : String(error)}
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={8} state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
               ) : isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading corpus data...</TableCell>
-                </TableRow>
+                <TableStateRow colSpan={8} state={{ kind: "loading", message: "Loading calls…" }} />
+              ) : (calls?.length ?? 0) === 0 ? (
+                <TableStateRow
+                  colSpan={8}
+                  state={{
+                    kind: "empty",
+                    message: "No calls imported yet.",
+                    action: <Link href="/setup?tab=sources" className="text-primary hover:underline">Import calls from Vapi →</Link>,
+                  }}
+                />
               ) : filteredCalls.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No calls found.</TableCell>
-                </TableRow>
+                <TableStateRow
+                  colSpan={8}
+                  state={{
+                    kind: "empty",
+                    message: `No calls match these filters (${calls?.length ?? 0} in the corpus).`,
+                    action: (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => {
+                          setSearchText("")
+                          setStatusFilter("all")
+                          setVerticalFilter("all")
+                          setHardCasesOnly(false)
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    ),
+                  }}
+                />
               ) : (
                 filteredCalls.map(call => {
                   const expanded = call.id === expandedId

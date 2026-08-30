@@ -40,6 +40,7 @@ import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { TableStateRow, errorMessage } from "@/components/table-state"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -1265,14 +1266,14 @@ function LiveBulkCard({ bulk }: { bulk: Bulk }) {
 
 export default function Bulks() {
   // Poll while any bulk is in flight (same reasoning as the Runs page).
-  const { data: bulks, isLoading, isError, error } = useListBulks(undefined, {
+  const { data: bulks, isLoading, isError, error, refetch } = useListBulks(undefined, {
     query: {
       queryKey: getListBulksQueryKey(),
       refetchInterval: (query) =>
         query.state.data?.some((b) => b.status === "running" || b.status === "estimating") ? 3000 : false,
     },
   })
-  const { data: templates } = useListBulkTemplates()
+  const { data: templates, isLoading: templatesLoading, isError: templatesError, error: templatesErr, refetch: refetchTemplates } = useListBulkTemplates()
   // T-74 (E.1): the running bulk (else the newest -- the list is newest-
   // first) is the page's headline; creation and templates collapse while
   // something is running so the live status is what the first screen shows.
@@ -1308,21 +1309,11 @@ export default function Bulks() {
             </TableHeader>
             <TableBody>
               {isError ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-sm text-destructive">
-                    Failed to load bulks: {error instanceof Error ? error.message : String(error)}
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
               ) : isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Loading bulks...</TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "loading", message: "Loading bulks…" }} />
               ) : bulks?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
-                    No bulks yet. Create one to evaluate a large call slice.
-                  </TableCell>
-                </TableRow>
+                <TableStateRow colSpan={6} state={{ kind: "empty", message: "No bulks yet. Create one above to run every provider over a slice of calls." }} />
               ) : (
                 bulks?.map((bulk) => (
                   <TableRow key={bulk.id}>
@@ -1385,12 +1376,14 @@ export default function Bulks() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {templates?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                    No templates. Save one to re-run the same slice (e.g. "last 7 days") on a schedule.
-                  </TableCell>
-                </TableRow>
+              {/* T-91: templates had no loading or failed row at all -- an API
+                  error rendered as an empty table. */}
+              {templatesError ? (
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "error", message: errorMessage(templatesErr), onRetry: () => void refetchTemplates() }} />
+              ) : templatesLoading ? (
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "loading", message: "Loading templates…" }} />
+              ) : templates?.length === 0 ? (
+                <TableStateRow colSpan={5} height="h-24" state={{ kind: "empty", message: 'No templates. Save one to re-run the same slice (e.g. "last 7 days") on a schedule.' }} />
               ) : (
                 templates?.map((template) => <TemplateRow key={template.id} template={template} />)
               )}

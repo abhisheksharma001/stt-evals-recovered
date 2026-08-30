@@ -1,5 +1,6 @@
 import * as React from "react"
 import { formatPerMinute } from "@/lib/utils"
+import { TableStateBody, errorMessage } from "@/components/table-state"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBenchmarkProviders,
@@ -43,7 +44,7 @@ function groupByVendor(providers: Provider[]): [string, Provider[]][] {
 }
 
 export default function Providers() {
-  const { data: providers, isLoading, isError, error } = useListBenchmarkProviders()
+  const { data: providers, isLoading, isError, error, refetch } = useListBenchmarkProviders()
 
   return (
     <div className="space-y-6">
@@ -56,8 +57,8 @@ export default function Providers() {
       </div>
 
       {isError ? (
-        <div className="text-center py-24 border rounded-md border-destructive/40 text-destructive text-sm">
-          Failed to load providers: {error instanceof Error ? error.message : String(error)}
+        <div className="text-center py-24 border rounded-md border-destructive/40">
+          <TableStateBody state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
         </div>
       ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
