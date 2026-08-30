@@ -91,6 +91,46 @@ function nameOf(data: BulkVerdicts, id: string | null): string {
   return data.providers.find((p) => p.id === id)?.name ?? id
 }
 
+/**
+ * T-84: the banner's rolled-up reading of a bulk, as data, so the Overview
+ * can say the same sentence flat on the page without a card. Still the
+ * only source is GET /bulks/{id}/verdicts -- nothing here re-derives a
+ * winner.
+ */
+export function summarizeBulkVerdicts(data: BulkVerdicts): {
+  tone: HeadlineVerdict["decision"]
+  leadName: string | null
+  sentence: string
+  counts: { winner: number; too_close: number; too_few_calls: number; insufficient: number }
+  totalCalls: number
+  groups: number
+} {
+  const groups = data.groups
+  const counts = { winner: 0, too_close: 0, too_few_calls: 0, insufficient: 0 }
+  for (const g of groups) counts[g.verdict.decision] += 1
+  const winners = groups.filter((g) => g.verdict.decision === "winner")
+  const totalCalls = groups.reduce((s, g) => s + g.verdict.evidenceCalls, 0)
+  if (groups.length === 0) {
+    return { tone: "insufficient", leadName: null, sentence: "No verdict yet: this bulk has no scored calls.", counts, totalCalls, groups: 0 }
+  }
+  if (winners.length > 0) {
+    const tally = new Map<string, number>()
+    for (const g of winners) tally.set(g.verdict.winnerProviderId ?? "?", (tally.get(g.verdict.winnerProviderId ?? "?") ?? 0) + 1)
+    const [topId, topN] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]
+    const rest = groups.length - winners.length
+    return {
+      tone: "winner",
+      leadName: nameOf(data, topId),
+      sentence: `wins ${topN} of ${groups.length} group${groups.length === 1 ? "" : "s"} outright${rest > 0 ? `; ${rest} ha${rest === 1 ? "s" : "ve"} no clear winner yet` : ""}.`,
+      counts, totalCalls, groups: groups.length,
+    }
+  }
+  if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls) {
+    return { tone: "too_close", leadName: null, sentence: "No clear winner: the top providers are too close to call on the calls so far.", counts, totalCalls, groups: groups.length }
+  }
+  return { tone: "too_few_calls", leadName: null, sentence: `No clear winner yet: ${counts.too_few_calls} of ${groups.length} group${groups.length === 1 ? "" : "s"} need more calls before one can be named.`, counts, totalCalls, groups: groups.length }
+}
+
 export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; groupLabels: Record<string, string> }) {
   const { data, isLoading, isError } = useBulkVerdicts(bulkId)
 

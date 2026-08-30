@@ -8,280 +8,165 @@ import {
   useHealthCheck,
   type BenchmarkDashboard,
 } from "@workspace/api-client-react"
-import { Activity, AlertCircle, ArrowRight, ExternalLink, Gavel, Layers, RotateCcw, Users } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { BulkVerdictBanner } from "@/components/verdict-headline"
+import { DecisionChip, summarizeBulkVerdicts, useBulkVerdicts } from "@/components/verdict-headline"
 import { apiBase } from "@/lib/api-base"
 import { formatMicrocents } from "@/lib/utils"
 
-/**
- * T-71 (PRD-v4-uiux E.3): the Overview answers "where do things stand right
- * now", in four blocks, top to bottom -- latest verdict, what needs a human,
- * running now, this month. Every number is computed on the server
- * (api-server/src/lib/overview.ts) from the same tables Bulks, Corpus and
- * Results read, so nothing here can disagree with a detail page. The
- * verdict block reuses <BulkVerdictBanner> against the same endpoint
- * Results uses; it never re-derives a winner.
- *
- * Gone from this page (E.3): corpus-by-vertical, the provider list, recent
- * runs. Each belongs to Corpus, Providers and Bulks and is one click away.
- */
+// ---------------------------------------------------------------------------
+// T-84 (per Abhishek 2026-08-30: "redesign the overview page, minimalist").
+//
+// One column, no cards. The page is four flat sections separated by
+// hairlines, each answering one question in one line of large type and one
+// line of small type:
+//   1. The verdict         -- one sentence, the provider name in ink
+//   2. Needs a person      -- four numbers in a row, each a link
+//   3. Running now         -- one line + a hairline progress bar (only when true)
+//   4. This month          -- two amounts and the API build, in a row
+// Numbers are computed on the server (api-server/src/lib/overview.ts) and the
+// verdict sentence comes from the same endpoint Results uses, so nothing here
+// can disagree with a detail page. Pattern checked on Mobbin (Midday home:
+// greeting sentence, a flat row of figures, plain links) -- D.5 "stop
+// wrapping everything in a card" applied literally.
+// ---------------------------------------------------------------------------
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function Row({ children }: { children: React.ReactNode }) {
+  return <section className="space-y-3 border-t border-border py-7 first:border-t-0 first:pt-0">{children}</section>
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
   return <h2 className="font-mono text-[11px] uppercase tracking-[0.09em] text-muted-foreground">{children}</h2>
 }
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "finished (time not recorded)"
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+function Figure({ value, label, href, tone = "quiet" }: { value: React.ReactNode; label: string; href?: string; tone?: "quiet" | "attention" | "destructive" }) {
+  const color = tone === "attention" ? "text-warning" : tone === "destructive" ? "text-destructive" : "text-foreground"
+  const body = (
+    <span className="flex items-baseline gap-2">
+      <span className={`font-mono text-2xl font-semibold tabular-nums leading-none ${color}`}>{value}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
+    </span>
+  )
+  return href ? <Link href={href} className="group rounded-sm hover:underline">{body}</Link> : body
 }
 
-function LatestVerdict({ bulk }: { bulk: BenchmarkDashboard["latestFinishedBulk"] }) {
+function fmtDate(iso: string | null): string {
+  if (!iso) return "finished"
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+}
+
+function Verdict({ bulk }: { bulk: BenchmarkDashboard["latestFinishedBulk"] }) {
+  const { data, isLoading } = useBulkVerdicts(bulk?.id ?? null)
   if (!bulk) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-between gap-6 p-5">
-          <div>
-            <p className="text-base font-semibold">No bulk has completed yet.</p>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              A verdict needs a finished bulk. Launch one from Bulks; it shows up here when it completes.
-            </p>
-          </div>
-          <Button asChild className="shrink-0">
-            <Link href="/bulks">Open Bulks <ArrowRight className="ml-2 h-4 w-4" /></Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <Row>
+        <Eyebrow>Verdict</Eyebrow>
+        <p className="text-2xl leading-snug" style={{ textWrap: "balance" }}>No bulk has finished yet.</p>
+        <p className="text-sm text-muted-foreground">
+          A verdict needs a finished bulk. <Link href="/bulks" className="text-primary hover:underline">Launch one →</Link>
+        </p>
+      </Row>
     )
   }
+  const summary = data ? summarizeBulkVerdicts(data) : null
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="text-sm">
-          <span className="font-medium">{bulk.name}</span>
-          <span className="text-muted-foreground"> · {fmtDate(bulk.completedAt)}</span>
-          {bulk.status === "partial" && (
-            <span className="text-muted-foreground"> · finished with some failed cells</span>
-          )}
+    <Row>
+      <div className="flex flex-wrap items-center gap-2">
+        <Eyebrow>Verdict</Eyebrow>
+        {summary && <DecisionChip decision={summary.tone} />}
+        <span className="text-xs text-muted-foreground">{bulk.name} · {fmtDate(bulk.completedAt)}{bulk.status === "partial" ? " · some cells failed" : ""}</span>
+      </div>
+      {isLoading || !summary ? (
+        <div className="h-8 w-2/3 animate-pulse rounded bg-muted" />
+      ) : (
+        <p className="max-w-[40ch] text-2xl leading-snug" style={{ textWrap: "balance" }}>
+          {summary.leadName && <span className="font-semibold">{summary.leadName} </span>}
+          {summary.sentence}
         </p>
-        <div className="flex items-center gap-3 text-xs">
-          <Link href="/results" className="text-primary hover:underline">Open in Results →</Link>
-          <a
-            href={`${apiBase()}/api/benchmark/bulks/${bulk.id}/verdict.html`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
-          >
-            Shareable verdict <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-      </div>
-      <BulkVerdictBanner bulkId={bulk.id} groupLabels={{}} />
-    </div>
-  )
-}
-
-function HumanRow({
-  icon: Icon,
-  count,
-  label,
-  detail,
-  href,
-  action,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  count: number
-  label: string
-  detail: string
-  href: string
-  action: string
-}) {
-  const quiet = count === 0
-  return (
-    <div className={`flex items-center gap-3.5 rounded-lg border px-3.5 py-3 ${quiet ? "border-border bg-transparent" : "border-warning/30 bg-warning/5"}`}>
-      <Icon className={`h-4 w-4 shrink-0 ${quiet ? "text-muted-foreground" : "text-warning"}`} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-xl font-semibold tabular-nums leading-none">{count.toLocaleString()}</span>
-          <span className="text-sm font-medium">{label}</span>
-        </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
-      </div>
-      <Link href={href} className="shrink-0 text-xs text-primary hover:underline">{action} →</Link>
-    </div>
+      )}
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        {summary && <span>{summary.totalCalls} calls scored · {summary.groups} group{summary.groups === 1 ? "" : "s"}</span>}
+        <Link href="/results" className="text-primary hover:underline">Open Results →</Link>
+        <a href={`${apiBase()}/api/benchmark/bulks/${bulk.id}/verdict.html`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+          Share verdict →
+        </a>
+      </p>
+    </Row>
   )
 }
 
 function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
-  const spans = data.spans
-  const open = spans ? spans.total - spans.adjudicated : null
+  const open = data.spans ? data.spans.total - data.spans.adjudicated : null
+  const attention = (n: number | null) => (n != null && n > 0 ? "attention" : "quiet")
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      <HumanRow
-        icon={Users}
-        count={data.callsAwaitingReview}
-        label="calls awaiting review"
-        detail="Imported but not yet ready to run. Normally 0 -- the review gate was retired 2026-08-27."
-        href="/corpus"
-        action="Corpus"
-      />
-      <HumanRow
-        icon={AlertCircle}
-        count={data.hardCaseCalls}
-        label="calls tagged hard case"
-        detail="Marked by a person as unusually hard audio; worth a listen before trusting the score."
-        href="/corpus"
-        action="Corpus"
-      />
-      <div className={`flex items-center gap-3.5 rounded-lg border px-3.5 py-3 ${open ? "border-warning/30 bg-warning/5" : "border-border"}`}>
-        <Gavel className={`h-4 w-4 shrink-0 ${open ? "text-warning" : "text-muted-foreground"}`} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-xl font-semibold tabular-nums leading-none">
-              {open === null ? "—" : open.toLocaleString()}
-            </span>
-            <span className="text-sm font-medium">disagreement spans not yet adjudicated</span>
-          </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {spans
-              ? `${spans.adjudicated.toLocaleString()} of ${spans.total.toLocaleString()} ruled on in the latest finished bulk. The judge's accuracy is unmeasured until a person rules on at least 10.`
-              : "No finished bulk yet, so there are no spans to rule on."}
-          </p>
-        </div>
-        <Link href="/corpus" className="shrink-0 text-xs text-primary hover:underline">Corpus →</Link>
+    <Row>
+      <Eyebrow>Needs a person</Eyebrow>
+      <div className="flex flex-wrap gap-x-10 gap-y-4">
+        <Figure value={data.callsAwaitingReview} label="calls awaiting review" href="/corpus" tone={attention(data.callsAwaitingReview)} />
+        <Figure value={data.hardCaseCalls} label="hard cases" href="/corpus" tone={attention(data.hardCaseCalls)} />
+        <Figure value={open == null ? "—" : open} label="spans to rule on" href="/corpus" tone={attention(open)} />
+        <Figure value={data.retryableFailedCells} label="cells a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
       </div>
-      <HumanRow
-        icon={RotateCcw}
-        count={data.retryableFailedCells}
-        label="failed cells a retry could fix"
-        detail="In stopped bulks; timeouts, 5xx and rate limits only. Expired or forbidden audio is not counted -- a retry cannot fix it."
-        href="/bulks"
-        action="Bulks"
-      />
-    </div>
-  )
-}
-
-function ProgressBar({ ok, failed, total }: { ok: number; failed: number; total: number }) {
-  const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%")
-  return (
-    <div className="flex h-1.5 overflow-hidden rounded-full bg-secondary">
-      <div className="bg-success" style={{ width: pct(ok) }} />
-      <div className="bg-destructive" style={{ width: pct(failed) }} />
-    </div>
+      <p className="text-xs text-muted-foreground">
+        {data.spans
+          ? `${data.spans.adjudicated} of ${data.spans.total} spans ruled on in the latest finished bulk; the AI judge's accuracy is unmeasured until a person rules on 10.`
+          : "No finished bulk yet, so nothing to rule on."}
+      </p>
+    </Row>
   )
 }
 
 function RunningNow({ bulk }: { bulk: NonNullable<BenchmarkDashboard["runningBulk"]> }) {
-  const { data: detail } = useGetBulk(bulk.id, {
-    query: { queryKey: getGetBulkQueryKey(bulk.id), refetchInterval: 5000 },
-  })
+  const { data: detail } = useGetBulk(bulk.id, { query: { queryKey: getGetBulkQueryKey(bulk.id), refetchInterval: 5000 } })
   const p = detail?.progress
   const done = p ? p.cellsOk + p.cellsFailed + p.cellsCancelled + p.cellsSkippedPendingReview : 0
+  const pct = p && p.cellsTotal > 0 ? Math.round((done / p.cellsTotal) * 100) : 0
   return (
-    <Card className="border-primary/40">
-      <CardContent className="space-y-3 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 animate-pulse text-primary" />
-            <span className="font-medium">{bulk.name}</span>
-          </div>
-          <Link href="/bulks" className="text-xs text-primary hover:underline">Open in Bulks →</Link>
-        </div>
+    <Row>
+      <Eyebrow>Running now</Eyebrow>
+      <p className="text-2xl leading-snug">
+        <span className="font-semibold">{bulk.name}</span>
+        {p && <span className="text-muted-foreground"> · {pct}%</span>}
+      </p>
+      <div className="h-px w-full bg-border">
+        <div className="h-px bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="flex flex-wrap gap-x-4 text-sm text-muted-foreground">
         {p ? (
           <>
-            <ProgressBar ok={p.cellsOk} failed={p.cellsFailed} total={p.cellsTotal} />
-            <div className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs tabular-nums text-muted-foreground">
-              <span>{done.toLocaleString()} / {p.cellsTotal.toLocaleString()} cells</span>
-              <span className="text-success">{p.cellsOk.toLocaleString()} ok</span>
-              {p.cellsFailed > 0 && <span className="text-destructive">{p.cellsFailed.toLocaleString()} failed</span>}
-              <span>{p.callsRun.toLocaleString()} / {p.callsTotal.toLocaleString()} calls</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <div>
-                <div className="font-mono text-[10px] uppercase text-muted-foreground">STT est.</div>
-                <div className="font-mono">{detail?.estimatedSttCostCents != null ? `$${(detail.estimatedSttCostCents / 100).toFixed(2)}` : "not estimated"}</div>
-              </div>
-              <div>
-                <div className="font-mono text-[10px] uppercase text-muted-foreground">STT so far</div>
-                <div className="font-mono">{formatMicrocents(detail?.actualCost.sttCostMicrocents)}</div>
-              </div>
-              <div>
-                <div className="font-mono text-[10px] uppercase text-muted-foreground">Agent est.</div>
-                <div className="font-mono">{detail?.estimatedAgentCostCents != null ? `$${(detail.estimatedAgentCostCents / 100).toFixed(2)}` : "not estimated"}</div>
-              </div>
-              <div>
-                <div className="font-mono text-[10px] uppercase text-muted-foreground">Agent so far</div>
-                <div className="font-mono">{formatMicrocents(detail?.actualCost.agentCostMicrocents)}</div>
-              </div>
-            </div>
+            <span>{p.cellsOk} ok{p.cellsFailed > 0 ? `, ${p.cellsFailed} failed` : ""} of {p.cellsTotal}</span>
+            <span>{p.callsRun}/{p.callsTotal} calls</span>
+            <span>STT so far {formatMicrocents(detail?.actualCost.sttCostMicrocents)} · AI check {formatMicrocents(detail?.actualCost.agentCostMicrocents)}</span>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">Loading progress…</p>
+          <span>Loading…</span>
         )}
-      </CardContent>
-    </Card>
+        <Link href="/bulks" className="text-primary hover:underline">Open Bulks →</Link>
+      </p>
+    </Row>
   )
 }
 
 function ThisMonth({ month }: { month: BenchmarkDashboard["thisMonth"] }) {
-  const { data: health, isError: healthError } = useHealthCheck({
-    query: { queryKey: getHealthCheckQueryKey(), refetchInterval: 30_000, retry: false },
-  })
-  const since = new Date(month.monthStart).toLocaleDateString(undefined, { month: "long", year: "numeric" })
+  const { data: health, isError } = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey(), refetchInterval: 30_000, retry: false } })
+  const since = new Date(month.monthStart).toLocaleDateString(undefined, { month: "long" })
+  const unpriced = month.sttCellsUnpriced + month.agentJudgementsUnpriced
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      <Card>
-        <CardContent className="p-4">
-          <div className="font-mono text-[10px] uppercase text-muted-foreground">STT spend · {since}</div>
-          <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{formatMicrocents(month.sttMicrocents)}</div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {month.sttCellsPriced.toLocaleString()} priced cell{month.sttCellsPriced === 1 ? "" : "s"}
-            {month.sttCellsUnpriced > 0 && (
-              <span className="text-warning"> · {month.sttCellsUnpriced.toLocaleString()} with no recorded cost, not included</span>
-            )}
-          </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-4">
-          <div className="font-mono text-[10px] uppercase text-muted-foreground">Agent (OpenAI judge) spend · {since}</div>
-          <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{formatMicrocents(month.agentMicrocents)}</div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {month.agentJudgementsPriced.toLocaleString()} priced judgement{month.agentJudgementsPriced === 1 ? "" : "s"}
-            {month.agentJudgementsUnpriced > 0 && (
-              <span className="text-warning"> · {month.agentJudgementsUnpriced.toLocaleString()} with no recorded cost, not included</span>
-            )}
-          </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-4">
-          <div className="font-mono text-[10px] uppercase text-muted-foreground">API build · health</div>
-          {healthError ? (
-            <div className="mt-1 text-sm text-destructive">API not reachable.</div>
-          ) : health ? (
-            <>
-              <div className="mt-1 font-mono text-sm">
-                <span className={health.status === "ok" ? "text-success" : "text-destructive"}>{health.status}</span>
-                {" · "}
-                {health.commitSha}
-                {health.commitSha.endsWith("-dirty") && <span className="text-warning"> (built from an uncommitted tree)</span>}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {health.providersConfigured.length} provider{health.providersConfigured.length === 1 ? "" : "s"} with a key: {health.providersConfigured.join(", ") || "none"}
-                {health.builtAt && new Date(health.builtAt) > new Date(health.startedAt) && (
-                  <span className="text-warning"> · rebuilt after this process started -- restart to run the new code</span>
-                )}
-              </p>
-            </>
-          ) : (
-            <div className="mt-1 text-sm text-muted-foreground">Checking…</div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <Row>
+      <Eyebrow>Spent in {since}</Eyebrow>
+      <div className="flex flex-wrap gap-x-10 gap-y-4">
+        <Figure value={formatMicrocents(month.sttMicrocents)} label="transcription" />
+        <Figure value={formatMicrocents(month.agentMicrocents)} label="AI judge" />
+        <Figure
+          value={isError ? "down" : health ? health.commitSha.replace(/-dirty$/, "") : "…"}
+          label={isError ? "API not reachable" : health?.commitSha.endsWith("-dirty") ? "API build (uncommitted tree)" : "API build"}
+          tone={isError ? "destructive" : "quiet"}
+        />
+      </div>
+      {unpriced > 0 && (
+        <p className="text-xs text-warning">{unpriced} item{unpriced === 1 ? "" : "s"} with no recorded cost are not included.</p>
+      )}
+    </Row>
   )
 }
 
@@ -290,12 +175,10 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-8 w-64 rounded bg-muted" />
-        <Card className="h-32 bg-muted/40" />
-        <div className="grid gap-2 sm:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-16 rounded-lg bg-muted/40" />)}
-        </div>
+      <div className="max-w-[760px] animate-pulse space-y-8">
+        <div className="h-7 w-40 rounded bg-muted" />
+        <div className="h-10 w-3/4 rounded bg-muted/60" />
+        <div className="h-8 w-1/2 rounded bg-muted/40" />
       </div>
     )
   }
@@ -305,47 +188,22 @@ export default function Dashboard() {
       <div className="flex h-64 flex-col items-center justify-center space-y-4">
         <AlertCircle className="h-8 w-8 text-destructive" />
         <h2 className="text-lg font-semibold">Failed to load the overview</h2>
-        <p className="text-muted-foreground">
-          The API server might not be running. {error instanceof Error ? error.message : ""}
-        </p>
+        <p className="text-muted-foreground">The API server might not be running. {error instanceof Error ? error.message : ""}</p>
         <Button variant="outline" size="sm" onClick={() => void refetch()}>Retry</Button>
       </div>
     )
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-        <p className="mt-1 text-muted-foreground">The latest verdict, what needs a person, what is running, what this month cost.</p>
-      </div>
-
-      <section className="space-y-2.5">
-        <SectionLabel>Latest verdict</SectionLabel>
-        <LatestVerdict bulk={data.latestFinishedBulk} />
-      </section>
-
-      <section className="space-y-2.5">
-        <SectionLabel>What needs a human</SectionLabel>
-        <NeedsHuman data={data.needsHuman} />
-      </section>
-
-      {data.runningBulk && (
-        <section className="space-y-2.5">
-          <SectionLabel>Running now</SectionLabel>
-          <RunningNow bulk={data.runningBulk} />
-        </section>
-      )}
-
-      <section className="space-y-2.5">
-        <SectionLabel>This month</SectionLabel>
-        <ThisMonth month={data.thisMonth} />
-      </section>
-
+    <div className="max-w-[760px]">
+      <h1 className="mb-8 text-3xl font-bold tracking-tight">Overview</h1>
+      <Verdict bulk={data.latestFinishedBulk} />
+      <NeedsHuman data={data.needsHuman} />
+      {data.runningBulk && <RunningNow bulk={data.runningBulk} />}
+      <ThisMonth month={data.thisMonth} />
       {data.corpusCount === 0 && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Layers className="h-4 w-4" /> No calls imported yet.{" "}
-          <Link href="/setup?tab=sources" className="text-primary hover:underline">Import from Vapi →</Link>
+        <p className="border-t border-border pt-7 text-sm text-muted-foreground">
+          No calls imported yet. <Link href="/setup?tab=sources" className="text-primary hover:underline">Import from Vapi →</Link>
         </p>
       )}
     </div>
