@@ -28,68 +28,10 @@ import {
 } from "@workspace/scoring";
 import { logger } from "./logger";
 
-type ConfidenceWord = { word: string; confidence: number };
-
-/** Provider-specific: pulls {word, confidence} pairs out of a provider's raw
- * response JSON. Returns null when the provider doesn't expose confidence at
- * all (Cartesia, OpenAI, ElevenLabs, Speechmatics -- confirmed absent from
- * real captured responses, docs/provider-data-samples.md), never an empty
- * array for that case -- callers need to tell "not available" apart from
- * "available and clean." */
-export function extractProviderConfidenceWords(
-  providerId: string,
-  rawOutputJson: string | null,
-): ConfidenceWord[] | null {
-  if (!rawOutputJson) return null;
-  let body: unknown;
-  try {
-    body = JSON.parse(rawOutputJson);
-  } catch {
-    return null;
-  }
-  if (!body || typeof body !== "object") return null;
-
-  try {
-    if (providerId === "assemblyai-universal") {
-      const words = (body as { words?: Array<{ text?: string; confidence?: number }> }).words;
-      if (!Array.isArray(words)) return null;
-      return words
-        .filter((w) => typeof w.text === "string" && typeof w.confidence === "number")
-        .map((w) => ({ word: w.text!, confidence: w.confidence! }));
-    }
-    if (providerId === "deepgram-nova-3") {
-      const words = (
-        body as {
-          results?: { channels?: Array<{ alternatives?: Array<{ words?: Array<{ word?: string; confidence?: number }> }> }> };
-        }
-      ).results?.channels?.[0]?.alternatives?.[0]?.words;
-      if (!Array.isArray(words)) return null;
-      return words
-        .filter((w) => typeof w.word === "string" && typeof w.confidence === "number")
-        .map((w) => ({ word: w.word!, confidence: w.confidence! }));
-    }
-    if (providerId === "gladia-solaria") {
-      const utterances = (
-        body as { result?: { transcription?: { utterances?: Array<{ words?: Array<{ word?: string; confidence?: number }> }> } } }
-      ).result?.transcription?.utterances;
-      if (!Array.isArray(utterances)) return null;
-      const words: ConfidenceWord[] = [];
-      for (const u of utterances) {
-        for (const w of u.words ?? []) {
-          if (typeof w.word === "string" && typeof w.confidence === "number") {
-            words.push({ word: w.word, confidence: w.confidence });
-          }
-        }
-      }
-      return words.length ? words : null;
-    }
-  } catch {
-    return null;
-  }
-  // cartesia-ink-whisper, openai-gpt-4o-transcribe, elevenlabs-scribe,
-  // speechmatics: no per-word confidence in their real responses.
-  return null;
-}
+// T-110: extraction lives in provider-confidence.ts (pure, no DB import) so
+// it is unit-testable; re-exported here for the existing callers.
+import { extractProviderConfidenceWords } from "./provider-confidence";
+export { extractProviderConfidenceWords };
 
 export type HybridFlagWriteResult = {
   resultId: string;

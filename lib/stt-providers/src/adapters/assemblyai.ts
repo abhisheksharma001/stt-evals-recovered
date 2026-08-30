@@ -49,8 +49,10 @@ const API_KEY_ENV_VAR = "ASSEMBLYAI_API_KEY";
 // 2026-08-30: `speech_model` is deprecated for `speech_models` (an array);
 // allowed values universal-3-5-pro and universal-2; omitted = both, newest
 // first. The historical rows here sent nothing, i.e. the vendor default.
+export const ASSEMBLYAI_DEFAULT_MODEL = "universal-3-5-pro";
+
 const ASSEMBLYAI_MODELS: ProviderModelOption[] = [
-  { apiModel: "universal-3-5-pro", label: "Universal-3.5 Pro", latest: true, source: "catalog", verifiedAt: "2026-08-30", legacyDefault: true, note: "vendor default today -- what assemblyai-universal runs when it sends no speech_models" },
+  { apiModel: "universal-3-5-pro", label: "Universal-3.5 Pro", latest: true, source: "catalog", verifiedAt: "2026-08-30", legacyDefault: true, note: "what the assemblyai-universal row is pinned to (T-110); was the vendor default" },
   { apiModel: "universal-2", label: "Universal-2", latest: false, source: "catalog", verifiedAt: "2026-08-30" },
 ];
 
@@ -92,9 +94,12 @@ export const assemblyAiAdapter: ProviderAdapter = {
       body: JSON.stringify({
         audio_url: uploadBody.upload_url,
         speaker_labels: input.diarize ?? true,
-        // T-104: undefined keeps the vendor default (newest first) for the
-        // historical "assemblyai-universal" row.
-        speech_models: input.model ? [input.model] : undefined,
+        // T-110: the historical "assemblyai-universal" row used to send no
+        // model at all, i.e. whatever AssemblyAI's default was that day -- a
+        // moving target that would silently change what old and new results
+        // of the same row mean. Pinned to the default verified 2026-08-30;
+        // a newer model gets its own row via T-104, never a silent swap.
+        speech_models: [input.model ?? ASSEMBLYAI_DEFAULT_MODEL],
         word_boost: input.keywordBoosts?.length ? input.keywordBoosts : undefined,
       }),
     });
