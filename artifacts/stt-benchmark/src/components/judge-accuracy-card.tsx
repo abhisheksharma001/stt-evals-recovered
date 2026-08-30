@@ -126,9 +126,9 @@ export function JudgeAccuracyCard({ providerNames }: { providerNames: Record<str
                       <span
                         className={`rounded px-1.5 py-0.5 font-medium ${
                           item.agrees === true
-                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            ? "bg-success/15 text-success"
                             : item.agrees === false
-                              ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                              ? "bg-destructive/15 text-destructive"
                               : "bg-muted text-muted-foreground"
                         }`}
                       >

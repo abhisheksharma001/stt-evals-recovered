@@ -205,7 +205,7 @@ function SelectionPreviewPanel({ preview, verb = "will run" }: { preview: Select
       </div>
       {blocked && <p>Nothing matches these filters, so this bulk would run nothing.</p>}
       {!blocked && productionGaps.length > 0 && (
-        <ul className="space-y-0.5 text-amber-700 dark:text-amber-400">
+        <ul className="space-y-0.5 text-warning">
           {productionGaps.map((c) => (
             <li key={`${c.vendor}::${c.model ?? ""}`} className="flex gap-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
