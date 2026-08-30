@@ -860,7 +860,7 @@ bulk_templates                                      benchmark_calls.source_accou
   succession — the bulk status machine should refuse the second, but no test proves
   it. T-77 covers it.
 - **Webhooks / event-driven:** none, and none needed. Vapi is pulled on demand;
-  provider polling is in `lib/stt-providers/poll.ts`. An event-driven runner is T-28's
+  provider polling is in `lib/stt-providers/src/poll.ts`. An event-driven runner is T-28's
   concern (Workflow DevKit), triggered by weekly cadence or ~10 clients.
 - **Rate limits:** outbound only — per-vendor concurrency caps, 429 halves the cap for
   60 s (`run-executor.ts:173`), BAML retries the judge. Inbound: none, single operator.

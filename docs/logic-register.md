@@ -1,5 +1,11 @@
 # STT Benchmark — Logic Register
 
+> **Historical document (banner added 2026-08-30, T-120).** Written while the
+> tool was being planned; file paths, task statuses and module names in here
+> describe that plan, not today's tree. `scripts/check-doc-paths.sh` does not
+> check this file. Current state: `.claude/CLAUDE.md` → `docs/PRD-v4-*.md` →
+> `docs/v4-task-register.md`.
+
 This document catalogs every algorithmic decision in the scoring and evaluation pipeline. Each entry states the **proposed default**, **alternatives**, **tradeoffs**, and the **exact build-time decision gate** that must be resolved before the corresponding task is coded.
 
 ---

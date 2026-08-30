@@ -1,5 +1,11 @@
 # UI/UX PRD v3 — Make the tool show its evidence
 
+> **Historical document (banner added 2026-08-30, T-120).** Written while the
+> tool was being planned; file paths, task statuses and module names in here
+> describe that plan, not today's tree. `scripts/check-doc-paths.sh` does not
+> check this file. Current state: `.claude/CLAUDE.md` → `docs/PRD-v4-*.md` →
+> `docs/v4-task-register.md`.
+
 **Version:** 1.0
 **Date:** 2026-08-27
 **Companion doc:** `docs/PRD-v3-technical.md` (same review, technical side —

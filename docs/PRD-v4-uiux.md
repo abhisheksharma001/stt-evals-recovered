@@ -796,7 +796,8 @@ page-section gap token and removes the per-page values.
 
 - One word-diff renderer: `Runs.tsx:206 WordDiffView` (+ its gold-free sibling at
   `:240`). Used in exactly one place (`:474`). T-72 lifts it to
-  `components/provider-output-row.tsx` and uses it from Corpus, Results, Runs.
+  components/provider-output-row.tsx (planned name) and uses it from Corpus, Results,
+  Runs (shipped as `components/word-diff-view.tsx` + `components/provider-comparison-section.tsx`).
 - Failure text is rendered four different ways: `Runs.tsx:461` ("Diagnosis
   available" **or raw error or `—`** — the dash E.5 forbids), `Runs.tsx:305–344`
   (diagnosis panel), `Bulks.tsx:857` (`FAILURE_CLASS_COPY` per failure group — the

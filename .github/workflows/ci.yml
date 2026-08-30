@@ -57,6 +57,10 @@ jobs:
       - name: Check import cycles (api-server)
         run: node scripts/check-import-cycles.mjs artifacts/api-server/src
 
+      # T-120: every backticked repo path in the live docs exists.
+      - name: Check doc paths
+        run: bash scripts/check-doc-paths.sh
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)
