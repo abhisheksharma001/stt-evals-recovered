@@ -126,6 +126,7 @@ import { drainWithConcurrency } from "../lib/concurrency";
 import { getOrCacheAudioBytes, audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
+import { cachedVendorModels } from "../lib/model-list-cache";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -1201,20 +1202,10 @@ router.post("/benchmark/providers", async (req, res): Promise<void> => {
 // dated day -- and which of them already have a provider row here. The
 // route never writes; enabling is the POST below, one row per model, so a
 // newer model never silently replaces the results of the old one.
-// T-119: a live vendor list (Deepgram, OpenAI) that does not answer must not
-// hang the page reading it -- on 2026-08-30 Deepgram's /v1/models took 51 s
-// and the Overview figure sat on "..." for as long. Past this many
-// milliseconds the vendor reports an error and the others still render; the
-// browser caches the answer for five minutes and asks again.
-const VENDOR_MODEL_LIST_TIMEOUT_MS = 8_000;
-function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} did not answer within ${Math.round(ms / 1000)} s.`)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
-
+// T-119/T-128: the per-vendor 8 s budget and the 30-minute server-side
+// cache both live in lib/model-list-cache.ts -- a slow vendor (Deepgram's
+// /v1/models once took 51 s) neither hangs the page nor gets re-asked on
+// every Overview and Setup visit.
 router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
   const rows = await db.select({ id: benchmarkProvidersTable.id, status: benchmarkProvidersTable.status }).from(benchmarkProvidersTable);
   const rowById = new Map(rows.map((r) => [r.id, r.status]));
@@ -1223,13 +1214,7 @@ router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
       .filter((a) => typeof a.listModels === "function")
       .map(async (adapter) => {
         const vendor = vendorOf(adapter);
-        let models: ProviderModelOption[] = [];
-        let error: string | null = null;
-        try {
-          models = await withTimeout(adapter.listModels!(), VENDOR_MODEL_LIST_TIMEOUT_MS, `${adapter.vendorLabel ?? vendor}'s model list`);
-        } catch (err) {
-          error = err instanceof Error ? err.message : String(err);
-        }
+        const { models, error } = await cachedVendorModels(vendor, adapter.vendorLabel ?? vendor, () => adapter.listModels!());
         return {
           vendor,
           vendorLabel: adapter.vendorLabel ?? vendor,
