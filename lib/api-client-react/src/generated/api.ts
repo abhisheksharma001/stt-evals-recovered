@@ -25,6 +25,7 @@ import type {
   AgentScanInput,
   AppSettings,
   AppSettingsUpdate,
+  AssistantTranscriber,
   AttestDeidBody,
   AuditLogEntry,
   BenchmarkCall,
@@ -485,6 +486,83 @@ export function useGetCallDisagreement<TData = Awaited<ReturnType<typeof getCall
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCallDisagreementQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAssistantTranscriberUrl = (assistantId: string,) => {
+
+
+
+
+  return `/api/benchmark/assistants/${assistantId}/transcriber`
+}
+
+/**
+ * @summary T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
+ */
+export const getAssistantTranscriber = async (assistantId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantTranscriber> => {
+
+  return customFetch<AssistantTranscriber>(getGetAssistantTranscriberUrl(assistantId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantTranscriberQueryKey = (assistantId: string,) => {
+    return [
+    `/api/benchmark/assistants/${assistantId}/transcriber`
+    ] as const;
+    }
+
+
+export const getGetAssistantTranscriberQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantTranscriber>>, TError = ErrorType<void>>(assistantId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantTranscriber>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantTranscriberQueryKey(assistantId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantTranscriber>>> = ({ signal }) => getAssistantTranscriber(assistantId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: assistantId !== null && assistantId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantTranscriber>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantTranscriberQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantTranscriber>>>
+export type GetAssistantTranscriberQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
+ */
+
+export function useGetAssistantTranscriber<TData = Awaited<ReturnType<typeof getAssistantTranscriber>>, TError = ErrorType<void>>(
+ assistantId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantTranscriber>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantTranscriberQueryOptions(assistantId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

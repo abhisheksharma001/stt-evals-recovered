@@ -307,6 +307,71 @@ export async function fetchVapiAssistants(
   return results.flat().sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** One transcriber entry as Vapi stores it on an assistant (T-97). Only the
+ *  fields read live on 2026-08-30 are typed; anything else stays unread. */
+export type VapiTranscriberSpec = {
+  provider?: string;
+  model?: string;
+  language?: string;
+  numerals?: boolean;
+  keyterm?: unknown;
+  fallbackPlan?: { transcribers?: Array<{ provider?: string; model?: string }> };
+};
+
+export type VapiAssistantTranscriber = {
+  assistantId: string;
+  name: string;
+  accountId: string;
+  accountLabel: string;
+  primary: { provider: string; model: string | null } | null;
+  /** In order; Vapi switches to the first one when the primary fails mid-call. */
+  fallback: { provider: string; model: string | null }[];
+  /** Vocabulary boost words on the assistant (Deepgram `keyterm`). 0 when none. */
+  keytermCount: number;
+  numerals: boolean | null;
+  language: string | null;
+  fetchedAt: string;
+};
+
+/**
+ * T-97: what the assistant is *configured* to transcribe with -- primary,
+ * fallback, boosted vocabulary. Different from transcriberOf(call), which is
+ * what actually ran on one call. Read live 2026-08-30 on two assistants:
+ * `b3914788` (deepgram / flux-general-en, fallbackPlan.transcribers =
+ * [assembly-ai]) and `05103255` (deepgram / flux-general-multi, no fallback,
+ * 120 keyterms, numerals: true). Read-only; nothing here writes to Vapi.
+ */
+export async function fetchVapiAssistantTranscriber(
+  accountId: string,
+  assistantId: string,
+): Promise<VapiAssistantTranscriber> {
+  const account = listVapiAccounts().find((a) => a.id === accountId);
+  if (!account) {
+    const known = listVapiAccounts().map((a) => a.id);
+    throw new VapiConfigError(`Unknown Vapi account "${accountId}". Configured accounts: ${known.join(", ")}.`);
+  }
+  const key = resolveKey(account.id);
+  const raw = await vapiGet<{ id: string; name?: string; transcriber?: VapiTranscriberSpec }>(
+    `/assistant/${encodeURIComponent(assistantId)}`,
+    key,
+  );
+  const t = raw.transcriber;
+  const spec = (x: { provider?: string; model?: string } | undefined) =>
+    x?.provider ? { provider: x.provider, model: x.model?.trim() || null } : null;
+  return {
+    assistantId: raw.id,
+    name: raw.name?.trim() || raw.id,
+    accountId: account.id,
+    accountLabel: account.label,
+    primary: spec(t),
+    fallback: (t?.fallbackPlan?.transcribers ?? []).map(spec).filter((x): x is { provider: string; model: string | null } => x !== null),
+    keytermCount: Array.isArray(t?.keyterm) ? t.keyterm.length : 0,
+    numerals: typeof t?.numerals === "boolean" ? t.numerals : null,
+    language: t?.language ?? null,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Fetches calls for one account over a date range, paginating past Vapi's
  * per-request cap so wide date windows no longer silently truncate at

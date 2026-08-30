@@ -18,6 +18,7 @@ import {
 import { getProviderAdapter } from "@workspace/stt-providers";
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { wordsToWatch } from "../lib/words-to-watch";
+import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
 import { callDisagreement } from "../lib/call-disagreement";
 import {
@@ -72,6 +73,8 @@ import {
   UpdateAppSettingsResponse,
   ListVapiAssistantsQueryParams,
   ListVapiAssistantsResponse,
+  GetAssistantTranscriberParams,
+  GetAssistantTranscriberResponse,
   AnalyzeResultFailureParams,
   AnalyzeResultFailureResponse,
 } from "@workspace/api-zod";
@@ -821,6 +824,32 @@ router.get("/benchmark/vapi/assistants", async (req, res): Promise<void> => {
   try {
     const assistants = await fetchVapiAssistants(parsed.data.accountId);
     res.json(ListVapiAssistantsResponse.parse(assistants));
+  } catch (err) {
+    respondVapiError(res, err);
+  }
+});
+
+// T-97: what the assistant is configured to run in production -- primary,
+// fallback, boosted keyterms -- read live from Vapi (10-minute cache). The
+// per-call `sourceTranscriber*` columns say what ran; this says what is
+// set, including the parts the benchmark cannot reproduce.
+router.get("/benchmark/assistants/:assistantId/transcriber", async (req, res): Promise<void> => {
+  const params = GetAssistantTranscriberParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  try {
+    const found = await assistantTranscriberConfig(params.data.assistantId);
+    if (found.kind === "no_calls") {
+      res.status(404).json({ error: "No imported call carries this assistant id, so its Vapi account is unknown." });
+      return;
+    }
+    if (found.kind === "no_account") {
+      res.status(404).json({ error: `The calls for this assistant carry org label "${found.accountLabel ?? ""}", which matches no configured Vapi account.` });
+      return;
+    }
+    res.json(GetAssistantTranscriberResponse.parse(found.config));
   } catch (err) {
     respondVapiError(res, err);
   }

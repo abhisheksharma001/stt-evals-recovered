@@ -93,6 +93,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CallDisagreement"
+  /benchmark/assistants/{assistantId}/transcriber:
+    get:
+      operationId: getAssistantTranscriber
+      tags: [benchmark]
+      summary: T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
+      parameters:
+        - name: assistantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Configured transcriber
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTranscriber"
+        "404":
+          description: No imported call carries this assistant, or its org label matches no configured Vapi account
+        "502":
+          description: Vapi API rejected the request
   /benchmark/words-to-watch:
     get:
       operationId: getWordsToWatch
@@ -1267,6 +1289,31 @@ components:
         name: { type: string }
         accountId: { type: string }
         accountLabel: { type: string }
+    TranscriberSpec:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: { type: string }
+        model: { type: string, nullable: true }
+    AssistantTranscriber:
+      type: object
+      required: [assistantId, name, accountId, accountLabel, primary, fallback, keytermCount, numerals, language, fetchedAt]
+      properties:
+        assistantId: { type: string }
+        name: { type: string }
+        accountId: { type: string }
+        accountLabel: { type: string }
+        primary:
+          allOf: [{ $ref: "#/components/schemas/TranscriberSpec" }]
+          nullable: true
+        fallback:
+          type: array
+          items: { $ref: "#/components/schemas/TranscriberSpec" }
+        # Vocabulary boost words set on the assistant (Deepgram keyterm). The benchmark runs without them.
+        keytermCount: { type: number }
+        numerals: { type: boolean, nullable: true }
+        language: { type: string, nullable: true }
+        fetchedAt: { type: string }
     VapiPreviewInput:
       type: object
       required: [accountId]

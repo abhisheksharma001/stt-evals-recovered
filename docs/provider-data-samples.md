@@ -270,3 +270,42 @@ agreement is between two providers with *different* bases. Read: on phone audio 
 this corpus size, shared base is a weak signal; do not weight votes by it. What the
 table does show is that gpt-4o-transcribe disagrees with everyone — it is the one
 genuinely independent reading, not the one to drop.
+
+## Vapi assistant transcriber: fallback plan and boosted vocabulary (T-97, read live 2026-08-30)
+
+Two more assistants read via `GET /assistant/{id}` (system prompt and voice
+omitted; only `transcriber` shown):
+
+```json
+// 05103255 "Rush Truck Center - Service Female" (account: Default)
+"transcriber": {
+  "provider": "deepgram", "model": "flux-general-multi", "language": "en",
+  "numerals": true, "eotThreshold": 0.7, "eotTimeoutMs": 5000, "confidenceThreshold": 0.24,
+  "keyterm": ["Peterbilt", "Freightliner", "Kenworth", "Volvo", "Mack", ... 120 terms ...]
+}
+// b3914788 "[PROD] Waterside Apartments Leasing" (account: Land And Apartment)
+"transcriber": {
+  "provider": "deepgram", "model": "flux-general-en", "language": "en",
+  "fallbackPlan": { "transcribers": [ { "provider": "assembly-ai", "language": "en", "formatTurns": true, "disablePartialTranscripts": false } ] }
+}
+```
+
+What this means for the benchmark:
+
+- **`fallbackPlan.transcribers`** is an ordered list; Vapi switches to the first
+  entry when the primary fails mid-call. The per-call `costs[].transcriber` entry
+  (what `transcriberOf()` reads) names whichever one actually ran, so a call that
+  fell over to AssemblyAI is stored with `sourceTranscriberProvider = assembly-ai`.
+  The Results baseline counts those as a different production provider — which
+  they were, for that call.
+- **`keyterm`** is Deepgram's vocabulary boost. The Rush assistant carries 120
+  truck-parts terms; every candidate provider in the benchmark, *including
+  Deepgram itself*, ran without them. "Production Deepgram beat benchmark
+  Deepgram" is therefore expected on Rush calls and is not evidence about the
+  model. `numerals: true` likewise formats spoken numbers as digits in
+  production only.
+- Read on the Results page as "Configured in Vapi: … · fallback … · N boosted
+  keyterms" under the production baseline (`GET
+  /benchmark/assistants/{id}/transcriber`, live, 10-minute cache, read-only).
+  The account that owns the assistant is not stored; it is the org label most
+  of the assistant's imported calls carry.

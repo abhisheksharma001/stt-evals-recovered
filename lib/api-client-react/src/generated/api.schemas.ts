@@ -232,6 +232,24 @@ export interface VapiAssistant {
   accountLabel: string;
 }
 
+export interface TranscriberSpec {
+  provider: string;
+  model: string | null;
+}
+
+export interface AssistantTranscriber {
+  assistantId: string;
+  name: string;
+  accountId: string;
+  accountLabel: string;
+  primary: TranscriberSpec | null;
+  fallback: TranscriberSpec[];
+  keytermCount: number;
+  numerals: boolean | null;
+  language: string | null;
+  fetchedAt: string;
+}
+
 export interface VapiPreviewInput {
   /** @minLength 1 */
   accountId: string;
