@@ -1,4 +1,5 @@
 import * as React from "react"
+import { formatPerMinute } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   useListBenchmarkProviders,
@@ -177,7 +178,7 @@ function VendorGrid({ groups }: { groups: [string, Provider[]][] }) {
                       </div>
                       <div className="text-muted-foreground">Cost / Min</div>
                       <div className="flex justify-end font-mono text-primary font-bold">
-                        ${provider.costPerMinute.toFixed(4)}
+                        {formatPerMinute(provider.costPerMinute)}
                       </div>
                     </div>
 

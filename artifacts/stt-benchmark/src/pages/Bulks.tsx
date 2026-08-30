@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useLocation } from "wouter"
 import Runs from "@/pages/Runs"
-import { formatMicrocents } from "@/lib/utils"
+import { formatMicrocents, formatCents } from "@/lib/utils"
 import { failureCopy } from "@/components/no-output"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -173,9 +173,8 @@ function useSelectionPreview(criteria: CriteriaDraft, providerIds: string[]): Se
   }
 }
 
-function cents(n: number): string {
-  return `$${(n / 100).toFixed(2)}`
-}
+// T-95: one money rule (lib/utils). Name kept; callers unchanged.
+const cents = formatCents
 
 /**
  * The count first, then every excluded bucket by name, then -- only once
@@ -606,7 +605,7 @@ function CreateBulkDialog() {
           // detail dialog's Launch button is the explicit confirmation.
           toast({
             title: "Cost gate",
-            description: `Estimate $${((bulk.estimatedCostCents ?? 0) / 100).toFixed(2)} exceeds the threshold. Open the bulk and confirm launch.`,
+            description: `Estimate ${formatCents(bulk.estimatedCostCents ?? 0)} exceeds the threshold. Open the bulk and confirm launch.`,
           })
         } else {
           toast({ title: "Bulk launched", description: `"${bulk.name}" is running.` })
@@ -925,8 +924,8 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
             <div>
               <div className="text-[10px] font-mono uppercase text-muted-foreground">Estimated cost</div>
               <div className="font-mono font-semibold">
-                {current.estimatedSttCostCents != null ? `STT $${(current.estimatedSttCostCents / 100).toFixed(2)}` : "STT —"}
-                {current.estimatedAgentCostCents != null && <> + agent ${(current.estimatedAgentCostCents / 100).toFixed(2)}</>}
+                {current.estimatedSttCostCents != null ? `STT ${formatCents(current.estimatedSttCostCents)}` : "STT —"}
+                {current.estimatedAgentCostCents != null && <> + agent {formatCents(current.estimatedAgentCostCents)}</>}
               </div>
             </div>
             {current.status === "awaiting_confirmation" && (

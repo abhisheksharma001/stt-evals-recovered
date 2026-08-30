@@ -1,4 +1,5 @@
 import React from "react"
+import { formatPerMinute, formatUsdMonthly } from "@/lib/utils"
 import {
   useGetClientVolume,
   getGetClientVolumeQueryKey,
@@ -28,8 +29,8 @@ export function projectMonthlyMinutes(minutes: number, windowDays: number): numb
   return windowDays > 0 ? (minutes * DAYS_PER_MONTH) / windowDays : 0
 }
 
-export const fmtUsd = (v: number) =>
-  v >= 100 ? `$${Math.round(v).toLocaleString()}` : v >= 10 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`
+/** T-95: kept as a name; the rule lives in lib/utils. */
+export const fmtUsd = formatUsdMonthly
 
 /** The Vapi account behind an assistant group: the most common
  * sourceAccountLabel on its corpus calls. Null when unknown. */
@@ -148,7 +149,7 @@ export function MonthlyCostCell({ listPrice, gv }: { listPrice: number | undefin
     return <span title={why}>—</span>
   }
   return (
-    <span title={`${fmtUsd(cost)}/month = $${listPrice!.toFixed(4)}/min × ≈${Math.round(gv.monthlyMinutes ?? 0).toLocaleString()} min/month (projected from ${gv.volume?.windowDays} days)`}>
+    <span title={`${fmtUsd(cost)}/month = ${formatPerMinute(listPrice)} × ≈${Math.round(gv.monthlyMinutes ?? 0).toLocaleString()} min/month (projected from ${gv.volume?.windowDays} days)`}>
       {fmtUsd(cost)}<span className="text-muted-foreground">/mo</span>
     </span>
   )
