@@ -165,14 +165,21 @@ export default function Corpus() {
   // from the API's audioCached, not an age guess.
   const audioSaved = React.useMemo(() => filteredCalls.filter((c) => c.audioCached).length, [filteredCalls])
   const audioGone = React.useMemo(
-    () => filteredCalls.filter((c) => retentionState(c.sourceStartedAt, c.audioCached)?.kind === "gone").length,
+    () => filteredCalls.filter((c) => retentionState(c.sourceStartedAt, c.audioCached, c.audioCacheLastOutcome)?.kind === "gone").length,
     [filteredCalls],
   )
 
   // T-126: corpus-wide (not filtered) because the rescue endpoint acts on
   // the whole corpus -- the button's count must match what a click does.
+  // T-131: refused calls (the server's last attempt hit a permanent source
+  // refusal) are excluded too -- the button must only count what a click
+  // can actually save, or it never reaches zero.
   const audioUnsaved = React.useMemo(
-    () => (calls ?? []).filter((c) => !c.audioCached && retentionState(c.sourceStartedAt, c.audioCached)?.kind !== "gone").length,
+    () =>
+      (calls ?? []).filter((c) => {
+        const st = retentionState(c.sourceStartedAt, c.audioCached, c.audioCacheLastOutcome)
+        return !c.audioCached && st?.kind !== "gone" && st?.kind !== "refused"
+      }).length,
     [calls],
   )
 
@@ -234,7 +241,7 @@ export default function Corpus() {
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={call.status} />
                             <JudgeChip scan={latestScanByCall.get(call.id) ?? null} />
-                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} audioCached={call.audioCached} />
+                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} audioCached={call.audioCached} audioCacheLastOutcome={call.audioCacheLastOutcome} />
                           </div>
                         </TableCell>
                         <TableCell>
@@ -712,8 +719,8 @@ function StatusBadge({ status }: { status: CallStatus }) {
 // from age alone (the pre-T-124 version warned "expired?" on calls that
 // were long since safely cached). The mapping lives in lib/retention.ts
 // retentionState(), unit-tested; this component only owns the CSS.
-function RetentionWarning({ sourceStartedAt, audioCached }: { sourceStartedAt?: string | null; audioCached?: boolean }) {
-  const st = retentionState(sourceStartedAt, audioCached)
+function RetentionWarning({ sourceStartedAt, audioCached, audioCacheLastOutcome }: { sourceStartedAt?: string | null; audioCached?: boolean; audioCacheLastOutcome?: string | null }) {
+  const st = retentionState(sourceStartedAt, audioCached, audioCacheLastOutcome)
   if (!st) return null
   if (st.kind === "saved") {
     return (
@@ -723,6 +730,17 @@ function RetentionWarning({ sourceStartedAt, audioCached }: { sourceStartedAt?: 
         data-testid="retention-chip"
       >
         <TimerReset className="h-2.5 w-2.5" /> audio saved
+      </span>
+    )
+  }
+  if (st.kind === "refused") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-mono uppercase text-destructive"
+        title="The server tried to save this call's audio and the source refused permanently (Vapi retention refusal or an unsigned storage link). No click here can save it -- see the backlog's storage-bucket finding."
+        data-testid="retention-chip"
+      >
+        <TimerReset className="h-2.5 w-2.5" /> source refuses audio
       </span>
     )
   }

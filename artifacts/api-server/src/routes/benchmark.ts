@@ -126,6 +126,7 @@ import { drainWithConcurrency } from "../lib/concurrency";
 import { getOrCacheAudioBytes, audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
+import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
 import { cachedVendorModels } from "../lib/model-list-cache";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -334,6 +335,11 @@ function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
     // T-124: only the read routes pass this -- write responses leave it
     // absent rather than claiming false without having looked.
     audioCached,
+    // T-131: last audio-cache attempt (rescue/import), so the UI can name a
+    // permanent source refusal instead of offering to save the unsaveable.
+    audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
+    audioCacheLastError: call.audioCacheLastError ?? null,
+    audioCacheLastAttemptAt: call.audioCacheLastAttemptAt?.toISOString() ?? null,
     createdAt: call.createdAt.toISOString(),
   };
 }
@@ -1100,9 +1106,14 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
     let message: string | null = null;
     try {
       await getOrCacheAudioBytes(created);
+      await recordAudioCacheAttempt(created.id, "saved", null);
     } catch (err) {
       req.log.warn({ err, callId: created.id }, "import: audio could not be cached at import time");
-      message = `Imported, but the audio could not be saved to the server yet (${err instanceof Error ? err.message : String(err)}). The first run, or "Save audio now" on Calls, will try again.`;
+      const errText = err instanceof Error ? err.message : String(err);
+      // T-131: remember what this attempt learned (permanent refusal vs
+      // retryable), same as the rescue endpoint does.
+      await recordAudioCacheAttempt(created.id, classifyAudioAttemptFailure(errText), errText);
+      message = `Imported, but the audio could not be saved to the server yet (${errText}). The first run, or "Save audio now" on Calls, will try again.`;
     }
 
     return {

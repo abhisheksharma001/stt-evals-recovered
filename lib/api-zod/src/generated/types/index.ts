@@ -28,6 +28,7 @@ export * from './assistantTranscriber';
 export * from './attestDeidBody';
 export * from './auditLogEntry';
 export * from './benchmarkCall';
+export * from './benchmarkCallAudioCacheLastOutcome';
 export * from './benchmarkCallInput';
 export * from './benchmarkCallUpdate';
 export * from './benchmarkDashboard';

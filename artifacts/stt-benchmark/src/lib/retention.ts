@@ -28,6 +28,7 @@ export const RETENTION_WARNING_DAYS = 10
 
 export type RetentionState =
   | { kind: "saved" }
+  | { kind: "refused" }
   | { kind: "gone"; age: number }
   | { kind: "expiring"; age: number; daysLeft: number }
 
@@ -43,9 +44,15 @@ export type RetentionState =
 export function retentionState(
   sourceStartedAt: string | null | undefined,
   audioCached: boolean | undefined,
+  audioCacheLastOutcome?: string | null,
   now: Date = new Date(),
 ): RetentionState | null {
   if (audioCached) return { kind: "saved" }
+  // T-131: the server's last save attempt learned the source will never
+  // hand this recording out (Vapi retention 400 / unsigned-bucket 403).
+  // Stated before any age math -- several refused calls have no known age
+  // at all, and one set is "only" 12 days old yet still refused.
+  if (audioCacheLastOutcome === "source_refused") return { kind: "refused" }
   if (!sourceStartedAt) return null
   const age = differenceInCalendarDays(now, new Date(sourceStartedAt))
   if (age >= VAPI_RETENTION_WINDOW_DAYS) return { kind: "gone", age }

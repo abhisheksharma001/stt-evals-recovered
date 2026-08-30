@@ -5,6 +5,7 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { BenchmarkCallAudioCacheLastOutcome } from './benchmarkCallAudioCacheLastOutcome';
 import type { CallStatus } from './callStatus';
 import type { EntityReference } from './entityReference';
 import type { Vertical } from './vertical';
@@ -51,5 +52,11 @@ export interface BenchmarkCall {
   /** @nullable */
   sourceSuccessEvaluation?: string | null;
   audioCached?: boolean;
+  /** @nullable */
+  audioCacheLastOutcome?: BenchmarkCallAudioCacheLastOutcome;
+  /** @nullable */
+  audioCacheLastError?: string | null;
+  /** @nullable */
+  audioCacheLastAttemptAt?: Date | null;
   createdAt: Date;
 }

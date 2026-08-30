@@ -1383,6 +1383,14 @@ components:
         # can never be fetched again, by anyone. Only the read routes
         # compute it; absent (not false) on write responses.
         audioCached: { type: "boolean" }
+        # T-131: outcome of the last audio-cache ATTEMPT (rescue or
+        # import-time caching). "source_refused" = the source will never
+        # hand this recording out again (Vapi retention 400 / unsigned
+        # bucket 403) -- the UI stops offering to save it. Null = never
+        # attempted by a recorder. Distinct from audioCached (a disk fact).
+        audioCacheLastOutcome: { type: ["string", "null"], enum: [saved, failed, source_refused, null] }
+        audioCacheLastError: { type: ["string", "null"] }
+        audioCacheLastAttemptAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
     BenchmarkCallInput:
       type: object

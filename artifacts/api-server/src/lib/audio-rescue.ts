@@ -12,6 +12,7 @@
 import { desc } from "drizzle-orm";
 import { benchmarkCallsTable, db } from "@workspace/db";
 import { getOrCacheAudioBytes, listCachedCallIds } from "./audio-cache";
+import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "./audio-attempt";
 import { drainWithConcurrency } from "./concurrency";
 import { VAPI_RETENTION_WINDOW_DAYS } from "./vapi-retention";
 import { planAudioRescue } from "./audio-rescue-plan";
@@ -75,11 +76,17 @@ export async function rescueUncachedAudio(): Promise<RescueResult> {
       await getOrCacheAudioBytes(call);
       savedCount += 1;
       results.push({ callId: call.id, label: call.label, outcome: "saved", error: null });
+      await recordAudioCacheAttempt(call.id, "saved", null);
     } catch (err) {
       failedCount += 1;
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ err, callId: call.id }, "audio rescue: could not cache this call's audio");
       results.push({ callId: call.id, label: call.label, outcome: "failed", error: message });
+      // T-131: persist what this attempt learned, so a permanent refusal
+      // (classifyAudioAttemptFailure) stops counting as saveable in the
+      // Overview figure and the "Save audio now" button. The attempt itself
+      // still runs on every rescue -- re-checking a refusal is free.
+      await recordAudioCacheAttempt(call.id, classifyAudioAttemptFailure(message), message);
     }
   });
 
