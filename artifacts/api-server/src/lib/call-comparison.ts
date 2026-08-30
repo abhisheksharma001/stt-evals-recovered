@@ -95,6 +95,9 @@ export type CallComparison = {
     status: string;
     pickProviderId: string | null;
     reasoning: string | null;
+    /** T-108: typed verdict halves; null on pre-2026-08-30 scans. */
+    confidence: "high" | "medium" | "low" | null;
+    keyDifferences: Array<{ span: string; alternatives: string; matters: string }> | null;
     createdAt: string;
   } | null;
   rows: ComparisonRow[];
@@ -373,6 +376,8 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
           status: scan.status,
           pickProviderId,
           reasoning: scan.agentPickReasoning ?? null,
+          confidence: scan.judgeConfidence ?? null,
+          keyDifferences: scan.judgeKeyDifferences ?? null,
           createdAt: scan.createdAt.toISOString(),
         }
       : null,

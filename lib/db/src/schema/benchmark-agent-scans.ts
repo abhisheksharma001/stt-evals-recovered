@@ -26,6 +26,11 @@ export type BenchmarkAgentFlag = {
 // provider-native confidence + domain-entity cross-check) across whatever
 // candidate transcripts already exist for the call, and only calls an LLM
 // to explain the flags the hybrid pass actually found -- see routes/agent.ts.
+/** T-108: one meaning-changing difference the judge weighed, as the typed
+ *  verdict returns it (judge.baml KeyDifference). */
+export type BenchmarkJudgeKeyDifference = { span: string; alternatives: string; matters: string };
+export type BenchmarkJudgeConfidence = "high" | "medium" | "low";
+
 export type BenchmarkHybridFlagSummary = {
   flagCount: number;
   flagSeverity: "none" | "low" | "medium" | "high";
@@ -80,6 +85,11 @@ export const benchmarkAgentScansTable = pgTable("benchmark_agent_scans", {
     () => benchmarkProviderCallResultsTable.id,
   ),
   agentPickReasoning: text("agent_pick_reasoning"),
+  // T-108: the typed halves of the verdict, stored as fields rather than
+  // parsed back out of the reasoning prose. Null on rows written before
+  // 2026-08-30 and on clean/error scans (no judge call).
+  judgeConfidence: text("judge_confidence").$type<BenchmarkJudgeConfidence | null>(),
+  judgeKeyDifferences: jsonb("judge_key_differences").$type<BenchmarkJudgeKeyDifference[] | null>(),
   // 2026-08-27, per Abhishek: track the real OpenAI cost of the judge call
   // (null on "clean" scans, which never call the LLM at all) so bulk/results
   // cost breakdowns can show real agent spend, not just STT spend. Captured

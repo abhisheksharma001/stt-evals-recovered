@@ -363,6 +363,12 @@ export const GetCallComparisonResponse = zod.object({
   "status": zod.string(),
   "pickProviderId": zod.string().nullable(),
   "reasoning": zod.string().nullable(),
+  "confidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullable(),
+  "keyDifferences": zod.array(zod.object({
+  "span": zod.string(),
+  "alternatives": zod.string(),
+  "matters": zod.string()
+}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullable(),
   "createdAt": zod.coerce.date()
 }).nullable(),
   "rows": zod.array(zod.object({
@@ -455,6 +461,12 @@ export const GetBulkCallComparisonResponse = zod.object({
   "status": zod.string(),
   "pickProviderId": zod.string().nullable(),
   "reasoning": zod.string().nullable(),
+  "confidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullable(),
+  "keyDifferences": zod.array(zod.object({
+  "span": zod.string(),
+  "alternatives": zod.string(),
+  "matters": zod.string()
+}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullable(),
   "createdAt": zod.coerce.date()
 }).nullable(),
   "rows": zod.array(zod.object({
@@ -1970,6 +1982,12 @@ export const ListAgentScansResponseItem = zod.object({
 })),
   "agentPickProviderId": zod.string().nullish(),
   "agentPickReasoning": zod.string().nullish(),
+  "judgeConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "judgeKeyDifferences": zod.array(zod.object({
+  "span": zod.string(),
+  "alternatives": zod.string(),
+  "matters": zod.string()
+}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullish(),
   "judgePromptTokens": zod.number().nullish(),
   "judgeCompletionTokens": zod.number().nullish(),
   "judgeCostMicrocents": zod.number().nullish(),
@@ -2025,6 +2043,12 @@ export const CreateAgentScanResponse = zod.object({
 })),
   "agentPickProviderId": zod.string().nullish(),
   "agentPickReasoning": zod.string().nullish(),
+  "judgeConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "judgeKeyDifferences": zod.array(zod.object({
+  "span": zod.string(),
+  "alternatives": zod.string(),
+  "matters": zod.string()
+}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullish(),
   "judgePromptTokens": zod.number().nullish(),
   "judgeCompletionTokens": zod.number().nullish(),
   "judgeCostMicrocents": zod.number().nullish(),
@@ -2083,6 +2107,12 @@ export const ApproveAgentScanResponse = zod.object({
 })),
   "agentPickProviderId": zod.string().nullish(),
   "agentPickReasoning": zod.string().nullish(),
+  "judgeConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "judgeKeyDifferences": zod.array(zod.object({
+  "span": zod.string(),
+  "alternatives": zod.string(),
+  "matters": zod.string()
+}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullish(),
   "judgePromptTokens": zod.number().nullish(),
   "judgeCompletionTokens": zod.number().nullish(),
   "judgeCostMicrocents": zod.number().nullish(),
@@ -2141,6 +2171,12 @@ export const RejectAgentScanResponse = zod.object({
 })),
   "agentPickProviderId": zod.string().nullish(),
   "agentPickReasoning": zod.string().nullish(),
+  "judgeConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "judgeKeyDifferences": zod.array(zod.object({
+  "span": zod.string(),
+  "alternatives": zod.string(),
+  "matters": zod.string()
+}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullish(),
   "judgePromptTokens": zod.number().nullish(),
   "judgeCompletionTokens": zod.number().nullish(),
   "judgeCostMicrocents": zod.number().nullish(),
