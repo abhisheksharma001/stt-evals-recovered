@@ -713,6 +713,12 @@ export const ComparisonRowStatus = {
   missing: 'missing',
 } as const;
 
+export type ComparisonRowHybridFlagsLowConfidenceWordSpansItem = {
+  words: string[];
+  avgConfidence: number;
+  severity: string;
+};
+
 /**
  * @nullable
  */
@@ -720,6 +726,7 @@ export type ComparisonRowHybridFlags = {
   /** @nullable */
   disagreementRate: number | null;
   lowConfidenceSpans: number;
+  lowConfidenceWordSpans: ComparisonRowHybridFlagsLowConfidenceWordSpansItem[];
   confidenceAvailable: boolean;
   entityMismatches: number;
 } | null;
@@ -832,6 +839,27 @@ export const CallComparisonOrdering = {
 /**
  * @nullable
  */
+export type CallComparisonJudgeConfidence = typeof CallComparisonJudgeConfidence[keyof typeof CallComparisonJudgeConfidence] | null;
+
+
+export const CallComparisonJudgeConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+/**
+ * T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.
+ */
+export interface JudgeKeyDifference {
+  span: string;
+  alternatives: string;
+  matters: string;
+}
+
+/**
+ * @nullable
+ */
 export type CallComparisonJudge = {
   scanId: string;
   status: string;
@@ -839,6 +867,10 @@ export type CallComparisonJudge = {
   pickProviderId: string | null;
   /** @nullable */
   reasoning: string | null;
+  /** @nullable */
+  confidence: CallComparisonJudgeConfidence;
+  /** @nullable */
+  keyDifferences: JudgeKeyDifference[] | null;
   createdAt: string;
 } | null;
 
@@ -917,6 +949,18 @@ export const AgentScanStatus = {
   rejected: 'rejected',
 } as const;
 
+/**
+ * @nullable
+ */
+export type AgentScanJudgeConfidence = typeof AgentScanJudgeConfidence[keyof typeof AgentScanJudgeConfidence] | null;
+
+
+export const AgentScanJudgeConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
 export type HybridFlagSummaryFlagSeverity = typeof HybridFlagSummaryFlagSeverity[keyof typeof HybridFlagSummaryFlagSeverity];
 
 
@@ -981,6 +1025,10 @@ export interface AgentScan {
   agentPickProviderId?: string | null;
   /** @nullable */
   agentPickReasoning?: string | null;
+  /** @nullable */
+  judgeConfidence?: AgentScanJudgeConfidence;
+  /** @nullable */
+  judgeKeyDifferences?: JudgeKeyDifference[] | null;
   /** @nullable */
   judgePromptTokens?: number | null;
   /** @nullable */

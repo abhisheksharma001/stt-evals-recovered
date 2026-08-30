@@ -28,13 +28,15 @@ import { NoOutputChip, NoOutputDetail, MissingCounts, missingByProvider, type No
 // T-31: Runs is no longer a route. Bulks renders it (`embedded`) as its
 // "Individual runs" section -- a bulk is a group of runs, so two sidebar
 // entries for the same thing was schema leaking into navigation (D.4).
-export default function Runs({ embedded = false }: { embedded?: boolean } = {}) {
+// T-106: `onlyAdhoc` hides bulk shard runs -- Bulks nests those under
+// their bulk row now, so this section is only for runs with no bulk.
+export default function Runs({ embedded = false, onlyAdhoc = false }: { embedded?: boolean; onlyAdhoc?: boolean } = {}) {
   // Runs execute fire-and-forget in the background (no job queue -- see
   // .claude/CLAUDE.md) and there was no way to see a "running" run finish
   // short of manually reloading the page. Poll while anything is actually
   // in flight; stop polling the moment nothing is (avoids hammering the API
   // once every run has settled).
-  const { data: runs, isLoading, isError, error, refetch } = useListBenchmarkRuns({
+  const { data: allRuns, isLoading, isError, error, refetch } = useListBenchmarkRuns({
     query: {
       queryKey: getListBenchmarkRunsQueryKey(),
       refetchInterval: (query) => {
@@ -45,6 +47,8 @@ export default function Runs({ embedded = false }: { embedded?: boolean } = {}) 
       },
     },
   })
+
+  const runs = onlyAdhoc ? allRuns?.filter((r) => r.bulkId == null) : allRuns
 
   return (
     <div className="space-y-6">
@@ -89,7 +93,7 @@ export default function Runs({ embedded = false }: { embedded?: boolean } = {}) 
               ) : isLoading ? (
                 <TableStateRow colSpan={6} state={{ kind: "loading", message: "Loading run history…" }} />
               ) : runs?.length === 0 ? (
-                <TableStateRow colSpan={6} state={{ kind: "empty", message: "No runs yet. Runs are created when a bulk is launched." }} />
+                <TableStateRow colSpan={6} state={{ kind: "empty", message: onlyAdhoc ? "No ad-hoc runs. Every run so far belongs to a bulk -- open a bulk row above to see its runs." : "No runs yet. Runs are created when a bulk is launched." }} />
               ) : (
                 runs?.map(run => (
                   <TableRow key={run.id}>
@@ -146,7 +150,7 @@ export default function Runs({ embedded = false }: { embedded?: boolean } = {}) 
   )
 }
 
-function RunStatusBadge({ status }: { status: RunStatus }) {
+export function RunStatusBadge({ status }: { status: RunStatus }) {
   const styles: Record<RunStatus, string> = {
     queued: "bg-secondary text-muted-foreground border-border",
     running: "bg-primary/15 text-primary animate-pulse border-primary/30",
@@ -167,7 +171,7 @@ function RunStatusBadge({ status }: { status: RunStatus }) {
 // FR-E4: a queued run that never started, or a run left "failed" after a
 // partial outage, can be (re)executed here -- only the cells without a
 // successful result are retried (see run-executor.ts).
-function ExecuteButton({ runId }: { runId: string }) {
+export function ExecuteButton({ runId }: { runId: string }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const execute = useExecuteBenchmarkRun()
@@ -335,7 +339,7 @@ function FailureAnalysisPanel({
 // aggregate recommendation). Renamed to "Cell detail" throughout -- this
 // dialog is the raw per-(call, provider) drill-down; "Results" now means
 // only the Rankings page.
-function ResultsDialog({ runId, providerIds, runStatus }: { runId: string; providerIds: string[]; runStatus: RunStatus }) {
+export function ResultsDialog({ runId, providerIds, runStatus }: { runId: string; providerIds: string[]; runStatus: RunStatus }) {
   const [open, setOpen] = React.useState(false)
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   // ux-fixes UX-1: skipped_pending_review cells are collapsed by default --

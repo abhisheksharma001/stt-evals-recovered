@@ -61,6 +61,8 @@ function ComparisonBody({ data }: { data: CallComparison }) {
   const pickName = data.judge?.pickProviderId
     ? (data.rows.find((r) => r.providerId === data.judge!.pickProviderId)?.providerName ?? data.judge.pickProviderId)
     : null
+  // T-108: the first sentence of the judge's own prose; the typed fields
+  // (confidence, key differences) render beside it, never parsed from it.
   const oneLiner = data.judge?.reasoning ? data.judge.reasoning.split(/(?<=[.!?])\s/)[0] : null
   const missing = data.rows.filter((r) => r.status !== "ok").length
   // E.5: per-provider missing counts in the header. One call here, so each
@@ -140,9 +142,17 @@ function ComparisonBody({ data }: { data: CallComparison }) {
               <Trophy className="h-3.5 w-3.5 text-primary" />
               <span className="font-semibold text-foreground">{pickName}</span>
               <Badge variant="outline" className="text-[9px] uppercase">OpenAI pick</Badge>
+              <JudgeConfidenceChip confidence={data.judge.confidence} />
               <span className="text-[10px] text-muted-foreground">-- a suggestion from the judge, not a verdict</span>
             </div>
             {oneLiner && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{oneLiner}</p>}
+            <JudgeKeyDifferences items={data.judge.keyDifferences} />
+            {data.judge.reasoning && (
+              <details className="mt-1.5 text-[11px] text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground">Full reasoning</summary>
+                <p className="mt-1 whitespace-pre-wrap leading-relaxed">{data.judge.reasoning}</p>
+              </details>
+            )}
           </div>
         ) : data.judge.status === "error" ? (
           <div className="flex items-center gap-1.5 rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-xs text-destructive">
@@ -217,6 +227,43 @@ function ComparisonBody({ data }: { data: CallComparison }) {
   )
 }
 
+/** T-108: how sure the judge said it was. Three levels from judge.baml; a
+ *  null (scan predates the typed verdict) says so rather than guessing. */
+function JudgeConfidenceChip({ confidence }: { confidence: "high" | "medium" | "low" | null }) {
+  if (!confidence) return <span className="text-[10px] text-muted-foreground" data-testid="judge-confidence">confidence not recorded</span>
+  const tone =
+    confidence === "high" ? "border-success/30 bg-success/10 text-success" : confidence === "medium" ? "border-warning/30 bg-warning/10 text-warning" : "border-destructive/30 bg-destructive/10 text-destructive"
+  const why =
+    confidence === "high"
+      ? "The meaning-changing differences all point the same way and the context makes the right reading clear."
+      : confidence === "medium"
+        ? "Better on balance, but at least one difference could go either way from text alone."
+        : "Text alone cannot settle it -- listen to the audio before trusting this pick."
+  return (
+    <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${tone}`} title={why} data-testid="judge-confidence">
+      {confidence} confidence
+    </span>
+  )
+}
+
+function JudgeKeyDifferences({ items }: { items: Array<{ span: string; alternatives: string; matters: string }> | null }) {
+  if (!items) return null
+  if (items.length === 0) return <p className="mt-1 text-[11px] text-muted-foreground">No meaning-changing differences -- the candidates differ in convention only.</p>
+  return (
+    <ul className="mt-1.5 space-y-1 text-[11px]" data-testid="judge-key-differences">
+      {items.map((d, i) => (
+        <li key={i} className="flex gap-1.5">
+          <span className="shrink-0 text-muted-foreground">·</span>
+          <span>
+            <span className="font-mono font-semibold text-foreground">“{d.span}”</span>
+            <span className="text-muted-foreground"> vs {d.alternatives} — {d.matters}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function pct(v: number | null | undefined): string {
   return v == null ? "—" : `${(v * 100).toFixed(0)}%`
 }
@@ -276,7 +323,7 @@ function ProviderRow({
       {expanded && ok && (
         <div className="space-y-2 border-t border-border bg-muted/20 p-3">
           {row.diff ? (
-            <WordDiffView wordDiff={row.diff.wordDiff} referenceLabel={referenceLabel} />
+            <WordDiffView wordDiff={row.diff.wordDiff} referenceLabel={referenceLabel} lowConfidence={row.hybridFlags?.lowConfidenceWordSpans} />
           ) : (
             <p className="whitespace-pre-wrap font-serif text-sm leading-relaxed">{row.hypothesisTranscript}</p>
           )}

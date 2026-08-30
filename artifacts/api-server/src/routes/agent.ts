@@ -90,6 +90,8 @@ async function serializeScan(scan: BenchmarkAgentScanRow) {
     candidates,
     agentPickProviderId,
     agentPickReasoning: scan.agentPickReasoning,
+    judgeConfidence: scan.judgeConfidence ?? null,
+    judgeKeyDifferences: scan.judgeKeyDifferences ?? null,
     judgePromptTokens: scan.judgePromptTokens,
     judgeCompletionTokens: scan.judgeCompletionTokens,
     judgeCostMicrocents: scan.judgeCostMicrocents,

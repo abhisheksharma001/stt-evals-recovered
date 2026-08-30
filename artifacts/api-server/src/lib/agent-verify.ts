@@ -275,6 +275,8 @@ export async function verifyCallWithAgent(params: {
     hybridFlags: hybridFlagsSummary,
     agentPickResultId,
     agentPickReasoning: judgeResult.reasoning,
+    judgeConfidence: judgeResult.confidence,
+    judgeKeyDifferences: judgeResult.keyDifferences,
     judgePromptTokens: judgeResult.promptTokens,
     judgeCompletionTokens: judgeResult.completionTokens,
     judgeCostMicrocents: judgeResult.costMicrocents,

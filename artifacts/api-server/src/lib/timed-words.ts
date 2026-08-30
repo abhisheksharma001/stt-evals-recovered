@@ -6,6 +6,7 @@
 // never an empty array for that case -- callers need "not available" to be
 // distinguishable from "available and empty".
 import type { TimedWord } from "@workspace/scoring";
+import { vendorOfProviderId } from "@workspace/stt-providers";
 
 function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -21,8 +22,11 @@ export function extractProviderTimedWords(providerId: string, rawOutputJson: str
   }
   if (!body || typeof body !== "object") return null;
 
+  // T-110: vendor-keyed (see hybrid-flagging.ts) so T-104 model rows get
+  // timings too.
+  const vendor = vendorOfProviderId(providerId);
   try {
-    if (providerId === "assemblyai-universal") {
+    if (vendor === "assemblyai") {
       // Milliseconds in the real response ("start": 1261) -- converted here.
       const words = (body as { words?: Array<{ text?: string; start?: number; end?: number }> }).words;
       if (!Array.isArray(words)) return null;
@@ -31,7 +35,7 @@ export function extractProviderTimedWords(providerId: string, rawOutputJson: str
         .map((w) => ({ word: w.text!, start: w.start! / 1000, end: w.end! / 1000 }));
       return out.length ? out : null;
     }
-    if (providerId === "deepgram-nova-3") {
+    if (vendor === "deepgram") {
       // Seconds ("start": 2.88).
       const words = (
         body as {
@@ -44,7 +48,7 @@ export function extractProviderTimedWords(providerId: string, rawOutputJson: str
         .map((w) => ({ word: w.word!, start: w.start!, end: w.end! }));
       return out.length ? out : null;
     }
-    if (providerId === "gladia-solaria") {
+    if (vendor === "gladia") {
       // Seconds, nested per utterance.
       const utterances = (
         body as { result?: { transcription?: { utterances?: Array<{ words?: Array<{ word?: string; start?: number; end?: number }> }> } } }
@@ -58,7 +62,7 @@ export function extractProviderTimedWords(providerId: string, rawOutputJson: str
       }
       return out.length ? out : null;
     }
-    if (providerId === "cartesia-ink-whisper") {
+    if (vendor === "cartesia") {
       // Streaming: the adapter stores every WebSocket message under
       // `events`; each final transcript message carries its own words with
       // seconds ("start": 1.97). Only is_final messages count -- partials
@@ -75,7 +79,7 @@ export function extractProviderTimedWords(providerId: string, rawOutputJson: str
       }
       return out.length ? out : null;
     }
-    if (providerId === "elevenlabs-scribe") {
+    if (vendor === "elevenlabs") {
       // T-48, verified against the real API 2026-08-29: Scribe returns
       // words as {text, start, end, type, speaker_id, logprob} with
       // seconds, and interleaves type "spacing" entries -- only type "word"

@@ -1028,3 +1028,35 @@ provider cards gained a "Newest: X · Enable" line (T-104); Results words-to-wat
 hybrid flags stop counting convention splits (T-101); the judge's verdict carries
 confidence and key differences inside its reasoning text (T-102).
 
+## G.7 Batch 8 (2026-08-30) — what it closed in this document
+
+**Evidence — nested bulk → runs (T-106)**
+**Pattern to use:** parent row with a chevron and a child count, children indented under
+it in the same table, same columns where they apply ← [Evernote notebooks](https://mobbin.com/screens/56017ffd-23a7-4f2c-86db-2b2820b53d75),
+[Asana list grouped by section](https://mobbin.com/screens/2af90759-4ce5-4763-a3d0-796f38cb18e8),
+[Braintrust playground grouped rows](https://mobbin.com/screens/5cdf1141-8f00-4e7d-b5f4-729ea894a29a).
+**Patterns to avoid:** sub-items shown only as a "SUB-ITEM OF: …" back-reference on a
+flat list — the reader still has to find the parent ← [Charma action items](https://mobbin.com/screens/378bbaaa-277b-48f7-a7a0-e790cfb430e4).
+**Changes to the plan:** the flat "Individual runs" section became "Ad-hoc runs" (no-bulk
+runs only); shard runs moved under their bulk row.
+
+**Evidence — judge confidence (T-108)**
+**Pattern to use:** a small "High" chip on the AI recommendation card, reasons as a short
+list, full reasoning behind a disclosure ← [Peec AI actions](https://mobbin.com/screens/bf1f0dfc-94de-4d62-af35-653fbcd49dc3),
+[Rox recommended action with Reasoning toggle](https://mobbin.com/screens/3f692f59-31ca-4254-8d47-1112661613a1).
+**What operators say:** "For any finding based on limited evidence, flag it" — the
+confidence level belongs next to the finding, not in a paragraph ← "How to do AI
+analysis you can actually trust" (Lenny's Newsletter, 2026-02-17)
+https://www.lennysnewsletter.com/p/how-to-do-ai-analysis-you-can-actually ; "Production
+systems often use techniques like confidence scores … to increase reliability" ←
+"Beyond vibe checks: A PM's complete guide to evals" (2025-04-08)
+https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete-guide-to-evals
+**Changes to the plan:** confidence and key differences became columns and typed API
+fields (T-102 had folded them into the reasoning text); the chip's tooltip carries the
+level's definition from `judge.baml` so "Low" reads as "listen to the audio".
+**No evidence found for:** a transcript diff that marks a provider's own low-confidence
+words (T-109) — done as a dotted underline, a different mark from the red/amber
+disagreement colours because the two can land on the same word.
+
+Also in this batch, no new UI pattern: Setup vendor lines say how old a dated catalog is
+(T-107); T-110 is backend only.

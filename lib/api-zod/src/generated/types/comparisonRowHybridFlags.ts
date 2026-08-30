@@ -5,6 +5,7 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { ComparisonRowHybridFlagsLowConfidenceWordSpansItem } from './comparisonRowHybridFlagsLowConfidenceWordSpansItem';
 
 /**
  * @nullable
@@ -13,6 +14,7 @@ export type ComparisonRowHybridFlags = {
   /** @nullable */
   disagreementRate: number | null;
   lowConfidenceSpans: number;
+  lowConfidenceWordSpans: ComparisonRowHybridFlagsLowConfidenceWordSpansItem[];
   confidenceAvailable: boolean;
   entityMismatches: number;
 } | null;

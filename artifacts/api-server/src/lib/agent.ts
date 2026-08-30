@@ -10,7 +10,7 @@
 // Follows this repo's existing convention (see lib/stt-providers/src/adapters)
 // of raw fetch against the provider's REST API rather than an SDK dependency.
 
-import type { BenchmarkAgentFlag } from "@workspace/db";
+import type { BenchmarkAgentFlag, BenchmarkJudgeConfidence, BenchmarkJudgeKeyDifference } from "@workspace/db";
 import type { FailureClass } from "@workspace/stt-providers";
 import { BamlClientFinishReasonError, BamlClientHttpError, BamlValidationError, ClientRegistry, Collector, setLogLevel } from "@boundaryml/baml";
 import { b } from "../baml_client";
@@ -127,6 +127,13 @@ function flagKindFor(kind: BenchmarkAgentFlag["kind"]): FlagKind | null {
  *  first paragraph is the judge's own sentences; the lines after are the
  *  structured fields, labelled, so a reader (or a later parser) can find
  *  them. */
+/** T-108: BAML enum -> the lower-case stored value; anything else is null,
+ *  never a guessed level. */
+function confidenceOf(value: unknown): BenchmarkJudgeConfidence | null {
+  const v = String(value ?? "").toLowerCase();
+  return v === "high" || v === "medium" || v === "low" ? v : null;
+}
+
 export function renderReasoning(verdict: Pick<JudgeVerdict, "reasoning" | "confidence" | "keyDifferences">): string {
   const lines = [typeof verdict.reasoning === "string" ? verdict.reasoning.trim() : ""];
   lines.push("", `Confidence: ${String(verdict.confidence).toLowerCase()}.`);
@@ -152,6 +159,9 @@ export async function judgeCandidates(params: {
 }): Promise<{
   pickedProviderId: string | null;
   reasoning: string;
+  /** T-108: the typed verdict halves, stored as their own fields. */
+  confidence: BenchmarkJudgeConfidence | null;
+  keyDifferences: BenchmarkJudgeKeyDifference[];
   promptTokens: number | null;
   completionTokens: number | null;
   costMicrocents: number | null;
@@ -160,6 +170,8 @@ export async function judgeCandidates(params: {
     return {
       pickedProviderId: null,
       reasoning: "No candidate transcripts were available to compare (every re-run provider failed).",
+      confidence: null,
+      keyDifferences: [],
       promptTokens: null,
       completionTokens: null,
       costMicrocents: null,
@@ -208,6 +220,12 @@ export async function judgeCandidates(params: {
     // contract is enforced here, not trusted to a library.
     pickedProviderId: params.candidates.some((c) => c.providerId === rawPick) ? rawPick : null,
     reasoning: renderReasoning(verdict),
+    confidence: confidenceOf(verdict.confidence),
+    keyDifferences: Array.isArray(verdict.keyDifferences)
+      ? verdict.keyDifferences
+          .slice(0, 3)
+          .map((d) => ({ span: String(d.span ?? ""), alternatives: String(d.alternatives ?? ""), matters: String(d.matters ?? "") }))
+      : [],
     promptTokens,
     completionTokens,
     costMicrocents:

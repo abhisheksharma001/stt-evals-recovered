@@ -81,6 +81,16 @@ function adapterByVendorPrefix(providerId: string): ProviderAdapter | undefined 
   return Object.values(providerRegistry).find((a) => providerId.startsWith(`${vendorOf(a)}-`));
 }
 
+/** T-110: the vendor behind any provider id -- the adapter's own id, a
+ *  catalog id, or a T-104 "<vendor>-<apiModel>" row. Everything that used
+ *  to switch on an exact id (confidence / timing extraction, concurrency)
+ *  keys on this instead, so a newly enabled model row gets the same
+ *  treatment as the vendor's historical row. */
+export function vendorOfProviderId(providerId: string): string {
+  const adapter = providerRegistry[providerId] ?? adapterByVendorPrefix(providerId);
+  return adapter ? vendorOf(adapter) : providerId.split("-")[0]!;
+}
+
 /** The API model string to send for a provider id, if the catalog knows one. */
 export function getProviderApiModel(providerId: string): string | undefined {
   const fromCatalog = providerCatalog[providerId]?.apiModel;

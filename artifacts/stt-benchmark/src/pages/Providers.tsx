@@ -17,7 +17,7 @@ import {
   useEnableProviderModel,
   type Provider,
 } from "@workspace/api-client-react"
-import { Server, Plus, Check, X, Shield, Activity, Zap, KeyRound, Ban, Power, Settings } from "lucide-react"
+import { Server, Plus, Check, X, Shield, Activity, Zap, KeyRound, Ban, Power, Settings, AlertTriangle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -132,6 +132,17 @@ export default function Providers() {
 // verified against the vendor's docs on a dated day. The newest model gets
 // a one-click Enable that creates its own provider row -- old results stay
 // on the old row, so nothing is silently re-labelled.
+/** T-107: after this many days a vendor catalog (no list API) is flagged
+ *  for a re-check. Deepgram and OpenAI are live and never age. */
+const CATALOG_RECHECK_DAYS = 60
+
+function catalogAge(m: { source: string; verifiedAt: string }): number | null {
+  if (m.source === "live") return null
+  const t = Date.parse(m.verifiedAt)
+  if (!Number.isFinite(t)) return null
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000))
+}
+
 function VendorModelsLine({ providers }: { providers: Provider[] }) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -151,9 +162,23 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
   if (!vendor) return null
   if (vendor.error) return <p className="text-[11px] text-muted-foreground" data-testid="vendor-models">Model list unavailable: {vendor.error}</p>
   const latest = vendor.models.find((m) => m.latest)
-  const when = latest ? (latest.source === "live" ? "live from the vendor just now" : `verified against the vendor docs ${latest.verifiedAt}`) : ""
+  // T-107: a catalog list has no API behind it -- it is only as fresh as the
+  // day someone last checked the vendor's docs. Say how old that check is,
+  // and flag it once it is older than the re-check window.
+  const age = latest ? catalogAge(latest) : null
+  const when = latest
+    ? latest.source === "live"
+      ? "live from the vendor just now"
+      : `from a dated catalog, last verified ${age === 0 ? "today" : age === 1 ? "yesterday" : `${age} days ago`} (${latest.verifiedAt})`
+    : ""
   return (
     <div className="mt-2 space-y-1 text-xs" data-testid="vendor-models">
+      {age != null && age > CATALOG_RECHECK_DAYS && (
+        <p className="flex items-center gap-1.5 rounded-md border border-warning/25 bg-warning/10 px-2 py-1 text-[11px] text-warning" data-testid="catalog-age">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          This vendor has no model-list API; its catalog was last verified {age} days ago. Re-check the vendor's docs before trusting "Newest".
+        </p>
+      )}
       {latest && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground">Newest:</span>

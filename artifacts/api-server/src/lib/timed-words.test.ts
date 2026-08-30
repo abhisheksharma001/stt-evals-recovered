@@ -24,6 +24,13 @@ describe("extractProviderTimedWords", () => {
     expect(extractProviderTimedWords("openai-gpt-4o-transcribe", JSON.stringify({ text: "hello", usage: { type: "tokens" } }))).toBeNull();
   });
 
+  it("T-110: reads a T-104 model row by its vendor (gladia-solaria-3, elevenlabs-scribe-v2)", () => {
+    const gladia = JSON.stringify({ result: { transcription: { utterances: [{ words: [{ word: "hi", start: 0.1, end: 0.4 }] }] } } });
+    expect(extractProviderTimedWords("gladia-solaria-3", gladia)).toEqual([{ word: "hi", start: 0.1, end: 0.4 }]);
+    const eleven = JSON.stringify({ words: [{ text: "yo", start: 1, end: 1.5, type: "word" }] });
+    expect(extractProviderTimedWords("elevenlabs-scribe-v2", eleven)).toEqual([{ word: "yo", start: 1, end: 1.5 }]);
+  });
+
   it("returns null for an unparseable or empty body", () => {
     expect(extractProviderTimedWords("elevenlabs-scribe", "not json")).toBeNull();
     expect(extractProviderTimedWords("elevenlabs-scribe", JSON.stringify({ words: [] }))).toBeNull();

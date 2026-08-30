@@ -31,6 +31,7 @@ import {
   isRetryableFailureClass,
   type FailureClass,
   type ProviderTranscribeResult,
+  vendorOfProviderId,
 } from "@workspace/stt-providers";
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
@@ -134,18 +135,20 @@ const providerSlots = new Map<string, Semaphore>();
 // WebSocket-streaming) -- not yet tuned against real 429s (see
 // docs/PRD-v3-technical.md T-6). Any provider not listed falls back to the
 // PROVIDER_CONCURRENCY env default below.
-const PROVIDER_CONCURRENCY_OVERRIDES: Record<string, number> = {
-  "deepgram-nova-3": 8,
-  "assemblyai-universal": 6,
-  "openai-gpt-4o-transcribe": 4,
-  "elevenlabs-scribe": 4,
-  "gladia-solaria": 4,
+// T-110: keyed by VENDOR (the rate limit is the vendor's, whichever model
+// row is running), so a T-104 model row inherits its vendor's slot count.
+const VENDOR_CONCURRENCY_OVERRIDES: Record<string, number> = {
+  deepgram: 8,
+  assemblyai: 6,
+  openai: 4,
+  elevenlabs: 4,
+  gladia: 4,
   speechmatics: 4,
-  "cartesia-ink-whisper": 2,
+  cartesia: 2,
 };
 
 function baseConcurrencyFor(providerId: string): number {
-  return PROVIDER_CONCURRENCY_OVERRIDES[providerId] ?? PROVIDER_CONCURRENCY;
+  return VENDOR_CONCURRENCY_OVERRIDES[vendorOfProviderId(providerId)] ?? PROVIDER_CONCURRENCY;
 }
 
 function slotsFor(providerId: string): Semaphore {

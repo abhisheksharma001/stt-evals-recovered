@@ -5,6 +5,8 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { CallComparisonJudgeConfidence } from './callComparisonJudgeConfidence';
+import type { JudgeKeyDifference } from './judgeKeyDifference';
 
 /**
  * @nullable
@@ -16,5 +18,9 @@ export type CallComparisonJudge = {
   pickProviderId: string | null;
   /** @nullable */
   reasoning: string | null;
+  /** @nullable */
+  confidence: CallComparisonJudgeConfidence;
+  /** @nullable */
+  keyDifferences: JudgeKeyDifference[] | null;
   createdAt: Date;
 } | null;

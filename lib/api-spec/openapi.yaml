@@ -1707,10 +1707,21 @@ components:
         flagSeverity: { type: ["string", "null"] }
         hybridFlags:
           type: ["object", "null"]
-          required: [disagreementRate, lowConfidenceSpans, confidenceAvailable, entityMismatches]
+          required: [disagreementRate, lowConfidenceSpans, lowConfidenceWordSpans, confidenceAvailable, entityMismatches]
           properties:
             disagreementRate: { type: ["number", "null"] }
             lowConfidenceSpans: { type: number }
+            # T-109 -- the spans behind the count, so the diff can underline
+            # the words the provider itself was unsure of.
+            lowConfidenceWordSpans:
+              type: array
+              items:
+                type: object
+                required: [words, avgConfidence, severity]
+                properties:
+                  words: { type: array, items: { type: string } }
+                  avgConfidence: { type: number }
+                  severity: { type: string }
             confidenceAvailable: { type: boolean }
             entityMismatches: { type: number }
         latencyFinalMs: { type: ["number", "null"] }
@@ -1766,12 +1777,16 @@ components:
         ordering: { type: string, enum: [verdict_rate, alphabetical] }
         judge:
           type: ["object", "null"]
-          required: [scanId, status, pickProviderId, reasoning, createdAt]
+          required: [scanId, status, pickProviderId, reasoning, confidence, keyDifferences, createdAt]
           properties:
             scanId: { type: string }
             status: { type: string }
             pickProviderId: { type: ["string", "null"] }
             reasoning: { type: ["string", "null"] }
+            confidence: { type: ["string", "null"], enum: [high, medium, low, null] }
+            keyDifferences:
+              type: ["array", "null"]
+              items: { $ref: "#/components/schemas/JudgeKeyDifference" }
             createdAt: { type: string, format: date-time }
         rows:
           type: array
@@ -1855,6 +1870,12 @@ components:
           items: { $ref: "#/components/schemas/AgentScanCandidate" }
         agentPickProviderId: { type: ["string", "null"] }
         agentPickReasoning: { type: ["string", "null"] }
+        # T-108 -- the typed verdict halves as fields (null before 2026-08-30
+        # and on clean / error scans).
+        judgeConfidence: { type: ["string", "null"], enum: [high, medium, low, null] }
+        judgeKeyDifferences:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/JudgeKeyDifference" }
         # T-01 (2026-08-28): these three were serialised by routes/agent.ts
         # but never declared here, so the response parse dropped them and no
         # client could ever see what a judgement cost. Micro-cents; null on
@@ -1868,6 +1889,14 @@ components:
         decidedByLabel: { type: ["string", "null"] }
         decidedAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
+    JudgeKeyDifference:
+      type: object
+      description: T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.
+      required: [span, alternatives, matters]
+      properties:
+        span: { type: string }
+        alternatives: { type: string }
+        matters: { type: string }
     HybridFlagSummary:
       type: object
       required: [flagCount, flagSeverity, crossProviderDisagreements, lowConfidenceSpans, entityMismatches]

@@ -38,9 +38,15 @@ export type ComparisonDiff = {
   werVsReference: number | null;
 };
 
+export type LowConfidenceWordSpan = { words: string[]; avgConfidence: number; severity: string };
+
 export type ComparisonHybridFlags = {
   disagreementRate: number | null;
   lowConfidenceSpans: number;
+  /** T-109: the spans themselves (the provider's own per-word confidence,
+   *  hybrid.ts signal 2), so the diff can underline the words it was unsure
+   *  of. Empty when the provider reports no confidence. */
+  lowConfidenceWordSpans: LowConfidenceWordSpan[];
   confidenceAvailable: boolean;
   entityMismatches: number;
 };
@@ -89,6 +95,9 @@ export type CallComparison = {
     status: string;
     pickProviderId: string | null;
     reasoning: string | null;
+    /** T-108: typed verdict halves; null on pre-2026-08-30 scans. */
+    confidence: "high" | "medium" | "low" | null;
+    keyDifferences: Array<{ span: string; alternatives: string; matters: string }> | null;
     createdAt: string;
   } | null;
   rows: ComparisonRow[];
@@ -143,9 +152,19 @@ function hybridFlagsOf(detail: Record<string, unknown> | null): ComparisonHybrid
   const hf = (detail as { hybridFlags?: Record<string, unknown> } | null)?.hybridFlags;
   if (!hf) return null;
   const disagreement = hf.crossProviderDisagreement as { disagreementRate?: number } | null | undefined;
+  const spans: LowConfidenceWordSpan[] = Array.isArray(hf.lowConfidenceSpans)
+    ? (hf.lowConfidenceSpans as Array<{ words?: unknown; avgConfidence?: unknown; severity?: unknown }>)
+        .filter((s) => Array.isArray(s.words) && typeof s.avgConfidence === "number")
+        .map((s) => ({
+          words: (s.words as unknown[]).filter((w): w is string => typeof w === "string"),
+          avgConfidence: s.avgConfidence as number,
+          severity: typeof s.severity === "string" ? s.severity : "low",
+        }))
+    : [];
   return {
     disagreementRate: typeof disagreement?.disagreementRate === "number" ? disagreement.disagreementRate : null,
-    lowConfidenceSpans: Array.isArray(hf.lowConfidenceSpans) ? hf.lowConfidenceSpans.length : 0,
+    lowConfidenceSpans: spans.length,
+    lowConfidenceWordSpans: spans,
     confidenceAvailable: hf.confidenceAvailable === true,
     entityMismatches: Array.isArray(hf.entityMismatches) ? hf.entityMismatches.length : 0,
   };
@@ -357,6 +376,8 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
           status: scan.status,
           pickProviderId,
           reasoning: scan.agentPickReasoning ?? null,
+          confidence: scan.judgeConfidence ?? null,
+          keyDifferences: scan.judgeKeyDifferences ?? null,
           createdAt: scan.createdAt.toISOString(),
         }
       : null,

@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useLocation } from "wouter"
-import Runs from "@/pages/Runs"
+import Runs, { RunStatusBadge, ExecuteButton, ResultsDialog } from "@/pages/Runs"
 import { formatMicrocents, formatCents } from "@/lib/utils"
 import { failureCopy } from "@/components/no-output"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -34,9 +34,11 @@ import {
   type BulkPreviewInput,
   type Provider,
   type VapiAssistant,
+  useListBenchmarkRuns,
+  type BenchmarkRun,
 } from "@workspace/api-client-react"
 import { RunStages } from "@/components/run-stages"
-import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2, GitMerge } from "lucide-react"
+import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2, GitMerge, ChevronRight, ChevronDown, Activity } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1169,6 +1171,48 @@ function TemplateRow({ template }: { template: BulkTemplate }) {
  * bulk that matters most right now -- the running one if any, else the
  * newest -- before the table, the creation form and the templates.
  */
+/** T-106: the runs (shards) of one bulk, nested under its table row. Same
+ *  pieces the Runs list uses -- status, scope, results, retry -- so a run
+ *  reads the same wherever it appears. */
+function BulkRunsList({ runs, bulkStatus }: { runs: BenchmarkRun[]; bulkStatus: BulkStatus }) {
+  if (runs.length === 0) {
+    return (
+      <p className="px-6 py-3 text-xs text-muted-foreground" data-testid="bulk-runs-empty">
+        {bulkStatus === "draft" || bulkStatus === "awaiting_confirmation" || bulkStatus === "estimating"
+          ? "No runs yet -- this bulk has not been launched."
+          : "No runs on file for this bulk."}
+      </p>
+    )
+  }
+  return (
+    <div className="divide-y divide-border" data-testid="bulk-runs-list">
+      {runs.map((run) => (
+        <div key={run.id} className="grid grid-cols-[6rem_7rem_1fr_7rem_5rem_auto] items-center gap-3 px-6 py-2 text-xs">
+          <span className="font-mono text-muted-foreground" title={run.id}>
+            {run.shardIndex != null ? `shard ${run.shardIndex + 1}` : run.id.substring(0, 8)}
+          </span>
+          <span><RunStatusBadge status={run.status} /></span>
+          <span className="min-w-0">
+            <span className="mr-3 inline-flex items-center font-mono text-muted-foreground"><Server className="mr-1 h-3 w-3" />{run.providerIds.length}</span>
+            <span className="mr-3 inline-flex items-center font-mono text-muted-foreground"><Database className="mr-1 h-3 w-3" />{run.callCount}</span>
+            {run.notes && <span className="block truncate text-muted-foreground" title={run.notes}>{run.notes}</span>}
+          </span>
+          <span className="text-muted-foreground">{formatDistanceToNow(new Date(run.createdAt), { addSuffix: true })}</span>
+          <span className="font-mono text-muted-foreground">
+            {run.completedAt
+              ? `${Math.floor((new Date(run.completedAt).getTime() - new Date(run.createdAt).getTime()) / 1000)}s`
+              : run.status === "running" ? <Activity className="h-3.5 w-3.5 animate-pulse text-primary" /> : "—"}
+          </span>
+          <span className="flex justify-end gap-2">
+            <ResultsDialog runId={run.id} providerIds={run.providerIds} runStatus={run.status} />
+            {(run.status === "failed" || run.status === "queued" || run.status === "complete" || run.status === "running") && <ExecuteButton runId={run.id} />}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LiveBulkCard({ bulk }: { bulk: Bulk }) {
   const inFlight = bulk.status === "running" || bulk.status === "estimating"
   const { data: detail } = useGetBulk(bulk.id, {
@@ -1254,6 +1298,31 @@ export default function Bulks() {
   const runsOpen = location.split("?")[0].replace(/\/+$/, "") === "/runs"
   const headline = bulks?.find((b) => b.status === "running" || b.status === "estimating") ?? bulks?.[0] ?? null
 
+  // T-106 (E.1 hierarchy): a bulk is a group of runs, so its runs nest under
+  // its row -- bulk -> run -> cells -- instead of living in a flat list at
+  // the bottom that a reader had to match up by hand.
+  const { data: runs } = useListBenchmarkRuns({
+    query: { queryKey: getListBenchmarkRunsQueryKey(), refetchInterval: anyRunning ? 3000 : false },
+  })
+  const runsByBulk = React.useMemo(() => {
+    const m = new Map<string, BenchmarkRun[]>()
+    for (const r of runs ?? []) {
+      if (!r.bulkId) continue
+      if (!m.has(r.bulkId)) m.set(r.bulkId, [])
+      m.get(r.bulkId)!.push(r)
+    }
+    for (const list of m.values()) list.sort((a, b) => (a.shardIndex ?? 0) - (b.shardIndex ?? 0))
+    return m
+  }, [runs])
+  const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set())
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
   return (
     <div className="space-y-8">
       <div>
@@ -1286,9 +1355,26 @@ export default function Bulks() {
               ) : bulks?.length === 0 ? (
                 <TableStateRow colSpan={6} state={{ kind: "empty", message: "No bulks yet. Create one above to run every provider over a slice of calls." }} />
               ) : (
-                bulks?.map((bulk) => (
-                  <TableRow key={bulk.id}>
-                    <TableCell className="font-medium">{bulk.name}</TableCell>
+                bulks?.map((bulk) => {
+                  const bulkRuns = runsByBulk.get(bulk.id) ?? []
+                  const open = expanded.has(bulk.id)
+                  return (
+                  <React.Fragment key={bulk.id}>
+                  <TableRow data-testid="bulk-row">
+                    <TableCell className="font-medium">
+                      <button
+                        type="button"
+                        onClick={() => toggle(bulk.id)}
+                        className="flex items-center gap-1.5 text-left hover:text-primary"
+                        aria-expanded={open}
+                        data-testid="bulk-row-toggle"
+                        title={open ? "Hide this bulk's runs" : "Show this bulk's runs"}
+                      >
+                        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                        <span>{bulk.name}</span>
+                        <span className="font-mono text-[11px] font-normal text-muted-foreground">{bulkRuns.length} run{bulkRuns.length === 1 ? "" : "s"}</span>
+                      </button>
+                    </TableCell>
                     <TableCell><BulkStatusBadge status={bulk.status} /></TableCell>
                     <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={criteriaSummary(bulk.selectionCriteria)}>
                       {criteriaSummary(bulk.selectionCriteria)}
@@ -1306,7 +1392,16 @@ export default function Bulks() {
                       </BulkDetailDialog>
                     </TableCell>
                   </TableRow>
-                ))
+                  {open && (
+                    <TableRow className="hover:bg-transparent" data-testid="bulk-runs-row">
+                      <TableCell colSpan={6} className="bg-muted/20 p-0">
+                        <BulkRunsList runs={bulkRuns} bulkStatus={bulk.status} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </React.Fragment>
+                  )
+                })
               )}
             </TableBody>
           </Table>
@@ -1366,15 +1461,17 @@ export default function Bulks() {
       </details>
 
       {/* T-31 (D.4): runs live inside Bulks now -- a bulk is a group of runs.
-          Collapsed by default; the old /runs route lands here expanded. */}
+          Collapsed by default; the old /runs route lands here expanded.
+          T-106: bulk shard runs moved under their bulk row above; this
+          section keeps only runs that belong to no bulk. */}
       <details id="runs" open={runsOpen} className="group rounded-lg border border-border">
         <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 px-4 py-3">
           <GitMerge className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">Individual runs</span>
-          <span className="text-xs text-muted-foreground">Every run, bulk shards and ad-hoc alike, with per-call results and retry.</span>
+          <span className="text-sm font-semibold">Ad-hoc runs</span>
+          <span className="text-xs text-muted-foreground">Runs that belong to no bulk. A bulk's own runs are under its row in the table above.</span>
         </summary>
         <div className="border-t border-border p-4">
-          <Runs embedded />
+          <Runs embedded onlyAdhoc />
         </div>
       </details>
     </div>

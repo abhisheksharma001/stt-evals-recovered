@@ -7,9 +7,11 @@
  */
 import type { AgentFlag } from './agentFlag';
 import type { AgentScanCandidate } from './agentScanCandidate';
+import type { AgentScanJudgeConfidence } from './agentScanJudgeConfidence';
 import type { AgentScanSourceLabel } from './agentScanSourceLabel';
 import type { AgentScanStatus } from './agentScanStatus';
 import type { HybridFlagSummary } from './hybridFlagSummary';
+import type { JudgeKeyDifference } from './judgeKeyDifference';
 
 /**
  * 2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel/sourceTranscript are best-effort context (Vapi's own draft), not an analysis input anymore.
@@ -37,6 +39,10 @@ export interface AgentScan {
   agentPickProviderId?: string | null;
   /** @nullable */
   agentPickReasoning?: string | null;
+  /** @nullable */
+  judgeConfidence?: AgentScanJudgeConfidence;
+  /** @nullable */
+  judgeKeyDifferences?: JudgeKeyDifference[] | null;
   /** @nullable */
   judgePromptTokens?: number | null;
   /** @nullable */
