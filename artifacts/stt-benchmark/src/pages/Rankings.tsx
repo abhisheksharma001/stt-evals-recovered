@@ -19,6 +19,7 @@ import {
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
 import { formatCents, formatMicrocents, formatPerMinute } from "@/lib/utils"
+import { paidVsListDiffers } from "@/lib/paid-vs-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
@@ -101,10 +102,10 @@ const DIRECTION: Record<SortKey, "↓" | "↑"> = {
  * the two differ by more than 2% -- rounding noise on short calls stays
  * quiet.
  */
-const PAID_VS_LIST_TOLERANCE = 0.02
 function PaidVsListNote({ paid, list }: { paid: number | null; list: number | undefined }) {
-  if (paid == null || list === undefined || list <= 0) return null
-  if (Math.abs(paid - list) / list <= PAID_VS_LIST_TOLERANCE) return null
+  // T-122: the threshold logic lives in lib/paid-vs-list.ts, unit-tested.
+  if (!paidVsListDiffers(paid, list)) return null
+  if (paid == null || list === undefined) return null // narrowing only; differs() already guaranteed both
   return (
     <span
       className="ml-1 rounded border border-warning/40 bg-warning/10 px-1 py-px text-[10px] text-warning"

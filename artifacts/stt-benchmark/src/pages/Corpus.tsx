@@ -44,6 +44,7 @@ import { DisagreementSpans } from "@/components/disagreement-spans"
 import { TableStateRow, errorMessage } from "@/components/table-state"
 import { ProviderComparisonSection } from "@/components/provider-comparison-section"
 import { VAPI_RETENTION_WINDOW_DAYS } from "@/lib/retention"
+import { judgeChipFor, type JudgeChipScan, type JudgeChipTone } from "@/lib/judge-chip"
 
 // ---------------------------------------------------------------------------
 // 2026-08-27, per Abhishek: "for corpus and listen if we can merge both into
@@ -645,24 +646,26 @@ function ProviderComparisonPanel({ scan }: { scan: any | null }) {
  * only, never a score. No scan = no chip (the call has not been through a
  * run); "checking" while a scan is in flight.
  */
-function JudgeChip({ scan }: { scan: { status: string; judgeConfidence?: string | null; agentPickReasoning?: string | null } | null }) {
-  if (!scan) return null
-  const base = "inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px]"
-  if (scan.status === "scanning") return <span className={`${base} border-border bg-muted/40 text-muted-foreground`} data-testid="judge-chip" title="AI check in progress">checking</span>
-  if (scan.status === "clean") return <span className={`${base} border-border bg-muted/40 text-muted-foreground`} data-testid="judge-chip" title="Every provider agreed; the AI judge was never asked">clean</span>
-  if (scan.status === "error") return <span className={`${base} border-destructive/40 bg-destructive/10 text-destructive`} data-testid="judge-chip" title="The AI check itself failed on this call">check failed</span>
-  // flagged / approved / rejected -- the judge answered only if there is reasoning on the row (T-34).
-  if (!scan.agentPickReasoning) return <span className={`${base} border-border bg-muted/40 text-muted-foreground`} data-testid="judge-chip" title="Providers disagreed but the judge did not answer">flagged, no verdict</span>
-  const tone =
-    scan.judgeConfidence === "high" ? "border-success/40 bg-success/10 text-success"
-    : scan.judgeConfidence === "medium" ? "border-warning/40 bg-warning/10 text-warning"
-    : scan.judgeConfidence === "low" ? "border-destructive/40 bg-destructive/10 text-destructive"
-    : "border-border bg-muted/40 text-muted-foreground"
-  const word = scan.judgeConfidence ?? "not recorded"
-  const title = scan.judgeConfidence
-    ? `The AI judge ruled on this call and was ${scan.judgeConfidence} on it. Expand the row for its pick and reasoning.`
-    : "The AI judge ruled on this call before confidence was recorded (batch 8). A real verdict with no level on it."
-  return <span className={`${base} ${tone}`} data-testid="judge-chip" title={title}>judge: {word}</span>
+function JudgeChip({ scan }: { scan: JudgeChipScan | null }) {
+  // T-122: the bucket/tone/title mapping lives in lib/judge-chip.ts, where
+  // it is unit-tested; this component only owns the CSS per tone.
+  const chip = judgeChipFor(scan)
+  if (!chip) return null
+  const toneClass: Record<JudgeChipTone, string> = {
+    muted: "border-border bg-muted/40 text-muted-foreground",
+    success: "border-success/40 bg-success/10 text-success",
+    warning: "border-warning/40 bg-warning/10 text-warning",
+    destructive: "border-destructive/40 bg-destructive/10 text-destructive",
+  }
+  return (
+    <span
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] ${toneClass[chip.tone]}`}
+      data-testid="judge-chip"
+      title={chip.title}
+    >
+      {chip.label}
+    </span>
+  )
 }
 
 function StatusBadge({ status }: { status: CallStatus }) {
