@@ -71,7 +71,9 @@ export default function Corpus() {
   const [verticalFilter, setVerticalFilter] = React.useState("all")
   // T-74 (E.1): "what needs a human" is the page's first question. The
   // strip above the table answers it and its chips filter the table.
-  const [hardCasesOnly, setHardCasesOnly] = React.useState(false)
+  // T-113: Results links here as ?hard=1 to open the table already filtered
+  // to the calls a person flagged.
+  const [hardCasesOnly, setHardCasesOnly] = React.useState(() => new URLSearchParams(search).get("hard") === "1")
   const { data: dashboard } = useGetBenchmarkDashboard({ query: { queryKey: getGetBenchmarkDashboardQueryKey() } })
   // T-96 (E.1 layer 1, Calls): the table reads org -> assistant -> call,
   // the same nesting as Results, so a reader lands on "which org, which
