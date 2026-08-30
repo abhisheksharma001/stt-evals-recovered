@@ -10,7 +10,7 @@ import { Loader2, Wallet } from "lucide-react"
 
 /**
  * T-24: money, not $/min. A provider's list price per minute times the
- * client's real minutes (read from Vapi -- every call on the account in
+ * org's real minutes (read from Vapi -- every call on the account in
  * its 14-day retention window, per assistant) gives "$18/month", the
  * number a person deciding whether to switch can actually weigh.
  *
@@ -155,9 +155,9 @@ export function MonthlyCostCell({ listPrice, gv }: { listPrice: number | undefin
 }
 
 /**
- * The whole client, not one assistant: every provider's list price at the
+ * The whole org, not one assistant: every provider's list price at the
  * account's full projected monthly minutes. This is the number a person
- * quotes when asked "what would switching cost us" for the client as a
+ * quotes when asked "what would switching cost us" for the org as a
  * whole. Same projection rule and same absent-not-zero rule as above.
  */
 export function ClientMonthlyCostLine({ accountLabel, providerIds }: { accountLabel: string | null; providerIds: string[] }) {
@@ -168,7 +168,7 @@ export function ClientMonthlyCostLine({ accountLabel, providerIds }: { accountLa
   if (isLoading)
     return <div className={cls} data-testid="client-cost"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Fetching {accountLabel}'s call volume from Vapi (first load can take a minute)…</div>
   if (isError || !data)
-    return <div className={cls} data-testid="client-cost"><Wallet className="h-3.5 w-3.5" /> Vapi did not return {accountLabel}'s calls -- no client-wide monthly figure.</div>
+    return <div className={cls} data-testid="client-cost"><Wallet className="h-3.5 w-3.5" /> Vapi did not return {accountLabel}'s calls -- no org-wide monthly figure.</div>
   const monthly = projectMonthlyMinutes(data.minutes, data.windowDays)
   const rows = (providers ?? [])
     .filter((p) => providerIds.includes(p.id))
