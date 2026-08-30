@@ -7,6 +7,8 @@
  */
 
 export * from './agentFlag';
+export * from './agentModelList';
+export * from './agentModelOption';
 export * from './agentScan';
 export * from './agentScanCandidate';
 export * from './agentScanCandidateStatus';

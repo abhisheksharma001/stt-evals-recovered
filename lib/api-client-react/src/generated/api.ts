@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AgentModelList,
   AgentScan,
   AgentScanDecision,
   AgentScanInput,
@@ -1645,6 +1646,83 @@ export const useUpdateBenchmarkProvider = <TError = ErrorType<void>,
       > => {
       return useMutation(getUpdateBenchmarkProviderMutationOptions(options));
     }
+
+export const getListAgentModelsUrl = () => {
+
+
+
+
+  return `/api/benchmark/agent-models`
+}
+
+/**
+ * @summary T-103 -- judge models for the agent, read live from OpenAI with the pinned five first. Falls back to the pinned list (live=false) when OpenAI is unreachable.
+ */
+export const listAgentModels = async ( options?: Parameters<typeof customFetch>[1]): Promise<AgentModelList> => {
+
+  return customFetch<AgentModelList>(getListAgentModelsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentModelsQueryKey = () => {
+    return [
+    `/api/benchmark/agent-models`
+    ] as const;
+    }
+
+
+export const getListAgentModelsQueryOptions = <TData = Awaited<ReturnType<typeof listAgentModels>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentModelsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentModels>>> = ({ signal }) => listAgentModels({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentModels>>>
+export type ListAgentModelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary T-103 -- judge models for the agent, read live from OpenAI with the pinned five first. Falls back to the pinned list (live=false) when OpenAI is unreachable.
+ */
+
+export function useListAgentModels<TData = Awaited<ReturnType<typeof listAgentModels>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentModelsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetAppSettingsUrl = () => {
 

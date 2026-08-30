@@ -41,10 +41,24 @@ export const JUDGE_MODEL = "gpt-4o";
 // fractional values that an integer DB column rejected -- silently
 // destroying every judgement the system made. See
 // lib/db/src/schema/benchmark-agent-scans.ts for the full post-mortem.
+// T-103 (2026-08-30): rates below verified on developers.openai.com/api/docs/pricing
+// (standard tier, per 1M tokens): 4.1 $2/$8, 4.1-mini $0.40/$1.60, 5.2
+// $1.75/$14, 5.5 $5/$30, 5.6-sol $4/$20, 4o $2.50/$10, 4o-mini $0.15/$0.60.
+// $1 per 1M tokens = 1,000 microcents per 1K tokens.
 const MODEL_COST_MICROCENTS_PER_1K_TOKENS: Record<string, { prompt: number; completion: number }> = {
-  "gpt-4o-mini": { prompt: 15, completion: 60 },
+  "gpt-4o-mini": { prompt: 150, completion: 600 },
   "gpt-4o": { prompt: 2_500, completion: 10_000 },
+  "gpt-4.1": { prompt: 2_000, completion: 8_000 },
+  "gpt-4.1-mini": { prompt: 400, completion: 1_600 },
+  "gpt-5.2": { prompt: 1_750, completion: 14_000 },
+  "gpt-5.5": { prompt: 5_000, completion: 30_000 },
+  "gpt-5.6-sol": { prompt: 4_000, completion: 20_000 },
 };
+
+/** Models this file can price. Anything else records a null cost. */
+export function pricedAgentModels(): string[] {
+  return Object.keys(MODEL_COST_MICROCENTS_PER_1K_TOKENS);
+}
 
 /** Integer micro-cents, or null for a model we have no published rate for --
  * null means "not recorded", and must never be rendered as a confident 0. */

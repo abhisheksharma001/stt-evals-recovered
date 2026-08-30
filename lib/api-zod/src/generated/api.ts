@@ -755,6 +755,27 @@ export const UpdateBenchmarkProviderResponse = zod.object({
 
 
 /**
+ * @summary T-103 -- judge models for the agent, read live from OpenAI with the pinned five first. Falls back to the pinned list (live=false) when OpenAI is unreachable.
+ */
+export const ListAgentModelsResponse = zod.object({
+  "defaultModel": zod.string(),
+  "pinned": zod.array(zod.object({
+  "id": zod.string(),
+  "priced": zod.boolean(),
+  "available": zod.boolean().nullable()
+})),
+  "others": zod.array(zod.object({
+  "id": zod.string(),
+  "priced": zod.boolean(),
+  "available": zod.boolean().nullable()
+})),
+  "live": zod.boolean(),
+  "fetchedAt": zod.string().nullable(),
+  "error": zod.string().nullable()
+})
+
+
+/**
  * @summary System-wide, changeable settings -- which provider real production calls actually use (separate from picking providers to benchmark in a bulk run), and which OpenAI model powers the transcript-quality agent's judge pass (2026-08-26)
  */
 export const GetAppSettingsResponse = zod.object({

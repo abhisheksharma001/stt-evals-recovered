@@ -19,6 +19,7 @@ import { getProviderAdapter } from "@workspace/stt-providers";
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
+import { listOpenAiJudgeModels, OpenAiModelsError, PINNED_AGENT_MODELS } from "../lib/openai-models";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
 import { callDisagreement } from "../lib/call-disagreement";
 import {
@@ -74,6 +75,7 @@ import {
   ListVapiAssistantsQueryParams,
   ListVapiAssistantsResponse,
   GetAssistantTranscriberParams,
+  ListAgentModelsResponse,
   GetAssistantTranscriberResponse,
   AnalyzeResultFailureParams,
   AnalyzeResultFailureResponse,
@@ -110,7 +112,7 @@ import {
   type VapiCall,
 } from "../lib/vapi";
 import { actorFromRequest, writeAudit } from "../lib/audit";
-import { AgentConfigError, AgentRequestError, analyzeFailure, matchKnownFailure } from "../lib/agent";
+import { AgentConfigError, AgentRequestError, JUDGE_MODEL, analyzeFailure, matchKnownFailure, pricedAgentModels } from "../lib/agent";
 import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
@@ -1218,6 +1220,28 @@ async function getOrCreateSettings() {
     .limit(1);
   return row!;
 }
+
+// T-103: judge models, live from OpenAI, pinned five first. When OpenAI
+// cannot be reached the pinned list still comes back (live: false) so the
+// Setup page never loses its choices.
+router.get("/benchmark/agent-models", async (_req, res): Promise<void> => {
+  const priced = new Set(pricedAgentModels());
+  let ids: string[] = [];
+  let fetchedAt: string | null = null;
+  let live = true;
+  let error: string | null = null;
+  try {
+    const got = await listOpenAiJudgeModels();
+    ids = got.ids;
+    fetchedAt = got.fetchedAt;
+  } catch (err) {
+    live = false;
+    error = err instanceof OpenAiModelsError ? err.message : "OpenAI model list unavailable.";
+  }
+  const pinned = PINNED_AGENT_MODELS.map((id) => ({ id, priced: priced.has(id), available: live ? ids.includes(id) : null }));
+  const others = ids.filter((id) => !(PINNED_AGENT_MODELS as readonly string[]).includes(id)).map((id) => ({ id, priced: priced.has(id), available: true }));
+  res.json(ListAgentModelsResponse.parse({ defaultModel: JUDGE_MODEL, pinned, others, live, fetchedAt, error }));
+});
 
 router.get("/benchmark/settings", async (_req, res): Promise<void> => {
   const settings = await getOrCreateSettings();

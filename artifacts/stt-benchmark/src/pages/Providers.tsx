@@ -10,6 +10,8 @@ import {
   useUpdateAppSettings,
   getListBenchmarkProvidersQueryKey,
   getGetAppSettingsQueryKey,
+  useListAgentModels,
+  getListAgentModelsQueryKey,
   type Provider,
 } from "@workspace/api-client-react"
 import { Server, Plus, Check, X, Shield, Activity, Zap, KeyRound, Ban, Power, Settings } from "lucide-react"
@@ -18,7 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 
@@ -257,7 +259,10 @@ function ActiveProviderControl({ providers }: { providers: Provider[] | undefine
 // this list is a convenience, not a hard allowlist; the server accepts
 // whatever string is sent and just uses it verbatim as the `model` field on
 // the OpenAI call (lib/agent.ts).
-const KNOWN_AGENT_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3", "o4-mini"]
+// T-103: the list is live from OpenAI (GET /benchmark/agent-models), the
+// pinned five first. This constant is only the offline fallback so the
+// select never renders empty.
+const FALLBACK_AGENT_MODELS = ["gpt-4.1", "gpt-5.2", "gpt-5.5", "gpt-5.6-sol", "gpt-4o", "gpt-4.1-mini"]
 
 /**
  * 2026-08-26, per Abhishek: a system-wide, changeable choice of (a) which
@@ -274,6 +279,11 @@ function SystemSettingsCard() {
   const { toast } = useToast()
   const { data: settings, isLoading } = useGetAppSettings()
   const [agentModel, setAgentModel] = React.useState("")
+  const { data: modelList } = useListAgentModels({ query: { queryKey: getListAgentModelsQueryKey(), staleTime: 10 * 60 * 1000, retry: false } })
+  const pinnedModels = modelList?.pinned.map((m) => m.id) ?? FALLBACK_AGENT_MODELS
+  const otherModels = modelList?.others.map((m) => m.id) ?? []
+  const KNOWN_AGENT_MODELS = React.useMemo(() => [...pinnedModels, ...otherModels], [pinnedModels, otherModels])
+  const pricedIds = React.useMemo(() => new Set([...(modelList?.pinned ?? []), ...(modelList?.others ?? [])].filter((m) => m.priced).map((m) => m.id)), [modelList])
   const [customModel, setCustomModel] = React.useState("")
 
   React.useEffect(() => {
@@ -323,13 +333,31 @@ function SystemSettingsCard() {
           <Select value={agentModel || "default"} onValueChange={setAgentModel}>
             <SelectTrigger><SelectValue placeholder="Default (gpt-4o)" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="default">Default (gpt-4o)</SelectItem>
-              {KNOWN_AGENT_MODELS.map((m) => (
-                <SelectItem key={m} value={m}>{m}</SelectItem>
-              ))}
+              <SelectItem value="default">Default ({modelList?.defaultModel ?? "gpt-4o"})</SelectItem>
+              <SelectGroup>
+                <SelectLabel>Pinned</SelectLabel>
+                {pinnedModels.map((m) => (
+                  <SelectItem key={m} value={m}>{m}{pricedIds.size > 0 && !pricedIds.has(m) ? " · cost not recorded" : ""}</SelectItem>
+                ))}
+              </SelectGroup>
+              {otherModels.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Every other OpenAI chat model ({otherModels.length})</SelectLabel>
+                  {otherModels.map((m) => (
+                    <SelectItem key={m} value={m}>{m}{!pricedIds.has(m) ? " · cost not recorded" : ""}</SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
               <SelectItem value="other">Other…</SelectItem>
             </SelectContent>
           </Select>
+          <p className="text-[11px] text-muted-foreground" data-testid="agent-models-source">
+            {modelList?.live
+              ? `List read live from OpenAI ${modelList.fetchedAt ? new Date(modelList.fetchedAt).toLocaleTimeString() : ""} -- new models appear on their own. "cost not recorded" = no verified rate yet, judgements with it show no $ figure.`
+              : modelList
+                ? `OpenAI model list unavailable (${modelList.error ?? "unknown"}); showing the pinned five.`
+                : "Loading the live model list…"}
+          </p>
           {agentModel === "other" && (
             <Input
               className="mt-2"

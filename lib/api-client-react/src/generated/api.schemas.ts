@@ -348,6 +348,21 @@ export interface Provider {
   apiKeyConfigured: boolean;
 }
 
+export interface AgentModelOption {
+  id: string;
+  priced: boolean;
+  available: boolean | null;
+}
+
+export interface AgentModelList {
+  defaultModel: string;
+  pinned: AgentModelOption[];
+  others: AgentModelOption[];
+  live: boolean;
+  fetchedAt: string | null;
+  error: string | null;
+}
+
 export interface ProviderUpdate {
   disabled?: boolean;
   /** @minimum 0 */

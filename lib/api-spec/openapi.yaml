@@ -417,6 +417,18 @@ paths:
                 $ref: "#/components/schemas/Provider"
         "404":
           description: Provider not found
+  /benchmark/agent-models:
+    get:
+      operationId: listAgentModels
+      tags: [benchmark]
+      summary: T-103 -- judge models for the agent, read live from OpenAI with the pinned five first. Falls back to the pinned list (live=false) when OpenAI is unreachable.
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentModelList"
   /benchmark/settings:
     get:
       operationId: getAppSettings
@@ -1401,6 +1413,29 @@ components:
         # var is currently set. `status` is computed from these.
         hasAdapter: { type: boolean }
         apiKeyConfigured: { type: boolean }
+    AgentModelOption:
+      type: object
+      required: [id, priced, available]
+      properties:
+        id: { type: string }
+        # True when lib/agent.ts has a verified per-token rate for it; otherwise every judgement records a null cost.
+        priced: { type: boolean }
+        # True/false from the live list; null when the list could not be fetched.
+        available: { type: boolean, nullable: true }
+    AgentModelList:
+      type: object
+      required: [defaultModel, pinned, others, live, fetchedAt, error]
+      properties:
+        defaultModel: { type: string }
+        pinned:
+          type: array
+          items: { $ref: "#/components/schemas/AgentModelOption" }
+        others:
+          type: array
+          items: { $ref: "#/components/schemas/AgentModelOption" }
+        live: { type: boolean }
+        fetchedAt: { type: string, nullable: true }
+        error: { type: string, nullable: true }
     ProviderUpdate:
       type: object
       properties:
