@@ -1186,6 +1186,7 @@ export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
+  audioUnsavedCalls: number;
 };
 
 export type BenchmarkDashboardThisMonth = {

@@ -2106,13 +2106,16 @@ components:
             name: { type: string }
         needsHuman:
           type: object
-          required: [callsAwaitingReview, hardCaseCalls, retryableFailedCells]
+          required: [callsAwaitingReview, hardCaseCalls, retryableFailedCells, audioUnsavedCalls]
           properties:
             callsAwaitingReview: { type: number }
             hardCaseCalls: { type: number }
             # Failed / skipped cells in stopped (partial, failed) bulks that
             # a retry could fix -- same rule as POST /bulks/{id}/retry-failed.
             retryableFailedCells: { type: number }
+            # T-130: calls whose audio is not on the server disk yet but is still
+            # obtainable from Vapi -- one click on Calls' "Save audio now" clears it.
+            audioUnsavedCalls: { type: number }
         thisMonth:
           type: object
           required: [monthStart, sttMicrocents, sttCellsPriced, sttCellsUnpriced, agentMicrocents, agentJudgementsPriced, agentJudgementsUnpriced]

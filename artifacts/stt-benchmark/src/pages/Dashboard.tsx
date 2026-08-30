@@ -108,6 +108,11 @@ function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
         <Figure value={data.callsAwaitingReview} label="calls awaiting review" href="/corpus" tone={attention(data.callsAwaitingReview)} />
         <Figure value={data.hardCaseCalls} label="hard cases" href="/corpus" tone={attention(data.hardCaseCalls)} />
         <Figure value={data.retryableFailedCells} label="transcripts a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
+        {/* T-130: T-126 made uncached audio fixable with one click on Calls
+            ("Save audio now"), so its existence belongs here with the other
+            person-chores. Calls already past the window are not counted --
+            nothing a person does can save them. */}
+        <Figure value={data.audioUnsavedCalls} label="calls' audio not saved on the server yet" href="/corpus" tone={attention(data.audioUnsavedCalls)} />
         <CatalogFigure />
       </div>
       {/* T-86: no human judge in this product. Nobody rules on spans; a

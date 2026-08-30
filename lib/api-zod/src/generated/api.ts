@@ -43,7 +43,8 @@ export const GetBenchmarkDashboardResponse = zod.object({
   "needsHuman": zod.object({
   "callsAwaitingReview": zod.number(),
   "hardCaseCalls": zod.number(),
-  "retryableFailedCells": zod.number()
+  "retryableFailedCells": zod.number(),
+  "audioUnsavedCalls": zod.number()
 }),
   "thisMonth": zod.object({
   "monthStart": zod.coerce.date(),
