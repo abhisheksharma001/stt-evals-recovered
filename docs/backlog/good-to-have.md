@@ -29,6 +29,37 @@ the 14 calls Vapi has already refused. Follow-up when it matters: store the
 last attempt outcome per call and split "never tried" from "Vapi refused",
 so the figure can reach a true zero. **Done in batch 13 (T-131).**
 
+## Mined 2026-08-31 (batch 13, T-133): what the equivalence rules still do not fold
+
+The mining tool is committed now (`artifacts/api-server/src/mine-reading-pairs.ts` --
+the batch-7 script was deleted before it was ever committed; the section below
+kept asking for a re-run nothing could perform). Run against the live DB:
+63 calls (latest batch run each), 738 spans, **1,060 distinct unfolded pairs**
+-- every one a disagreement the current `canonicalTranscript()` does NOT fold,
+because since T-101 spans are built on the canonical form.
+
+Top of the list (count, reference ||| other):
+
+```
+ 155  0 |||                       (Deepgram's inserted 0 -- known, real, stays)
+  22  0 am ||| 0 a m              ┐
+  16  am 0 ||| a m                │ "am"/"pm" vs letter-spaced "a m"/"p m":
+  13  0 pm ||| 0 p m              │ ~80 span hits across variants -- the
+  12  1 pm ||| 1 p m              │ strongest NEW fold candidate
+   9  a m ||| am                  ┘
+  11  apartment ||| apartments    (meaning-adjacent -- stays a disagreement)
+   8  with villaroma ||| with villa roma   ┐ client-name spacing, 15 hits --
+   7  the villaroma ||| the villa roma     ┘ fold candidate (a name, not meaning)
+   7  hill's ||| hills            (possessive -- deliberately not folded)
+   5  booked ||| book             (tense -- deliberately not folded)
+```
+
+Deliberately NOT folded here: folding "am ||| a m" or "villaroma ||| villa
+roma" is an equivalence-rule change (`lib/scoring/src/equivalence.ts`) with
+score-shifting consequences -- flag counts drop for whoever letter-spaces --
+so it needs its own deliberate task, not a drive-by in the batch that built
+the tool. Re-run after the next paid bulk; the command is in the script header.
+
 ## Mined 2026-08-30 (batch 7, T-101): the real reading pairs behind the equivalence rules
 
 72 calls, latest batch run each, 873 disagreement spans, 2,390 distinct reading
@@ -60,8 +91,9 @@ Everything folded by `lib/scoring/src/equivalence.ts` is on this list or was nam
 Abhishek ("fortyc / 40c", "highpriority / high-priority", slang like "sweet").
 Deliberately **not** folded: plural / possessive ("hills" / "hill's"), tense ("had" /
 "have"), and "4" / "forty" — those change meaning or could. Re-run the mining
-(the script lived in src/_mine-pairs.ts -- deleted, never committed -- for one session; recreate from
-`buildSpansForCallRun`) after the next few bulks to see what rises next.
+(the script lived in src/_mine-pairs.ts -- deleted, never committed -- for one session) after the next few bulks to see what rises next.
+**Batch 13 (T-133) recreated it as a committed tool and re-ran it -- see the
+section above.**
 
 ## Deferred 2026-08-30 (batch 4): more call providers
 
