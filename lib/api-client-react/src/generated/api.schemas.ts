@@ -12,6 +12,40 @@ export interface SpanReading {
   agreesWithMajority: boolean;
 }
 
+export type WordsToWatchWordsItemKind = typeof WordsToWatchWordsItemKind[keyof typeof WordsToWatchWordsItemKind];
+
+
+export const WordsToWatchWordsItemKind = {
+  number: 'number',
+  word: 'word',
+  filler: 'filler',
+} as const;
+
+export type WordsToWatchWordsItemAlternativesItem = {
+  text: string;
+  count: number;
+  providerIds: string[];
+};
+
+export type WordsToWatchWordsItem = {
+  heardAs: string;
+  kind: WordsToWatchWordsItemKind;
+  noMajority: boolean;
+  calls: number;
+  spans: number;
+  alternatives: WordsToWatchWordsItemAlternativesItem[];
+  exampleCallIds: string[];
+};
+
+export interface WordsToWatch {
+  bulkId: string;
+  /** @nullable */
+  assistantId: string | null;
+  callsScanned: number;
+  callsWithSpans: number;
+  words: WordsToWatchWordsItem[];
+}
+
 export interface DisagreementSpan {
   startMs: number;
   endMs: number;
@@ -1443,6 +1477,11 @@ status?: CallStatus;
 
 export type GetCallDisagreementParams = {
 bulkId?: string;
+};
+
+export type GetWordsToWatchParams = {
+bulkId: string;
+assistantId?: string;
 };
 
 export type ListDisagreementSpansParams = {

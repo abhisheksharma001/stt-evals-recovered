@@ -51,6 +51,7 @@ import type {
   DisagreementSpansResponse,
   GetCallDisagreementParams,
   GetClientVolumeParams,
+  GetWordsToWatchParams,
   HealthStatus,
   ListAgentScansParams,
   ListAuditLogParams,
@@ -72,7 +73,8 @@ import type {
   VapiImportResult,
   VapiPreviewInput,
   VapiPreviewResult,
-  VerticalRanking
+  VerticalRanking,
+  WordsToWatch
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -483,6 +485,90 @@ export function useGetCallDisagreement<TData = Awaited<ReturnType<typeof getCall
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCallDisagreementQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWordsToWatchUrl = (params: GetWordsToWatchParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/words-to-watch?${stringifiedParams}` : `/api/benchmark/words-to-watch`
+}
+
+/**
+ * @summary T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+ */
+export const getWordsToWatch = async (params: GetWordsToWatchParams, options?: Parameters<typeof customFetch>[1]): Promise<WordsToWatch> => {
+
+  return customFetch<WordsToWatch>(getGetWordsToWatchUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWordsToWatchQueryKey = (params?: GetWordsToWatchParams,) => {
+    return [
+    `/api/benchmark/words-to-watch`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWordsToWatchQueryOptions = <TData = Awaited<ReturnType<typeof getWordsToWatch>>, TError = ErrorType<void>>(params: GetWordsToWatchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWordsToWatchQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWordsToWatch>>> = ({ signal }) => getWordsToWatch(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWordsToWatchQueryResult = NonNullable<Awaited<ReturnType<typeof getWordsToWatch>>>
+export type GetWordsToWatchQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+ */
+
+export function useGetWordsToWatch<TData = Awaited<ReturnType<typeof getWordsToWatch>>, TError = ErrorType<void>>(
+ params: GetWordsToWatchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWordsToWatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWordsToWatchQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

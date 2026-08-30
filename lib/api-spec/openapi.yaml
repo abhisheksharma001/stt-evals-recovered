@@ -93,6 +93,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CallDisagreement"
+  /benchmark/words-to-watch:
+    get:
+      operationId: getWordsToWatch
+      tags: [benchmark]
+      summary: T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+      parameters:
+        - name: bulkId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: assistantId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Words to watch, most calls first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WordsToWatch"
+        "404":
+          description: Bulk not found
   /benchmark/calls/{callId}:
     get:
       operationId: getBenchmarkCall
@@ -1024,6 +1048,40 @@ components:
         agreesWithReference: { type: boolean }
         # T-47: true when this text is the span's plurality; false for all when tied.
         agreesWithMajority: { type: boolean }
+    WordsToWatch:
+      type: object
+      required: [bulkId, assistantId, callsScanned, callsWithSpans, words]
+      properties:
+        bulkId: { type: string }
+        assistantId: { type: ["string", "null"] }
+        callsScanned: { type: number }
+        callsWithSpans: { type: number }
+        words:
+          type: array
+          items:
+            type: object
+            required: [heardAs, kind, noMajority, calls, spans, alternatives, exampleCallIds]
+            properties:
+              heardAs: { type: string }
+              # number = a digit on any side (meaning at stake); filler = every reading is empty or a filler word; word = the rest.
+              kind: { type: string, enum: [number, word, filler] }
+              noMajority: { type: boolean }
+              calls: { type: number }
+              spans: { type: number }
+              alternatives:
+                type: array
+                items:
+                  type: object
+                  required: [text, count, providerIds]
+                  properties:
+                    text: { type: string }
+                    count: { type: number }
+                    providerIds:
+                      type: array
+                      items: { type: string }
+              exampleCallIds:
+                type: array
+                items: { type: string }
     DisagreementSpan:
       type: object
       required: [startMs, endMs, contextBefore, contextAfter, referencePositions, readings, majorityText]

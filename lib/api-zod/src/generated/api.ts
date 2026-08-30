@@ -169,6 +169,35 @@ export const GetCallDisagreementResponse = zod.object({
 
 
 /**
+ * @summary T-87 -- words that keep splitting the providers in one bulk, grouped by the plurality reading, most calls first. Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
+ */
+export const GetWordsToWatchQueryParams = zod.object({
+  "bulkId": zod.coerce.string(),
+  "assistantId": zod.coerce.string().optional()
+})
+
+export const GetWordsToWatchResponse = zod.object({
+  "bulkId": zod.string(),
+  "assistantId": zod.string().nullable(),
+  "callsScanned": zod.number(),
+  "callsWithSpans": zod.number(),
+  "words": zod.array(zod.object({
+  "heardAs": zod.string(),
+  "kind": zod.enum(['number', 'word', 'filler']),
+  "noMajority": zod.boolean(),
+  "calls": zod.number(),
+  "spans": zod.number(),
+  "alternatives": zod.array(zod.object({
+  "text": zod.string(),
+  "count": zod.number(),
+  "providerIds": zod.array(zod.string())
+})),
+  "exampleCallIds": zod.array(zod.string())
+}))
+})
+
+
+/**
  * @summary One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
  */
 export const GetBenchmarkCallParams = zod.object({
