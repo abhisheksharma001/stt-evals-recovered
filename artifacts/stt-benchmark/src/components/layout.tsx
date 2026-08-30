@@ -6,11 +6,9 @@ import {
   LayoutGrid,
   Database,
   AudioLines,
-  GitMerge,
   Layers,
   BarChart3,
-  Server,
-  Radio,
+  Settings2,
 } from "lucide-react"
 import { getHealthCheckQueryKey, useHealthCheck } from "@workspace/api-client-react"
 import { cn } from "@/lib/utils"
@@ -30,7 +28,9 @@ function SidebarItem({ href, icon: Icon, label, badge, badgeTone = "quiet" }: Si
   // wouter's location includes the query string: a Corpus -> "Open in
   // Review" deep link (/review?call=<id>) left every nav item unselected
   // (UX review 2026-08-25). Match on the path portion only.
-  const isActive = location.split("?")[0] === href
+  const current = location.split("?")[0].replace(/\/+$/, "") || "/"
+  const ALIASES: Record<string, string> = { "/runs": "/bulks", "/providers": "/setup", "/sources": "/setup" }
+  const isActive = (ALIASES[current] ?? current) === href
   // B-14: the active page may hold unsaved work (Review's gold editor).
   // Consult its guard before letting wouter unmount it.
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -64,15 +64,6 @@ function SidebarItem({ href, icon: Icon, label, badge, badgeTone = "quiet" }: Si
         </span>
       )}
     </Link>
-  )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-2.5 pb-2 pt-5 font-mono text-[10px] font-medium uppercase tracking-[0.09em] text-muted-foreground">
-      <span className="hidden lg:inline">{children}</span>
-      <span className="block h-px bg-sidebar-border lg:hidden" aria-hidden />
-    </div>
   )
 }
 
@@ -225,19 +216,20 @@ export function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 lg:px-3">
-        <SectionLabel>Pipeline</SectionLabel>
-        <div className="flex flex-col gap-px">
+        {/* T-31 (D.4): seven entries -> five. Runs folded into Bulks,
+            Providers + Call sources into Setup. Order = the reader's
+            questions: what's the answer (Results), show me the calls
+            (Calls), what ran and what it cost (Bulks), keys and accounts
+            (Setup). Overview stays as the one-screen status page (T-84).
+            Plain nouns, not "Verdict / Evidence / Work" -- checked against
+            Amplitude / Mixpanel / Linear sidebars on Mobbin, all of which
+            name pages by the thing on them. */}
+        <div className="flex flex-col gap-px pt-2">
           <SidebarItem href="/" icon={LayoutGrid} label="Overview" />
-          <SidebarItem href="/corpus" icon={Database} label="Corpus" />
-          <SidebarItem href="/runs" icon={GitMerge} label="Runs" />
-          <SidebarItem href="/bulks" icon={Layers} label="Bulks" />
           <SidebarItem href="/results" icon={BarChart3} label="Results" />
-        </div>
-
-        <SectionLabel>Setup</SectionLabel>
-        <div className="flex flex-col gap-px">
-          <SidebarItem href="/providers" icon={Server} label="Providers" />
-          <SidebarItem href="/sources" icon={Radio} label="Call sources" />
+          <SidebarItem href="/corpus" icon={Database} label="Calls" />
+          <SidebarItem href="/bulks" icon={Layers} label="Bulks" />
+          <SidebarItem href="/setup" icon={Settings2} label="Setup" />
         </div>
       </div>
 

@@ -24,7 +24,10 @@ import { useToast } from "@/hooks/use-toast"
 import { WordDiffView } from "@/components/word-diff-view"
 import { NoOutputChip, NoOutputDetail, MissingCounts, missingByProvider, type NoOutputStatus } from "@/components/no-output"
 
-export default function Runs() {
+// T-31: Runs is no longer a route. Bulks renders it (`embedded`) as its
+// "Individual runs" section -- a bulk is a group of runs, so two sidebar
+// entries for the same thing was schema leaking into navigation (D.4).
+export default function Runs({ embedded = false }: { embedded?: boolean } = {}) {
   // Runs execute fire-and-forget in the background (no job queue -- see
   // .claude/CLAUDE.md) and there was no way to see a "running" run finish
   // short of manually reloading the page. Poll while anything is actually
@@ -44,6 +47,7 @@ export default function Runs() {
 
   return (
     <div className="space-y-6">
+      {!embedded && (
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Benchmark Runs</h1>
@@ -63,6 +67,7 @@ export default function Runs() {
           </Button>
         </Link>
       </div>
+      )}
 
       <Card>
         <CardContent className="p-0">

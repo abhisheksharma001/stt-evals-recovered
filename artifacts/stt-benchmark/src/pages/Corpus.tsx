@@ -326,7 +326,7 @@ function ExpandedCallDetail({ call, bulkId }: { call: any; bulkId: string | null
 
   return (
     <div className="space-y-5 border-t border-border p-5">
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
+      <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* T-72 (E.4): reference transcript (gold, else the draft labelled
             draft), audio, and every provider's output diffed against it
             with the cell's metrics and the judge's pick. Replaces the
@@ -659,7 +659,7 @@ function ProductionTranscriberPanel({ call }: { call: any }) {
       {!benchmarked && (
         <p className="text-xs text-warning">
           No enabled provider matches this model, so every candidate is being compared against a
-          baseline this benchmark never measures. Add or enable it on the Providers page to make the
+          baseline this benchmark never measures. Add or enable it on the Setup page to make the
           comparison meaningful.
         </p>
       )}
