@@ -11,6 +11,7 @@ import Setup from "@/pages/Setup"
 import Bulks from "@/pages/Bulks"
 import Results from "@/pages/Rankings"
 import NotFound from "@/pages/not-found"
+import Landing from "@/pages/Landing"
 
 // Review finding #21: the bare QueryClient meant every query used library
 // defaults -- refetch-on-window-focus storms against a single-node Express,
@@ -53,6 +54,10 @@ export default function App() {
   // B-52: normalize trailing slashes so bookmarks/proxies handing us
   // "/results/" don't 404 a real page.
   const path = (location.split("?")[0].replace(/\/+$/, "") || "/")
+
+  // T-83: the public landing page lives outside the app shell -- no
+  // sidebar, no data hooks, so it never needs the API to render.
+  if (path === "/welcome") return <Landing />
 
   return (
     <QueryClientProvider client={queryClient}>
