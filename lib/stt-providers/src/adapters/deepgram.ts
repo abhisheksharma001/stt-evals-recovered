@@ -3,6 +3,7 @@ import {
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
+  type ProviderModelOption,
 } from "../types";
 import { classifyProviderHttpStatus } from "../failure-class";
 
@@ -48,8 +49,50 @@ export function parseDeepgramResponse(body: DeepgramResponse): {
 const PROVIDER_ID = "deepgram-nova-3";
 const API_KEY_ENV_VAR = "DEEPGRAM_API_KEY";
 
+/** T-104: Deepgram lists its models live (GET /v1/models, verified
+ *  2026-08-30: 443 STT entries, keyed by canonical_name + architecture).
+ *  Deduped to one row per canonical name; "latest" = the general model of
+ *  the highest nova generation. Flux models are streaming-only and appear
+ *  under their own names. */
+async function listDeepgramModels(): Promise<ProviderModelOption[]> {
+  const apiKey = process.env[API_KEY_ENV_VAR];
+  if (!apiKey) throw new ProviderConfigError(PROVIDER_ID, API_KEY_ENV_VAR);
+  const res = await fetch("https://api.deepgram.com/v1/models", { headers: { Authorization: `Token ${apiKey}` } });
+  if (!res.ok) throw new Error(`Deepgram /v1/models returned HTTP ${res.status}`);
+  const body = (await res.json()) as { stt?: Array<{ canonical_name?: string; architecture?: string; version?: string }> };
+  const byName = new Map<string, { architecture: string; version: string }>();
+  for (const m of body.stt ?? []) {
+    if (!m.canonical_name || !/^(nova|flux)/.test(m.canonical_name)) continue;
+    if (!byName.has(m.canonical_name)) byName.set(m.canonical_name, { architecture: m.architecture ?? "", version: m.version ?? "" });
+  }
+  let topNova = 0;
+  for (const name of byName.keys()) {
+    const g = name.match(/^nova-(\d+)/);
+    if (g) topNova = Math.max(topNova, Number(g[1]));
+  }
+  const verifiedAt = new Date().toISOString();
+  return [...byName.entries()]
+    // "nova-3-general" is what Deepgram accepts as plain "nova-3" (docs:
+    // the -general suffix is the default variant), and "nova-3" is the id
+    // this repo's rows have always used, so the alias is the api model here.
+    .map(([name, m]) => [name.replace(/-general$/, ""), m, name] as const)
+    .map(([apiModel, m, name]) => ({
+      apiModel,
+      label: name,
+      latest: name === `nova-${topNova}-general`,
+      legacyDefault: apiModel === "nova-3",
+      source: "live" as const,
+      verifiedAt,
+      note: m.version ? `${m.architecture} ${m.version}` : m.architecture,
+    }))
+    .sort((a, b) => Number(b.latest) - Number(a.latest) || a.apiModel.localeCompare(b.apiModel));
+}
+
 export const deepgramAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
+  vendor: "deepgram",
+  vendorLabel: "Deepgram",
+  listModels: listDeepgramModels,
   apiKeyEnvVar: API_KEY_ENV_VAR,
   async transcribe(input: ProviderTranscribeInput): Promise<ProviderTranscribeResult> {
     const apiKey = process.env[API_KEY_ENV_VAR];

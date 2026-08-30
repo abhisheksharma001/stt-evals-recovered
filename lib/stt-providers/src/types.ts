@@ -67,7 +67,31 @@ export type ProviderTranscribeResult = {
   failureClass?: FailureClass | null;
 };
 
+/** T-104: one model a vendor offers, as the adapter knows it. `source`
+ *  says whether the list came from the vendor's own API just now ("live":
+ *  Deepgram, OpenAI) or from a list verified against the vendor's docs on
+ *  `verifiedAt` ("catalog": AssemblyAI, Gladia, Cartesia, ElevenLabs). */
+export type ProviderModelOption = {
+  /** Exact string sent to the vendor's API. */
+  apiModel: string;
+  label: string;
+  /** The vendor's newest general model. */
+  latest: boolean;
+  source: "live" | "catalog";
+  verifiedAt: string;
+  note?: string;
+  /** True for the model the adapter's own historical row (e.g.
+   *  "gladia-solaria") actually runs, so that row shows as enabled here. */
+  legacyDefault?: boolean;
+};
+
 export interface ProviderAdapter {
+  /** T-104: vendor key, the prefix of every provider id this adapter serves
+   *  ("deepgram" serves deepgram-nova-3, deepgram-nova-3-medical ...). */
+  vendor?: string;
+  vendorLabel?: string;
+  /** T-104: the models this vendor offers today. Absent = one fixed model. */
+  listModels?(): Promise<ProviderModelOption[]>;
   /** Must match the `id` column on benchmark_providers. */
   providerId: string;
   /** Env var name holding the API key/secret. Never logged or persisted. */

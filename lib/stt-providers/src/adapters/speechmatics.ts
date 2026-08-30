@@ -53,6 +53,8 @@ const API_KEY_ENV_VAR = "SPEECHMATICS_API_KEY";
 
 export const speechmaticsAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
+  vendor: "speechmatics",
+  vendorLabel: "Speechmatics",
   apiKeyEnvVar: API_KEY_ENV_VAR,
   async transcribe(input: ProviderTranscribeInput): Promise<ProviderTranscribeResult> {
     const apiKey = process.env[API_KEY_ENV_VAR];

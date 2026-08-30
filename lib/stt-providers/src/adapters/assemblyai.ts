@@ -4,6 +4,7 @@ import {
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
+  type ProviderModelOption,
 } from "../types";
 import {
   classifyProviderHttpStatus,
@@ -44,8 +45,20 @@ export function parseAssemblyAiResponse(body: AssemblyAiResponse): {
 const PROVIDER_ID = "assemblyai-universal";
 const API_KEY_ENV_VAR = "ASSEMBLYAI_API_KEY";
 
+// T-104, verified on assemblyai.com/docs/api-reference/transcripts/submit
+// 2026-08-30: `speech_model` is deprecated for `speech_models` (an array);
+// allowed values universal-3-5-pro and universal-2; omitted = both, newest
+// first. The historical rows here sent nothing, i.e. the vendor default.
+const ASSEMBLYAI_MODELS: ProviderModelOption[] = [
+  { apiModel: "universal-3-5-pro", label: "Universal-3.5 Pro", latest: true, source: "catalog", verifiedAt: "2026-08-30", legacyDefault: true, note: "vendor default today -- what assemblyai-universal runs when it sends no speech_models" },
+  { apiModel: "universal-2", label: "Universal-2", latest: false, source: "catalog", verifiedAt: "2026-08-30" },
+];
+
 export const assemblyAiAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
+  vendor: "assemblyai",
+  vendorLabel: "AssemblyAI",
+  listModels: async () => ASSEMBLYAI_MODELS,
   apiKeyEnvVar: API_KEY_ENV_VAR,
   async transcribe(input: ProviderTranscribeInput): Promise<ProviderTranscribeResult> {
     const apiKey = process.env[API_KEY_ENV_VAR];
@@ -79,6 +92,9 @@ export const assemblyAiAdapter: ProviderAdapter = {
       body: JSON.stringify({
         audio_url: uploadBody.upload_url,
         speaker_labels: input.diarize ?? true,
+        // T-104: undefined keeps the vendor default (newest first) for the
+        // historical "assemblyai-universal" row.
+        speech_models: input.model ? [input.model] : undefined,
         word_boost: input.keywordBoosts?.length ? input.keywordBoosts : undefined,
       }),
     });

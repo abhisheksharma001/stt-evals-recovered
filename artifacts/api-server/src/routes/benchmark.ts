@@ -15,7 +15,7 @@ import {
   type BenchmarkCallRow,
   type BenchmarkRunRow,
 } from "@workspace/db";
-import { getProviderAdapter } from "@workspace/stt-providers";
+import { getProviderAdapter, listProviderAdapters, providerIdForModel, vendorOf, type ProviderModelOption } from "@workspace/stt-providers";
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
@@ -76,6 +76,9 @@ import {
   ListVapiAssistantsResponse,
   GetAssistantTranscriberParams,
   ListAgentModelsResponse,
+  ListProviderModelsResponse,
+  EnableProviderModelBody,
+  EnableProviderModelResponse,
   GetAssistantTranscriberResponse,
   AnalyzeResultFailureParams,
   AnalyzeResultFailureResponse,
@@ -1143,6 +1146,128 @@ router.post("/benchmark/providers", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(CreateBenchmarkProviderResponse.parse(serializeProvider(provider)));
+});
+
+// T-104 (2026-08-30, per Abhishek: "toggle for each STT provider ... the
+// latest version ... so we don't need to keep it updated manually"). Per
+// vendor: the models it offers today -- live from the vendor's API where one
+// exists (Deepgram, OpenAI), else a list verified against its docs on a
+// dated day -- and which of them already have a provider row here. The
+// route never writes; enabling is the POST below, one row per model, so a
+// newer model never silently replaces the results of the old one.
+router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
+  const rows = await db.select({ id: benchmarkProvidersTable.id, status: benchmarkProvidersTable.status }).from(benchmarkProvidersTable);
+  const rowById = new Map(rows.map((r) => [r.id, r.status]));
+  const vendors = await Promise.all(
+    listProviderAdapters()
+      .filter((a) => typeof a.listModels === "function")
+      .map(async (adapter) => {
+        const vendor = vendorOf(adapter);
+        let models: ProviderModelOption[] = [];
+        let error: string | null = null;
+        try {
+          models = await adapter.listModels!();
+        } catch (err) {
+          error = err instanceof Error ? err.message : String(err);
+        }
+        return {
+          vendor,
+          vendorLabel: adapter.vendorLabel ?? vendor,
+          adapterId: adapter.providerId,
+          apiKeyConfigured: Boolean(process.env[adapter.apiKeyEnvVar]?.trim()),
+          source: models[0]?.source ?? null,
+          error,
+          models: models.map((m) => {
+            const providerId = providerIdForModel(vendor, m.apiModel);
+            // The adapter's own historical row is the vendor default model
+            // for that vendor; it counts as enabled for whichever model the
+            // catalog says it means (or the vendor default when unknown).
+            const enabledAs = rowById.has(providerId)
+              ? providerId
+              : m.legacyDefault && rowById.has(adapter.providerId)
+                ? adapter.providerId
+                : null;
+            return {
+              apiModel: m.apiModel,
+              label: m.label,
+              latest: m.latest,
+              source: m.source,
+              verifiedAt: m.verifiedAt,
+              note: m.note ?? null,
+              providerId,
+              enabled: enabledAs !== null,
+              rowStatus: enabledAs ? (rowById.get(enabledAs) ?? null) : null,
+            };
+          }),
+        };
+      }),
+  );
+  res.json(ListProviderModelsResponse.parse({ vendors, fetchedAt: new Date().toISOString() }));
+});
+
+// T-104: one click on "Enable <newest model>". Creates the provider row for
+// (vendor, apiModel) if it does not exist -- copying price and capability
+// flags from the vendor's existing row so the estimate is not zero -- and
+// returns it either way. Runs only when a bulk picks it, like any provider.
+router.post("/benchmark/providers/models/enable", async (req, res): Promise<void> => {
+  const parsed = EnableProviderModelBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const adapter = listProviderAdapters().find((a) => vendorOf(a) === parsed.data.vendor);
+  if (!adapter || typeof adapter.listModels !== "function") {
+    res.status(404).json({ error: `No vendor "${parsed.data.vendor}" with a model list.` });
+    return;
+  }
+  let option: ProviderModelOption | undefined;
+  try {
+    option = (await adapter.listModels()).find((m) => m.apiModel === parsed.data.apiModel);
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : "Vendor model list unavailable." });
+    return;
+  }
+  if (!option) {
+    res.status(404).json({ error: `${adapter.vendorLabel ?? parsed.data.vendor} does not list a model "${parsed.data.apiModel}" today.` });
+    return;
+  }
+  const id = providerIdForModel(parsed.data.vendor, option.apiModel);
+  const [existing] = await db.select().from(benchmarkProvidersTable).where(eq(benchmarkProvidersTable.id, id)).limit(1);
+  if (existing) {
+    res.status(200).json(EnableProviderModelResponse.parse({ created: false, provider: serializeProvider(existing) }));
+    return;
+  }
+  const [sibling] = await db
+    .select()
+    .from(benchmarkProvidersTable)
+    .where(eq(benchmarkProvidersTable.id, adapter.providerId))
+    .limit(1);
+  const [created] = await db
+    .insert(benchmarkProvidersTable)
+    .values({
+      id,
+      name: sibling?.name ?? adapter.vendorLabel ?? parsed.data.vendor,
+      model: option.label,
+      status: "not_configured",
+      supportsStreaming: sibling?.supportsStreaming ?? false,
+      supportsDiarization: sibling?.supportsDiarization ?? false,
+      costPerMinute: sibling?.costPerMinute ?? 0,
+      keywordBoosting: sibling?.keywordBoosting ?? false,
+      configNote: sibling
+        ? `T-104: price and capability flags copied from ${sibling.id} on enable -- verify the price for ${option.apiModel}.`
+        : `T-104: enabled from the vendor model list; no price on file yet.`,
+    })
+    .returning();
+  await syncProviderReadiness();
+  const [refreshed] = await db.select().from(benchmarkProvidersTable).where(eq(benchmarkProvidersTable.id, id)).limit(1);
+  await writeAudit({
+    entityType: "provider",
+    entityId: id,
+    actorLabel: actorFromRequest(req),
+    action: "create",
+    afterState: refreshed ?? created,
+  });
+  res.status(201).json(EnableProviderModelResponse.parse({ created: true, provider: serializeProvider(refreshed ?? created!) }));
 });
 
 router.patch("/benchmark/providers/:providerId", async (req, res): Promise<void> => {

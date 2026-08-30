@@ -182,6 +182,11 @@ export function reduceCartesiaTranscript(
 
 export const cartesiaAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
+  vendor: "cartesia",
+  vendorLabel: "Cartesia",
+  // T-104, verified on docs.cartesia.ai/api-reference/stt/transcribe
+  // 2026-08-30: the only accepted model is ink-whisper.
+  listModels: async () => [{ apiModel: "ink-whisper", label: "Ink-Whisper", latest: true, source: "catalog", verifiedAt: "2026-08-30", legacyDefault: true }],
   apiKeyEnvVar: API_KEY_ENV_VAR,
   async transcribe(input: ProviderTranscribeInput): Promise<ProviderTranscribeResult> {
     const apiKey = process.env[API_KEY_ENV_VAR];
@@ -220,7 +225,7 @@ export const cartesiaAdapter: ProviderAdapter = {
     // WebSocket client can't set custom request headers, and Cartesia's
     // docs offer this as the documented alternative for exactly that case.
     const params = new URLSearchParams({
-      model: "ink-whisper",
+      model: input.model ?? "ink-whisper",
       encoding,
       sample_rate: String(wav.sampleRate),
       cartesia_version: CARTESIA_VERSION,

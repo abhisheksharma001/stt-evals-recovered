@@ -55,11 +55,40 @@ export const providerCatalog: Record<string, ProviderCatalogEntry> = {
     adapterId: deepgramAdapter.providerId,
     apiModel: "flux-general-en",
   },
+  // T-104 (2026-08-30): ids whose api model string is not a clean slug of
+  // itself, or that predate the vendor-prefix rule below. Everything else
+  // resolves by prefix: "<vendor>-<apiModel>".
+  "elevenlabs-scribe-v2": { adapterId: elevenLabsAdapter.providerId, apiModel: "scribe_v2" },
 };
+
+/** T-104: the provider id a (vendor, apiModel) pair gets. Stable, so
+ *  enabling the same model twice finds the same row. */
+export function providerIdForModel(vendor: string, apiModel: string): string {
+  const slug = apiModel.toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^-|-$/g, "");
+  return `${vendor}-${slug}`;
+}
+
+export function listProviderAdapters(): ProviderAdapter[] {
+  return Object.values(providerRegistry);
+}
+
+/** Vendor key of an adapter: declared, else the first segment of its id. */
+export function vendorOf(adapter: ProviderAdapter): string {
+  return adapter.vendor ?? adapter.providerId.split("-")[0]!;
+}
+
+function adapterByVendorPrefix(providerId: string): ProviderAdapter | undefined {
+  return Object.values(providerRegistry).find((a) => providerId.startsWith(`${vendorOf(a)}-`));
+}
 
 /** The API model string to send for a provider id, if the catalog knows one. */
 export function getProviderApiModel(providerId: string): string | undefined {
-  return providerCatalog[providerId]?.apiModel;
+  const fromCatalog = providerCatalog[providerId]?.apiModel;
+  if (fromCatalog) return fromCatalog;
+  // An adapter's own historical id keeps its own default (undefined here).
+  if (providerRegistry[providerId]) return undefined;
+  const adapter = adapterByVendorPrefix(providerId);
+  return adapter ? providerId.slice(vendorOf(adapter).length + 1) : undefined;
 }
 
 export function getProviderAdapter(providerId: string): ProviderAdapter | undefined {
@@ -69,5 +98,7 @@ export function getProviderAdapter(providerId: string): ProviderAdapter | undefi
   if (direct) return direct;
   // Then a catalog entry, which points at the vendor adapter that serves it.
   const entry = providerCatalog[providerId];
-  return entry ? providerRegistry[entry.adapterId] : undefined;
+  if (entry) return providerRegistry[entry.adapterId];
+  // T-104: "<vendor>-<apiModel>" rows created from the model list.
+  return adapterByVendorPrefix(providerId);
 }

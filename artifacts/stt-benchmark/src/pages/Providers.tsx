@@ -12,6 +12,9 @@ import {
   getGetAppSettingsQueryKey,
   useListAgentModels,
   getListAgentModelsQueryKey,
+  useListProviderModels,
+  getListProviderModelsQueryKey,
+  useEnableProviderModel,
   type Provider,
 } from "@workspace/api-client-react"
 import { Server, Plus, Check, X, Shield, Activity, Zap, KeyRound, Ban, Power, Settings } from "lucide-react"
@@ -124,6 +127,71 @@ export default function Providers() {
   )
 }
 
+// T-104: what this vendor offers today vs. what is enabled here. Live from
+// the vendor API where one exists (Deepgram, OpenAI), otherwise a list
+// verified against the vendor's docs on a dated day. The newest model gets
+// a one-click Enable that creates its own provider row -- old results stay
+// on the old row, so nothing is silently re-labelled.
+function VendorModelsLine({ providers }: { providers: Provider[] }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const { data, isLoading } = useListProviderModels({ query: { queryKey: getListProviderModelsQueryKey(), staleTime: 5 * 60 * 1000, retry: false } })
+  const enable = useEnableProviderModel({
+    mutation: {
+      onSuccess: (res) => {
+        void qc.invalidateQueries({ queryKey: getListBenchmarkProvidersQueryKey() })
+        void qc.invalidateQueries({ queryKey: getListProviderModelsQueryKey() })
+        toast({ title: res.created ? `Enabled ${res.provider.model}` : `${res.provider.model} was already enabled`, description: res.created ? "Its own provider row; pick it in a bulk to run it. Check its price." : undefined })
+      },
+      onError: (err) => toast({ title: "Could not enable model", description: errorMessage(err), variant: "destructive" }),
+    },
+  })
+  const vendor = data?.vendors.find((v) => providers.some((p) => p.id === v.adapterId || p.id.startsWith(`${v.vendor}-`)))
+  if (isLoading) return <p className="text-[11px] text-muted-foreground">Checking the vendor's model list…</p>
+  if (!vendor) return null
+  if (vendor.error) return <p className="text-[11px] text-muted-foreground" data-testid="vendor-models">Model list unavailable: {vendor.error}</p>
+  const latest = vendor.models.find((m) => m.latest)
+  const when = latest ? (latest.source === "live" ? "live from the vendor just now" : `verified against the vendor docs ${latest.verifiedAt}`) : ""
+  return (
+    <div className="mt-2 space-y-1 text-xs" data-testid="vendor-models">
+      {latest && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">Newest:</span>
+          <span className="font-mono font-semibold">{latest.apiModel}</span>
+          {latest.enabled ? (
+            <Badge variant="secondary" className="text-[10px] uppercase">enabled{latest.rowStatus ? ` · ${latest.rowStatus.replace("_", " ")}` : ""}</Badge>
+          ) : (
+            <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" disabled={enable.isPending} onClick={() => enable.mutate({ data: { vendor: vendor.vendor, apiModel: latest.apiModel } })}>
+              {enable.isPending ? "Enabling…" : `Enable ${latest.apiModel}`}
+            </Button>
+          )}
+          <span className="text-[11px] text-muted-foreground">({when})</span>
+        </div>
+      )}
+      {vendor.models.length > 1 && (
+        <details className="text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer hover:text-foreground">{vendor.models.length} models offered · {vendor.models.filter((m) => m.enabled).length} enabled here</summary>
+          <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto pl-1">
+            {vendor.models.map((m) => (
+              <li key={m.apiModel} className="flex items-center gap-2">
+                <span className="font-mono">{m.apiModel}</span>
+                {m.note && <span className="truncate text-muted-foreground/80">{m.note}</span>}
+                {m.enabled ? (
+                  <span className="ml-auto text-success">enabled</span>
+                ) : (
+                  <button type="button" className="ml-auto text-primary hover:underline" disabled={enable.isPending} onClick={() => enable.mutate({ data: { vendor: vendor.vendor, apiModel: m.apiModel } })}>
+                    enable
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  )
+}
+
 function VendorGrid({ groups }: { groups: [string, Provider[]][] }) {
   return (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -142,6 +210,7 @@ function VendorGrid({ groups }: { groups: [string, Provider[]][] }) {
                     </CardDescription>
                   </div>
                 </div>
+                <VendorModelsLine providers={models} />
               </CardHeader>
               <CardContent className="space-y-4">
                 {models.map((provider) => (

@@ -51,6 +51,8 @@ import type {
   CallDisagreement,
   ClientVolume,
   DisagreementSpansResponse,
+  EnableProviderModelInput,
+  EnableProviderModelResult,
   GetCallDisagreementParams,
   GetClientVolumeParams,
   GetWordsToWatchParams,
@@ -66,6 +68,7 @@ import type {
   Provider,
   ProviderCallResult,
   ProviderInput,
+  ProviderModelList,
   ProviderUpdate,
   ResultFailureAnalysis,
   RunManifest,
@@ -1573,6 +1576,154 @@ export const useCreateBenchmarkProvider = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateBenchmarkProviderMutationOptions(options));
+    }
+
+export const getListProviderModelsUrl = () => {
+
+
+
+
+  return `/api/benchmark/providers/models`
+}
+
+/**
+ * @summary T-104 -- per vendor, the STT models it offers today (live from the vendor API where one exists, else verified catalog) and which already have a provider row. Read-only.
+ */
+export const listProviderModels = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProviderModelList> => {
+
+  return customFetch<ProviderModelList>(getListProviderModelsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProviderModelsQueryKey = () => {
+    return [
+    `/api/benchmark/providers/models`
+    ] as const;
+    }
+
+
+export const getListProviderModelsQueryOptions = <TData = Awaited<ReturnType<typeof listProviderModels>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProviderModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProviderModelsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProviderModels>>> = ({ signal }) => listProviderModels({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProviderModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProviderModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listProviderModels>>>
+export type ListProviderModelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary T-104 -- per vendor, the STT models it offers today (live from the vendor API where one exists, else verified catalog) and which already have a provider row. Read-only.
+ */
+
+export function useListProviderModels<TData = Awaited<ReturnType<typeof listProviderModels>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProviderModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProviderModelsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getEnableProviderModelUrl = () => {
+
+
+
+
+  return `/api/benchmark/providers/models/enable`
+}
+
+/**
+ * @summary T-104 -- create the provider row for one (vendor, apiModel) if missing, so a newer model runs as its own candidate. Idempotent.
+ */
+export const enableProviderModel = async (enableProviderModelInput: EnableProviderModelInput, options?: Parameters<typeof customFetch>[1]): Promise<EnableProviderModelResult> => {
+
+  return customFetch<EnableProviderModelResult>(getEnableProviderModelUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(enableProviderModelInput)
+  }
+);}
+
+
+
+
+
+export const getEnableProviderModelMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enableProviderModel>>, TError,{data: BodyType<EnableProviderModelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof enableProviderModel>>, TError,{data: BodyType<EnableProviderModelInput>}, TContext> => {
+
+const mutationKey = ['enableProviderModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enableProviderModel>>, {data: BodyType<EnableProviderModelInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  enableProviderModel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnableProviderModelMutationResult = NonNullable<Awaited<ReturnType<typeof enableProviderModel>>>
+    export type EnableProviderModelMutationBody = BodyType<EnableProviderModelInput>
+    export type EnableProviderModelMutationError = ErrorType<void>
+
+    /**
+ * @summary T-104 -- create the provider row for one (vendor, apiModel) if missing, so a newer model runs as its own candidate. Idempotent.
+ */
+export const useEnableProviderModel = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enableProviderModel>>, TError,{data: BodyType<EnableProviderModelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof enableProviderModel>>,
+        TError,
+        {data: BodyType<EnableProviderModelInput>},
+        TContext
+      > => {
+      return useMutation(getEnableProviderModelMutationOptions(options));
     }
 
 export const getUpdateBenchmarkProviderUrl = (providerId: string,) => {
