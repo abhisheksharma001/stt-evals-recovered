@@ -71,7 +71,7 @@ Express 5, single Node process (:8177), esbuild single-file bundle
             ├── computeHybridFlagsForRun()
             └── runAutoAgentVerificationForRun()  → OpenAI judge
     │
-    ├── Postgres (Supabase) via Drizzle
+    ├── Postgres via Drizzle (local Docker on :5433 today; no Supabase project holds this database -- Q-3, batch 9)
     └── Local disk: ./audio-cache/
 ```
 

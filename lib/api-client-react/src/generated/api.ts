@@ -26,6 +26,7 @@ import type {
   AgentScanInput,
   AppSettings,
   AppSettingsUpdate,
+  AssistantSignals,
   AssistantTranscriber,
   AttestDeidBody,
   AuditLogEntry,
@@ -53,6 +54,7 @@ import type {
   DisagreementSpansResponse,
   EnableProviderModelInput,
   EnableProviderModelResult,
+  GetAssistantSignalsParams,
   GetCallDisagreementParams,
   GetClientVolumeParams,
   GetWordsToWatchParams,
@@ -567,6 +569,90 @@ export function useGetAssistantTranscriber<TData = Awaited<ReturnType<typeof get
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAssistantTranscriberQueryOptions(assistantId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAssistantSignalsUrl = (params?: GetAssistantSignalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/assistant-signals?${stringifiedParams}` : `/api/benchmark/assistant-signals`
+}
+
+/**
+ * @summary T-112 / T-113 -- per-assistant signals for a Results card. How sure the AI judge was (high / medium / low, or not recorded for verdicts made before batch 8) over the latest scan per call, and which calls a person flagged as hard, with the tags used. One bulk when bulkId is given; otherwise all-time (every finished bulk). Scoped to one assistant when assistantId is given.
+ */
+export const getAssistantSignals = async (params?: GetAssistantSignalsParams, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSignals> => {
+
+  return customFetch<AssistantSignals>(getGetAssistantSignalsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantSignalsQueryKey = (params?: GetAssistantSignalsParams,) => {
+    return [
+    `/api/benchmark/assistant-signals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAssistantSignalsQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantSignals>>, TError = ErrorType<void>>(params?: GetAssistantSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantSignalsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantSignals>>> = ({ signal }) => getAssistantSignals(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantSignals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantSignalsQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantSignals>>>
+export type GetAssistantSignalsQueryError = ErrorType<void>
+
+
+/**
+ * @summary T-112 / T-113 -- per-assistant signals for a Results card. How sure the AI judge was (high / medium / low, or not recorded for verdicts made before batch 8) over the latest scan per call, and which calls a person flagged as hard, with the tags used. One bulk when bulkId is given; otherwise all-time (every finished bulk). Scoped to one assistant when assistantId is given.
+ */
+
+export function useGetAssistantSignals<TData = Awaited<ReturnType<typeof getAssistantSignals>>, TError = ErrorType<void>>(
+ params?: GetAssistantSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantSignalsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

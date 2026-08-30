@@ -111,8 +111,8 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   never gets (Rush: 120 keyterms + numerals). Words to watch has a `format`
   kind (hyphen / spacing / "one" vs "1" / stray um) hidden with fillers. Q-2
   answered (only Cartesia + Gladia share a Whisper base; weak signal live).
-  **Four data backfills are still unapplied** — `bash
-  scripts/apply-backfills.sh --apply`, see `docs/runbooks/pending-backfills.md`.
+  The four data backfills were applied in batch 9 (T-111) — see
+  `docs/runbooks/pending-backfills.md` for the before/after counts.
 
 - **2026-08-30, batch 7: convention ≠ disagreement; judge prompt v2; live model
   lists.** `lib/scoring/src/equivalence.ts` `canonicalTranscript()` is what flags,
@@ -134,6 +134,15 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   on `vendorOfProviderId()`**, never an exact id — T-104 model rows
   (`gladia-solaria-3`) got no confidence/timings/slots until T-110.
   `assemblyai-universal` is pinned to `universal-3-5-pro`.
+
+- **2026-08-30, batch 9: backfills applied; judge confidence + hard cases on
+  Results; Vite warnings; Q-3.** All pending backfills and the hybrid-flag
+  recompute are applied (T-111). `GET /benchmark/assistant-signals` feeds two
+  lines per Results assistant card: how sure the AI judge was (counts; "not
+  recorded" = pre-batch-8 verdicts) and which calls a person flagged hard
+  (`/corpus?hard=1`). shadcn's `'use client'` lines are gone (they were the
+  two build warnings). **The database is local Docker Postgres on :5433 —
+  there is no Supabase project for this tool, and no pgvector.**
 
 ## Standing rules for this project specifically
 

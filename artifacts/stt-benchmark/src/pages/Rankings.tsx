@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { WordsToWatch } from "@/components/words-to-watch"
+import { AssistantSignals } from "@/components/assistant-signals"
 import { ClientTrendSection } from "@/components/trend-strip"
 import { apiBase } from "@/lib/api-base"
 import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
@@ -821,6 +822,10 @@ export default function Rankings() {
                             </div>
                           )}
                           <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
+                          {/* T-112 / T-113: how sure the AI judge was, and what a
+                              person flagged as hard -- machine and human signal
+                              side by side, counts only. */}
+                          <AssistantSignals bulkId={viewMode === "bulk" ? selectedBulkId : null} assistantId={ranks[0]?.assistantId ?? null} />
                           {/* T-87 / T-92: the words that split the providers for
                               this assistant -- this bulk, or all-time (every
                               finished bulk, latest run per call). */}

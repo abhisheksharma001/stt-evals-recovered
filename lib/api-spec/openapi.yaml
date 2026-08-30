@@ -115,6 +115,29 @@ paths:
           description: No imported call carries this assistant, or its org label matches no configured Vapi account
         "502":
           description: Vapi API rejected the request
+  /benchmark/assistant-signals:
+    get:
+      operationId: getAssistantSignals
+      tags: [benchmark]
+      summary: T-112 / T-113 -- per-assistant signals for a Results card. How sure the AI judge was (high / medium / low, or not recorded for verdicts made before batch 8) over the latest scan per call, and which calls a person flagged as hard, with the tags used. One bulk when bulkId is given; otherwise all-time (every finished bulk). Scoped to one assistant when assistantId is given.
+      parameters:
+        - name: bulkId
+          in: query
+          schema:
+            type: string
+        - name: assistantId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Judge confidence and hard-case counts for the scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSignals"
+        "404":
+          description: Bulk not found
   /benchmark/words-to-watch:
     get:
       operationId: getWordsToWatch
@@ -1121,6 +1144,54 @@ components:
         agreesWithReference: { type: boolean }
         # T-47: true when this text is the span's plurality; false for all when tied.
         agreesWithMajority: { type: boolean }
+    AssistantSignals:
+      type: object
+      required: [bulkId, bulksCovered, assistantId, callsInScope, judge, hardCases]
+      properties:
+        # Null = all-time (every finished bulk).
+        bulkId: { type: ["string", "null"] }
+        bulksCovered: { type: number }
+        assistantId: { type: ["string", "null"] }
+        callsInScope: { type: number }
+        judge:
+          type: object
+          required: [checked, judged, high, medium, low, notRecorded, clean, errored]
+          properties:
+            # Calls with a scan (latest scan per call, T-35 rule).
+            checked: { type: number }
+            # Latest scan is flagged / approved / rejected and the judge answered (T-34 rule).
+            judged: { type: number }
+            high: { type: number }
+            medium: { type: number }
+            low: { type: number }
+            # A real verdict made before T-108 recorded a confidence level.
+            notRecorded: { type: number }
+            clean: { type: number }
+            errored: { type: number }
+        hardCases:
+          type: object
+          required: [calls, tags, examples]
+          properties:
+            calls: { type: number }
+            tags:
+              type: array
+              items:
+                type: object
+                required: [tag, calls]
+                properties:
+                  tag: { type: string }
+                  calls: { type: number }
+            examples:
+              type: array
+              items:
+                type: object
+                required: [callId, label, tags]
+                properties:
+                  callId: { type: string }
+                  label: { type: string }
+                  tags:
+                    type: array
+                    items: { type: string }
     WordsToWatch:
       type: object
       required: [bulkId, bulksCovered, assistantId, callsScanned, callsWithSpans, words]

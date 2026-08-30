@@ -2,8 +2,14 @@
 
 Several register rows shipped a *script* but the write itself was left for
 Abhishek to run (the auto-mode classifier blocks direct database writes from
-the agent, and that is the right default). As of 2026-08-30 (batch 6, T-99)
-**none of them has been applied**; the live database still shows:
+the agent, and that is the right default).
+
+**Applied 2026-08-30 (T-111, batch 9) with Abhishek's go.** The dry run
+afterwards reads: `T-65 cross-run pick links: 0; ... legacy ...: 0; T-62 flux
+$/min: 0.0077` and `T-52: 14 calls ... resolved 0, unresolved 14, written 0`
+(those 14 are past Vapi's retention and stay null for good); the recompute
+covered all 22 finished runs. The table below is what the database showed
+**before** that, kept as the record of what changed:
 
 | Row | What is still wrong live | Script |
 |---|---|---|
