@@ -190,7 +190,7 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 
 | # | Question | Blocks |
 |---|---|---|
-| Q-1 | **Can the transcriber actually be switched per assistant in Vapi?** If it's fixed per account, or operationally painful, the verdict is a report nobody can act on. Nobody has verified this. Check the Vapi assistant API. | Phase 3 |
+| Q-1 | ~~**Can the transcriber actually be switched per assistant in Vapi?**~~ ✅ **Answered 2026-08-30 (T-93, batch 5).** Yes: `transcriber` is a per-assistant field (read live on assistant `b3914788`: deepgram / flux-general-en with an AssemblyAI `fallbackPlan`), and Vapi's own OpenAPI has it on `PATCH /assistant/{id}` (`UpdateAssistantDTO.transcriber`, a oneOf over 14 providers incl. all 7 this tool benchmarks). No write was made. Detail: `docs/provider-data-samples.md`. | Phase 3 |
 | Q-2 | Which providers share a base model (Whisper derivatives)? Needed for T-18. | T-18 |
 | Q-3 | Is `pgvector` enabled on the Supabase project? Only matters if phrase similarity is wanted later. **Verify, don't assume.** | T-30 |
 

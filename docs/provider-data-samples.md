@@ -185,3 +185,52 @@ transcriber. We just added Deepgram as a candidate provider today. If we ever sc
 Deepgram against a call where Deepgram was also the draft source, that comparison is
 unfair to the other providers — Deepgram gets a head start because the "gold" transcript
 a human corrected started out already agreeing with Deepgram's own words.
+
+## Vapi assistant `transcriber` — can the STT provider be switched per assistant? (T-93, verified 2026-08-30)
+
+**Yes. The transcriber is a per-assistant setting, and Vapi's own API accepts it on
+update.** Register Q-1 is answered; a verdict is something a person can act on.
+
+Read live, `GET https://api.vapi.ai/assistant/b3914788-3dc5-473c-b534-3d02b7848b29`
+(org "Land And Apartment", key from `VAPI_API_KEY_LAND_AND_APARTMENT`; read-only, no
+write was made):
+
+```json
+{
+  "name": "[PROD] Waterside Apartments Leasing",
+  "transcriber": {
+    "provider": "deepgram",
+    "model": "flux-general-en",
+    "language": "en",
+    "fallbackPlan": {
+      "transcribers": [
+        { "provider": "assembly-ai", "language": "en", "formatTurns": true, "disablePartialTranscripts": false }
+      ]
+    }
+  }
+}
+```
+
+Two things this shows that the corpus columns (`sourceTranscriberProvider/Model`)
+did not: the production transcriber carries a **`fallbackPlan`** (here AssemblyAI
+behind Deepgram Flux) — so "what runs in production" is a primary plus a fallback,
+and the baseline line on Results names only the primary; and `flux-general-en` is
+Vapi's model id for Deepgram Flux, which is why the catalog match in
+`useProductionBaseline` normalises names before comparing.
+
+Write side, from Vapi's published OpenAPI (`GET https://api.vapi.ai/api-json`, fetched
+2026-08-30): `PATCH /assistant/{id}` takes `UpdateAssistantDTO`, whose `transcriber`
+property is a `oneOf` over these providers:
+
+`AssemblyAITranscriber, AzureSpeechTranscriber, CustomTranscriber,
+DeepgramTranscriber, ElevenLabsTranscriber, GladiaTranscriber, GoogleTranscriber,
+SpeechmaticsTranscriber, TalkscriberTranscriber, OpenAITranscriber,
+CartesiaTranscriber, SonioxTranscriber, XaiTranscriber, VapiTranscriber`
+
+Every provider this tool benchmarks (AssemblyAI, Cartesia, Deepgram, ElevenLabs,
+Gladia, OpenAI, Speechmatics) is a Vapi transcriber option, so any winner the
+verdict names can be applied to the assistant with one PATCH. **Not exercised** —
+PATCHing a production assistant is a write with live consequences and is nobody's
+call but Abhishek's. If an "apply the verdict" button is ever wanted, this is the
+endpoint, and it must be a confirmed, audit-logged action, never automatic.
+
