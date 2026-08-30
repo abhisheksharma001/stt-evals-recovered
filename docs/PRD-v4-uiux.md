@@ -835,3 +835,57 @@ page-section gap token and removes the per-page values.
 - The frontend dev server needs `API_PROXY_TARGET=http://localhost:8177` set, or
   `/api/*` silently returns the SPA HTML shell and pages crash with confusing type
   errors instead of a network error. This has bitten twice.
+
+---
+
+# Part F — Copy, evidence and the batch loop (added 2026-08-30)
+
+## F.1 Copy audit (T-81)
+
+Abhishek's brief (2026-08-30): "UI copy audit, not a redesign … speak the user's
+language, not the internal one … one label answers one question … the same word for
+the same concept everywhere … cut every word that doesn't help someone decide."
+
+**Vocabulary — one word per concept.** Applies to every screen, the share page and
+the verdict sentences in `lib/scoring/src/verdict.ts`:
+
+| Concept | Was (variants) | Now |
+|---|---|---|
+| The section | verdict / decision / Decision Logic / recommendation | **Verdict** |
+| Provider that won | winner / Recommended / Clear winner / best fit | **Winner** |
+| Rank 1 without a win | Leading, not decided / leader / top candidate | **Ahead, not a winner** |
+| Statistical gap | noise floor / 95% CI / inside the noise / survived 1,000 reshuffles | **margin of error** |
+| Calls the verdict used | evidence calls / scored calls | **calls scored** |
+| Calls the top two both ran | shared calls / shared by top two | **calls both ran** |
+| Under 20 calls | provisional | **early read (under 20 calls)** |
+| The quality metric | peer flags / cross-provider flags / Avg Flags / flags per 100 words | **disagreements per 100 words** (↓ better) |
+| Production provider | production / active / live / production transcriber | **in production today** |
+| Decision chips | Clear winner / Too close to call / Too few calls / Not enough providers | **Winner / Too close to call / Not enough calls / Only one provider** |
+
+Rules: plain label on screen, exact mechanism in the tooltip (engineers lose
+nothing); every numeric column carries ↓ better / ↑ better and each page with a
+rating carries one legend line at the top; no ticket ids, spec ids or dates in
+user-facing text; the T-57 rule stands (only the verdict's winner gets the badge) —
+its wording changes to the vocabulary above. The full 50-row decision table is in
+the session log of 2026-08-30 and is applied by T-81.
+
+**Evidence:** Hamel Husain & Shreya Shankar, "Building eval systems that improve your
+AI product" (Lenny's, 2025-09-09) — binary labels over 1–5 scales, nuance in the
+critique; don't put a score on a dashboard, sort examples and look at them (→ T-82,
+T-85; drop the 0–3 severity column from the client table). Codecademy benchmark
+results on Mobbin — plain per-row states.
+
+## F.2 Landing page (T-83)
+
+Abhishek chose **B: a public marketing page** for the tool (2026-08-30). Not the
+Overview (a) and not the share page (c). Static, outside the app shell, same design
+tokens. Reference pass via the `visual-and-research` skill before building.
+
+## F.3 The batch loop and the evidence habit
+
+Five register tasks per iteration, one PR with one commit per task, one deploy at
+the end. Before any UI or product decision, the global `visual-and-research` skill
+runs: 1–3 Mobbin screen searches (visual pattern) and 1–3 Lenny's searches (operator
+insight), producing an evidence note that names what changed in the plan. Batch 1
+(2026-08-30, PR #49) used it for T-31 (page names), T-82 (Semrush pattern) and T-84
+(Midday pattern).
