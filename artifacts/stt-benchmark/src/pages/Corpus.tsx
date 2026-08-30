@@ -14,6 +14,7 @@ import {
   Vertical,
   useGetCallDisagreement,
   getGetCallDisagreementQueryKey,
+  useListVapiAssistants,
 } from "@workspace/api-client-react"
 import {
   Plus,
@@ -27,6 +28,8 @@ import {
   Loader2,
   Users,
   AlertCircle,
+  Building2,
+  Bot,
 } from "lucide-react"
 import { differenceInCalendarDays } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -70,6 +73,16 @@ export default function Corpus() {
   // strip above the table answers it and its chips filter the table.
   const [hardCasesOnly, setHardCasesOnly] = React.useState(false)
   const { data: dashboard } = useGetBenchmarkDashboard({ query: { queryKey: getGetBenchmarkDashboardQueryKey() } })
+  // T-96 (E.1 layer 1, Calls): the table reads org -> assistant -> call,
+  // the same nesting as Results, so a reader lands on "which org, which
+  // agent" before any row. Groups collapse; "flat" is the old table.
+  const [groupBy, setGroupBy] = React.useState<"org" | "flat">("org")
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set())
+  const toggleGroup = (key: string) => setCollapsed((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next })
+  // Assistant names come from Vapi live (same call Bulks makes); until they
+  // arrive, or for an assistant no longer in Vapi, the id prefix is shown.
+  const { data: assistants } = useListVapiAssistants()
+  const assistantName = React.useMemo(() => new Map((assistants ?? []).map((a) => [a.id, a.name])), [assistants])
 
   // Deep link support (replaces the old /review?call=<id> link): "expand
   // this call and scroll to it" from anywhere that still passes ?call=<id>.
@@ -112,115 +125,32 @@ export default function Corpus() {
       .sort((a, b) => rank(b.id) - rank(a.id) || a.label.localeCompare(b.label))
   }, [calls, searchText, statusFilter, verticalFilter, hardCasesOnly, disagreementOf])
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Corpus</h1>
-          <p className="text-muted-foreground mt-1">Calls pulled from Vapi, ready to run against any configured provider. No gold transcript or sign-off step required.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative w-56">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search calls..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger aria-label="Filter by status" className="h-9 w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="needs_review">Needs review</SelectItem>
-              <SelectItem value="ready_to_run">Ready to run</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={verticalFilter} onValueChange={setVerticalFilter}>
-            <SelectTrigger aria-label="Filter by vertical" className="h-9 w-48 capitalize"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All verticals</SelectItem>
-              <SelectItem value="rush">Rush</SelectItem>
-              <SelectItem value="property_management">Property management</SelectItem>
-              <SelectItem value="trucking">Trucking</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-            {filteredCalls.length}{calls ? ` / ${calls.length}` : ""}
-          </span>
-          <CreateCallDialog />
-        </div>
-      </div>
+  type CallRow = NonNullable<typeof calls>[number]
+  type AssistantGroup = { key: string; id: string | null; calls: CallRow[]; needsReview: number; hardCases: number }
+  type OrgGroup = { key: string; label: string | null; calls: number; needsReview: number; hardCases: number; assistants: AssistantGroup[] }
+  const orgs = React.useMemo<OrgGroup[]>(() => {
+    const byOrg = new Map<string, OrgGroup>()
+    for (const c of filteredCalls) {
+      const label = c.sourceAccountLabel ?? null
+      const orgKey = label ?? "__no_org__"
+      const org = byOrg.get(orgKey) ?? { key: orgKey, label, calls: 0, needsReview: 0, hardCases: 0, assistants: [] }
+      const aId = c.sourceAssistantId ?? null
+      const aKey = `${orgKey}/${aId ?? "__no_assistant__"}`
+      let a = org.assistants.find((x) => x.key === aKey)
+      if (!a) { a = { key: aKey, id: aId, calls: [], needsReview: 0, hardCases: 0 }; org.assistants.push(a) }
+      a.calls.push(c)
+      org.calls += 1
+      if (c.status === "needs_review") { a.needsReview += 1; org.needsReview += 1 }
+      if (c.hardCases.length > 0) { a.hardCases += 1; org.hardCases += 1 }
+      byOrg.set(orgKey, org)
+    }
+    // Biggest first at both levels; calls inside keep the worst-first order.
+    for (const org of byOrg.values()) org.assistants.sort((x, y) => y.calls.length - x.calls.length)
+    return [...byOrg.values()].sort((x, y) => y.calls - x.calls || (x.label ?? "~").localeCompare(y.label ?? "~"))
+  }, [filteredCalls])
+  const allGroupKeys = React.useMemo(() => orgs.flatMap((o) => [o.key, ...o.assistants.map((a) => a.key)]), [orgs])
 
-      <NeedsHumanStrip
-        data={dashboard?.needsHuman}
-        statusFilter={statusFilter}
-        hardCasesOnly={hardCasesOnly}
-        onAwaitingReview={() => { setStatusFilter(statusFilter === "needs_review" ? "all" : "needs_review"); setHardCasesOnly(false) }}
-        onHardCases={() => { setHardCasesOnly((v) => !v); setStatusFilter("all") }}
-      />
-
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Call ID / Label</TableHead>
-                <TableHead className="text-right" title="Sum of disagreements across every provider's transcript of this call. Lower is better; blank means no scored transcript yet. The table is sorted by this, most disagreement first.">
-                  Disagreements ↓
-                  <div className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground">most first</div>
-                </TableHead>
-                <TableHead>Vertical</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Hard Cases</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {/* T-91 (U-8): loading, failed and empty are three different
-                  rows -- and "nothing matches these filters" is not the same
-                  as "nothing has been imported". */}
-              {isError ? (
-                <TableStateRow colSpan={8} state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
-              ) : isLoading ? (
-                <TableStateRow colSpan={8} state={{ kind: "loading", message: "Loading calls…" }} />
-              ) : (calls?.length ?? 0) === 0 ? (
-                <TableStateRow
-                  colSpan={8}
-                  state={{
-                    kind: "empty",
-                    message: "No calls imported yet.",
-                    action: <Link href="/setup?tab=sources" className="text-primary hover:underline">Import calls from Vapi →</Link>,
-                  }}
-                />
-              ) : filteredCalls.length === 0 ? (
-                <TableStateRow
-                  colSpan={8}
-                  state={{
-                    kind: "empty",
-                    message: `No calls match these filters (${calls?.length ?? 0} in the corpus).`,
-                    action: (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7"
-                        onClick={() => {
-                          setSearchText("")
-                          setStatusFilter("all")
-                          setVerticalFilter("all")
-                          setHardCasesOnly(false)
-                        }}
-                      >
-                        Clear filters
-                      </Button>
-                    ),
-                  }}
-                />
-              ) : (
-                filteredCalls.map(call => {
+  const renderCall = (call: CallRow) => {
                   const expanded = call.id === expandedId
                   return (
                     <React.Fragment key={call.id}>
@@ -287,13 +217,194 @@ export default function Corpus() {
                       )}
                     </React.Fragment>
                   )
-                })
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Calls</h1>
+          <p className="text-muted-foreground mt-1">Calls pulled from Vapi, ready to run against any configured provider. No gold transcript or sign-off step required.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search calls..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger aria-label="Filter by status" className="h-9 w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="needs_review">Needs review</SelectItem>
+              <SelectItem value="ready_to_run">Ready to run</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={verticalFilter} onValueChange={setVerticalFilter}>
+            <SelectTrigger aria-label="Filter by vertical" className="h-9 w-48 capitalize"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All verticals</SelectItem>
+              <SelectItem value="rush">Rush</SelectItem>
+              <SelectItem value="property_management">Property management</SelectItem>
+              <SelectItem value="trucking">Trucking</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+            {filteredCalls.length}{calls ? ` / ${calls.length}` : ""}
+          </span>
+          <CreateCallDialog />
+        </div>
+      </div>
+
+      <NeedsHumanStrip
+        data={dashboard?.needsHuman}
+        statusFilter={statusFilter}
+        hardCasesOnly={hardCasesOnly}
+        onAwaitingReview={() => { setStatusFilter(statusFilter === "needs_review" ? "all" : "needs_review"); setHardCasesOnly(false) }}
+        onHardCases={() => { setHardCasesOnly((v) => !v); setStatusFilter("all") }}
+      />
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted-foreground" data-testid="calls-grouping-bar">
+            <span>{groupBy === "org" ? "Grouped by org, then assistant. Calls inside are most disagreement first." : "One row per call, most disagreement first."}</span>
+            <div className="ml-auto flex items-center gap-3">
+              <div className="flex items-center rounded-md border border-border text-xs" role="group" aria-label="Group rows">
+                <button type="button" onClick={() => setGroupBy("org")} className={`px-2 py-1.5 ${groupBy === "org" ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`} title="Org, then assistant, then calls -- the same nesting as Results">
+                  By org
+                </button>
+                <button type="button" onClick={() => setGroupBy("flat")} className={`px-2 py-1.5 ${groupBy === "flat" ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`} title="One row per call, most disagreement first">
+                  Flat
+                </button>
+              </div>
+              {groupBy === "org" && orgs.length > 0 && (
+                <button type="button" onClick={() => setCollapsed(collapsed.size === 0 ? new Set(allGroupKeys) : new Set())} className="text-xs text-muted-foreground hover:text-foreground hover:underline whitespace-nowrap">
+                  {collapsed.size === 0 ? "Collapse all" : "Expand all"}
+                </button>
+              )}
+            </div>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Call ID / Label</TableHead>
+                <TableHead className="text-right" title="Sum of disagreements across every provider's transcript of this call. Lower is better; blank means no scored transcript yet. The table is sorted by this, most disagreement first.">
+                  Disagreements ↓
+                  <div className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground">most first</div>
+                </TableHead>
+                <TableHead>Vertical</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Hard Cases</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* T-91 (U-8): loading, failed and empty are three different
+                  rows -- and "nothing matches these filters" is not the same
+                  as "nothing has been imported". */}
+              {isError ? (
+                <TableStateRow colSpan={8} state={{ kind: "error", message: errorMessage(error), onRetry: () => void refetch() }} />
+              ) : isLoading ? (
+                <TableStateRow colSpan={8} state={{ kind: "loading", message: "Loading calls…" }} />
+              ) : (calls?.length ?? 0) === 0 ? (
+                <TableStateRow
+                  colSpan={8}
+                  state={{
+                    kind: "empty",
+                    message: "No calls imported yet.",
+                    action: <Link href="/setup?tab=sources" className="text-primary hover:underline">Import calls from Vapi →</Link>,
+                  }}
+                />
+              ) : filteredCalls.length === 0 ? (
+                <TableStateRow
+                  colSpan={8}
+                  state={{
+                    kind: "empty",
+                    message: `No calls match these filters (${calls?.length ?? 0} in the corpus).`,
+                    action: (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        onClick={() => {
+                          setSearchText("")
+                          setStatusFilter("all")
+                          setVerticalFilter("all")
+                          setHardCasesOnly(false)
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    ),
+                  }}
+                />
+              ) : (
+                groupBy === "flat" ? (
+                  filteredCalls.map(renderCall)
+                ) : (
+                  orgs.map((org) => {
+                    const orgOpen = !collapsed.has(org.key)
+                    return (
+                      <React.Fragment key={org.key}>
+                        <TableRow className="bg-secondary/60 hover:bg-secondary/60" data-testid="org-group">
+                          <TableCell colSpan={8} className="py-2">
+                            <button type="button" onClick={() => toggleGroup(org.key)} className="flex w-full items-center gap-2 text-left" aria-expanded={orgOpen}>
+                              {orgOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-semibold">{org.label ?? "Unlabelled org"}</span>
+                              <span className="font-mono text-xs text-muted-foreground">{org.calls} call{org.calls === 1 ? "" : "s"} · {org.assistants.length} assistant{org.assistants.length === 1 ? "" : "s"}</span>
+                              <GroupCounts needsReview={org.needsReview} hardCases={org.hardCases} />
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                        {orgOpen && org.assistants.map((a) => {
+                          const aOpen = !collapsed.has(a.key)
+                          const worst = a.calls.map((c) => disagreementOf.get(c.id)).find((d) => d !== undefined)
+                          return (
+                            <React.Fragment key={a.key}>
+                              <TableRow className="bg-muted/30 hover:bg-muted/30" data-testid="assistant-group">
+                                <TableCell colSpan={8} className="py-1.5 pl-8">
+                                  <button type="button" onClick={() => toggleGroup(a.key)} className="flex w-full items-center gap-2 text-left text-sm" aria-expanded={aOpen}>
+                                    {aOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                                    <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="font-medium">{a.id ? (assistantName.get(a.id) ?? <span className="font-mono">{a.id.slice(0, 8)}…</span>) : "No assistant id captured at import"}</span>
+                                    <span className="font-mono text-xs text-muted-foreground">{a.calls.length} call{a.calls.length === 1 ? "" : "s"}{worst !== undefined ? ` · worst ${worst} disagreements` : ""}</span>
+                                    <GroupCounts needsReview={a.needsReview} hardCases={a.hardCases} />
+                                  </button>
+                                </TableCell>
+                              </TableRow>
+                              {aOpen && a.calls.map(renderCall)}
+                            </React.Fragment>
+                          )
+                        })}
+                      </React.Fragment>
+                    )
+                  })
+                )
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// T-96: the two "needs a human" numbers on a group header, blank when zero
+// so a clean group reads clean.
+function GroupCounts({ needsReview, hardCases }: { needsReview: number; hardCases: number }) {
+  if (needsReview === 0 && hardCases === 0) return null
+  return (
+    <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide">
+      {needsReview > 0 && <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-foreground">{needsReview} need review</span>}
+      {hardCases > 0 && <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-muted-foreground">{hardCases} hard</span>}
+    </span>
   )
 }
 
