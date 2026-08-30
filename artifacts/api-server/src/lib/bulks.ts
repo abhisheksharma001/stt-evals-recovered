@@ -17,6 +17,7 @@ import { isFailureClass, isRetryableFailureClass } from "@workspace/stt-provider
 import { executeBenchmarkRun, requestRunCancellation } from "./run-executor";
 import { drainWithConcurrency, envInt } from "./concurrency";
 import { audioCachePathFor } from "./audio-cache";
+import { VAPI_RETENTION_WINDOW_DAYS } from "./vapi-retention";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";
 import { resolveProductionProviderId } from "./verdict";
@@ -26,7 +27,6 @@ import { resolveProductionProviderId } from "./verdict";
 // threshold already shown in Corpus's RetentionWarning UI and the
 // `retention_expired` known-cause text in lib/agent.ts's KNOWN_FAILURE_BY_CLASS --
 // one number, not three independent guesses at the same Vapi plan limit.
-const VAPI_RETENTION_WINDOW_DAYS = 14;
 
 // T-6 fix (2026-08-27, base-solidity review): launchBulk used to fire EVERY
 // shard run at once (`void executeBenchmarkRun(...)` in a plain loop). A

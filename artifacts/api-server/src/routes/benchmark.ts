@@ -40,6 +40,7 @@ import {
   GetBenchmarkRunManifestParams,
   GetBenchmarkRunManifestResponse,
   ImportVapiCallsBody,
+  CacheCorpusAudioResponse,
   ImportVapiCallsResponse,
   ListAuditLogQueryParams,
   ListAuditLogResponse,
@@ -122,8 +123,10 @@ import { AgentConfigError, AgentRequestError, JUDGE_MODEL, analyzeFailure, match
 import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
-import { audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
+import { getOrCacheAudioBytes, audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
+import { rescueUncachedAudio } from "../lib/audio-rescue";
+import { cachedVendorModels } from "../lib/model-list-cache";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -454,6 +457,16 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(CreateBenchmarkCallResponse.parse(serializeCall(call)));
+});
+
+// T-126: save every uncached call's audio to the server's disk while Vapi
+// still has it (free -- only a download, no STT provider call). Cached
+// calls are skipped, per-call failures are reported not thrown, and calls
+// already past the 14-day window are named as expired instead of silently
+// attempted.
+router.post("/benchmark/calls/cache-audio", async (_req, res): Promise<void> => {
+  const result = await rescueUncachedAudio();
+  res.json(CacheCorpusAudioResponse.parse(result));
 });
 
 // T-51: one call by id. The list route above is the corpus (121 calls today,
@@ -1076,12 +1089,28 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
       afterState: serializeCall(created),
     });
 
+    // T-127: save the audio bytes to the server's disk right now, while the
+    // recording is certainly still alive at Vapi -- so a newly imported call
+    // never sits on the 14-day retention countdown at all. A cache failure
+    // must NOT fail the import (the call row is real either way); it is
+    // named in the outcome message instead of being a silent gap. This
+    // re-resolves a fresh URL via the same path every other cache write
+    // uses (getOrCacheAudioBytes), so the player, the run executor and the
+    // importer can never disagree about what "the audio" is.
+    let message: string | null = null;
+    try {
+      await getOrCacheAudioBytes(created);
+    } catch (err) {
+      req.log.warn({ err, callId: created.id }, "import: audio could not be cached at import time");
+      message = `Imported, but the audio could not be saved to the server yet (${err instanceof Error ? err.message : String(err)}). The first run, or "Save audio now" on Calls, will try again.`;
+    }
+
     return {
       vapiCallId,
       outcome: "imported",
       callId: created.id,
       label,
-      message: null,
+      message,
     };
   };
 
@@ -1173,20 +1202,10 @@ router.post("/benchmark/providers", async (req, res): Promise<void> => {
 // dated day -- and which of them already have a provider row here. The
 // route never writes; enabling is the POST below, one row per model, so a
 // newer model never silently replaces the results of the old one.
-// T-119: a live vendor list (Deepgram, OpenAI) that does not answer must not
-// hang the page reading it -- on 2026-08-30 Deepgram's /v1/models took 51 s
-// and the Overview figure sat on "..." for as long. Past this many
-// milliseconds the vendor reports an error and the others still render; the
-// browser caches the answer for five minutes and asks again.
-const VENDOR_MODEL_LIST_TIMEOUT_MS = 8_000;
-function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} did not answer within ${Math.round(ms / 1000)} s.`)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
-
+// T-119/T-128: the per-vendor 8 s budget and the 30-minute server-side
+// cache both live in lib/model-list-cache.ts -- a slow vendor (Deepgram's
+// /v1/models once took 51 s) neither hangs the page nor gets re-asked on
+// every Overview and Setup visit.
 router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
   const rows = await db.select({ id: benchmarkProvidersTable.id, status: benchmarkProvidersTable.status }).from(benchmarkProvidersTable);
   const rowById = new Map(rows.map((r) => [r.id, r.status]));
@@ -1195,13 +1214,7 @@ router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
       .filter((a) => typeof a.listModels === "function")
       .map(async (adapter) => {
         const vendor = vendorOf(adapter);
-        let models: ProviderModelOption[] = [];
-        let error: string | null = null;
-        try {
-          models = await withTimeout(adapter.listModels!(), VENDOR_MODEL_LIST_TIMEOUT_MS, `${adapter.vendorLabel ?? vendor}'s model list`);
-        } catch (err) {
-          error = err instanceof Error ? err.message : String(err);
-        }
+        const { models, error } = await cachedVendorModels(vendor, adapter.vendorLabel ?? vendor, () => adapter.listModels!());
         return {
           vendor,
           vendorLabel: adapter.vendorLabel ?? vendor,

@@ -43,7 +43,8 @@ export const GetBenchmarkDashboardResponse = zod.object({
   "needsHuman": zod.object({
   "callsAwaitingReview": zod.number(),
   "hardCaseCalls": zod.number(),
-  "retryableFailedCells": zod.number()
+  "retryableFailedCells": zod.number(),
+  "audioUnsavedCalls": zod.number()
 }),
   "thisMonth": zod.object({
   "monthStart": zod.coerce.date(),
@@ -150,6 +151,23 @@ export const CreateBenchmarkCallResponse = zod.object({
   "sourceSuccessEvaluation": zod.string().nullish(),
   "audioCached": zod.boolean().optional(),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary T-126 -- download and save to the server's disk the audio of every uncached corpus call still inside Vapi's 14-day retention window. Free (no STT provider is called); safe to repeat (already-cached calls are skipped).
+ */
+export const CacheCorpusAudioResponse = zod.object({
+  "alreadyCachedCount": zod.number(),
+  "savedCount": zod.number(),
+  "failedCount": zod.number(),
+  "expiredCount": zod.number(),
+  "results": zod.array(zod.object({
+  "callId": zod.string(),
+  "label": zod.string(),
+  "outcome": zod.enum(['saved', 'failed', 'expired']),
+  "error": zod.string().nullable()
+}))
 })
 
 

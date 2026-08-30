@@ -368,6 +368,31 @@ export interface VapiImportResult {
   results: VapiImportOutcome[];
 }
 
+export type CacheAudioOutcomeOutcome = typeof CacheAudioOutcomeOutcome[keyof typeof CacheAudioOutcomeOutcome];
+
+
+export const CacheAudioOutcomeOutcome = {
+  saved: 'saved',
+  failed: 'failed',
+  expired: 'expired',
+} as const;
+
+export interface CacheAudioOutcome {
+  callId: string;
+  label: string;
+  outcome: CacheAudioOutcomeOutcome;
+  /** @nullable */
+  error: string | null;
+}
+
+export interface CacheAudioResult {
+  alreadyCachedCount: number;
+  savedCount: number;
+  failedCount: number;
+  expiredCount: number;
+  results: CacheAudioOutcome[];
+}
+
 export interface AttestDeidBody {
   /** @minLength 2 */
   approverLabel: string;
@@ -1161,6 +1186,7 @@ export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
+  audioUnsavedCalls: number;
 };
 
 export type BenchmarkDashboardThisMonth = {

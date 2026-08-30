@@ -1,3 +1,20 @@
+## Found 2026-08-31 (batch 12, T-126): what the audio rescue could and could not save
+
+First full rescue over the corpus (121 calls, 57 uncached): 43 saved, 0
+expired-by-our-count, 14 refused by Vapi with HTTP 400 "Your subscription
+plan only covers the last 14 days of call history". The 14: nine calls with
+no `sourceStartedAt` at all (pre-labeling era, genuinely old), and the five
+dated 2026-08-19 — refused at day 12, i.e. before day 14. Whether those five
+are the same five calls as the known storage-bucket failure set was not
+verified; the counts match, the identity was not checked call-by-call.
+
+Residue, deferred (not silently ignored): neither the rescue endpoint nor
+import-time caching persists a per-call attempt outcome, so the Overview's
+"audio not saved" figure and the "Save audio now (N)" button keep counting
+the 14 calls Vapi has already refused. Follow-up when it matters: store the
+last attempt outcome per call and split "never tried" from "Vapi refused",
+so the figure can reach a true zero.
+
 ## Mined 2026-08-30 (batch 7, T-101): the real reading pairs behind the equivalence rules
 
 72 calls, latest batch run each, 873 disagreement spans, 2,390 distinct reading

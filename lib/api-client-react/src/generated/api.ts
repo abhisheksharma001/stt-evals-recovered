@@ -48,6 +48,7 @@ import type {
   BulkTemplateInput,
   BulkTemplateLaunchInput,
   BulkVerdicts,
+  CacheAudioResult,
   CallComparison,
   CallDisagreement,
   ClientVolume,
@@ -418,6 +419,77 @@ export const useCreateBenchmarkCall = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateBenchmarkCallMutationOptions(options));
+    }
+
+export const getCacheCorpusAudioUrl = () => {
+
+
+
+
+  return `/api/benchmark/calls/cache-audio`
+}
+
+/**
+ * @summary T-126 -- download and save to the server's disk the audio of every uncached corpus call still inside Vapi's 14-day retention window. Free (no STT provider is called); safe to repeat (already-cached calls are skipped).
+ */
+export const cacheCorpusAudio = async ( options?: Parameters<typeof customFetch>[1]): Promise<CacheAudioResult> => {
+
+  return customFetch<CacheAudioResult>(getCacheCorpusAudioUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCacheCorpusAudioMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cacheCorpusAudio>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cacheCorpusAudio>>, TError,void, TContext> => {
+
+const mutationKey = ['cacheCorpusAudio'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cacheCorpusAudio>>, void> = () => {
+
+
+          return  cacheCorpusAudio(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CacheCorpusAudioMutationResult = NonNullable<Awaited<ReturnType<typeof cacheCorpusAudio>>>
+
+    export type CacheCorpusAudioMutationError = ErrorType<unknown>
+
+    /**
+ * @summary T-126 -- download and save to the server's disk the audio of every uncached corpus call still inside Vapi's 14-day retention window. Free (no STT provider is called); safe to repeat (already-cached calls are skipped).
+ */
+export const useCacheCorpusAudio = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cacheCorpusAudio>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cacheCorpusAudio>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCacheCorpusAudioMutationOptions(options));
     }
 
 export const getGetCallDisagreementUrl = (params?: GetCallDisagreementParams,) => {

@@ -258,6 +258,18 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 
 ---
 
+## Phase 17 — batch 12 (added 2026-08-31; set = batch-11 report's free candidates: protect the corpus audio, kill the Deepgram wait, first component tests)
+
+| ID | Task | Acceptance |
+|---|---|---|
+| T-126 | ~~**Audio rescue — save every uncached call's audio while Vapi has it**~~ ✅ **done 2026-08-31 — batch 12.** Recon: 57 of 121 calls had no audio bytes on the server. `POST /benchmark/calls/cache-audio` (`lib/audio-rescue.ts`; pure classifier in `lib/audio-rescue-plan.ts`, unit-tested) tries every uncached call still inside the window — cached calls skipped, per-call failures reported not thrown, past-window calls named "expired" instead of attempted. The 14-day constant now lives once, in `lib/vapi-retention.ts` (bulks.ts imports it). Calls' grouping bar gets "Save audio now (N)" with a saved/failed/expired/already-safe toast. **Run live: 43 saved (64 → 107 of 121 cached); 14 refused by Vapi with the retention 400 — 9 date-unknown pre-labeling calls plus the 5 dated 2026-08-19 (refused at day 12, before day 14).** | Endpoint idempotent; live run saved everything Vapi would give; unit tests green. |
+| T-127 | ~~**Import caches audio immediately**~~ ✅ **done 2026-08-31 — batch 12.** The importer calls `getOrCacheAudioBytes` right after inserting the row, while the recording is certainly alive — a new call never sits on the retention countdown. A cache failure never fails the import; it is named in that call's import outcome message. | Import still succeeds when caching fails; message says so; 52 api tests green. |
+| T-128 | ~~**Server cache for vendor model lists**~~ ✅ **done 2026-08-31 — batch 12.** `lib/model-list-cache.ts`: a successful list is good for 30 minutes; on a vendor error/timeout the last good list from within 24 h is served instead of a blank (each model's `verifiedAt` already carries its true age); older than that, the error reports as before. T-119's 8 s timeout moved in with it. Measured live: first hit 2.1 s, second 0.012 s. | Unit tests: fresh hit, TTL expiry, stale-on-error, error-with-nothing, vendor isolation. |
+| T-129 | ~~**Component tests: jsdom + testing-library**~~ ✅ **done 2026-08-31 — batch 12.** `*.test.tsx` files run in jsdom via a per-file pragma (default env stays node); vitest gets the `@` alias and the automatic JSX runtime (classic default = "React is not defined" on every tsx test, found the hard way). `JudgeChip` extracted unchanged to `components/judge-chip.tsx` and rendered under test: 5 renders pin no-scan→nothing, clean→muted "never asked", high→success tone, failed check blames the check, pre-batch-8→"not recorded". 39 web tests total. | Suite green locally + CI; live render unchanged. |
+| T-130 | ~~**Overview: unsaved-audio figure**~~ ✅ **done 2026-08-31 — batch 12.** Fifth "Needs a person" figure: calls whose audio is not on the server's disk but still obtainable from Vapi (unknown age counts; past-window calls do not — nothing a person does saves those), linking to /corpus. Computed server-side in `lib/overview.ts` like the others. Known residue: rescue outcomes are not persisted, so the 14 Vapi-refused calls keep counting until that lands (named in the backlog). | Live: figure reads 14 after the rescue; dashboard parse green. |
+
+---
+
 ## Deferred, by name
 
 | ID | Task | Owner |

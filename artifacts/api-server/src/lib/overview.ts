@@ -15,6 +15,8 @@ import {
   db,
 } from "@workspace/db";
 import { isFailureClass, isRetryableFailureClass } from "@workspace/stt-providers";
+import { listCachedCallIds } from "./audio-cache";
+import { isPastVapiRetention } from "./vapi-retention";
 
 /** Bulks that have finished executing. `partial` is finished-with-failures,
  *  not in-flight, so it counts: its verdict is as real as a `complete` one. */
@@ -71,15 +73,32 @@ export type NeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
+  audioUnsavedCalls: number;
 };
 
 export async function needsHuman(): Promise<NeedsHuman> {
   const calls = await db
-    .select({ status: benchmarkCallsTable.status, hardCases: benchmarkCallsTable.hardCases })
+    .select({
+      id: benchmarkCallsTable.id,
+      status: benchmarkCallsTable.status,
+      hardCases: benchmarkCallsTable.hardCases,
+      sourceStartedAt: benchmarkCallsTable.sourceStartedAt,
+    })
     .from(benchmarkCallsTable);
   const awaiting = new Set<string>(AWAITING_REVIEW_STATUSES);
   const callsAwaitingReview = calls.filter((c) => awaiting.has(c.status)).length;
   const hardCaseCalls = calls.filter((c) => Array.isArray(c.hardCases) && c.hardCases.length > 0).length;
+
+  // T-130: uncached audio became a person's chore in T-126 ("Save audio
+  // now" on Calls) -- so the Overview must say when the chore exists.
+  // Counted: every call whose bytes are not on the server's disk and whose
+  // recording Vapi can still hand out. Unknown age counts (an attempt is
+  // the only way to find out); calls already past the window do not -- no
+  // person can save those, and Calls names them "audio gone" instead.
+  const cachedIds = await listCachedCallIds();
+  const audioUnsavedCalls = calls.filter(
+    (c) => !cachedIds.has(c.id) && !isPastVapiRetention(c.sourceStartedAt),
+  ).length;
 
   // Cells a retry could still fix, in bulks that have stopped: the same rule
   // retryBulkFailedCells applies (lib/bulks.ts), so this count and the
@@ -117,7 +136,7 @@ export async function needsHuman(): Promise<NeedsHuman> {
     }
   }
 
-  return { callsAwaitingReview, hardCaseCalls, retryableFailedCells };
+  return { callsAwaitingReview, hardCaseCalls, retryableFailedCells, audioUnsavedCalls };
 }
 
 export type MonthSpend = {
