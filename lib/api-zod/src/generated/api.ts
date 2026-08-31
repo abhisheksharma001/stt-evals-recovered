@@ -2123,66 +2123,6 @@ export const ListAgentScansResponse = zod.array(ListAgentScansResponseItem)
 
 
 /**
- * @summary Scan one call's current best transcript for likely mis-transcriptions, and (if any are found) re-transcribe it across the other configured providers for the agent to compare -- on-demand, one call at a time (not automatic on import)
- */
-export const CreateAgentScanBody = zod.object({
-  "callId": zod.string()
-})
-
-export const CreateAgentScanResponse = zod.object({
-  "id": zod.string(),
-  "callId": zod.string(),
-  "sourceLabel": zod.union([zod.literal('draft'),zod.literal('gold'),zod.literal(null)]).nullable().describe('\"gold\" only appears on scans created before 2026-08-27 (gold transcripts retired) -- new scans only ever produce \"draft\" or null.'),
-  "sourceTranscript": zod.string().nullable().describe('Vapi\'s own draft transcript at scan time, for context only -- null if the call has no draft on file.'),
-  "status": zod.enum(['scanning', 'clean', 'flagged', 'error', 'approved', 'rejected']),
-  "flags": zod.array(zod.object({
-  "text": zod.string(),
-  "reason": zod.string()
-})),
-  "hybridFlags": zod.union([zod.object({
-  "flagCount": zod.number(),
-  "flagSeverity": zod.enum(['none', 'low', 'medium', 'high']),
-  "crossProviderDisagreements": zod.array(zod.object({
-  "providerId": zod.string().optional(),
-  "disagreementRate": zod.number().optional()
-})),
-  "lowConfidenceSpans": zod.record(zod.string(), zod.array(zod.object({
-  "words": zod.array(zod.string()).optional(),
-  "avgConfidence": zod.number().optional(),
-  "severity": zod.string().optional()
-}))),
-  "entityMismatches": zod.array(zod.object({
-  "type": zod.string().optional(),
-  "valuesByProvider": zod.record(zod.string(), zod.array(zod.string())).optional()
-}))
-}),zod.null()]).optional(),
-  "runId": zod.string().nullish(),
-  "candidates": zod.array(zod.object({
-  "providerId": zod.string(),
-  "providerName": zod.string(),
-  "status": zod.enum(['pending', 'ok', 'failed']),
-  "transcript": zod.string().nullable()
-})),
-  "agentPickProviderId": zod.string().nullish(),
-  "agentPickReasoning": zod.string().nullish(),
-  "judgeConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
-  "judgeKeyDifferences": zod.array(zod.object({
-  "span": zod.string(),
-  "alternatives": zod.string(),
-  "matters": zod.string()
-}).describe('T-108 -- one meaning-changing difference the judge weighed. span is the picked reading; alternatives what the others said; matters why it changes the meaning.')).nullish(),
-  "judgePromptTokens": zod.number().nullish(),
-  "judgeCompletionTokens": zod.number().nullish(),
-  "judgeCostMicrocents": zod.number().nullish(),
-  "errorMessage": zod.string().nullish(),
-  "requestedByLabel": zod.string(),
-  "decidedByLabel": zod.string().nullish(),
-  "decidedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date()
-}).describe('2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel\/sourceTranscript are best-effort context (Vapi\'s own draft), not an analysis input anymore.')
-
-
-/**
  * @summary A human accepts the agent's picked transcript as gold -- drives the same PATCH /benchmark/calls logic and de-id gate as manual review (draft != gold rule; the agent's pick is never written on its own)
  */
 export const ApproveAgentScanParams = zod.object({

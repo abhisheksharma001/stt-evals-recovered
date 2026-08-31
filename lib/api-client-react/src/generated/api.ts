@@ -23,7 +23,6 @@ import type {
   AgentModelList,
   AgentScan,
   AgentScanDecision,
-  AgentScanInput,
   AppSettings,
   AppSettingsUpdate,
   AssistantSignals,
@@ -4380,77 +4379,6 @@ export function useListAgentScans<TData = Awaited<ReturnType<typeof listAgentSca
 
 
 
-
-export const getCreateAgentScanUrl = () => {
-
-
-
-
-  return `/api/benchmark/agent/scans`
-}
-
-/**
- * @summary Scan one call's current best transcript for likely mis-transcriptions, and (if any are found) re-transcribe it across the other configured providers for the agent to compare -- on-demand, one call at a time (not automatic on import)
- */
-export const createAgentScan = async (agentScanInput: AgentScanInput, options?: Parameters<typeof customFetch>[1]): Promise<AgentScan> => {
-
-  return customFetch<AgentScan>(getCreateAgentScanUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(agentScanInput)
-  }
-);}
-
-
-
-
-
-export const getCreateAgentScanMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAgentScan>>, TError,{data: BodyType<AgentScanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createAgentScan>>, TError,{data: BodyType<AgentScanInput>}, TContext> => {
-
-const mutationKey = ['createAgentScan'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAgentScan>>, {data: BodyType<AgentScanInput>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  createAgentScan(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateAgentScanMutationResult = NonNullable<Awaited<ReturnType<typeof createAgentScan>>>
-    export type CreateAgentScanMutationBody = BodyType<AgentScanInput>
-    export type CreateAgentScanMutationError = ErrorType<void>
-
-    /**
- * @summary Scan one call's current best transcript for likely mis-transcriptions, and (if any are found) re-transcribe it across the other configured providers for the agent to compare -- on-demand, one call at a time (not automatic on import)
- */
-export const useCreateAgentScan = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAgentScan>>, TError,{data: BodyType<AgentScanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof createAgentScan>>,
-        TError,
-        {data: BodyType<AgentScanInput>},
-        TContext
-      > => {
-      return useMutation(getCreateAgentScanMutationOptions(options));
-    }
 
 export const getApproveAgentScanUrl = (scanId: string,) => {
 

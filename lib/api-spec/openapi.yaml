@@ -1156,27 +1156,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AgentScan"
-    post:
-      operationId: createAgentScan
-      tags: [benchmark]
-      summary: Scan one call's current best transcript for likely mis-transcriptions, and (if any are found) re-transcribe it across the other configured providers for the agent to compare -- on-demand, one call at a time (not automatic on import)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AgentScanInput"
-      responses:
-        "201":
-          description: Completed scan (clean, or flagged with an agent pick to review)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AgentScan"
-        "404":
-          description: Call not found
-        "409":
-          description: Call has no transcript to scan yet
   /benchmark/agent/scans/{scanId}/approve:
     post:
       operationId: approveAgentScan
@@ -2148,11 +2127,6 @@ components:
             properties:
               type: { type: string }
               valuesByProvider: { type: object, additionalProperties: { type: array, items: { type: string } } }
-    AgentScanInput:
-      type: object
-      required: [callId]
-      properties:
-        callId: { type: string }
     AgentScanDecision:
       type: object
       required: [approverLabel]
