@@ -31,6 +31,7 @@ import {
 } from "@workspace/api-zod";
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { respondInvalid } from "../lib/validation-error";
+import { respondJson } from "../lib/respond";
 import type { ZodInput } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -124,7 +125,7 @@ router.get("/benchmark/agent/scans", async (req, res): Promise<void> => {
         .from(benchmarkAgentScansTable)
         .orderBy(desc(benchmarkAgentScansTable.createdAt));
 
-  res.json(ListAgentScansResponse.parse(await Promise.all(rows.map(serializeScan))));
+  respondJson(res, ListAgentScansResponse, await Promise.all(rows.map(serializeScan)));
 });
 
 router.post("/benchmark/agent/scans/:scanId/approve", async (req, res): Promise<void> => {
@@ -168,7 +169,7 @@ router.post("/benchmark/agent/scans/:scanId/approve", async (req, res): Promise<
     afterState: { callId: scan.callId, agentPickResultId: scan.agentPickResultId },
   });
 
-  res.json(ApproveAgentScanResponse.parse(await serializeScan(approved)));
+  respondJson(res, ApproveAgentScanResponse, await serializeScan(approved));
 });
 
 router.post("/benchmark/agent/scans/:scanId/reject", async (req, res): Promise<void> => {
@@ -208,7 +209,7 @@ router.post("/benchmark/agent/scans/:scanId/reject", async (req, res): Promise<v
     afterState: { callId: scan.callId },
   });
 
-  res.json(RejectAgentScanResponse.parse(await serializeScan(rejected)));
+  respondJson(res, RejectAgentScanResponse, await serializeScan(rejected));
 });
 
 export default router;
