@@ -1289,7 +1289,7 @@ components:
           items: { $ref: "#/components/schemas/SpanReading" }
     DisagreementSpansResponse:
       type: object
-      required: [callId, runId, referenceProviderId, referenceWords, unavailableReason, spans]
+      required: [callId, runId, referenceProviderId, referenceWords, referenceWordStartMs, unavailableReason, spans]
       properties:
         callId: { type: string }
         # null when no run has a successful cell for this call yet.
@@ -1300,6 +1300,11 @@ components:
         referenceWords:
           type: array
           items: { type: string }
+        # T-137 (play from caret): start of each referenceWords[i] in the audio,
+        # milliseconds, same length and order. Empty when there is no reference.
+        referenceWordStartMs:
+          type: array
+          items: { type: number }
         unavailableReason:
           oneOf:
             - type: string
