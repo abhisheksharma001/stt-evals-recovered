@@ -85,6 +85,11 @@ export class Fixtures {
     this.callIds.push(id);
   }
 
+  /** Same, for a run created through POST /benchmark/runs (T-179). */
+  adoptRun(id: string): void {
+    this.runIds.push(id);
+  }
+
   async run(overrides: Partial<typeof benchmarkRunsTable.$inferInsert> = {}): Promise<RunRow> {
     const [row] = await db
       .insert(benchmarkRunsTable)
