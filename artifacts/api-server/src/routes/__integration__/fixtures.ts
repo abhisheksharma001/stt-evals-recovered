@@ -10,6 +10,7 @@
 // paths it exercises. New read-route suites start here instead.
 import { inArray } from "drizzle-orm";
 import {
+  auditLogTable,
   benchmarkAgentScansTable,
   benchmarkBulksTable,
   benchmarkCallsTable,
@@ -29,6 +30,7 @@ type ResultRow = typeof benchmarkProviderCallResultsTable.$inferSelect;
 type ScoreRow = typeof benchmarkScoresTable.$inferSelect;
 type RankingRow = typeof benchmarkRankingsTable.$inferSelect;
 type ScanRow = typeof benchmarkAgentScansTable.$inferSelect;
+type AuditRow = typeof auditLogTable.$inferSelect;
 
 export class Fixtures {
   readonly suffix = Math.random().toString(16).slice(2, 10);
@@ -38,6 +40,7 @@ export class Fixtures {
   private runIds: string[] = [];
   private bulkIds: string[] = [];
   private rankingIds: string[] = [];
+  private auditIds: string[] = [];
 
   /** Providers get ids no adapter matches, so syncProviderReadiness derives
    *  them straight to "not_configured" and no provider API can ever be hit. */
@@ -161,6 +164,23 @@ export class Fixtures {
     return row;
   }
 
+  /** An audit-log row (T-170). No FK in either direction; actorLabel
+   *  carries the suffix so a stranded row is greppable. */
+  async audit(overrides: Partial<typeof auditLogTable.$inferInsert> = {}): Promise<AuditRow> {
+    const [row] = await db
+      .insert(auditLogTable)
+      .values({
+        entityType: "call",
+        entityId: `fx-entity-${this.suffix}`,
+        actorLabel: `fixture-${this.suffix}`,
+        action: "fixture",
+        ...overrides,
+      })
+      .returning();
+    this.auditIds.push(row.id);
+    return row;
+  }
+
   /** FK order matters and is a cycle: results cascade from runs but hold
    *  plain references to calls, scans cascade from calls but hold a PLAIN
    *  (no-cascade) reference to runs -- so a scan blocks its run's delete.
@@ -176,5 +196,6 @@ export class Fixtures {
       await db.delete(benchmarkProvidersTable).where(inArray(benchmarkProvidersTable.id, this.providerIds));
     if (this.rankingIds.length)
       await db.delete(benchmarkRankingsTable).where(inArray(benchmarkRankingsTable.id, this.rankingIds));
+    if (this.auditIds.length) await db.delete(auditLogTable).where(inArray(auditLogTable.id, this.auditIds));
   }
 }
