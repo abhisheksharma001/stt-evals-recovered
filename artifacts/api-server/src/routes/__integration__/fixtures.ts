@@ -19,6 +19,7 @@ import {
   benchmarkRankingsTable,
   benchmarkRunsTable,
   benchmarkScoresTable,
+  bulkTemplatesTable,
   db,
 } from "@workspace/db";
 
@@ -201,6 +202,9 @@ export class Fixtures {
     if (this.rankingIds.length)
       await db.delete(benchmarkRankingsTable).where(inArray(benchmarkRankingsTable.id, this.rankingIds));
     if (this.auditIds.length) await db.delete(auditLogTable).where(inArray(auditLogTable.id, this.auditIds));
+    // Bulk templates are created only through their route (T-177), which
+    // stamps the `x-actor` this fixture sends as createdByLabel.
+    await db.delete(bulkTemplatesTable).where(eq(bulkTemplatesTable.createdByLabel, this.actor));
     // Writes made through a route leave audit rows this class never
     // inserted; they carry `actor` when the suite sends the header.
     await db.delete(auditLogTable).where(eq(auditLogTable.actorLabel, this.actor));
