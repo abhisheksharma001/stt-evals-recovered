@@ -7,7 +7,7 @@
 // The dashboard aggregates over the WHOLE database, so every assertion is a
 // delta between a GET taken before seeding and one taken after -- exact
 // global counts would break on any leftover row from a crashed earlier run.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq } from "drizzle-orm";
 import { benchmarkProvidersTable, benchmarkRunsTable, db, pool } from "@workspace/db";
