@@ -31,10 +31,12 @@ import {
 } from "@workspace/api-zod";
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { respondInvalid } from "../lib/validation-error";
+import type { ZodInput } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
-async function serializeScan(scan: BenchmarkAgentScanRow) {
+// T-153: return type is the contract's own input shape (see benchmark.ts).
+async function serializeScan(scan: BenchmarkAgentScanRow): Promise<ZodInput<typeof ApproveAgentScanResponse>> {
   // 2026-08-27: candidates are keyed by CALL, not by scan.runId -- most
   // scans now reuse a call's existing results instead of spawning a fresh
   // run (see POST .../scans), so runId is routinely null even for a
@@ -99,8 +101,8 @@ async function serializeScan(scan: BenchmarkAgentScanRow) {
     errorMessage: scan.errorMessage,
     requestedByLabel: scan.requestedByLabel,
     decidedByLabel: scan.decidedByLabel,
-    decidedAt: scan.decidedAt?.toISOString() ?? null,
-    createdAt: scan.createdAt.toISOString(),
+    decidedAt: scan.decidedAt,
+    createdAt: scan.createdAt,
   };
 }
 

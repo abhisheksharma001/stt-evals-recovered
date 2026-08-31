@@ -1,4 +1,12 @@
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+// T-153: each serializer declares the shape it produces as the contract's own
+// input type, so a required field cannot fall out of a serializer without
+// failing tsc -- the error lands at the source, not at 20 call sites. The
+// annotation names one operation's schema; the operations share the spec
+// component, so structural typing makes it hold for every call site. Dates
+// travel as Date here: the schemas are zod.coerce.date(), and res.json
+// writes a Date as the same ISO string toISOString produced.
+import type { ZodInput } from "@workspace/api-zod";
 import { Router, type IRouter, type Response } from "express";
 import {
   APP_SETTINGS_ID,
@@ -294,13 +302,15 @@ export async function syncProviderReadiness(): Promise<void> {
   }
 }
 
-function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect) {
+function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect): ZodInput<typeof CreateBenchmarkProviderResponse> {
   const adapter = getProviderAdapter(provider.id);
   return {
     id: provider.id,
     name: provider.name,
     model: provider.model,
-    status: provider.status,
+    // The db column is unconstrained text; the respondJson parse validates
+    // the value at the edge, the cast only carries the contract's union.
+    status: provider.status as ZodInput<typeof CreateBenchmarkProviderResponse>["status"],
     supportsStreaming: provider.supportsStreaming,
     supportsDiarization: provider.supportsDiarization,
     costPerMinute: provider.costPerMinute,
@@ -311,13 +321,15 @@ function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect
   };
 }
 
-function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
+function serializeCall(call: BenchmarkCallRow, audioCached?: boolean): ZodInput<typeof GetBenchmarkCallResponse> {
   return {
     id: call.id,
     label: call.label,
-    vertical: call.vertical,
+    // Same rule as serializeProvider's status: unconstrained text columns,
+    // values held by the runtime parse.
+    vertical: call.vertical as ZodInput<typeof GetBenchmarkCallResponse>["vertical"],
     durationSeconds: call.durationSeconds,
-    status: call.status,
+    status: call.status as ZodInput<typeof GetBenchmarkCallResponse>["status"],
     hardCases: call.hardCases,
     goldTranscript: call.goldTranscript,
     draftTranscript: call.draftTranscript,
@@ -325,14 +337,14 @@ function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
     entityReferences: call.entityReferences,
     audioObjectPath: call.audioObjectPath,
     deIdAttestedByLabel: call.deIdAttestedByLabel,
-    deIdAttestedAt: call.deIdAttestedAt?.toISOString() ?? null,
+    deIdAttestedAt: call.deIdAttestedAt,
     deIdSecondApproverLabel: call.deIdSecondApproverLabel,
-    deIdSecondApprovedAt: call.deIdSecondApprovedAt?.toISOString() ?? null,
+    deIdSecondApprovedAt: call.deIdSecondApprovedAt,
     sourceProvider: call.sourceProvider,
     sourceCallId: call.sourceCallId,
     sourceAccountLabel: call.sourceAccountLabel,
     sourceAssistantId: call.sourceAssistantId,
-    sourceStartedAt: call.sourceStartedAt?.toISOString() ?? null,
+    sourceStartedAt: call.sourceStartedAt,
     sourceTranscriberProvider: call.sourceTranscriberProvider,
     sourceTranscriberModel: call.sourceTranscriberModel,
     sourceEndedReason: call.sourceEndedReason,
@@ -344,24 +356,25 @@ function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
     // permanent source refusal instead of offering to save the unsaveable.
     audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
     audioCacheLastError: call.audioCacheLastError ?? null,
-    audioCacheLastAttemptAt: call.audioCacheLastAttemptAt?.toISOString() ?? null,
-    createdAt: call.createdAt.toISOString(),
+    audioCacheLastAttemptAt: call.audioCacheLastAttemptAt,
+    createdAt: call.createdAt,
   };
 }
 
-function serializeRun(run: BenchmarkRunRow, bulkName: string | null = null) {
+function serializeRun(run: BenchmarkRunRow, bulkName: string | null = null): ZodInput<typeof CreateBenchmarkRunResponse> {
   return {
     id: run.id,
-    status: run.status,
+    // Same rule: unconstrained text column, value held by the runtime parse.
+    status: run.status as ZodInput<typeof CreateBenchmarkRunResponse>["status"],
     providerIds: run.providerIds,
     callCount: run.callCount,
-    createdAt: run.createdAt.toISOString(),
-    completedAt: run.completedAt?.toISOString() ?? null,
+    createdAt: run.createdAt,
+    completedAt: run.completedAt,
     notes: run.notes,
     bulkId: run.bulkId ?? null,
     bulkName,
     shardIndex: run.shardIndex ?? null,
-    archivedAt: run.archivedAt?.toISOString() ?? null,
+    archivedAt: run.archivedAt,
   };
 }
 

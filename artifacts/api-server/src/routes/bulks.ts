@@ -48,6 +48,7 @@ import {
   RetryBulkFailedParams,
   RetryBulkFailedResponse,
 } from "@workspace/api-zod";
+import type { ZodInput } from "@workspace/api-zod";
 import {
   isFailureClass,
   isRetryableFailureClass,
@@ -107,12 +108,22 @@ function criteriaFromBody(criteria: {
   };
 }
 
-function serializeBulk(bulk: BenchmarkBulkRow) {
+// T-153: same rule as benchmark.ts's serializers -- the return type is the
+// contract's own input shape, so a dropped required field fails tsc at the
+// source. Dates travel as Date (zod.coerce.date), res.json writes the same
+// ISO string toISOString produced.
+function serializeBulk(bulk: BenchmarkBulkRow): ZodInput<typeof CancelBulkResponse> {
   return {
     id: bulk.id,
     name: bulk.name,
-    status: bulk.status,
-    selectionCriteria: bulk.selectionCriteria,
+    // Unconstrained text column; the value is held by the runtime parse, the
+    // cast only carries the contract's union (same rule as benchmark.ts).
+    status: bulk.status as ZodInput<typeof CancelBulkResponse>["status"],
+    // The jsonb column stores criteria dates as the ISO strings they were
+    // written as; zod.coerce.date() accepts them at runtime, but zod 3 types
+    // a coerce schema's input as its output (Date), so the honest string is
+    // carried past the compiler here and re-validated by the parse.
+    selectionCriteria: bulk.selectionCriteria as ZodInput<typeof CancelBulkResponse>["selectionCriteria"],
     providerIds: bulk.providerIds,
     shardSize: bulk.shardSize,
     minDurationSeconds: bulk.minDurationSeconds,
@@ -122,24 +133,25 @@ function serializeBulk(bulk: BenchmarkBulkRow) {
     estimatedAgentCostCents: bulk.estimatedAgentCostCents ?? null,
     launchedByLabel: bulk.launchedByLabel ?? null,
     notes: bulk.notes ?? null,
-    createdAt: bulk.createdAt.toISOString(),
-    updatedAt: bulk.updatedAt.toISOString(),
-    completedAt: bulk.completedAt?.toISOString() ?? null,
+    createdAt: bulk.createdAt,
+    updatedAt: bulk.updatedAt,
+    completedAt: bulk.completedAt,
   };
 }
 
-function serializeTemplate(template: BulkTemplateRow) {
+function serializeTemplate(template: BulkTemplateRow): ZodInput<typeof CreateBulkTemplateResponse> {
   return {
     id: template.id,
     name: template.name,
-    selectionCriteria: template.selectionCriteria,
+    // Same jsonb-dates rule as serializeBulk above.
+    selectionCriteria: template.selectionCriteria as ZodInput<typeof CreateBulkTemplateResponse>["selectionCriteria"],
     providerIds: template.providerIds,
     shardSize: template.shardSize,
     minDurationSeconds: template.minDurationSeconds,
     maxDurationSeconds: template.maxDurationSeconds ?? null,
     createdByLabel: template.createdByLabel ?? null,
-    createdAt: template.createdAt.toISOString(),
-    updatedAt: template.updatedAt.toISOString(),
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
   };
 }
 
@@ -669,7 +681,7 @@ router.get("/benchmark/bulks/:bulkId/manifest", async (req, res): Promise<void> 
       selectionCriteria: bulk.selectionCriteria,
       providerIds: bulk.providerIds,
       shardSize: bulk.shardSize,
-      createdAt: bulk.createdAt.toISOString(),
+      createdAt: bulk.createdAt,
       runs: runs.map((run: BenchmarkRunRow) => ({
         // Runs created before manifests existed keep a truthful stub rather
         // than a fabricated one.
