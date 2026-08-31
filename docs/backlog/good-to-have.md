@@ -1,3 +1,25 @@
+## Found 2026-08-31 (batch 20): the last reads
+
+- Integration suite 52 → 69 (provider-correlation 3, volume/accounts 3,
+  runs+results 4, scans+audit 3, small reads 4); green twice, zero
+  leftover fixture rows (the new audit rows included). Proved by breaking:
+  the runs-list purpose filter and the T-41 `?? known?.diagnosis` fallback
+  each fail exactly one test when removed.
+- **Two self-caught fake assertions worth remembering.** A duplicate
+  insert swallowed by `.catch` "asserted" the failed-cell rule while
+  seeding nothing (the cell-key constraint refused it) — an assertion that
+  cannot fail proves nothing. And a /key/i leak regex on the accounts row
+  would trip on the env var NAME (`VAPI_API_KEY…`) wherever a key IS
+  configured — leak checks must target values, and the row shape has no
+  field that could carry one.
+- `benchmark_calls` has no `notes` column — it is `entityNotes`; vitest
+  transpiles without typechecking, so a wrong field name in a builder
+  override survives to the first red run. The repo typecheck catches it,
+  but only when it runs.
+- Reads still untested: `GET /benchmark/calls/disagreement`, the run/bulk
+  manifest routes, and the live-external lists (vapi/assistants,
+  transcriber, providers/models, agent-models — refusals only, offline).
+
 ## Found 2026-08-31 (batch 19): the aggregate reads, swept
 
 - **Transcript-only span candidates build nothing.** `buildDisagreementSpans`

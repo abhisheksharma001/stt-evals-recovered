@@ -151,6 +151,20 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 20: the last reads.** Suite 52 → 69 (15 files):
+  provider-correlation (excess 1.0 vs −0.5 through the route; failed-only
+  provider stays out; two providers → excess null), volume/vapi-accounts
+  (offline refusals; account rows carry env var NAMES only, and the row
+  shape check must not regex /key/ — the NAME contains it), runs list
+  (batch-only, bulkName join) + run results (score join; T-41 sentence
+  derived from failureClass, stored analysis wins; T-73 retryable),
+  agent-scans + audit-log filters (fixtures gained `audit()`), settings /
+  providers (FR-P3 derived on the list route too) / single call. Purpose
+  filter and T-41 fallback proved by breaking. Lesson repeated: `notes`
+  guessed, column is `entityNotes` — vitest transpiles without
+  typechecking. Untested leftovers: calls/disagreement, manifest routes,
+  live-external lists.
+
 - **2026-08-31, batch 19: the aggregate reads, swept.** Every remaining
   bulk-derived read has seeded route tests (suite 34 → 52): words-to-watch
   (the batch-7 canonical rule proven at the route — "four" vs "4" makes no
