@@ -13,13 +13,14 @@ import { Router, type IRouter } from "express";
 import { benchmarkCallsTable, benchmarkProviderCallResultsTable, benchmarkRunsTable, db } from "@workspace/db";
 import { ListDisagreementSpansQueryParams, ListDisagreementSpansResponse } from "@workspace/api-zod";
 import { buildSpansForCallRun } from "../lib/disagreement-spans";
+import { respondInvalid } from "../lib/validation-error";
 
 const router: IRouter = Router();
 
 router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
   const parsed = ListDisagreementSpansQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const { callId } = parsed.data;

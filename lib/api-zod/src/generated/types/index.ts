@@ -13,7 +13,6 @@ export * from './agentScan';
 export * from './agentScanCandidate';
 export * from './agentScanCandidateStatus';
 export * from './agentScanDecision';
-export * from './agentScanInput';
 export * from './agentScanJudgeConfidence';
 export * from './agentScanSourceLabel';
 export * from './agentScanStatus';

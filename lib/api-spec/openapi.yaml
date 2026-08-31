@@ -221,6 +221,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BenchmarkCall"
+  /benchmark/calls/{callId}/audio:
+    get:
+      operationId: getBenchmarkCallAudio
+      tags: [benchmark]
+      summary: The call's audio, for playback. Serves the bytes cached on the server's disk when they are there (with Range support, so the player's scrubber works), and otherwise redirects to a freshly signed Vapi URL -- the same resolver the run executor uses, so playback and scoring can never drift onto two different notions of "the audio". Consumed directly by an <audio> element, not through the generated JSON client.
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The audio bytes, from the server's cache
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: A byte range of the cached audio
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "302":
+          description: No cached bytes -- redirect to a freshly signed source URL
+        "404":
+          description: Call not found, or its source no longer has a recording
+        "416":
+          description: The requested byte range lies outside the file
   /benchmark/calls/{callId}/comparison:
     get:
       operationId: getCallComparison
@@ -1123,27 +1156,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AgentScan"
-    post:
-      operationId: createAgentScan
-      tags: [benchmark]
-      summary: Scan one call's current best transcript for likely mis-transcriptions, and (if any are found) re-transcribe it across the other configured providers for the agent to compare -- on-demand, one call at a time (not automatic on import)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AgentScanInput"
-      responses:
-        "201":
-          description: Completed scan (clean, or flagged with an agent pick to review)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AgentScan"
-        "404":
-          description: Call not found
-        "409":
-          description: Call has no transcript to scan yet
   /benchmark/agent/scans/{scanId}/approve:
     post:
       operationId: approveAgentScan
@@ -2115,11 +2127,6 @@ components:
             properties:
               type: { type: string }
               valuesByProvider: { type: object, additionalProperties: { type: array, items: { type: string } } }
-    AgentScanInput:
-      type: object
-      required: [callId]
-      properties:
-        callId: { type: string }
     AgentScanDecision:
       type: object
       required: [approverLabel]

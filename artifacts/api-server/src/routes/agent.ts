@@ -30,6 +30,7 @@ import {
   RejectAgentScanResponse,
 } from "@workspace/api-zod";
 import { actorFromRequest, writeAudit } from "../lib/audit";
+import { respondInvalid } from "../lib/validation-error";
 
 const router: IRouter = Router();
 
@@ -106,7 +107,7 @@ async function serializeScan(scan: BenchmarkAgentScanRow) {
 router.get("/benchmark/agent/scans", async (req, res): Promise<void> => {
   const parsed = ListAgentScansQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
 

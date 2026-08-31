@@ -1135,10 +1135,6 @@ export interface AgentScan {
   createdAt: string;
 }
 
-export interface AgentScanInput {
-  callId: string;
-}
-
 export interface AgentScanDecision {
   approverLabel: string;
 }

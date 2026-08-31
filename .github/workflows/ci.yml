@@ -61,6 +61,12 @@ jobs:
       - name: Check doc paths
         run: bash scripts/check-doc-paths.sh
 
+      # T-148: the spec and the router declare the same endpoints. A spec
+      # entry with no route generates a client function that 404s; a route
+      # with no spec entry has no generated validator.
+      - name: Check API routes match the spec
+        run: node scripts/check-api-routes.mjs
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)
