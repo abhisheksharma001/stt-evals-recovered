@@ -433,11 +433,28 @@ stakeholder" the research kept circling back to.
 ## 6. Gold-transcript integrity, not just anchoring
 - Blind transcription option: occasionally correct straight from audio with
   no seeded draft at all, as a periodic audit against the seeded workflow.
-- Explicit written policy for disfluencies, number formatting, punctuation --
+- ~~Explicit written policy for disfluencies, number formatting, punctuation --
   applied identically to gold and provider output before scoring, so WER
-  measures recognition, not formatting taste.
+  measures recognition, not formatting taste.~~ **Done 2026-08-31 (batch 15,
+  T-144)** -- `docs/scoring-policy.md`, every rule read out of the code and
+  then run to check it. Gold and provider output go through the same function
+  in the same call, so formatting can never favour a provider.
 - Explicit policy for unintelligible-audio segments (how a `[inaudible]`
-  marker is scored against a provider's guess).
+  marker is scored against a provider's guess). **Still open, and now
+  measured** (T-144): brackets are punctuation, so a `[inaudible]` in gold
+  leaves the literal word `inaudible` in the reference and the provider takes
+  a deletion for not saying it -- gold `the unit is [inaudible] four` vs a
+  provider's `the unit is 4` scores WER 0.2. Until this is decided, reviewers
+  are told in the policy doc not to type the marker at all.
+- **Entity matching is a substring match** (T-144, measured): a provider that
+  heard `44712` is credited with the entity `4471` -- `entityAccuracy` 1.0 on
+  a transcript whose WER shows that very word wrong. Over-credits, never
+  under-credits. Tightening it to a token-boundary match is a scoring change
+  and shifts stored numbers, so it needs a version bump and Abhishek's go.
+- **`normalizationVersion` is hard-coded `"v1"`** on every stored score
+  (`lib/scoring/src/index.ts`) and never moved when normalization changed under
+  `SCORING_VERSION` v2. Either maintain it or drop it; today it is decoration
+  and `scoringVersion` is the field that means anything.
 
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,

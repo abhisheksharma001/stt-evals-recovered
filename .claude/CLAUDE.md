@@ -36,10 +36,14 @@ with its own UI page (Corpus, Review, Runs, Rankings).
    plus every real bug found and fixed during live testing, with evidence. Read the
    top of this file for the most recent findings before touching run execution,
    scoring, or the Cartesia/Vapi adapters — there's hard-won context there.
-6. **`docs/provider-data-samples.md`** — real (not hypothetical) examples of exactly
+6. **`docs/scoring-policy.md`** — what is normalized away before a provider is
+   scored, what counts as "the same words in a different convention", and the
+   gaps that are still open (`[inaudible]`, substring entity matching). Read
+   before changing anything in `lib/scoring`, and before correcting gold.
+7. **`docs/provider-data-samples.md`** — real (not hypothetical) examples of exactly
    what each provider's API and Vapi's API send back. Read before adding any new
    provider field or metric.
-7. **`docs/reproducibility.md`, `docs/logic-register.md`, `docs/execution-plan.md`** —
+8. **`docs/reproducibility.md`, `docs/logic-register.md`, `docs/execution-plan.md`** —
    deeper technical decisions, as needed.
 
 ## Current state (keep this updated)
