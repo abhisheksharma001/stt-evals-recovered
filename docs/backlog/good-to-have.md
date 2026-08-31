@@ -1,3 +1,23 @@
+## Found 2026-08-31 (batch 18): the reads the compile check cannot hold
+
+- **`benchmark_agent_scans.run_id` is a plain, no-cascade FK — a scan blocks its
+  run's delete.** The schema graph is a cycle: results cascade from runs but hold
+  plain references to calls; scans cascade from calls but hold a plain reference
+  to runs. Found when the comparison suite's first cleanup crashed on it. Any
+  future delete/archival code touching runs must delete (or null out) the calls'
+  scans first — the integration fixtures (`fixtures.ts` cleanup) now do exactly
+  that, scans first by callId.
+- **A crashed cleanup poisons global-latest assertions.** That crash stranded two
+  `complete` runs in the test database, and the dashboard T-134 test — which had
+  seeded its run pair 60s apart — failed on the stray that slipped between them.
+  Rule the suites carry now: a test of a global "latest" seeds its rows 1s apart
+  (files run serially; nothing else writes inside that second), and everything
+  else asserts deltas or containment on its own suffix-tagged rows only.
+- Integration suite 20 → 34 tests; the two T-134 behaviors (dashboard latest-run,
+  rankings snapshot retirement) are each proved by removing the filter and
+  watching exactly one test fail.
+
+
 ## Found 2026-08-31 (batch 17): the response edge, made compile-checked
 
 Batch 14 wrote it down and left it open: "a hand-written response mapping is
