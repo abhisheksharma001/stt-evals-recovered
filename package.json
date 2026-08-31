@@ -9,6 +9,7 @@
     "check:cycles": "node scripts/check-import-cycles.mjs artifacts/api-server/src",
     "check:doc-paths": "bash scripts/check-doc-paths.sh",
     "check:api-routes": "node scripts/check-api-routes.mjs",
+    "check:response-edge": "node scripts/check-response-edge.mjs",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
