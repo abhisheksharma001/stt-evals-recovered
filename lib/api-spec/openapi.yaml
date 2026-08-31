@@ -221,6 +221,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BenchmarkCall"
+  /benchmark/calls/{callId}/audio:
+    get:
+      operationId: getBenchmarkCallAudio
+      tags: [benchmark]
+      summary: The call's audio, for playback. Serves the bytes cached on the server's disk when they are there (with Range support, so the player's scrubber works), and otherwise redirects to a freshly signed Vapi URL -- the same resolver the run executor uses, so playback and scoring can never drift onto two different notions of "the audio". Consumed directly by an <audio> element, not through the generated JSON client.
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The audio bytes, from the server's cache
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: A byte range of the cached audio
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "302":
+          description: No cached bytes -- redirect to a freshly signed source URL
+        "404":
+          description: Call not found, or its source no longer has a recording
+        "416":
+          description: The requested byte range lies outside the file
   /benchmark/calls/{callId}/comparison:
     get:
       operationId: getCallComparison

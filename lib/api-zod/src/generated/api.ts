@@ -398,6 +398,16 @@ export const UpdateBenchmarkCallResponse = zod.object({
 
 
 /**
+ * @summary The call's audio, for playback. Serves the bytes cached on the server's disk when they are there (with Range support, so the player's scrubber works), and otherwise redirects to a freshly signed Vapi URL -- the same resolver the run executor uses, so playback and scoring can never drift onto two different notions of "the audio". Consumed directly by an <audio> element, not through the generated JSON client.
+ */
+export const GetBenchmarkCallAudioParams = zod.object({
+  "callId": zod.string().uuid()
+})
+
+export const GetBenchmarkCallAudioResponse = zod.unknown()
+
+
+/**
  * @summary T-72 (E.4) -- one call, reference transcript on top, every provider's output under it as a word-diff row with its cell metrics and the judge's pick marked
  */
 export const GetCallComparisonParams = zod.object({

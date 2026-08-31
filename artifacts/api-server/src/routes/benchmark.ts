@@ -42,6 +42,7 @@ import {
   ImportVapiCallsBody,
   CacheCorpusAudioResponse,
   SetRunArchivedBody,
+  SetRunArchivedParams,
   SetRunArchivedResponse,
   ImportVapiCallsResponse,
   ListAuditLogQueryParams,
@@ -68,6 +69,7 @@ import {
   GetBenchmarkCallResponse,
   GetBulkCallComparisonParams,
   GetBulkCallComparisonResponse,
+  GetBenchmarkCallAudioParams,
   GetCallComparisonParams,
   GetCallComparisonResponse,
   UpdateBenchmarkCallParams,
@@ -724,7 +726,17 @@ router.post("/benchmark/calls/:callId/attest-deid", async (req, res): Promise<vo
 // lib/run-executor.ts -- so playback and scoring can't drift onto two
 // different notions of "the audio." Never cached, never persisted.
 router.get("/benchmark/calls/:callId/audio", async (req, res): Promise<void> => {
-  const callId = req.params.callId;
+  // T-146: this route and the run-archive one below were the two the
+  // batch-15 fix could not reach -- it worked by adding `format: uuid` to
+  // the spec, which only binds a handler that actually parses its params.
+  // Both read req.params raw, so a malformed id went into a uuid column and
+  // Postgres threw: `GET /benchmark/calls/not-a-uuid/audio` answered 500.
+  const params = GetBenchmarkCallAudioParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const callId = params.data.callId;
   const [call] = await db
     .select()
     .from(benchmarkCallsTable)
@@ -1635,6 +1647,11 @@ router.get("/benchmark/runs/:runId/manifest", async (req, res): Promise<void> =>
 // runs live and die with their bulk (FR-BLK-10), and archiving one shard
 // would silently unbalance the bulk's own numbers.
 router.post("/benchmark/runs/:runId/archive", async (req, res): Promise<void> => {
+  const params = SetRunArchivedParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
   const parsed = SetRunArchivedBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -1643,7 +1660,7 @@ router.post("/benchmark/runs/:runId/archive", async (req, res): Promise<void> =>
   const [run] = await db
     .select()
     .from(benchmarkRunsTable)
-    .where(eq(benchmarkRunsTable.id, req.params.runId));
+    .where(eq(benchmarkRunsTable.id, params.data.runId));
   if (!run) {
     res.status(404).json({ error: "Run not found" });
     return;

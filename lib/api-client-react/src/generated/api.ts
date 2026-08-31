@@ -971,6 +971,83 @@ export const useUpdateBenchmarkCall = <TError = ErrorType<unknown>,
       return useMutation(getUpdateBenchmarkCallMutationOptions(options));
     }
 
+export const getGetBenchmarkCallAudioUrl = (callId: string,) => {
+
+
+
+
+  return `/api/benchmark/calls/${callId}/audio`
+}
+
+/**
+ * @summary The call's audio, for playback. Serves the bytes cached on the server's disk when they are there (with Range support, so the player's scrubber works), and otherwise redirects to a freshly signed Vapi URL -- the same resolver the run executor uses, so playback and scoring can never drift onto two different notions of "the audio". Consumed directly by an <audio> element, not through the generated JSON client.
+ */
+export const getBenchmarkCallAudio = async (callId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetBenchmarkCallAudioUrl(callId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBenchmarkCallAudioQueryKey = (callId: string,) => {
+    return [
+    `/api/benchmark/calls/${callId}/audio`
+    ] as const;
+    }
+
+
+export const getGetBenchmarkCallAudioQueryOptions = <TData = Awaited<ReturnType<typeof getBenchmarkCallAudio>>, TError = ErrorType<void>>(callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkCallAudio>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBenchmarkCallAudioQueryKey(callId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBenchmarkCallAudio>>> = ({ signal }) => getBenchmarkCallAudio(callId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: callId !== null && callId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkCallAudio>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBenchmarkCallAudioQueryResult = NonNullable<Awaited<ReturnType<typeof getBenchmarkCallAudio>>>
+export type GetBenchmarkCallAudioQueryError = ErrorType<void>
+
+
+/**
+ * @summary The call's audio, for playback. Serves the bytes cached on the server's disk when they are there (with Range support, so the player's scrubber works), and otherwise redirects to a freshly signed Vapi URL -- the same resolver the run executor uses, so playback and scoring can never drift onto two different notions of "the audio". Consumed directly by an <audio> element, not through the generated JSON client.
+ */
+
+export function useGetBenchmarkCallAudio<TData = Awaited<ReturnType<typeof getBenchmarkCallAudio>>, TError = ErrorType<void>>(
+ callId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarkCallAudio>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBenchmarkCallAudioQueryOptions(callId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getGetCallComparisonUrl = (callId: string,) => {
 
 
