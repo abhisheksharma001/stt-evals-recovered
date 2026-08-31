@@ -151,6 +151,19 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 18: the reads the compile check cannot hold.** The four
+  highest-traffic read routes have seeded integration tests now (suite 20 → 34):
+  dashboard (deltas; FR-P3 derived provider status; T-134 archived-run skip),
+  rankings (bulk scope, latest-per-group, snapshot retirement, agent-scan
+  exclusion, Vapi-down label fallback), calls list (filters, order, 400 on an
+  unknown vertical), call comparison (draft-as-reference, diff numbers, retry
+  verdict, T-73 missing row, judge pick). Shared suffix-tagged fixture builders
+  in `artifacts/api-server/src/routes/__integration__/fixtures.ts`; suites
+  assert deltas/containment, never global counts. Real find: scans' `run_id`
+  FK has no cascade — a scan blocks its run's delete (cleanup deletes scans
+  first). Both T-134 behaviors proved by breaking the filter. Zero provider
+  spend — fixture provider ids match no adapter, so nothing can call out.
+
 - **2026-08-31, batch 17: the response edge is compile-checked.** All 58
   success-response sites go through `respondJson(res, schema, value, status?)`
   (`artifacts/api-server/src/lib/respond.ts`), which types the payload as the
