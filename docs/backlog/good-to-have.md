@@ -1,3 +1,51 @@
+## Found 2026-08-31 (batch 15, T-141/T-142): every id parameter was unchecked
+
+The register was drained, so recon started by hitting all 23 GET endpoints on
+the running production server with real ids -- and then with bad ones. Five
+answers were `500 Internal server error` for what is plainly a caller's
+mistake:
+
+    GET /benchmark/calls/not-a-uuid                     500
+    GET /benchmark/bulks/zzz                            500
+    GET /benchmark/rankings?bulkId=zzz                  500
+    GET /benchmark/disagreement-spans (no callId)       500
+    GET /benchmark/disagreement-spans?callId=a&callId=b 500
+
+Two separate mistakes underneath, both now fixed and both worth remembering:
+
+- **Nothing checked an id's shape before the query.** Every id in the spec was
+  a bare `type: string`, so a malformed one went straight into
+  `where id = $1` against a uuid column and Postgres threw
+  `invalid input syntax for type uuid`. Our log filled with what looked like
+  our bug. Fixed by `format: uuid` on the 30 parameters backed by a uuid
+  column (T-141) -- and deliberately not on the ones backed by text:
+  `providerId` (`deepgram-nova-3`), `assistantId` (Vapi's own id),
+  `accountLabel`, the audit log's `entityId`.
+- **`zod.coerce.string()` says yes to nothing.** Coercion runs `String(value)`
+  before any check, so a parameter that was never sent became the literal
+  nine-character string `"undefined"` and passed `.min(1)`. `GET
+  /benchmark/volume` with no label answered `404 No Vapi account configured
+  with label "undefined"` -- an answer about a client that cannot exist. A
+  repeated parameter arrives as an array and was joined into `"a,b"`.
+  Coercion is now `number` only (T-142); `z.coerce.boolean()` would have been
+  worse still, since `Boolean("false")` is true.
+
+Not yet bitten in normal use -- the UI only ever sends ids it got from the API,
+and the five 500s in the log are the probes that found this. It bites the first
+time someone edits a URL, follows a stale link, or writes a script.
+
+**General lesson, next to T-136's:** a generated validator is only as strict as
+the spec it was generated from, and a permissive coercion is worse than none --
+it converts "the caller sent nothing" into a value that passes every rule.
+Sweeping every endpoint with a bad input takes ten minutes and is now the way
+each batch's recon starts.
+
+Adding the first `format:` to the spec also exposed that orval's zod output was
+never pinned: its `auto` default inferred Zod 4 from a Zod 3.25 install and
+emitted `zod.uuid()`, a v4-only form. It failed the build immediately because
+the codegen script typechecks what it generates -- the good kind of failure.
+Pinned to `version: 3`.
+
 ## Found 2026-08-31 (batch 14, T-136): the listening panel had been dead for a day
 
 `GET /benchmark/disagreement-spans` answered **500 for every call** from the
@@ -33,12 +81,21 @@ failed cells in stopped bulks -- 30 `retention_expired`, 15
 was honest, just mute: those 15 can be retried, and retrying them re-calls a
 paid provider. The number now carries its own breakdown (T-140).
 
-Open, deliberately not fixed here (no drive-by scope): the Corpus page logs
-two React warnings, "Select is changing from uncontrolled to controlled"
-(`artifacts/stt-benchmark/src/pages/Corpus.tsx` has two filter Selects).
-Pre-existing, unrelated to batch 14's changes, harmless today -- but it is a
-real controlled/uncontrolled mistake and will bite whoever next changes those
-filters.
+Open, deliberately not fixed here (no drive-by scope): the page logs a React
+"Select is changing from uncontrolled to controlled" warning. Pre-existing,
+unrelated to batch 14's changes, harmless today -- but it is a real
+controlled/uncontrolled mistake and will bite whoever next changes that picker.
+
+**Corrected 2026-08-31 (batch 15, T-145).** The note above was wrong twice, and
+wrong in the way worth remembering: it was written off a console buffer that
+still held the *previous* page's logs, so it blamed the page that happened to
+be open (Corpus, two filter Selects) rather than the page that emitted it. With
+the console cleared before each load and each page loaded on its own: **Corpus
+0 warnings, Results 1** -- the bulk picker in
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`, which passed
+`value={selectedBulkId ?? undefined}`. Corpus's two filter Selects start at
+`"all"` and were never uncontrolled. Fixed and measured 1 -> 0.
+**Lesson: clear the console before you attribute a warning to a page.**
 
 ## Verified 2026-08-31 (batch 13, T-132): the refused calls, identified call-by-call
 
@@ -433,11 +490,28 @@ stakeholder" the research kept circling back to.
 ## 6. Gold-transcript integrity, not just anchoring
 - Blind transcription option: occasionally correct straight from audio with
   no seeded draft at all, as a periodic audit against the seeded workflow.
-- Explicit written policy for disfluencies, number formatting, punctuation --
+- ~~Explicit written policy for disfluencies, number formatting, punctuation --
   applied identically to gold and provider output before scoring, so WER
-  measures recognition, not formatting taste.
+  measures recognition, not formatting taste.~~ **Done 2026-08-31 (batch 15,
+  T-144)** -- `docs/scoring-policy.md`, every rule read out of the code and
+  then run to check it. Gold and provider output go through the same function
+  in the same call, so formatting can never favour a provider.
 - Explicit policy for unintelligible-audio segments (how a `[inaudible]`
-  marker is scored against a provider's guess).
+  marker is scored against a provider's guess). **Still open, and now
+  measured** (T-144): brackets are punctuation, so a `[inaudible]` in gold
+  leaves the literal word `inaudible` in the reference and the provider takes
+  a deletion for not saying it -- gold `the unit is [inaudible] four` vs a
+  provider's `the unit is 4` scores WER 0.2. Until this is decided, reviewers
+  are told in the policy doc not to type the marker at all.
+- **Entity matching is a substring match** (T-144, measured): a provider that
+  heard `44712` is credited with the entity `4471` -- `entityAccuracy` 1.0 on
+  a transcript whose WER shows that very word wrong. Over-credits, never
+  under-credits. Tightening it to a token-boundary match is a scoring change
+  and shifts stored numbers, so it needs a version bump and Abhishek's go.
+- **`normalizationVersion` is hard-coded `"v1"`** on every stored score
+  (`lib/scoring/src/index.ts`) and never moved when normalization changed under
+  `SCORING_VERSION` v2. Either maintain it or drop it; today it is decoration
+  and `scoringVersion` is the field that means anything.
 
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,

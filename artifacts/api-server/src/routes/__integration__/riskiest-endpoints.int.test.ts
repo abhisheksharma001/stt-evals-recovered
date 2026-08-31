@@ -19,6 +19,10 @@
 //       shard is refused with 409.
 //   (f) POST /calls/cache-audio -- answers with the four counts even when
 //       there is nothing it can save.
+//
+// T-143 added (g): the parameter checks themselves. A malformed id, a missing
+// required parameter and a repeated parameter each answer 400 -- before
+// T-141/T-142 the first two reached the database and answered 500.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq, inArray } from "drizzle-orm";
@@ -268,5 +272,74 @@ describe("(f) POST /api/benchmark/calls/cache-audio", () => {
     expect(alreadyCachedCount + savedCount + failedCount + expiredCount).toBeGreaterThanOrEqual(1);
     expect(results.length).toBe(savedCount + failedCount + expiredCount);
     expect(results.every((r: { outcome: string }) => ["saved", "failed", "expired"].includes(r.outcome))).toBe(true);
+  });
+});
+
+// T-143: the parameter checks T-141/T-142 put in. Before them a malformed id
+// went straight into a `where id = $1` against a uuid column, Postgres threw,
+// and the caller got 500 "Internal server error" for their own typo; a missing
+// required parameter became the literal string "undefined" and was looked up
+// as if it were an id. Both are client mistakes and both must answer 400.
+describe("(g) parameter validation", () => {
+  const junk = "not-a-uuid";
+
+  it("answers 400, not 500, for a malformed id in the path", async () => {
+    const paths = [
+      `/api/benchmark/calls/${junk}`,
+      `/api/benchmark/calls/${junk}/comparison`,
+      `/api/benchmark/bulks/${junk}`,
+      `/api/benchmark/bulks/${junk}/verdicts`,
+      `/api/benchmark/bulks/${junk}/manifest`,
+      `/api/benchmark/runs/${junk}/results`,
+      `/api/benchmark/runs/${junk}/manifest`,
+    ];
+    for (const path of paths) {
+      const res = await request(app).get(path);
+      expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
+    }
+  });
+
+  it("answers 400 for a malformed id in the query string", async () => {
+    for (const path of [
+      `/api/benchmark/disagreement-spans?callId=${junk}`,
+      `/api/benchmark/rankings?bulkId=${junk}`,
+      `/api/benchmark/words-to-watch?bulkId=${junk}`,
+      `/api/benchmark/assistant-signals?bulkId=${junk}`,
+    ]) {
+      const res = await request(app).get(path);
+      expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
+    }
+  });
+
+  it("names the parameter a caller left out instead of inventing one", async () => {
+    // T-142: with string coercion this was `String(undefined)` -- the id
+    // "undefined" -- so /volume answered 404 "no account labelled undefined"
+    // and /disagreement-spans looked up a call that cannot exist.
+    for (const path of ["/api/benchmark/disagreement-spans", "/api/benchmark/volume"]) {
+      const res = await request(app).get(path);
+      expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
+      expect(res.body.error).toContain("Required");
+    }
+  });
+
+  it("refuses a repeated parameter instead of joining it with a comma", async () => {
+    const res = await request(app).get(`/api/benchmark/disagreement-spans?callId=${callId}&callId=${callId}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("received array");
+  });
+
+  it("still accepts the ids and text parameters that are genuinely valid", async () => {
+    const ok = [
+      `/api/benchmark/calls/${callId}`,
+      `/api/benchmark/disagreement-spans?callId=${callId}`,
+      "/api/benchmark/rankings",
+      // assistantId is Vapi's own id in a text column, not a uuid: a value
+      // that is not uuid-shaped must still be answered, not refused.
+      `/api/benchmark/words-to-watch?assistantId=${junk}`,
+    ];
+    for (const path of ok) {
+      const res = await request(app).get(path);
+      expect(`${path} -> ${res.status}`).toBe(`${path} -> 200`);
+    }
   });
 });

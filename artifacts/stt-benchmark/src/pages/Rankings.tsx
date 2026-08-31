@@ -705,8 +705,15 @@ export default function Rankings() {
             All-time combined
           </button>
         </div>
+        {/* T-145: the picker's value is "" while no bulk is picked, never
+            undefined. Radix reads undefined as "this component manages its own
+            value", so the first render was uncontrolled and the render after
+            the bulks arrive was controlled -- React's "changing from
+            uncontrolled to controlled" warning, and a picker that could keep
+            its own idea of the selection. "" matches no item, so the
+            placeholder still shows. */}
         {viewMode === "bulk" && (
-          <Select value={selectedBulkId ?? undefined} onValueChange={setSelectedBulkId}>
+          <Select value={selectedBulkId ?? ""} onValueChange={setSelectedBulkId}>
             <SelectTrigger className="h-9 w-[360px]"><SelectValue placeholder="Pick a bulk..." /></SelectTrigger>
             <SelectContent>
               {(bulks ?? []).map((b) => (
