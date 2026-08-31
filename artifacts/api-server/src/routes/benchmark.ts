@@ -1458,6 +1458,18 @@ router.patch("/benchmark/settings", async (req, res): Promise<void> => {
     respondInvalid(res, parsed.error);
     return;
   }
+  // T-151: a PATCH that sets nothing used to reach drizzle's `.set({})` and
+  // throw, so `{}` -- or a body whose only field is a typo, since zod strips
+  // unknown keys -- answered 500. Reproduced live on `{"judgeModel":123}`:
+  // the field does not exist, nothing was left to set, and the caller was
+  // told the server had failed rather than that they had.
+  if (parsed.data.activeProviderId === undefined && parsed.data.agentModel === undefined) {
+    res.status(400).json({
+      error: "Name at least one setting to change: activeProviderId or agentModel.",
+    });
+    return;
+  }
+
   if (parsed.data.activeProviderId) {
     const [provider] = await db
       .select({ id: benchmarkProvidersTable.id })

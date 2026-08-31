@@ -397,6 +397,16 @@ describe("(h) the two routes that read their params raw, and what a refusal says
     }
   });
 
+  it("T-151: a settings PATCH that would change nothing is refused, not crashed", async () => {
+    // Both bodies leave nothing to set -- zod strips the unknown key -- and
+    // both used to reach drizzle's `.set({})` and answer 500.
+    for (const body of [{}, { judgeModel: 123 }]) {
+      const res = await request(app).patch("/api/benchmark/settings").send(body);
+      expect(`${JSON.stringify(body)} -> ${res.status}`).toBe(`${JSON.stringify(body)} -> 400`);
+      expect(res.body.error).toContain("Name at least one setting to change");
+    }
+  });
+
   it("T-150: a rejected body says what is wrong in a sentence", async () => {
     const res = await request(app).post("/api/benchmark/bulks").send({ label: "x" });
     expect(res.status).toBe(400);
