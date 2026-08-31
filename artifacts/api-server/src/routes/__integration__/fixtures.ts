@@ -79,6 +79,12 @@ export class Fixtures {
     return row;
   }
 
+  /** A call this suite created through its ROUTE rather than here, so
+   *  cleanup still owns it (T-178). */
+  adoptCall(id: string): void {
+    this.callIds.push(id);
+  }
+
   async run(overrides: Partial<typeof benchmarkRunsTable.$inferInsert> = {}): Promise<RunRow> {
     const [row] = await db
       .insert(benchmarkRunsTable)
