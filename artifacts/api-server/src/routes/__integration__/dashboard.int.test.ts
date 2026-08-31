@@ -63,10 +63,15 @@ describe("GET /api/benchmark/dashboard", () => {
     let body = await getDashboard();
     expect(body.latestRunStatus).toBe("complete");
 
-    // Archive the newest; the next-newest (seeded older, failed) must win.
+    // Archive the newest; the next-newest (seeded 1s older, failed) must
+    // win. 1s, not more: latestRunStatus is a GLOBAL latest, so the seeded
+    // pair must be the two newest rows -- suite files run serially and
+    // nothing else writes runs inside that second (a wider gap let a
+    // stranded row from a crashed earlier cleanup slip between them, found
+    // the hard way).
     await fx.run({
       status: "failed",
-      createdAt: new Date(newest.createdAt.getTime() - 60_000),
+      createdAt: new Date(newest.createdAt.getTime() - 1_000),
     });
     await db
       .update(benchmarkRunsTable)

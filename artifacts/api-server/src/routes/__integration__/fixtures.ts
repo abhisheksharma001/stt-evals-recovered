@@ -161,9 +161,14 @@ export class Fixtures {
     return row;
   }
 
-  /** FK order: runs first (cascades results, then scores), then bulks,
-   *  calls (cascades scans), providers, rankings (no FK either way). */
+  /** FK order matters and is a cycle: results cascade from runs but hold
+   *  plain references to calls, scans cascade from calls but hold a PLAIN
+   *  (no-cascade) reference to runs -- so a scan blocks its run's delete.
+   *  Scans go first by callId, then runs (cascading results and scores),
+   *  then bulks, calls, providers, rankings (no FK either way). */
   async cleanup(): Promise<void> {
+    if (this.callIds.length)
+      await db.delete(benchmarkAgentScansTable).where(inArray(benchmarkAgentScansTable.callId, this.callIds));
     if (this.runIds.length) await db.delete(benchmarkRunsTable).where(inArray(benchmarkRunsTable.id, this.runIds));
     if (this.bulkIds.length) await db.delete(benchmarkBulksTable).where(inArray(benchmarkBulksTable.id, this.bulkIds));
     if (this.callIds.length) await db.delete(benchmarkCallsTable).where(inArray(benchmarkCallsTable.id, this.callIds));
