@@ -33,12 +33,21 @@ failed cells in stopped bulks -- 30 `retention_expired`, 15
 was honest, just mute: those 15 can be retried, and retrying them re-calls a
 paid provider. The number now carries its own breakdown (T-140).
 
-Open, deliberately not fixed here (no drive-by scope): the Corpus page logs
-two React warnings, "Select is changing from uncontrolled to controlled"
-(`artifacts/stt-benchmark/src/pages/Corpus.tsx` has two filter Selects).
-Pre-existing, unrelated to batch 14's changes, harmless today -- but it is a
-real controlled/uncontrolled mistake and will bite whoever next changes those
-filters.
+Open, deliberately not fixed here (no drive-by scope): the page logs a React
+"Select is changing from uncontrolled to controlled" warning. Pre-existing,
+unrelated to batch 14's changes, harmless today -- but it is a real
+controlled/uncontrolled mistake and will bite whoever next changes that picker.
+
+**Corrected 2026-08-31 (batch 15, T-145).** The note above was wrong twice, and
+wrong in the way worth remembering: it was written off a console buffer that
+still held the *previous* page's logs, so it blamed the page that happened to
+be open (Corpus, two filter Selects) rather than the page that emitted it. With
+the console cleared before each load and each page loaded on its own: **Corpus
+0 warnings, Results 1** -- the bulk picker in
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`, which passed
+`value={selectedBulkId ?? undefined}`. Corpus's two filter Selects start at
+`"all"` and were never uncontrolled. Fixed and measured 1 -> 0.
+**Lesson: clear the console before you attribute a warning to a page.**
 
 ## Verified 2026-08-31 (batch 13, T-132): the refused calls, identified call-by-call
 
