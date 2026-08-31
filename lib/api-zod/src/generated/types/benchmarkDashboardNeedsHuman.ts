@@ -5,10 +5,12 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { BenchmarkDashboardNeedsHumanRetryableFailedCellGroupsItem } from './benchmarkDashboardNeedsHumanRetryableFailedCellGroupsItem';
 
 export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
+  retryableFailedCellGroups: BenchmarkDashboardNeedsHumanRetryableFailedCellGroupsItem[];
   audioUnsavedCalls: number;
 };

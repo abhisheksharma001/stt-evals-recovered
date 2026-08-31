@@ -44,6 +44,12 @@ export const GetBenchmarkDashboardResponse = zod.object({
   "callsAwaitingReview": zod.number(),
   "hardCaseCalls": zod.number(),
   "retryableFailedCells": zod.number(),
+  "retryableFailedCellGroups": zod.array(zod.object({
+  "providerId": zod.string(),
+  "providerName": zod.string(),
+  "reason": zod.string(),
+  "cells": zod.number()
+})),
   "audioUnsavedCalls": zod.number()
 }),
   "thisMonth": zod.object({

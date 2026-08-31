@@ -17,6 +17,7 @@ import { DecisionChip, summarizeBulkVerdicts, useBulkVerdicts } from "@/componen
 import { apiBase } from "@/lib/api-base"
 import { formatMicrocents } from "@/lib/utils"
 import { CATALOG_RECHECK_DAYS, staleCatalogVendors } from "@/lib/catalog-age"
+import { describeRetryableCells } from "@/lib/retry-figure"
 
 // ---------------------------------------------------------------------------
 // T-84 (per Abhishek 2026-08-30: "redesign the overview page, minimalist").
@@ -43,7 +44,23 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   return <h2 className="font-mono text-[11px] uppercase tracking-[0.09em] text-muted-foreground">{children}</h2>
 }
 
-function Figure({ value, label, href, tone = "quiet" }: { value: React.ReactNode; label: string; href?: string; tone?: "quiet" | "attention" | "destructive" }) {
+function Figure({
+  value,
+  label,
+  href,
+  tone = "quiet",
+  hint,
+  title,
+}: {
+  value: React.ReactNode
+  label: string
+  href?: string
+  tone?: "quiet" | "attention" | "destructive"
+  /** T-140: one short line under the figure, when the number alone does not
+   *  say enough to act on. */
+  hint?: string
+  title?: string
+}) {
   const color = tone === "attention" ? "text-warning" : tone === "destructive" ? "text-destructive" : "text-foreground"
   const body = (
     <span className="flex items-baseline gap-2">
@@ -51,7 +68,21 @@ function Figure({ value, label, href, tone = "quiet" }: { value: React.ReactNode
       <span className="text-sm text-muted-foreground">{label}</span>
     </span>
   )
-  return href ? <Link href={href} className="group rounded-sm hover:underline">{body}</Link> : body
+  const inner = hint ? (
+    <span className="flex flex-col gap-0.5">
+      {body}
+      <span className="text-xs text-muted-foreground/80">{hint}</span>
+    </span>
+  ) : (
+    body
+  )
+  return href ? (
+    <Link href={href} title={title} className="group rounded-sm hover:underline">
+      {inner}
+    </Link>
+  ) : (
+    inner
+  )
 }
 
 function fmtDate(iso: string | null): string {
@@ -101,13 +132,25 @@ function Verdict({ bulk }: { bulk: BenchmarkDashboard["latestFinishedBulk"] }) {
 
 function NeedsHuman({ data }: { data: BenchmarkDashboard["needsHuman"] }) {
   const attention = (n: number | null) => (n != null && n > 0 ? "attention" : "quiet")
+  const retryCopy = describeRetryableCells(data.retryableFailedCellGroups, data.retryableFailedCells)
   return (
     <Row>
       <Eyebrow>Needs a person</Eyebrow>
       <div className="flex flex-wrap gap-x-10 gap-y-4">
         <Figure value={data.callsAwaitingReview} label="calls awaiting review" href="/corpus" tone={attention(data.callsAwaitingReview)} />
         <Figure value={data.hardCaseCalls} label="hard cases" href="/corpus" tone={attention(data.hardCaseCalls)} />
-        <Figure value={data.retryableFailedCells} label="transcripts a retry could fix" href="/bulks" tone={attention(data.retryableFailedCells)} />
+        {/* T-140: this is the only figure here whose fix spends provider
+            money, and "15" said nothing about whose transcripts or why. The
+            server groups the same cells it counted, so the line under the
+            number can never disagree with the number. */}
+        <Figure
+          value={data.retryableFailedCells}
+          label="transcripts a retry could fix"
+          href="/bulks"
+          tone={attention(data.retryableFailedCells)}
+          hint={retryCopy?.hint}
+          title={retryCopy?.title}
+        />
         {/* T-130: T-126 made uncached audio fixable with one click on Calls
             ("Save audio now"), so its existence belongs here with the other
             person-chores. Calls already past the window are not counted --

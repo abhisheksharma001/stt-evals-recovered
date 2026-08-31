@@ -34,6 +34,7 @@ export * from './benchmarkCallUpdate';
 export * from './benchmarkDashboard';
 export * from './benchmarkDashboardLatestFinishedBulk';
 export * from './benchmarkDashboardNeedsHuman';
+export * from './benchmarkDashboardNeedsHumanRetryableFailedCellGroupsItem';
 export * from './benchmarkDashboardRunningBulk';
 export * from './benchmarkDashboardThisMonth';
 export * from './benchmarkRun';
