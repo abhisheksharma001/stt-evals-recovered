@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
 import { providerRegistry } from "@workspace/stt-providers";
 import { buildAt, buildCommitSha, startedAt } from "../lib/build-info";
+import { respondJson } from "../lib/respond";
 
 const router: IRouter = Router();
 
@@ -24,14 +25,13 @@ router.get("/healthz", (_req, res) => {
     .map((adapter) => adapter.providerId)
     .sort();
 
-  const data = HealthCheckResponse.parse({
+  respondJson(res, HealthCheckResponse, {
     status: "ok",
     commitSha: buildCommitSha,
     builtAt: buildAt,
     startedAt,
     providersConfigured,
   });
-  res.json(data);
 });
 
 export default router;
