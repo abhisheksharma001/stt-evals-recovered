@@ -187,7 +187,7 @@ export const CacheCorpusAudioResponse = zod.object({
  * @summary T-85 -- one number per call, how much the providers disagreed on it (sum of peer flag counts over ok scored cells), most disagreement first. Scoped to one bulk when bulkId is given, else every benchmark run. Calls with no scored cell are absent, never zero.
  */
 export const GetCallDisagreementQueryParams = zod.object({
-  "bulkId": zod.coerce.string().optional()
+  "bulkId": zod.coerce.string().uuid().optional()
 })
 
 export const GetCallDisagreementResponse = zod.object({
@@ -231,7 +231,7 @@ export const GetAssistantTranscriberResponse = zod.object({
  * @summary T-112 / T-113 -- per-assistant signals for a Results card. How sure the AI judge was (high / medium / low, or not recorded for verdicts made before batch 8) over the latest scan per call, and which calls a person flagged as hard, with the tags used. One bulk when bulkId is given; otherwise all-time (every finished bulk). Scoped to one assistant when assistantId is given.
  */
 export const GetAssistantSignalsQueryParams = zod.object({
-  "bulkId": zod.coerce.string().optional(),
+  "bulkId": zod.coerce.string().uuid().optional(),
   "assistantId": zod.coerce.string().optional()
 })
 
@@ -269,7 +269,7 @@ export const GetAssistantSignalsResponse = zod.object({
  * @summary T-87 -- words that keep splitting the providers, grouped by the plurality reading, most calls first. One bulk when bulkId is given; otherwise all-time (T-92 -- every finished bulk, the latest run per call). Scoped to one assistant when assistantId is given. Says where providers split; never which reading is right (no human judge, T-86).
  */
 export const GetWordsToWatchQueryParams = zod.object({
-  "bulkId": zod.coerce.string().optional(),
+  "bulkId": zod.coerce.string().uuid().optional(),
   "assistantId": zod.coerce.string().optional()
 })
 
@@ -299,7 +299,7 @@ export const GetWordsToWatchResponse = zod.object({
  * @summary One call by id (T-51) -- reading a single call no longer means fetching the whole corpus
  */
 export const GetBenchmarkCallParams = zod.object({
-  "callId": zod.coerce.string()
+  "callId": zod.coerce.string().uuid()
 })
 
 export const GetBenchmarkCallResponse = zod.object({
@@ -342,7 +342,7 @@ export const GetBenchmarkCallResponse = zod.object({
  * @summary Update gold-reference readiness and benchmark call metadata
  */
 export const UpdateBenchmarkCallParams = zod.object({
-  "callId": zod.coerce.string()
+  "callId": zod.coerce.string().uuid()
 })
 
 export const updateBenchmarkCallBodyLabelMin = 2;
@@ -401,7 +401,7 @@ export const UpdateBenchmarkCallResponse = zod.object({
  * @summary T-72 (E.4) -- one call, reference transcript on top, every provider's output under it as a word-diff row with its cell metrics and the judge's pick marked
  */
 export const GetCallComparisonParams = zod.object({
-  "callId": zod.coerce.string()
+  "callId": zod.coerce.string().uuid()
 })
 
 export const GetCallComparisonResponse = zod.object({
@@ -498,8 +498,8 @@ export const GetCallComparisonResponse = zod.object({
  * @summary T-72 (E.4) -- the same comparison scoped to one bulk's runs, providers ordered by the bulk's verdict rate. (A separate operation rather than ?bulkId= because orval names a query-param type and a path-param zod schema identically and they collide.)
  */
 export const GetBulkCallComparisonParams = zod.object({
-  "bulkId": zod.coerce.string(),
-  "callId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid(),
+  "callId": zod.coerce.string().uuid()
 })
 
 export const GetBulkCallComparisonResponse = zod.object({
@@ -596,8 +596,8 @@ export const GetBulkCallComparisonResponse = zod.object({
  * @summary T-08 -- the stretches of one call where providers heard different words, each with a start/end in the audio, every provider's reading, and any human verdict already recorded
  */
 export const ListDisagreementSpansQueryParams = zod.object({
-  "callId": zod.coerce.string(),
-  "runId": zod.coerce.string().optional().describe('Which run\'s results to build spans from. Defaults to the most recent run that has a successful cell for this call.')
+  "callId": zod.coerce.string().uuid(),
+  "runId": zod.coerce.string().uuid().optional().describe('Which run\'s results to build spans from. Defaults to the most recent run that has a successful cell for this call.')
 })
 
 export const listDisagreementSpansResponseSpansItemReferencePositionsMin = 2;
@@ -633,7 +633,7 @@ export const ListDisagreementSpansResponse = zod.object({
  * @summary Record a de-identification approval (two distinct approvers required, FR-C3)
  */
 export const AttestBenchmarkCallDeidParams = zod.object({
-  "callId": zod.coerce.string()
+  "callId": zod.coerce.string().uuid()
 })
 
 export const attestBenchmarkCallDeidBodyApproverLabelMin = 2;
@@ -1011,7 +1011,7 @@ export const CreateBenchmarkRunResponse = zod.object({
  * @summary (Re)execute a queued or failed run against configured providers (FR-E4 resumable)
  */
 export const ExecuteBenchmarkRunParams = zod.object({
-  "runId": zod.coerce.string()
+  "runId": zod.coerce.string().uuid()
 })
 
 export const ExecuteBenchmarkRunResponse = zod.object({
@@ -1033,7 +1033,7 @@ export const ExecuteBenchmarkRunResponse = zod.object({
  * @summary T-134 -- archive (or unarchive) one ad-hoc run. Soft only -- nothing is deleted; an archived run leaves the default Runs list and stops being any group's latest ranking snapshot. Bulk shard runs are managed through their bulk and refuse this with 409.
  */
 export const SetRunArchivedParams = zod.object({
-  "runId": zod.coerce.string()
+  "runId": zod.coerce.string().uuid()
 })
 
 export const SetRunArchivedBody = zod.object({
@@ -1059,7 +1059,7 @@ export const SetRunArchivedResponse = zod.object({
  * @summary Per-cell (provider x call) raw results and scores for a run (FR-E3, drill-down)
  */
 export const ListBenchmarkRunResultsParams = zod.object({
-  "runId": zod.coerce.string()
+  "runId": zod.coerce.string().uuid()
 })
 
 export const ListBenchmarkRunResultsResponseItem = zod.object({
@@ -1119,7 +1119,7 @@ export const ListBenchmarkRunResultsResponse = zod.array(ListBenchmarkRunResults
  * @summary 2026-08-26 -- AI diagnosis + suggested fix for one failed cell's raw error message. On-demand only (real OpenAI cost per click); persisted on the result row so it survives a refresh and is never recomputed for free.
  */
 export const AnalyzeResultFailureParams = zod.object({
-  "resultId": zod.coerce.string()
+  "resultId": zod.coerce.string().uuid()
 })
 
 export const AnalyzeResultFailureResponse = zod.object({
@@ -1155,7 +1155,7 @@ export const ListAuditLogResponse = zod.array(ListAuditLogResponseItem)
  * @summary Get provider scores and recommendations by vertical
  */
 export const ListBenchmarkRankingsQueryParams = zod.object({
-  "bulkId": zod.coerce.string().optional()
+  "bulkId": zod.coerce.string().uuid().optional()
 })
 
 export const ListBenchmarkRankingsResponseItem = zod.object({
@@ -1452,7 +1452,7 @@ export const PreviewBulkSelectionResponse = zod.object({
  * @summary Bulk detail with live progress aggregates (FR-EXC-4, FR-BLK-13)
  */
 export const GetBulkParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 
@@ -1537,7 +1537,7 @@ export const GetBulkResponse = zod.object({
  * @summary Launch a draft/awaiting_confirmation bulk -- fans the frozen call set into shard runs (FR-BLK-3). Async; poll GET /benchmark/bulks/{bulkId}.
  */
 export const LaunchBulkParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 
@@ -1586,7 +1586,7 @@ export const LaunchBulkResponse = zod.object({
  * @summary Re-enqueue only failed/pending cells of this bulk's shard runs (FR-BLK-6; already-succeeded cells are never re-billed)
  */
 export const RetryBulkFailedParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 
@@ -1635,7 +1635,7 @@ export const RetryBulkFailedResponse = zod.object({
  * @summary Cancel a running bulk -- un-started cells are marked cancelled; in-flight provider requests complete and are recorded (FR-BLK-7)
  */
 export const CancelBulkParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 
@@ -1684,7 +1684,7 @@ export const CancelBulkResponse = zod.object({
  * @summary T-18 -- how often each pair of providers transcribed this bulk's calls the same way. Two providers that agree almost always are one witness, not two, when reading consensus. Free; text arithmetic over stored transcripts.
  */
 export const GetBulkProviderCorrelationParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 export const GetBulkProviderCorrelationResponse = zod.object({
@@ -1709,7 +1709,7 @@ export const GetBulkProviderCorrelationResponse = zod.object({
  * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
  */
 export const GetBulkVerdictsParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 export const getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Min = 2;
@@ -1773,7 +1773,7 @@ export const GetBulkVerdictsResponse = zod.object({
  * @summary T-32 -- the shareable dated verdict artefact. One self-contained HTML page (no scripts, no external assets, print-clean) rendered from the same numbers as getBulkVerdicts, stamped with the produced-at time, build SHA and scoring version. Open in a browser or save/attach; not part of the generated JSON client.
  */
 export const GetBulkVerdictArtefactParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 export const GetBulkVerdictArtefactResponse = zod.unknown()
@@ -1783,7 +1783,7 @@ export const GetBulkVerdictArtefactResponse = zod.unknown()
  * @summary Immutable bulk manifest -- the composition of every shard run's frozen manifest (FR-BLK-8, FR-REP1 replay evidence)
  */
 export const GetBulkManifestParams = zod.object({
-  "bulkId": zod.coerce.string()
+  "bulkId": zod.coerce.string().uuid()
 })
 
 
@@ -1962,7 +1962,7 @@ export const CreateBulkTemplateResponse = zod.object({
  * @summary Delete a saved template (T-50). Bulks already launched from it are untouched -- they froze their own call set and provider list at creation.
  */
 export const DeleteBulkTemplateParams = zod.object({
-  "templateId": zod.coerce.string()
+  "templateId": zod.coerce.string().uuid()
 })
 
 export const DeleteBulkTemplateResponse = zod.void()
@@ -1972,7 +1972,7 @@ export const DeleteBulkTemplateResponse = zod.void()
  * @summary Launch a template -- re-resolves its relative date window against right now, then creates (and cost-gates) a fresh bulk (FR-BLK-9, AC-2.7)
  */
 export const LaunchBulkTemplateParams = zod.object({
-  "templateId": zod.coerce.string()
+  "templateId": zod.coerce.string().uuid()
 })
 
 
@@ -2029,7 +2029,7 @@ export const LaunchBulkTemplateResponse = zod.object({
  * @summary Immutable run manifest -- frozen corpus + provider config + scoring version snapshot (RUN-01, P2-T1)
  */
 export const GetBenchmarkRunManifestParams = zod.object({
-  "runId": zod.coerce.string()
+  "runId": zod.coerce.string().uuid()
 })
 
 export const GetBenchmarkRunManifestResponse = zod.object({
@@ -2055,7 +2055,7 @@ export const GetBenchmarkRunManifestResponse = zod.object({
  * @summary List transcript-quality-agent scans, optionally filtered to one call
  */
 export const ListAgentScansQueryParams = zod.object({
-  "callId": zod.coerce.string().optional()
+  "callId": zod.coerce.string().uuid().optional()
 })
 
 export const ListAgentScansResponseItem = zod.object({
@@ -2176,7 +2176,7 @@ export const CreateAgentScanResponse = zod.object({
  * @summary A human accepts the agent's picked transcript as gold -- drives the same PATCH /benchmark/calls logic and de-id gate as manual review (draft != gold rule; the agent's pick is never written on its own)
  */
 export const ApproveAgentScanParams = zod.object({
-  "scanId": zod.coerce.string()
+  "scanId": zod.coerce.string().uuid()
 })
 
 export const ApproveAgentScanBody = zod.object({
@@ -2240,7 +2240,7 @@ export const ApproveAgentScanResponse = zod.object({
  * @summary A human rejects the agent's pick -- no data changes, call keeps its current gold transcript
  */
 export const RejectAgentScanParams = zod.object({
-  "scanId": zod.coerce.string()
+  "scanId": zod.coerce.string().uuid()
 })
 
 export const RejectAgentScanBody = zod.object({

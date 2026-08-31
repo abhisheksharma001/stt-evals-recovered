@@ -57,6 +57,12 @@ export default defineConfig({
       prettier: true,
       override: {
         zod: {
+          // T-141: pin the output to the zod major this repo actually installs
+          // (3.x). Orval's default is `auto`, which fell back to zod 4 output
+          // and emitted `zod.uuid()` -- a v4-only top-level form -- the moment
+          // the spec first used `format: uuid`. It only surfaced because the
+          // codegen script typechecks what it generates.
+          version: 3,
           coerce: {
             query: ['boolean', 'number', 'string'],
             param: ['boolean', 'number', 'string'],
