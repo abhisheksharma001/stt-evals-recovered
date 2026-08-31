@@ -151,6 +151,23 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 22: the writes batch 21 missed.** Suite 90 → 110 (25
+  files). Batch 21's closing line ("every route without a network call or
+  spend now has tests") **was wrong**: eight write routes had none. Now
+  held: bulk-template CRUD (name-ordered list, duplicate 409, delete keeps
+  the recipe in the audit before-state), manual call create + the FR-C3
+  de-id gate (**"Bob" then "bob" is one person, not two**), run create on
+  the **blocked path only** — `POST /benchmark/runs` executes what it
+  creates the moment nothing blocks it, so every run in that suite is
+  blocked by construction and the file says so — provider create/edit
+  (status is derived on writes too; **an operator-disabled provider reads
+  `disabled`, not `not_configured`**), and bulk preview + cancel (T-14's
+  matched + excluded = in-scope; **a hand-picked call skips the band by
+  design**; cancelling stops queued shards so nothing wakes up to spend).
+  Fixtures gained `adoptCall` / `adoptRun` / `adoptProvider` and template
+  cleanup. Left untested for stated reasons only: vendor list APIs, live
+  Vapi, or real money.
+
 - **2026-08-31, batch 21: the last routes.** Suite 69 → 90 (20 files):
   per-call disagreement (agent-scan runs and failed cells never count; a
   call that ran but was never scored is ABSENT, not zero), the two
