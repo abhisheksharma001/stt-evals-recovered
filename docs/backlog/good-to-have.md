@@ -1,3 +1,34 @@
+## Found 2026-08-31 (batch 22): the writes, and a claim that was wrong
+
+- **Batch 21's closing line overclaimed.** It said every route without a
+  network call or provider spend had tests. The read surface had been swept;
+  eight write routes had nothing. Corrected in the register rather than
+  quietly fixed: bulk-template CRUD, manual call create, de-id attestation,
+  run create, provider create/edit, model enable, bulk preview, bulk cancel.
+  Lesson: a sweep of GET routes is not a sweep of routes.
+
+- **`POST /benchmark/runs` executes what it creates.** Fire-and-forget, the
+  moment nothing blocks it. Any test of that route must be blocked by
+  construction — fixture provider ids match no adapter, so readiness derives
+  to not_configured and the handler refuses to start. The suite's header says
+  so; never seed a "ready" provider there.
+
+- **An operator-disabled provider reads `disabled`, not `not_configured`.**
+  The manual flag outranks key presence in the FR-P3 derivation, so the reason
+  a provider will not run stays visible. Found by a first-draft assertion that
+  expected the wrong one.
+
+- **A hand-picked call skips the duration band, the date window and the
+  outcome filters** — only the retention pass still applies. By design (a
+  person named it), but it defeated a first draft that scoped a preview test
+  with explicit call ids and then could not see the band at all. Scope a
+  filter test by account label instead.
+
+- **Response field names are not request field names.** The template body
+  takes `criteria`; the row and the response answer `selectionCriteria`.
+  Third slip of this class in three batches (`notes`/`entityNotes`,
+  `APP_SETTINGS_ID`), and the same fix each time: read the schema.
+
 ## Found 2026-08-31 (batch 21): the last routes
 
 - **Probed first this time, and nothing was dead.** Before writing a line of

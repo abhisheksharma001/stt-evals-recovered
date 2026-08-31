@@ -19,6 +19,7 @@ import {
   benchmarkRankingsTable,
   benchmarkRunsTable,
   benchmarkScoresTable,
+  bulkTemplatesTable,
   db,
 } from "@workspace/db";
 
@@ -76,6 +77,22 @@ export class Fixtures {
       .returning();
     this.callIds.push(row.id);
     return row;
+  }
+
+  /** A call this suite created through its ROUTE rather than here, so
+   *  cleanup still owns it (T-178). */
+  adoptCall(id: string): void {
+    this.callIds.push(id);
+  }
+
+  /** Same, for a run created through POST /benchmark/runs (T-179). */
+  adoptRun(id: string): void {
+    this.runIds.push(id);
+  }
+
+  /** Same, for a provider created through POST /benchmark/providers (T-180). */
+  adoptProvider(id: string): void {
+    this.providerIds.push(id);
   }
 
   async run(overrides: Partial<typeof benchmarkRunsTable.$inferInsert> = {}): Promise<RunRow> {
@@ -201,6 +218,9 @@ export class Fixtures {
     if (this.rankingIds.length)
       await db.delete(benchmarkRankingsTable).where(inArray(benchmarkRankingsTable.id, this.rankingIds));
     if (this.auditIds.length) await db.delete(auditLogTable).where(inArray(auditLogTable.id, this.auditIds));
+    // Bulk templates are created only through their route (T-177), which
+    // stamps the `x-actor` this fixture sends as createdByLabel.
+    await db.delete(bulkTemplatesTable).where(eq(bulkTemplatesTable.createdByLabel, this.actor));
     // Writes made through a route leave audit rows this class never
     // inserted; they carry `actor` when the suite sends the header.
     await db.delete(auditLogTable).where(eq(auditLogTable.actorLabel, this.actor));
