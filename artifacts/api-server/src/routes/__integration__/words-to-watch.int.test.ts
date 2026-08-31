@@ -7,7 +7,7 @@
 // shared database. Disputed words carry a letters-only suffix (hex digits
 // would land in the number-canonicalisation path) so containment can never
 // collide with anyone else's data.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import app from "../../app";
