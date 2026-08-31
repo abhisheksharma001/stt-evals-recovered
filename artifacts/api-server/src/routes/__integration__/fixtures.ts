@@ -8,7 +8,7 @@
 // The riskiest-endpoints suite predates this file and keeps its own inline
 // seeding on purpose: it is green and its rows are shaped around the write
 // paths it exercises. New read-route suites start here instead.
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   auditLogTable,
   benchmarkAgentScansTable,
@@ -34,6 +34,10 @@ type AuditRow = typeof auditLogTable.$inferSelect;
 
 export class Fixtures {
   readonly suffix = Math.random().toString(16).slice(2, 10);
+  /** The `x-actor` a write suite sends, so the audit rows the ROUTE writes
+   *  (not just the ones seeded here) are this fixture's own and cleanup can
+   *  find them -- audit rows have no FK in either direction. */
+  readonly actor = `fixture-${this.suffix}`;
 
   private providerIds: string[] = [];
   private callIds: string[] = [];
@@ -172,7 +176,7 @@ export class Fixtures {
       .values({
         entityType: "call",
         entityId: `fx-entity-${this.suffix}`,
-        actorLabel: `fixture-${this.suffix}`,
+        actorLabel: this.actor,
         action: "fixture",
         ...overrides,
       })
@@ -197,5 +201,8 @@ export class Fixtures {
     if (this.rankingIds.length)
       await db.delete(benchmarkRankingsTable).where(inArray(benchmarkRankingsTable.id, this.rankingIds));
     if (this.auditIds.length) await db.delete(auditLogTable).where(inArray(auditLogTable.id, this.auditIds));
+    // Writes made through a route leave audit rows this class never
+    // inserted; they carry `actor` when the suite sends the header.
+    await db.delete(auditLogTable).where(eq(auditLogTable.actorLabel, this.actor));
   }
 }

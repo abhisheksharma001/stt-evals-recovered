@@ -1,3 +1,43 @@
+## Found 2026-08-31 (batch 21): the last routes
+
+- **Probed first this time, and nothing was dead.** Before writing a line of
+  T-172..T-175, all eight remaining untested read routes were called against
+  the live server: `calls/disagreement`, both manifests, `verdicts`,
+  `verdict.html`, `bulk-templates`, `vapi/assistants`, `providers/models`,
+  `agent-models` — all 200. The T-136 case (spans 500ing unnoticed for a whole
+  batch cycle) is why that probe is now the first step, not the last.
+
+- **The reproducibility promise is testable, and now tested.** A run manifest
+  pins gold-transcript hashes and provider config hashes at run creation. The
+  test corrects the gold transcript AND renames the call afterwards, re-reads
+  the manifest through the route, and asserts nothing moved. That is the
+  property that makes an old run's numbers explainable; nothing was watching it
+  before.
+
+- **`APP_SETTINGS_ID` was guessed as a uuid; it is the string `"default"`.**
+  The audit assertions came back empty and the guess was found in one grep.
+  Same class as batch 20's `notes` / `entityNotes`: vitest transpiles without
+  typechecking, so a name written from memory survives to the first red run.
+  The constant is exported from `@workspace/db` and is imported now.
+
+- **Audit rows written by a ROUTE have no FK and were never cleaned.** The
+  fixtures only tracked rows they inserted themselves. Fixtures gained
+  `actor` (`fixture-<suffix>`), the write suite sends it as `x-actor`, and
+  cleanup deletes by that label. Verified: zero `fixture-%` audit rows after a
+  full run.
+
+- **The older `riskiest-endpoints.int.test.ts` suite leaves its audit rows
+  behind** — 102 rows with actor "unknown" (launch / execute / archive /
+  unarchive) accumulated across runs. Harmless in a throwaway database and not
+  fixed here, but it is why a global audit-row count is not zero after a clean
+  run; only the `fixture-%` count is a meaningful leftover check.
+
+- **What stays untested, and why.** `providers/models` and `agent-models` call
+  vendor list APIs on every request (a live call does not belong in CI, and
+  their only offline story is a network failure); `vapi/preview` and
+  `vapi/import` need a live Vapi; run `execute`, bulk `launch`, `retry-failed`
+  and `analyze-failure` spend real provider or judge money.
+
 ## Found 2026-08-31 (batch 20): the last reads
 
 - Integration suite 52 → 69 (provider-correlation 3, volume/accounts 3,
