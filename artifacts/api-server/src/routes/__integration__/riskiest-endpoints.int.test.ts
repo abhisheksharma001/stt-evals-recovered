@@ -9,6 +9,16 @@
 //       has no audio, so every cell fails before any provider is called.
 //   (c) GET /bulks/{id}/verdicts and verdict.html -- 404 on an unknown id,
 //       200 with the expected shape on a seeded bulk.
+//
+// T-139 added three more, each an endpoint that had no route test and had
+// already broken (or could break) silently in production:
+//   (d) GET /disagreement-spans -- the whole response must satisfy its own
+//       schema. It did not between T-47 and T-136 (a dropped `majorityText`
+//       made every call answer 500), and nothing caught it.
+//   (e) POST /runs/{id}/archive -- ad-hoc runs archive and restore; a bulk
+//       shard is refused with 409.
+//   (f) POST /calls/cache-audio -- answers with the four counts even when
+//       there is nothing it can save.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq, inArray } from "drizzle-orm";
@@ -26,6 +36,10 @@ import { upsertResult } from "../../lib/run-executor";
 
 const suffix = Math.random().toString(36).slice(2, 10);
 const providerId = `t77-provider-${suffix}`;
+// T-139 (d): vendor-prefixed so extractProviderTimedWords reads their word
+// timings -- spans need at least two candidates and one full set of timings.
+const spanProviderA = `deepgram-t137a-${suffix}`;
+const spanProviderB = `deepgram-t137b-${suffix}`;
 let callId = "";
 const bulkIds: string[] = [];
 const runIds: string[] = [];
@@ -55,8 +69,22 @@ async function waitForRunsToSettle(bulkId: string): Promise<string[]> {
   throw new Error("shard runs did not settle in 15s");
 }
 
+/** A Deepgram-shaped raw response (seconds), the exact shape timed-words.ts
+ *  reads. Words are one per second so the spans are easy to assert on. */
+function deepgramRaw(words: string[]): string {
+  return JSON.stringify({
+    results: {
+      channels: [{ alternatives: [{ words: words.map((word, i) => ({ word, start: i, end: i + 0.5 })) }] }],
+    },
+  });
+}
+
 beforeAll(async () => {
-  await db.insert(benchmarkProvidersTable).values({ id: providerId, name: `T-77 ${suffix}`, model: "none", status: "not_configured" });
+  await db.insert(benchmarkProvidersTable).values([
+    { id: providerId, name: `T-77 ${suffix}`, model: "none", status: "not_configured" },
+    { id: spanProviderA, name: `T-137 A ${suffix}`, model: "none", status: "not_configured" },
+    { id: spanProviderB, name: `T-137 B ${suffix}`, model: "none", status: "not_configured" },
+  ]);
   const [call] = await db
     .insert(benchmarkCallsTable)
     .values({ label: `t77-call-${suffix}`, vertical: "property_management", durationSeconds: 30, status: "ready_to_run" })
@@ -68,7 +96,7 @@ afterAll(async () => {
   if (runIds.length) await db.delete(benchmarkRunsTable).where(inArray(benchmarkRunsTable.id, runIds));
   if (bulkIds.length) await db.delete(benchmarkBulksTable).where(inArray(benchmarkBulksTable.id, bulkIds));
   if (callId) await db.delete(benchmarkCallsTable).where(eq(benchmarkCallsTable.id, callId));
-  await db.delete(benchmarkProvidersTable).where(eq(benchmarkProvidersTable.id, providerId));
+  await db.delete(benchmarkProvidersTable).where(inArray(benchmarkProvidersTable.id, [providerId, spanProviderA, spanProviderB]));
   await pool.end();
 });
 
@@ -146,5 +174,99 @@ describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
     expect(html.headers["content-type"]).toMatch(/text\/html/);
     expect(html.text).toContain(`STT verdict: ${bulk.name}`);
     expect(html.text).toContain("Winner");
+  });
+});
+
+describe("(d) GET /api/benchmark/disagreement-spans", () => {
+  it("404s on an unknown call", async () => {
+    const res = await request(app).get("/api/benchmark/disagreement-spans").query({ callId: "00000000-0000-4000-8000-000000000000" });
+    expect(res.status).toBe(404);
+  });
+
+  it("answers the full schema, majorityText included, for two disagreeing providers", async () => {
+    const [run] = await db
+      .insert(benchmarkRunsTable)
+      .values({ status: "complete", purpose: "batch", providerIds: [spanProviderA, spanProviderB], callIds: [callId], callCount: 1 })
+      .returning();
+    runIds.push(run.id);
+
+    // Same three words, one heard differently -> exactly one span.
+    await upsertResult(run.id, callId, spanProviderA, {
+      status: "ok",
+      hypothesisTranscript: "book the load",
+      rawOutput: deepgramRaw(["book", "the", "load"]),
+    });
+    await upsertResult(run.id, callId, spanProviderB, {
+      status: "ok",
+      hypothesisTranscript: "book the road",
+      rawOutput: deepgramRaw(["book", "the", "road"]),
+    });
+
+    const res = await request(app).get("/api/benchmark/disagreement-spans").query({ callId, runId: run.id });
+    // A 500 here is the T-136 regression: the response did not satisfy its
+    // own schema, which no typecheck can catch.
+    expect(res.status).toBe(200);
+    expect(res.body.unavailableReason).toBeNull();
+    expect(res.body.referenceWords).toEqual(["book", "the", "load"]);
+    // T-137: one start per reference word, in order, milliseconds.
+    expect(res.body.referenceWordStartMs).toEqual([0, 1000, 2000]);
+    expect(res.body.spans).toHaveLength(1);
+    const span = res.body.spans[0];
+    expect(span.referencePositions).toEqual([2, 2]);
+    expect(span.startMs).toBe(2000);
+    // Two providers, one vote each: a tie, which is reported as null rather
+    // than a made-up winner.
+    expect(span).toHaveProperty("majorityText", null);
+    expect(span.readings.map((r: { providerId: string; text: string }) => r.text).sort()).toEqual(["load", "road"]);
+  });
+});
+
+describe("(e) POST /api/benchmark/runs/:runId/archive", () => {
+  it("archives and restores an ad-hoc run, and refuses a bulk shard with 409", async () => {
+    const [adhoc] = await db
+      .insert(benchmarkRunsTable)
+      .values({ status: "complete", purpose: "batch", providerIds: [providerId], callIds: [callId], callCount: 1 })
+      .returning();
+    runIds.push(adhoc.id);
+
+    const archived = await request(app).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: true });
+    expect(archived.status).toBe(200);
+    expect(archived.body.archivedAt).not.toBeNull();
+
+    const restored = await request(app).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: false });
+    expect(restored.status).toBe(200);
+    expect(restored.body.archivedAt).toBeNull();
+
+    // A shard belongs to its bulk; hiding one would silently change what the
+    // bulk's verdict was computed from (FR-BLK-10).
+    const bulk = await seedBulk("t137 archive", "complete");
+    const [shard] = await db
+      .insert(benchmarkRunsTable)
+      .values({ status: "complete", purpose: "batch", bulkId: bulk.id, providerIds: [providerId], callIds: [callId], callCount: 1 })
+      .returning();
+    runIds.push(shard.id);
+    const refused = await request(app).post(`/api/benchmark/runs/${shard.id}/archive`).send({ archived: true });
+    expect(refused.status).toBe(409);
+  });
+
+  it("404s on an unknown run", async () => {
+    const res = await request(app).post("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/archive").send({ archived: true });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("(f) POST /api/benchmark/calls/cache-audio", () => {
+  it("answers with counts, and never throws when there is nothing to save", async () => {
+    const res = await request(app).post("/api/benchmark/calls/cache-audio").send();
+    expect(res.status).toBe(200);
+    // The endpoint takes no body: it sweeps every uncached call. The seeded
+    // call has no recording anywhere, so it can only be a failure -- what
+    // matters here is that one bad call does not throw, and that every call
+    // lands in exactly one bucket.
+    const { alreadyCachedCount, savedCount, failedCount, expiredCount, results } = res.body;
+    expect(savedCount).toBe(0);
+    expect(alreadyCachedCount + savedCount + failedCount + expiredCount).toBeGreaterThanOrEqual(1);
+    expect(results.length).toBe(savedCount + failedCount + expiredCount);
+    expect(results.every((r: { outcome: string }) => ["saved", "failed", "expired"].includes(r.outcome))).toBe(true);
   });
 });
