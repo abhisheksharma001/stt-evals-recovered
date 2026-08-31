@@ -1289,7 +1289,7 @@ components:
           items: { $ref: "#/components/schemas/SpanReading" }
     DisagreementSpansResponse:
       type: object
-      required: [callId, runId, referenceProviderId, referenceWords, unavailableReason, spans]
+      required: [callId, runId, referenceProviderId, referenceWords, referenceWordStartMs, unavailableReason, spans]
       properties:
         callId: { type: string }
         # null when no run has a successful cell for this call yet.
@@ -1300,6 +1300,11 @@ components:
         referenceWords:
           type: array
           items: { type: string }
+        # T-137 (play from caret): start of each referenceWords[i] in the audio,
+        # milliseconds, same length and order. Empty when there is no reference.
+        referenceWordStartMs:
+          type: array
+          items: { type: number }
         unavailableReason:
           oneOf:
             - type: string
@@ -2150,13 +2155,27 @@ components:
             name: { type: string }
         needsHuman:
           type: object
-          required: [callsAwaitingReview, hardCaseCalls, retryableFailedCells, audioUnsavedCalls]
+          required: [callsAwaitingReview, hardCaseCalls, retryableFailedCells, retryableFailedCellGroups, audioUnsavedCalls]
           properties:
             callsAwaitingReview: { type: number }
             hardCaseCalls: { type: number }
             # Failed / skipped cells in stopped (partial, failed) bulks that
             # a retry could fix -- same rule as POST /bulks/{id}/retry-failed.
             retryableFailedCells: { type: number }
+            # T-140: the same cells grouped by provider + reason, biggest
+            # first, so the figure can say what it is made of. Empty when the
+            # count is 0. `reason` is a retryable failure class or the literal
+            # "skipped_pending_review".
+            retryableFailedCellGroups:
+              type: array
+              items:
+                type: object
+                required: [providerId, providerName, reason, cells]
+                properties:
+                  providerId: { type: string }
+                  providerName: { type: string }
+                  reason: { type: string }
+                  cells: { type: number }
             # T-130: calls whose audio is not on the server disk yet but is still
             # obtainable from Vapi -- one click on Calls' "Save audio now" clears it.
             audioUnsavedCalls: { type: number }

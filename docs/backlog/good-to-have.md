@@ -1,3 +1,45 @@
+## Found 2026-08-31 (batch 14, T-136): the listening panel had been dead for a day
+
+`GET /benchmark/disagreement-spans` answered **500 for every call** from the
+T-86 route rewrite (batch 4, PR #52, 2026-08-30) until batch 14. The handler
+builds its response by copying span fields one at a time, and that copy never
+gained `majorityText` after T-47 made it required -- so the response failed
+its own `ListDisagreementSpansResponse.parse()`, and Corpus showed "Couldn't
+load disagreement spans for this call." for the whole day. Reproduced against
+the running production server before touching anything.
+
+Two lessons, both now acted on:
+
+- **A hand-written response mapping is untyped in the one direction that
+  matters.** `res.json(Schema.parse({...}))` type-checks the *input* against
+  nothing: a missing field is a runtime failure only. Every such handler is
+  one schema change away from this. T-139 covers the three newest with route
+  tests; the rest are still exposed.
+- **Nothing was watching.** The panel is deep inside an expanded call row, so
+  a browser pass that does not open that exact section never sees it. The
+  regression test now fails with "expected 500 to be 200" if the mapping loses
+  a field again.
+
+Found by accident, while reading the same route to add T-137's word starts --
+not by any check we own. That is the honest provenance.
+
+## Verified 2026-08-31 (batch 14, T-140): what the "retry could fix" 15 actually are
+
+The Overview's "transcripts a retry could fix" has read 15 for days with no
+way to tell what they were. Against the live DB: **all 15 are
+`cartesia-ink-whisper` `provider_timeout` cells dated 2026-08-27** (the other
+failed cells in stopped bulks -- 30 `retention_expired`, 15
+`audio_url_forbidden` -- are permanent and correctly excluded). So the figure
+was honest, just mute: those 15 can be retried, and retrying them re-calls a
+paid provider. The number now carries its own breakdown (T-140).
+
+Open, deliberately not fixed here (no drive-by scope): the Corpus page logs
+two React warnings, "Select is changing from uncontrolled to controlled"
+(`artifacts/stt-benchmark/src/pages/Corpus.tsx` has two filter Selects).
+Pre-existing, unrelated to batch 14's changes, harmless today -- but it is a
+real controlled/uncontrolled mistake and will bite whoever next changes those
+filters.
+
 ## Verified 2026-08-31 (batch 13, T-132): the refused calls, identified call-by-call
 
 Closes the open identity question below. Against the live DB + cache dir:
@@ -379,10 +421,12 @@ is the concrete shape of the "decision artifact for a non-technical
 stakeholder" the research kept circling back to.
 
 ## 5. Review workspace polish
-- Play-from-caret (click text, hear that moment) instead of only a global
-  transport bar.
-- Loop-selection / spot-audition for a flagged span (names, IDs).
-- Variable playback speed.
+- ~~Play-from-caret (click text, hear that moment) instead of only a global
+  transport bar.~~ **Done 2026-08-31 (batch 14, T-137)** -- every word in the
+  reading plays the call from itself.
+- ~~Loop-selection / spot-audition for a flagged span (names, IDs).~~
+  **Done 2026-08-31 (batch 14, T-138)** -- Loop toggle, `L` / `Esc`.
+- ~~Variable playback speed.~~ **Done 2026-08-31 (batch 13, T-135).**
 - Utterance-level "verified" marks as the real progress signal, replacing
   "does the WER number look stable" as an implicit (bad) stopping cue.
 

@@ -68,6 +68,12 @@ export type DisagreementSpansResult = {
    *  every provider's full transcript side by side. Empty when there is
    *  no reference. */
   referenceWords: string[];
+  /** T-137 (play from caret): the start of each `referenceWords[i]` in the
+   *  audio, milliseconds. Same length as `referenceWords`, and never null
+   *  per word -- the reference is chosen from candidates whose every token
+   *  carries a timing, which is what makes it the clock. Empty when there
+   *  is no reference. */
+  referenceWordStartMs: number[];
   spans: DisagreementSpan[];
   /** Why there are no spans, when the reason is structural rather than
    *  "everyone agreed": nothing to build from. */
@@ -136,7 +142,13 @@ export function majorityReadingText(readings: readonly { text: string }[]): stri
  */
 export function buildDisagreementSpans(candidates: SpanCandidate[]): DisagreementSpansResult {
   if (candidates.length < 2) {
-    return { referenceProviderId: null, referenceWords: [], spans: [], unavailableReason: "fewer_than_two_candidates" };
+    return {
+      referenceProviderId: null,
+      referenceWords: [],
+      referenceWordStartMs: [],
+      spans: [],
+      unavailableReason: "fewer_than_two_candidates",
+    };
   }
   const tokenized = candidates.map((c) => ({ providerId: c.providerId, tokens: tokenize(c) }));
 
@@ -145,10 +157,19 @@ export function buildDisagreementSpans(candidates: SpanCandidate[]): Disagreemen
   // fewest words to unanchored insertions.
   const timed = tokenized.filter((t) => t.tokens.length > 0 && t.tokens.every((tok) => tok.start !== null));
   if (timed.length === 0) {
-    return { referenceProviderId: null, referenceWords: [], spans: [], unavailableReason: "no_word_timings" };
+    return {
+      referenceProviderId: null,
+      referenceWords: [],
+      referenceWordStartMs: [],
+      spans: [],
+      unavailableReason: "no_word_timings",
+    };
   }
   const reference = [...timed].sort((a, b) => b.tokens.length - a.tokens.length)[0]!;
   const refWords = reference.tokens.map((t) => t.text);
+  // T-137: same order, same length as refWords. `start` is non-null on every
+  // reference token by construction (the `timed` filter above).
+  const refWordStartMs = reference.tokens.map((t) => Math.round(t.start! * 1000));
   const positionCount = refWords.length;
 
   // Per candidate, per reference position: the words that candidate has
@@ -229,5 +250,11 @@ export function buildDisagreementSpans(candidates: SpanCandidate[]): Disagreemen
     };
   });
 
-  return { referenceProviderId: reference.providerId, referenceWords: refWords, spans, unavailableReason: null };
+  return {
+    referenceProviderId: reference.providerId,
+    referenceWords: refWords,
+    referenceWordStartMs: refWordStartMs,
+    spans,
+    unavailableReason: null,
+  };
 }

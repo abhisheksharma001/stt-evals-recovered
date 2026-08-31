@@ -119,6 +119,7 @@ export interface DisagreementSpansResponse {
   /** @nullable */
   referenceProviderId: string | null;
   referenceWords: string[];
+  referenceWordStartMs: number[];
   unavailableReason: DisagreementSpansResponseUnavailableReason;
   spans: DisagreementSpan[];
 }
@@ -1206,10 +1207,18 @@ export type BenchmarkDashboardRunningBulk = {
   name: string;
 } | null;
 
+export type BenchmarkDashboardNeedsHumanRetryableFailedCellGroupsItem = {
+  providerId: string;
+  providerName: string;
+  reason: string;
+  cells: number;
+};
+
 export type BenchmarkDashboardNeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
+  retryableFailedCellGroups: BenchmarkDashboardNeedsHumanRetryableFailedCellGroupsItem[];
   audioUnsavedCalls: number;
 };
 

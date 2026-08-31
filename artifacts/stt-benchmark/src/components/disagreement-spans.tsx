@@ -1,10 +1,11 @@
 import * as React from "react"
 import { useListDisagreementSpans, type DisagreementSpan } from "@workspace/api-client-react"
-import { Play, Loader2 } from "lucide-react"
+import { Play, Loader2, Repeat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { apiBase } from "@/lib/api-base"
 import { PlaybackSpeed } from "@/components/playback-speed"
+import { spanPlaybackAction } from "@/lib/span-playback"
 
 // T-08: "a disagreement is a play button" (PRD-v4-uiux D.3.2).
 // T-86: listen-only. There is no human judge in this product -- nobody
@@ -12,9 +13,25 @@ import { PlaybackSpeed } from "@/components/playback-speed"
 // this lists each stretch with its timestamp; clicking it plays just those
 // seconds (plus a little context) from the cached audio, with every
 // provider's reading beside it. J/K or arrows move, Space plays.
+//
+// T-137 (backlog "review workspace polish"): every ordinary word in the
+// reading is a caret too -- click any word and the audio plays from that
+// word onward, so checking a name or a number no longer means dragging the
+// transport bar to guess where it was. The word starts come from the same
+// reference timings that anchor the spans (referenceWordStartMs), so a
+// caret can never point somewhere the spans disagree with.
+//
+// T-138 (same backlog item, "loop-selection / spot-audition"): a span can be
+// put on repeat. Two seconds of a phone number played once is a guess; the
+// same two seconds on a loop is a decision. Loop applies to spans only -- a
+// caret has no end to loop back from.
 
 /** Seconds of audio played either side of the disputed words. */
 const CONTEXT_SECONDS = 0.75
+
+/** T-137: a hair of lead-in before the clicked word, so its first consonant
+ *  is not clipped by the seek. */
+const CARET_LEAD_IN_SECONDS = 0.12
 
 function fmtTime(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000))
@@ -30,24 +47,66 @@ function fmtTime(ms: number): string {
 // reading is never "the right one".
 function DisagreementReading({
   referenceWords,
+  wordStartMs,
   spans,
   activeIndex,
   playingIndex,
+  caretIndex,
   nameOf,
   onPlay,
+  onPlayFromWord,
 }: {
   referenceWords: string[]
+  /** T-137: start of each referenceWords[i] in the audio. Same length; empty
+   *  only when the API sent no timings, which is when carets stay off. */
+  wordStartMs: number[]
   spans: DisagreementSpan[]
   activeIndex: number
   playingIndex: number | null
+  caretIndex: number | null
   nameOf: (providerId: string) => string
   onPlay: (index: number) => void
+  onPlayFromWord: (position: number) => void
 }) {
+  const carets = wordStartMs.length === referenceWords.length
+  // T-137: one clickable word. Rendered as a plain inline button so the
+  // reading still reads as prose -- no boxes, no underlines until hover.
+  const word = (position: number) => {
+    const text = referenceWords[position]!
+    if (!carets) return <span key={`w${position}`}>{text} </span>
+    return (
+      <button
+        type="button"
+        key={`w${position}`}
+        data-testid="caret-word"
+        data-word-position={position}
+        onClick={(e) => {
+          e.stopPropagation()
+          onPlayFromWord(position)
+        }}
+        title={`Play from here (${fmtTime(wordStartMs[position]!)})`}
+        className={`rounded-sm px-px hover:bg-primary/15 hover:underline ${
+          caretIndex === position ? "bg-primary/20 underline" : ""
+        }`}
+      >
+        {text}
+      </button>
+    )
+  }
+  const plain = (from: number, to: number) => {
+    const out: React.ReactNode[] = []
+    for (let p = from; p < to; p += 1) {
+      out.push(word(p))
+      out.push(<span key={`ws${p}`}> </span>)
+    }
+    return out
+  }
+
   const pieces: React.ReactNode[] = []
   let cursor = 0
   spans.forEach((span, index) => {
     const [first, last] = span.referencePositions as [number, number]
-    if (first > cursor) pieces.push(<span key={`t${cursor}`}>{referenceWords.slice(cursor, first).join(" ")} </span>)
+    if (first > cursor) pieces.push(...plain(cursor, first))
     const ownWords = referenceWords.slice(first, last + 1).join(" ")
     const others = span.readings.filter((r) => !r.agreesWithReference)
     const active = index === activeIndex
@@ -83,7 +142,7 @@ function DisagreementReading({
     pieces.push(<span key={`g${index}`}> </span>)
     cursor = last + 1
   })
-  if (cursor < referenceWords.length) pieces.push(<span key={`t${cursor}`}>{referenceWords.slice(cursor).join(" ")}</span>)
+  if (cursor < referenceWords.length) pieces.push(...plain(cursor, referenceWords.length))
 
   return (
     <div
@@ -119,24 +178,29 @@ export function DisagreementSpans({
   }
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const stopAtRef = React.useRef<number | null>(null)
+  // T-138: where the current span's loop restarts from. Null while a caret
+  // plays (nothing to loop) or before anything has played.
+  const loopFromRef = React.useRef<number | null>(null)
+  const [loop, setLoop] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
   const [playingIndex, setPlayingIndex] = React.useState<number | null>(null)
+  // T-137: which word the caret is playing from, for the highlight. Null
+  // whenever a span (or nothing) is playing.
+  const [caretIndex, setCaretIndex] = React.useState<number | null>(null)
 
   const spans: DisagreementSpan[] = data?.spans ?? []
 
-  // Stop at the end of the span -- the <audio> element has no "play a
-  // window" API, so it's a timeupdate watch.
-  const play = React.useCallback(
-    (index: number) => {
-      const span = spans[index]
+  /** Play from `fromSec`, stopping at `stopAtSec` (null = play on until the
+   *  audio ends or the person pauses). The <audio> element has no "play a
+   *  window" API, so the stop is a timeupdate watch. */
+  const playFrom = React.useCallback(
+    (fromSec: number, stopAtSec: number | null, onBlocked: () => void) => {
       const audio = audioRef.current
-      if (!span || !audio) return
-      stopAtRef.current = span.endMs / 1000 + CONTEXT_SECONDS
-      audio.currentTime = Math.max(0, span.startMs / 1000 - CONTEXT_SECONDS)
-      setActiveIndex(index)
-      setPlayingIndex(index)
+      if (!audio) return
+      stopAtRef.current = stopAtSec
+      audio.currentTime = Math.max(0, fromSec)
       void audio.play().catch((err: unknown) => {
-        setPlayingIndex(null)
+        onBlocked()
         // T-59: say what actually went wrong.
         const name = err instanceof DOMException ? err.name : ""
         const description =
@@ -148,7 +212,37 @@ export function DisagreementSpans({
         toast({ title: "Couldn't play audio", description, variant: "destructive" })
       })
     },
-    [spans, toast],
+    [toast],
+  )
+
+  const play = React.useCallback(
+    (index: number) => {
+      const span = spans[index]
+      if (!span) return
+      setActiveIndex(index)
+      setPlayingIndex(index)
+      setCaretIndex(null)
+      const from = span.startMs / 1000 - CONTEXT_SECONDS
+      loopFromRef.current = Math.max(0, from)
+      playFrom(from, span.endMs / 1000 + CONTEXT_SECONDS, () => setPlayingIndex(null))
+    },
+    [spans, playFrom],
+  )
+
+  // T-137: play from a word in the reading. No stop point -- "hear that
+  // moment" means the call keeps running from there until it is paused,
+  // which is how someone checks whether a name was said right.
+  const wordStartMs = data?.referenceWordStartMs ?? []
+  const playFromWord = React.useCallback(
+    (position: number) => {
+      const startMs = wordStartMs[position]
+      if (startMs === undefined) return
+      setPlayingIndex(null)
+      setCaretIndex(position)
+      loopFromRef.current = null
+      playFrom(startMs / 1000 - CARET_LEAD_IN_SECONDS, null, () => setCaretIndex(null))
+    },
+    [wordStartMs, playFrom],
   )
 
   React.useEffect(() => {
@@ -158,12 +252,22 @@ export function DisagreementSpans({
 
   const onTimeUpdate = () => {
     const audio = audioRef.current
-    if (!audio || stopAtRef.current === null) return
-    if (audio.currentTime >= stopAtRef.current) {
-      audio.pause()
-      stopAtRef.current = null
-      setPlayingIndex(null)
+    if (!audio) return
+    // T-138: the decision itself lives in lib/span-playback.ts, under test.
+    const action = spanPlaybackAction({
+      currentTime: audio.currentTime,
+      stopAt: stopAtRef.current,
+      loop,
+      loopFrom: loopFromRef.current,
+    })
+    if (action === "continue") return
+    if (action === "restart") {
+      audio.currentTime = loopFromRef.current!
+      return
     }
+    audio.pause()
+    stopAtRef.current = null
+    setPlayingIndex(null)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -178,6 +282,13 @@ export function DisagreementSpans({
     } else if (key === " " || key === "Enter") {
       e.preventDefault()
       play(activeIndex)
+    } else if (key === "l" || key === "L") {
+      // T-138: the loop toggle, without leaving the keyboard.
+      e.preventDefault()
+      setLoop((on) => !on)
+    } else if (key === "Escape") {
+      e.preventDefault()
+      audioRef.current?.pause()
     }
   }
 
@@ -213,7 +324,7 @@ export function DisagreementSpans({
       onKeyDown={onKeyDown}
       onClick={() => containerRef.current?.focus()}
       className="space-y-2 rounded-md outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      aria-label="Disagreement spans -- J/K to move, Space to play"
+      aria-label="Disagreement spans -- J/K to move, Space to play, L to loop, Esc to stop"
     >
       <audio
         ref={audioRef}
@@ -221,8 +332,14 @@ export function DisagreementSpans({
         src={`${apiBase()}/api/benchmark/calls/${callId}/audio`}
         onLoadedMetadata={(e) => { e.currentTarget.playbackRate = playbackRate }}
         onTimeUpdate={onTimeUpdate}
-        onEnded={() => setPlayingIndex(null)}
-        onPause={() => setPlayingIndex(null)}
+        onEnded={() => {
+          setPlayingIndex(null)
+          setCaretIndex(null)
+        }}
+        onPause={() => {
+          setPlayingIndex(null)
+          setCaretIndex(null)
+        }}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs">
@@ -236,8 +353,24 @@ export function DisagreementSpans({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={loop ? "default" : "outline"}
+            aria-pressed={loop}
+            data-testid="loop-span"
+            onClick={(e) => {
+              e.stopPropagation()
+              setLoop((on) => !on)
+            }}
+            title="Repeat the span you play until you stop it (Esc stops, L toggles)"
+            className="h-7 gap-1 px-2 text-[11px]"
+          >
+            <Repeat className="h-3 w-3" />
+            Loop
+          </Button>
           <PlaybackSpeed value={playbackRate} onChange={applyRate} />
-          <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play</span>
+          <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play · L loop · Esc stop · click a word to play from it</span>
         </div>
       </div>
 
@@ -246,15 +379,18 @@ export function DisagreementSpans({
           <p className="text-[10px] text-muted-foreground">
             The call as {data.referenceProviderId ? nameOf(data.referenceProviderId) : "the reference"} heard it, normalized
             (lowercase, digits, no punctuation). Highlighted stretches are where providers disagree -- click one to hear
-            it and see every reading below.
+            it and see every reading below. Click any other word to play the call from there.
           </p>
           <DisagreementReading
             referenceWords={data.referenceWords}
+            wordStartMs={data.referenceWordStartMs}
             spans={spans}
             activeIndex={activeIndex}
             playingIndex={playingIndex}
+            caretIndex={caretIndex}
             nameOf={nameOf}
             onPlay={play}
+            onPlayFromWord={playFromWord}
           />
         </div>
       )}

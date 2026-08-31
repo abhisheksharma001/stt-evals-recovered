@@ -147,6 +147,24 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 14: spans endpoint was 500ing; play-from-caret; span
+  loop; route tests; retry figure explained.** `GET /benchmark/disagreement-spans`
+  had answered **500 for every call since batch 4** (the hand-written response
+  mapping lost `majorityText`, which T-47 made required) — the Corpus "hear the
+  disagreements" panel was dead and nothing was watching (T-136). Fixed, and the
+  three newest endpoints (spans, run archive, cache-audio) now have route tests
+  in the integration suite, 5 → 10 (T-139). **Rule this leaves: a
+  `res.json(Schema.parse({…}))` mapping is only checked at runtime — add a route
+  test whenever you hand-build a response.** The reading is clickable now:
+  `referenceWordStartMs` gives every reference word its exact start, so clicking
+  any word plays the call from there (T-137), and a disputed span can be put on
+  repeat (Loop, `L` / `Esc`; boundary logic in
+  `artifacts/stt-benchmark/src/lib/span-playback.ts`, T-138). Overview's
+  "transcripts a retry could fix" now says what it is made of — **all 15 are
+  Cartesia `provider_timeout` cells from 2026-08-27**, and the hover warns a
+  retry costs provider money (`artifacts/stt-benchmark/src/lib/retry-figure.ts`,
+  T-140).
+
 - **2026-08-31, batch 13: attempt outcomes; refused-set identity; mining tool;
   run archive; playback speed.** `benchmark_calls` carries the last audio-cache
   ATTEMPT outcome (`lib/audio-attempt.ts`; pure classifier split db-free) —

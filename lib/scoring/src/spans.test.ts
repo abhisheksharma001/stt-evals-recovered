@@ -128,6 +128,28 @@ describe("buildDisagreementSpans", () => {
     }
   });
 
+  // T-137 (play from caret): every reference word carries its own start, so
+  // a UI can seek to any word, not only to a span.
+  it("returns one start per reference word, in order, milliseconds", () => {
+    const result = buildDisagreementSpans([
+      { providerId: "a", timedWords: timed("the number is three six six eight thanks", 10) },
+      { providerId: "b", transcript: "the number is thirty six sixty eight thanks" },
+    ]);
+    expect(result.referenceWordStartMs).toHaveLength(result.referenceWords.length);
+    expect(result.referenceWordStartMs.slice(0, 4)).toEqual([10000, 10500, 11000, 11500]);
+    // The first span starts at its own first word's start -- one clock.
+    expect(result.spans[0]!.startMs).toBe(result.referenceWordStartMs[result.spans[0]!.referencePositions[0]]);
+  });
+
+  it("has no word starts when there is no reference at all", () => {
+    const result = buildDisagreementSpans([
+      { providerId: "a", transcript: "no timings here" },
+      { providerId: "b", transcript: "none here either" },
+    ]);
+    expect(result.unavailableReason).toBe("no_word_timings");
+    expect(result.referenceWordStartMs).toEqual([]);
+  });
+
   it("prefers the longest timed candidate as the reference", () => {
     const result = buildDisagreementSpans([
       { providerId: "short", timedWords: timed("a b c") },

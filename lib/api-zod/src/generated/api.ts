@@ -44,6 +44,12 @@ export const GetBenchmarkDashboardResponse = zod.object({
   "callsAwaitingReview": zod.number(),
   "hardCaseCalls": zod.number(),
   "retryableFailedCells": zod.number(),
+  "retryableFailedCellGroups": zod.array(zod.object({
+  "providerId": zod.string(),
+  "providerName": zod.string(),
+  "reason": zod.string(),
+  "cells": zod.number()
+})),
   "audioUnsavedCalls": zod.number()
 }),
   "thisMonth": zod.object({
@@ -604,6 +610,7 @@ export const ListDisagreementSpansResponse = zod.object({
   "runId": zod.string().nullable(),
   "referenceProviderId": zod.string().nullable(),
   "referenceWords": zod.array(zod.string()),
+  "referenceWordStartMs": zod.array(zod.number()),
   "unavailableReason": zod.union([zod.enum(['no_run', 'no_word_timings', 'fewer_than_two_candidates']),zod.null()]),
   "spans": zod.array(zod.object({
   "startMs": zod.number(),

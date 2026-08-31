@@ -10,6 +10,7 @@ import {
   benchmarkBulksTable,
   benchmarkCallsTable,
   benchmarkProviderCallResultsTable,
+  benchmarkProvidersTable,
   benchmarkRunsTable,
   benchmarkScoresTable,
   db,
@@ -69,10 +70,25 @@ export async function runningBulk(): Promise<{ id: string; name: string } | null
   return row ?? null;
 }
 
+/** T-140: one line of the retryable-cells figure, so the number can say what
+ *  it is made of. `reason` is the retryable failure class, or the literal
+ *  "skipped_pending_review" for a cell that never failed at all (it was held
+ *  back by review). Nothing else can appear: an unclassified or permanent
+ *  failure is not counted as retryable in the first place. */
+export type RetryableCellGroup = {
+  providerId: string;
+  providerName: string;
+  reason: string;
+  cells: number;
+};
+
 export type NeedsHuman = {
   callsAwaitingReview: number;
   hardCaseCalls: number;
   retryableFailedCells: number;
+  /** The same cells as `retryableFailedCells`, grouped by provider + reason,
+   *  biggest group first. Empty when the figure is 0. */
+  retryableFailedCellGroups: RetryableCellGroup[];
   audioUnsavedCalls: number;
 };
 
@@ -117,6 +133,7 @@ export async function needsHuman(): Promise<NeedsHuman> {
     .from(benchmarkBulksTable)
     .where(inArray(benchmarkBulksTable.status, ["partial", "failed"]));
   let retryableFailedCells = 0;
+  let retryableFailedCellGroups: RetryableCellGroup[] = [];
   if (stoppedBulks.length > 0) {
     const runs = await db
       .select({ id: benchmarkRunsTable.id, status: benchmarkRunsTable.status })
@@ -128,6 +145,7 @@ export async function needsHuman(): Promise<NeedsHuman> {
         .select({
           status: benchmarkProviderCallResultsTable.status,
           failureClass: benchmarkProviderCallResultsTable.failureClass,
+          providerId: benchmarkProviderCallResultsTable.providerId,
         })
         .from(benchmarkProviderCallResultsTable)
         .where(
@@ -136,15 +154,54 @@ export async function needsHuman(): Promise<NeedsHuman> {
             inArray(benchmarkProviderCallResultsTable.status, ["failed", "skipped_pending_review"]),
           ),
         );
-      retryableFailedCells = rows.filter(
+      const retryable = rows.filter(
         (row) =>
           row.status === "skipped_pending_review" ||
           (isFailureClass(row.failureClass) && isRetryableFailureClass(row.failureClass)),
-      ).length;
+      );
+      retryableFailedCells = retryable.length;
+
+      // T-140: "15 transcripts a retry could fix" is a number nobody can act
+      // on -- it says nothing about which provider, what went wrong, or that
+      // clicking retry spends real provider money. Group it here, from the
+      // same rows the count is made of, so the two can never disagree.
+      if (retryable.length > 0) {
+        const providers = await db
+          .select({ id: benchmarkProvidersTable.id, name: benchmarkProvidersTable.name })
+          .from(benchmarkProvidersTable);
+        const nameById = new Map(providers.map((p) => [p.id, p.name]));
+        const byKey = new Map<string, RetryableCellGroup>();
+        for (const row of retryable) {
+          const reason = row.status === "skipped_pending_review" ? "skipped_pending_review" : row.failureClass!;
+          const key = `${row.providerId}\u0000${reason}`;
+          const existing = byKey.get(key);
+          if (existing) {
+            existing.cells += 1;
+          } else {
+            byKey.set(key, {
+              providerId: row.providerId,
+              // A provider row deleted from Setup leaves results behind; the
+              // id is still the honest name for it, never a blank.
+              providerName: nameById.get(row.providerId) ?? row.providerId,
+              reason,
+              cells: 1,
+            });
+          }
+        }
+        retryableFailedCellGroups = [...byKey.values()].sort(
+          (a, b) => b.cells - a.cells || a.providerName.localeCompare(b.providerName),
+        );
+      }
     }
   }
 
-  return { callsAwaitingReview, hardCaseCalls, retryableFailedCells, audioUnsavedCalls };
+  return {
+    callsAwaitingReview,
+    hardCaseCalls,
+    retryableFailedCells,
+    retryableFailedCellGroups,
+    audioUnsavedCalls,
+  };
 }
 
 export type MonthSpend = {

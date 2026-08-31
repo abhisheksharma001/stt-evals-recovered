@@ -51,7 +51,15 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
 
   if (!runId) {
     res.json(
-      ListDisagreementSpansResponse.parse({ callId, runId: null, referenceProviderId: null, referenceWords: [], unavailableReason: "no_run", spans: [] }),
+      ListDisagreementSpansResponse.parse({
+        callId,
+        runId: null,
+        referenceProviderId: null,
+        referenceWords: [],
+        referenceWordStartMs: [],
+        unavailableReason: "no_run",
+        spans: [],
+      }),
     );
     return;
   }
@@ -63,10 +71,17 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
       runId,
       referenceProviderId: built.referenceProviderId,
       referenceWords: built.referenceWords,
+      referenceWordStartMs: built.referenceWordStartMs,
       unavailableReason: built.unavailableReason,
+      // T-136: every field the schema requires, listed once. This mapping
+      // dropped `majorityText` between T-47 (which made it required) and the
+      // T-86 route rewrite, so the response failed its own zod parse and the
+      // endpoint answered 500 for every call -- the whole "hear where they
+      // disagree" panel was dead on Corpus. A route test now covers it.
       spans: built.spans.map((s) => ({
         startMs: s.startMs,
         endMs: s.endMs,
+        majorityText: s.majorityText,
         contextBefore: s.contextBefore,
         contextAfter: s.contextAfter,
         referencePositions: s.referencePositions,
