@@ -1,3 +1,52 @@
+## Found 2026-08-31 (batch 17): the response edge, made compile-checked
+
+Batch 14 wrote it down and left it open: "a hand-written response mapping is
+untyped in the one direction that matters ... the rest are still exposed."
+This batch closed it. All 58 success-response sites now go through
+`respondJson(res, schema, value, status?)`, which types the payload as the
+schema's own input type -- so the T-136 class of bug (a required field
+missing from a hand-built mapping, discovered as a production 500 a day
+later) is a `tsc` error now. Proved by re-creating the exact T-136 omission:
+deleting `majorityText` fails typecheck with "Property 'majorityText' is
+missing ... but required", and `respond.test.ts` holds that omission behind
+`@ts-expect-error` so the guarantee weakening is itself a build failure.
+`scripts/check-response-edge.mjs` (CI) keeps future handlers on the helper.
+
+What the compiler surfaced once it could see the payloads -- none of it
+changing a byte on the wire:
+
+- **Four hand-written mirrors of the contract** were living in `lib/`:
+  the CallComparison family (call-comparison.ts), OverviewBulkRef and
+  MonthSpend (overview.ts), ClientVolume (volume.ts). Each was one schema
+  edit away from being T-136. All four are projections of the generated
+  schema now (`ZodInput<typeof GetCallComparisonResponse>` and friends);
+  the only drift that had actually accumulated was `judge.createdAt`
+  (string vs Date). **Rule: a lib type that describes a response is derived
+  from the contract, never restated.** scoring's TrendBulk is the deliberate
+  exception -- that package is shared with the UI and takes no api-zod
+  dependency, so the trend route rehydrates its `at` at the boundary.
+- **Dates travel as Date.** The generated schemas are `zod.coerce.date()`,
+  and `res.json` writes a Date as exactly the ISO string `toISOString`
+  produced -- so 13 hand-rolled `?.toISOString() ?? null` dances are gone.
+  Two rehydration points remain where jsonb stored the ISO string (run
+  manifests, bulk criteria), each commented.
+- **zod 3 types a coerce schema's input as its output.** `coerce.date()`
+  accepts an ISO string at runtime but claims to want `Date` -- the one
+  place the compiler and the runtime disagree, and why the jsonb criteria
+  carry a commented cast instead of a conversion.
+- **Rankings' `runId` column is nullable; the data never is.** Verified
+  live before casting: 0 of 378 snapshot rows null, and the all-time branch
+  inner-joins runs on that id. The cast carries the provenance; a null
+  would still be refused loudly by the parse.
+- The analyze-failure response now answers with the values the handler just
+  wrote (non-null by construction) instead of reading back the nullable
+  columns it wrote them to.
+
+**Lesson, next to batch 16's:** `res.json(Schema.parse(value))` looks
+defended and is not -- parse takes `unknown`, so the check runs a day too
+late. The compile-time half costs one helper and a mechanical sweep; the
+schema was the source of truth all along, the code just never asked it.
+
 ## Found 2026-08-31 (batch 16): the same defect class, on the routes the fix could not reach
 
 Batch 15 swept the read endpoints and fixed malformed ids at the spec edge.

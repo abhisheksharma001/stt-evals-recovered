@@ -4,6 +4,7 @@
 // about a count. Nothing is estimated and nothing null is rendered as zero:
 // where a figure has no basis (no finished bulk yet, no priced cell yet) the
 // field says so with null / a separate "unpriced" count.
+import { GetBenchmarkDashboardResponse, type ZodInput } from "@workspace/api-zod";
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   benchmarkAgentScansTable,
@@ -28,12 +29,9 @@ const FINISHED_BULK_STATUSES = ["complete", "partial"] as const;
  *  call moved by hand stays visible here rather than vanishing. */
 const AWAITING_REVIEW_STATUSES = ["needs_review", "ready_for_gold", "gold_in_review"] as const;
 
-export type OverviewBulkRef = {
-  id: string;
-  name: string;
-  status: string;
-  completedAt: string | null;
-};
+// T-154: a projection of the contract, not a hand-written mirror of it
+// (same rule as call-comparison.ts's CallComparison family).
+export type OverviewBulkRef = NonNullable<ZodInput<typeof GetBenchmarkDashboardResponse>["latestFinishedBulk"]>;
 
 export async function latestFinishedBulk(): Promise<OverviewBulkRef | null> {
   const [row] = await db
@@ -55,8 +53,9 @@ export async function latestFinishedBulk(): Promise<OverviewBulkRef | null> {
   return {
     id: row.id,
     name: row.name,
-    status: row.status,
-    completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    // Unconstrained text column; value held by the runtime parse (T-153 rule).
+    status: row.status as OverviewBulkRef["status"],
+    completedAt: row.completedAt,
   };
 }
 
@@ -204,18 +203,10 @@ export async function needsHuman(): Promise<NeedsHuman> {
   };
 }
 
-export type MonthSpend = {
-  monthStart: string;
-  /** Sum of recorded per-cell STT cost this month. Cells with no recorded
-   *  cost are counted separately, never folded in as zero. */
-  sttMicrocents: number;
-  sttCellsPriced: number;
-  sttCellsUnpriced: number;
-  /** OpenAI judge spend this month: agent scans. Same unpriced rule. */
-  agentMicrocents: number;
-  agentJudgementsPriced: number;
-  agentJudgementsUnpriced: number;
-};
+// T-154: same projection rule as OverviewBulkRef above. Field semantics the
+// shape cannot say: cells/judgements with no recorded cost are counted in
+// their own *Unpriced figures, never folded into the sums as zero.
+export type MonthSpend = ZodInput<typeof GetBenchmarkDashboardResponse>["thisMonth"];
 
 export function monthStartUtc(now = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -255,7 +246,7 @@ export async function monthSpend(now = new Date()): Promise<MonthSpend> {
   ]);
 
   return {
-    monthStart: start.toISOString(),
+    monthStart: start,
     sttMicrocents: Number(stt?.micro ?? 0),
     sttCellsPriced: stt?.priced ?? 0,
     sttCellsUnpriced: stt?.unpriced ?? 0,

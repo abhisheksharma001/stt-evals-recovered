@@ -48,10 +48,8 @@ import {
   RetryBulkFailedParams,
   RetryBulkFailedResponse,
 } from "@workspace/api-zod";
-import {
-  isFailureClass,
-  isRetryableFailureClass,
-} from "@workspace/stt-providers";
+import type { ZodInput } from "@workspace/api-zod";
+import { isFailureClass, isRetryableFailureClass, type FailureClass } from "@workspace/stt-providers";
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { logger } from "../lib/logger";
 import { bulkProviderCorrelation } from "../lib/provider-correlation";
@@ -61,6 +59,7 @@ import { bulkVerdicts } from "../lib/verdict";
 import { renderVerdictArtefact } from "../lib/verdict-artefact";
 import { buildCommitSha } from "../lib/build-info";
 import { respondInvalid } from "../lib/validation-error";
+import { respondJson } from "../lib/respond";
 import { SCORING_VERSION } from "@workspace/scoring";
 import {
   BulkDurationBandError,
@@ -107,12 +106,22 @@ function criteriaFromBody(criteria: {
   };
 }
 
-function serializeBulk(bulk: BenchmarkBulkRow) {
+// T-153: same rule as benchmark.ts's serializers -- the return type is the
+// contract's own input shape, so a dropped required field fails tsc at the
+// source. Dates travel as Date (zod.coerce.date), res.json writes the same
+// ISO string toISOString produced.
+function serializeBulk(bulk: BenchmarkBulkRow): ZodInput<typeof CancelBulkResponse> {
   return {
     id: bulk.id,
     name: bulk.name,
-    status: bulk.status,
-    selectionCriteria: bulk.selectionCriteria,
+    // Unconstrained text column; the value is held by the runtime parse, the
+    // cast only carries the contract's union (same rule as benchmark.ts).
+    status: bulk.status as ZodInput<typeof CancelBulkResponse>["status"],
+    // The jsonb column stores criteria dates as the ISO strings they were
+    // written as; zod.coerce.date() accepts them at runtime, but zod 3 types
+    // a coerce schema's input as its output (Date), so the honest string is
+    // carried past the compiler here and re-validated by the parse.
+    selectionCriteria: bulk.selectionCriteria as ZodInput<typeof CancelBulkResponse>["selectionCriteria"],
     providerIds: bulk.providerIds,
     shardSize: bulk.shardSize,
     minDurationSeconds: bulk.minDurationSeconds,
@@ -122,24 +131,25 @@ function serializeBulk(bulk: BenchmarkBulkRow) {
     estimatedAgentCostCents: bulk.estimatedAgentCostCents ?? null,
     launchedByLabel: bulk.launchedByLabel ?? null,
     notes: bulk.notes ?? null,
-    createdAt: bulk.createdAt.toISOString(),
-    updatedAt: bulk.updatedAt.toISOString(),
-    completedAt: bulk.completedAt?.toISOString() ?? null,
+    createdAt: bulk.createdAt,
+    updatedAt: bulk.updatedAt,
+    completedAt: bulk.completedAt,
   };
 }
 
-function serializeTemplate(template: BulkTemplateRow) {
+function serializeTemplate(template: BulkTemplateRow): ZodInput<typeof CreateBulkTemplateResponse> {
   return {
     id: template.id,
     name: template.name,
-    selectionCriteria: template.selectionCriteria,
+    // Same jsonb-dates rule as serializeBulk above.
+    selectionCriteria: template.selectionCriteria as ZodInput<typeof CreateBulkTemplateResponse>["selectionCriteria"],
     providerIds: template.providerIds,
     shardSize: template.shardSize,
     minDurationSeconds: template.minDurationSeconds,
     maxDurationSeconds: template.maxDurationSeconds ?? null,
     createdByLabel: template.createdByLabel ?? null,
-    createdAt: template.createdAt.toISOString(),
-    updatedAt: template.updatedAt.toISOString(),
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
   };
 }
 
@@ -168,7 +178,7 @@ router.get("/benchmark/bulks", async (req, res): Promise<void> => {
         .select()
         .from(benchmarkBulksTable)
         .orderBy(desc(benchmarkBulksTable.createdAt));
-  res.json(ListBulksResponse.parse(bulks.map(serializeBulk)));
+  respondJson(res, ListBulksResponse, bulks.map(serializeBulk));
 });
 
 router.post("/benchmark/bulks", async (req, res): Promise<void> => {
@@ -188,7 +198,7 @@ router.post("/benchmark/bulks", async (req, res): Promise<void> => {
       confirm: parsed.data.confirm,
       actorLabel: actorFromRequest(req),
     });
-    res.status(201).json(CreateBulkResponse.parse(serializeBulk(bulk)));
+    respondJson(res, CreateBulkResponse, serializeBulk(bulk), 201);
   } catch (err) {
     if (err instanceof BulkSelectionEmptyError || err instanceof BulkDurationBandError) {
       res.status(400).json({ error: err.message });
@@ -216,7 +226,7 @@ router.post("/benchmark/bulks/preview", async (req, res): Promise<void> => {
       minDurationSeconds: parsed.data.minDurationSeconds,
       maxDurationSeconds: parsed.data.maxDurationSeconds,
     });
-    res.json(PreviewBulkSelectionResponse.parse(preview));
+    respondJson(res, PreviewBulkSelectionResponse, preview);
   } catch (err) {
     if (err instanceof BulkDurationBandError) {
       res.status(400).json({ error: err.message });
@@ -395,7 +405,7 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
   // any such value into the unclassified (null) bucket rather than letting
   // it fail GetBulkResponse.parse() and take the whole detail view down --
   // an unrecognised class is, by definition, unclassified.
-  const cellsByClass = new Map<string | null, number>();
+  const cellsByClass = new Map<FailureClass | null, number>();
   for (const row of failureGroupRows) {
     const key = isFailureClass(row.failureClass) ? row.failureClass : null;
     if (!isFailureClass(row.failureClass) && row.failureClass !== null) {
@@ -430,8 +440,10 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
       return a.failureClass.localeCompare(b.failureClass);
     });
 
-  res.json(
-    GetBulkResponse.parse({
+  respondJson(
+    res,
+    GetBulkResponse,
+    {
       ...serializeBulk(bulk),
       actualCost: {
         sttCostMicrocents,
@@ -464,13 +476,13 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
       runs: runs.map((run) => ({
         id: run.id,
         shardIndex: run.shardIndex ?? 0,
-        status: run.status,
+        // Unconstrained text column; value held by the runtime parse (T-153 rule).
+        status: run.status as ZodInput<typeof GetBulkResponse>["runs"][number]["status"],
         callCount: run.callCount,
-        createdAt: run.createdAt.toISOString(),
-        completedAt: run.completedAt?.toISOString() ?? null,
+        createdAt: run.createdAt,
+        completedAt: run.completedAt,
       })),
-    }),
-  );
+    });
 });
 
 router.post("/benchmark/bulks/:bulkId/launch", async (req, res): Promise<void> => {
@@ -491,9 +503,7 @@ router.post("/benchmark/bulks/:bulkId/launch", async (req, res): Promise<void> =
   const actorLabel = actorFromRequest(req);
   await launchBulk(bulk.id, actorLabel);
   const refreshed = await loadBulk(bulk.id);
-  res
-    .status(202)
-    .json(LaunchBulkResponse.parse(serializeBulk(refreshed ?? bulk)));
+  respondJson(res, LaunchBulkResponse, serializeBulk(refreshed ?? bulk), 202);
 });
 
 router.post("/benchmark/bulks/:bulkId/retry-failed", async (req, res): Promise<void> => {
@@ -515,9 +525,7 @@ router.post("/benchmark/bulks/:bulkId/retry-failed", async (req, res): Promise<v
   }
   await retryBulkFailedCells(bulk.id, actorFromRequest(req));
   const refreshed = await loadBulk(bulk.id);
-  res
-    .status(202)
-    .json(RetryBulkFailedResponse.parse(serializeBulk(refreshed ?? bulk)));
+  respondJson(res, RetryBulkFailedResponse, serializeBulk(refreshed ?? bulk), 202);
 });
 
 router.post("/benchmark/bulks/:bulkId/cancel", async (req, res): Promise<void> => {
@@ -537,7 +545,7 @@ router.post("/benchmark/bulks/:bulkId/cancel", async (req, res): Promise<void> =
   }
   await cancelBulk(bulk.id, actorFromRequest(req));
   const refreshed = await loadBulk(bulk.id);
-  res.json(CancelBulkResponse.parse(serializeBulk(refreshed ?? bulk)));
+  respondJson(res, CancelBulkResponse, serializeBulk(refreshed ?? bulk));
 });
 
 // FR-BLK-8: the bulk manifest is the composition of its shard runs' frozen
@@ -557,14 +565,21 @@ router.get("/benchmark/bulks/:bulkId/provider-correlation", async (req, res): Pr
     res.status(404).json({ error: "Bulk not found" });
     return;
   }
-  res.json(GetBulkProviderCorrelationResponse.parse(await bulkProviderCorrelation(bulk.id)));
+  respondJson(res, GetBulkProviderCorrelationResponse, await bulkProviderCorrelation(bulk.id));
 });
 
 // T-23: raw summed cells for the cross-bulk trend strip, over every
 // finished bulk. Pooling per client / assistant happens client-side with
 // @workspace/scoring's buildTrend so one read serves every scope.
 router.get("/benchmark/trend", async (_req, res): Promise<void> => {
-  res.json(GetBenchmarkTrendResponse.parse(await benchmarkTrend()));
+  const trend = await benchmarkTrend();
+  respondJson(res, GetBenchmarkTrendResponse, {
+    ...trend,
+    // scoring's TrendBulk keeps `at` as the ISO string it pools by (that
+    // package is shared with the UI and has no api-zod dependency); the
+    // contract's coerce.date wants the Date back at this edge.
+    bulks: trend.bulks.map((b) => ({ ...b, at: new Date(b.at) })),
+  });
 });
 
 // T-24: the client's real call volume from Vapi (trailing 14 days -- the plan's retention -- every
@@ -582,7 +597,7 @@ router.get("/benchmark/volume", async (req, res): Promise<void> => {
       res.status(404).json({ error: `No Vapi account configured with label "${query.data.accountLabel}"` });
       return;
     }
-    res.json(GetClientVolumeResponse.parse(volume));
+    respondJson(res, GetClientVolumeResponse, volume);
   } catch (err) {
     logger.warn({ err, accountLabel: query.data.accountLabel }, "Could not fetch client volume from Vapi");
     res.status(502).json({ error: "Vapi did not return this account's calls" });
@@ -605,7 +620,7 @@ router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> 
     res.status(404).json({ error: "Bulk not found" });
     return;
   }
-  res.json(GetBulkVerdictsResponse.parse(await bulkVerdicts(bulk.id)));
+  respondJson(res, GetBulkVerdictsResponse, await bulkVerdicts(bulk.id));
 });
 
 // T-32 (PRD-v4 D.6): the shareable, dated verdict artefact. One
@@ -660,32 +675,41 @@ router.get("/benchmark/bulks/:bulkId/manifest", async (req, res): Promise<void> 
     .where(eq(benchmarkRunsTable.bulkId, bulk.id))
     .orderBy(asc(benchmarkRunsTable.shardIndex));
 
-  res.json(
-    GetBulkManifestResponse.parse({
+  respondJson(
+    res,
+    GetBulkManifestResponse,
+    {
       manifestVersion: 1,
       bulkId: bulk.id,
       name: bulk.name,
-      status: bulk.status,
-      selectionCriteria: bulk.selectionCriteria,
+      // Unconstrained text column / jsonb-stored criteria dates -- same two
+      // boundary rules as serializeBulk above.
+      status: bulk.status as ZodInput<typeof GetBulkManifestResponse>["status"],
+      selectionCriteria: bulk.selectionCriteria as ZodInput<typeof GetBulkManifestResponse>["selectionCriteria"],
       providerIds: bulk.providerIds,
       shardSize: bulk.shardSize,
-      createdAt: bulk.createdAt.toISOString(),
+      createdAt: bulk.createdAt,
       runs: runs.map((run: BenchmarkRunRow) => ({
         // Runs created before manifests existed keep a truthful stub rather
         // than a fabricated one.
-        ...(run.manifest ?? {
-          manifestVersion: 1,
-          scoringVersion: "unknown (predates manifests)",
-          createdAt: run.createdAt.toISOString(),
-          calls: [],
-          providers: [],
-        }),
+        // The stored manifest is jsonb, so its createdAt survives as the ISO
+        // string it was written as -- rehydrated for the contract's
+        // coerce.date (same rule as the run-manifest route).
+        ...(run.manifest
+          ? { ...run.manifest, createdAt: new Date(run.manifest.createdAt) }
+          : {
+              manifestVersion: 1,
+              scoringVersion: "unknown (predates manifests)",
+              createdAt: run.createdAt,
+              calls: [],
+              providers: [],
+            }),
         runId: run.id,
         shardIndex: run.shardIndex ?? null,
-        runStatus: run.status,
+        // Unconstrained text column; value held by the runtime parse.
+        runStatus: run.status as ZodInput<typeof GetBulkManifestResponse>["runs"][number]["runStatus"],
       })),
-    }),
-  );
+    });
 });
 
 // --- FR-BLK-9: reusable, named bulk templates -------------------------------
@@ -695,7 +719,7 @@ router.get("/benchmark/bulk-templates", async (_req, res): Promise<void> => {
     .select()
     .from(bulkTemplatesTable)
     .orderBy(asc(bulkTemplatesTable.name));
-  res.json(ListBulkTemplatesResponse.parse(templates.map(serializeTemplate)));
+  respondJson(res, ListBulkTemplatesResponse, templates.map(serializeTemplate));
 });
 
 router.post("/benchmark/bulk-templates", async (req, res): Promise<void> => {
@@ -750,9 +774,7 @@ router.post("/benchmark/bulk-templates", async (req, res): Promise<void> => {
     action: "create",
     afterState: serializeTemplate(template),
   });
-  res
-    .status(201)
-    .json(CreateBulkTemplateResponse.parse(serializeTemplate(template)));
+  respondJson(res, CreateBulkTemplateResponse, serializeTemplate(template), 201);
 });
 
 // T-50: a wrong template (bad band, wrong providers) used to be permanent
@@ -840,9 +862,7 @@ router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Pr
       action: "launch",
       afterState: { bulkId: result.bulk.id, bulkName: result.bulk.name },
     });
-    res
-      .status(201)
-      .json(LaunchBulkTemplateResponse.parse(serializeBulk(result.bulk)));
+    respondJson(res, LaunchBulkTemplateResponse, serializeBulk(result.bulk), 201);
   } catch (err) {
     if (err instanceof BulkSelectionEmptyError || err instanceof BulkDurationBandError) {
       res.status(400).json({ error: err.message });

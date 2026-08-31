@@ -67,6 +67,12 @@ jobs:
       - name: Check API routes match the spec
         run: node scripts/check-api-routes.mjs
 
+      # T-156: every success payload goes through respondJson, the only form
+      # the compiler can hold against the contract -- res.json(Schema.parse(v))
+      # typechecks v against nothing, which is how T-136 shipped a 500.
+      - name: Check success responses go through respondJson
+        run: node scripts/check-response-edge.mjs
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)

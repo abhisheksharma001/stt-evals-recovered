@@ -151,6 +151,23 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 17: the response edge is compile-checked.** All 58
+  success-response sites go through `respondJson(res, schema, value, status?)`
+  (`artifacts/api-server/src/lib/respond.ts`), which types the payload as the
+  schema's own input (`ZodInput`, re-exported from api-zod) -- the T-136 bug
+  class (required field missing from a hand-built mapping = production 500) is
+  a tsc error now, held by an `@ts-expect-error` test on that exact omission.
+  Four hand-written contract mirrors in `lib/` (CallComparison family,
+  OverviewBulkRef, MonthSpend, ClientVolume) are projections of the generated
+  schema; **a lib type that describes a response is derived from the contract,
+  never restated** (scoring's TrendBulk stays string-dated on purpose -- UI
+  package, no api-zod dep; the route rehydrates at the edge). Dates travel as
+  `Date` (schemas are `zod.coerce.date()`; wire bytes unchanged). Enum-shaped
+  text columns carry a commented boundary cast; the runtime parse still holds
+  values. `scripts/check-response-edge.mjs` (CI, `pnpm run
+  check:response-edge`) fails on any bypass -- proved by breaking all three
+  forms. Suites: api-server 71 unit + 20 integration.
+
 - **2026-08-31, batch 16: the routes the spec fix could not reach; spec/router
   drift is CI now; refusals speak English.** Sweeping the *write* routes the way
   batch 15 swept the read ones found five more live failures. Two handlers read

@@ -4,21 +4,13 @@
 // -- the corpus is a filtered sample and would understate volume.
 // Cached in memory per account for a short while: Results re-renders
 // often and Vapi paginates at 1,000 calls per request.
+import { GetClientVolumeResponse, type ZodInput } from "@workspace/api-zod";
 import { durationSecondsOf, fetchVapiCallPage, listVapiAccounts, type VapiCall } from "./vapi";
 
-export type ClientVolume = {
-  accountId: string;
-  accountLabel: string;
-  windowDays: number;
-  from: string;
-  to: string;
-  calls: number;
-  minutes: number;
-  /** True when the page cap was hit -- the window may be undercounted. */
-  truncated: boolean;
-  assistants: { assistantId: string | null; calls: number; minutes: number }[];
-  fetchedAt: string;
-};
+// T-155: a projection of the contract, not a hand-written mirror of it
+// (same rule as call-comparison.ts / overview.ts). `truncated` still means
+// the page cap was hit and the window may be undercounted.
+export type ClientVolume = ZodInput<typeof GetClientVolumeResponse>;
 
 /** Vapi's plan keeps 14 days of call history (verified live 2026-08-29:
  * a 30-day request came back HTTP 400 "Your subscription plan only covers
@@ -120,15 +112,15 @@ function refresh(accountId: string, accountLabel: string): Promise<ClientVolume>
       accountId,
       accountLabel,
       windowDays: VOLUME_WINDOW_DAYS,
-      from: from.toISOString(),
-      to: to.toISOString(),
+      from,
+      to,
       calls: calls.length,
       minutes: seconds / 60,
       truncated,
       assistants: [...byAssistant.entries()]
         .map(([assistantId, a]) => ({ assistantId, calls: a.calls, minutes: a.seconds / 60 }))
         .sort((a, b) => b.minutes - a.minutes),
-      fetchedAt: to.toISOString(),
+      fetchedAt: to,
     };
     cache.set(accountId, { at: Date.now(), value });
     return value;

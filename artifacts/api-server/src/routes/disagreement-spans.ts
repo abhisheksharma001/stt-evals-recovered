@@ -14,6 +14,7 @@ import { benchmarkCallsTable, benchmarkProviderCallResultsTable, benchmarkRunsTa
 import { ListDisagreementSpansQueryParams, ListDisagreementSpansResponse } from "@workspace/api-zod";
 import { buildSpansForCallRun } from "../lib/disagreement-spans";
 import { respondInvalid } from "../lib/validation-error";
+import { respondJson } from "../lib/respond";
 
 const router: IRouter = Router();
 
@@ -51,8 +52,7 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
   }
 
   if (!runId) {
-    res.json(
-      ListDisagreementSpansResponse.parse({
+    respondJson(res, ListDisagreementSpansResponse, {
         callId,
         runId: null,
         referenceProviderId: null,
@@ -60,14 +60,12 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
         referenceWordStartMs: [],
         unavailableReason: "no_run",
         spans: [],
-      }),
-    );
+      });
     return;
   }
 
   const built = await buildSpansForCallRun(callId, runId);
-  res.json(
-    ListDisagreementSpansResponse.parse({
+  respondJson(res, ListDisagreementSpansResponse, {
       callId,
       runId,
       referenceProviderId: built.referenceProviderId,
@@ -78,7 +76,9 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
       // dropped `majorityText` between T-47 (which made it required) and the
       // T-86 route rewrite, so the response failed its own zod parse and the
       // endpoint answered 500 for every call -- the whole "hear where they
-      // disagree" panel was dead on Corpus. A route test now covers it.
+      // disagree" panel was dead on Corpus. A route test covers it, and since
+      // T-152 respondJson types this payload, so the same omission is now a
+      // tsc error before it is anything else.
       spans: built.spans.map((s) => ({
         startMs: s.startMs,
         endMs: s.endMs,
@@ -88,8 +88,7 @@ router.get("/benchmark/disagreement-spans", async (req, res): Promise<void> => {
         referencePositions: s.referencePositions,
         readings: s.readings,
       })),
-    }),
-  );
+    });
 });
 
 export default router;

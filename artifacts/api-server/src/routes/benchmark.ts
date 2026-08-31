@@ -1,4 +1,12 @@
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+// T-153: each serializer declares the shape it produces as the contract's own
+// input type, so a required field cannot fall out of a serializer without
+// failing tsc -- the error lands at the source, not at 20 call sites. The
+// annotation names one operation's schema; the operations share the spec
+// component, so structural typing makes it hold for every call site. Dates
+// travel as Date here: the schemas are zod.coerce.date(), and res.json
+// writes a Date as the same ISO string toISOString produced.
+import type { ZodInput } from "@workspace/api-zod";
 import { Router, type IRouter, type Response } from "express";
 import {
   APP_SETTINGS_ID,
@@ -133,6 +141,7 @@ import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
 import { cachedVendorModels } from "../lib/model-list-cache";
 import { respondInvalid } from "../lib/validation-error";
+import { respondJson } from "../lib/respond";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -294,13 +303,15 @@ export async function syncProviderReadiness(): Promise<void> {
   }
 }
 
-function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect) {
+function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect): ZodInput<typeof CreateBenchmarkProviderResponse> {
   const adapter = getProviderAdapter(provider.id);
   return {
     id: provider.id,
     name: provider.name,
     model: provider.model,
-    status: provider.status,
+    // The db column is unconstrained text; the respondJson parse validates
+    // the value at the edge, the cast only carries the contract's union.
+    status: provider.status as ZodInput<typeof CreateBenchmarkProviderResponse>["status"],
     supportsStreaming: provider.supportsStreaming,
     supportsDiarization: provider.supportsDiarization,
     costPerMinute: provider.costPerMinute,
@@ -311,13 +322,15 @@ function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect
   };
 }
 
-function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
+function serializeCall(call: BenchmarkCallRow, audioCached?: boolean): ZodInput<typeof GetBenchmarkCallResponse> {
   return {
     id: call.id,
     label: call.label,
-    vertical: call.vertical,
+    // Same rule as serializeProvider's status: unconstrained text columns,
+    // values held by the runtime parse.
+    vertical: call.vertical as ZodInput<typeof GetBenchmarkCallResponse>["vertical"],
     durationSeconds: call.durationSeconds,
-    status: call.status,
+    status: call.status as ZodInput<typeof GetBenchmarkCallResponse>["status"],
     hardCases: call.hardCases,
     goldTranscript: call.goldTranscript,
     draftTranscript: call.draftTranscript,
@@ -325,14 +338,14 @@ function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
     entityReferences: call.entityReferences,
     audioObjectPath: call.audioObjectPath,
     deIdAttestedByLabel: call.deIdAttestedByLabel,
-    deIdAttestedAt: call.deIdAttestedAt?.toISOString() ?? null,
+    deIdAttestedAt: call.deIdAttestedAt,
     deIdSecondApproverLabel: call.deIdSecondApproverLabel,
-    deIdSecondApprovedAt: call.deIdSecondApprovedAt?.toISOString() ?? null,
+    deIdSecondApprovedAt: call.deIdSecondApprovedAt,
     sourceProvider: call.sourceProvider,
     sourceCallId: call.sourceCallId,
     sourceAccountLabel: call.sourceAccountLabel,
     sourceAssistantId: call.sourceAssistantId,
-    sourceStartedAt: call.sourceStartedAt?.toISOString() ?? null,
+    sourceStartedAt: call.sourceStartedAt,
     sourceTranscriberProvider: call.sourceTranscriberProvider,
     sourceTranscriberModel: call.sourceTranscriberModel,
     sourceEndedReason: call.sourceEndedReason,
@@ -344,24 +357,25 @@ function serializeCall(call: BenchmarkCallRow, audioCached?: boolean) {
     // permanent source refusal instead of offering to save the unsaveable.
     audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
     audioCacheLastError: call.audioCacheLastError ?? null,
-    audioCacheLastAttemptAt: call.audioCacheLastAttemptAt?.toISOString() ?? null,
-    createdAt: call.createdAt.toISOString(),
+    audioCacheLastAttemptAt: call.audioCacheLastAttemptAt,
+    createdAt: call.createdAt,
   };
 }
 
-function serializeRun(run: BenchmarkRunRow, bulkName: string | null = null) {
+function serializeRun(run: BenchmarkRunRow, bulkName: string | null = null): ZodInput<typeof CreateBenchmarkRunResponse> {
   return {
     id: run.id,
-    status: run.status,
+    // Same rule: unconstrained text column, value held by the runtime parse.
+    status: run.status as ZodInput<typeof CreateBenchmarkRunResponse>["status"],
     providerIds: run.providerIds,
     callCount: run.callCount,
-    createdAt: run.createdAt.toISOString(),
-    completedAt: run.completedAt?.toISOString() ?? null,
+    createdAt: run.createdAt,
+    completedAt: run.completedAt,
     notes: run.notes,
     bulkId: run.bulkId ?? null,
     bulkName,
     shardIndex: run.shardIndex ?? null,
-    archivedAt: run.archivedAt?.toISOString() ?? null,
+    archivedAt: run.archivedAt,
   };
 }
 
@@ -385,7 +399,8 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
     monthSpend(),
   ]);
 
-  const latestRunStatus = latestRuns[0]?.status ?? "blocked";
+  // Unconstrained text column; value held by the runtime parse (T-153 rule).
+  const latestRunStatus = (latestRuns[0]?.status ?? "blocked") as ZodInput<typeof GetBenchmarkDashboardResponse>["latestRunStatus"];
   // 2026-08-27, per Abhishek: gold-transcript stage retired, then the
   // de-identification gate itself retired too -- import lands a call
   // directly at ready_to_run (see PATCH /benchmark/calls above), so
@@ -416,7 +431,7 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
     thisMonth: month,
   };
 
-  res.json(GetBenchmarkDashboardResponse.parse(data));
+  respondJson(res, GetBenchmarkDashboardResponse, data);
 });
 
 router.get("/benchmark/calls", async (req, res): Promise<void> => {
@@ -434,7 +449,7 @@ router.get("/benchmark/calls", async (req, res): Promise<void> => {
   // are already on disk -- the Corpus retention chips read this instead of
   // guessing from age alone.
   const cachedIds = await listCachedCallIds();
-  res.json(ListBenchmarkCallsResponse.parse(calls.map((c) => serializeCall(c, cachedIds.has(c.id)))));
+  respondJson(res, ListBenchmarkCallsResponse, calls.map((c) => serializeCall(c, cachedIds.has(c.id))));
 });
 
 router.post("/benchmark/calls", async (req, res): Promise<void> => {
@@ -470,7 +485,7 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
     afterState: serializeCall(call),
   });
 
-  res.status(201).json(CreateBenchmarkCallResponse.parse(serializeCall(call)));
+  respondJson(res, CreateBenchmarkCallResponse, serializeCall(call), 201);
 });
 
 // T-126: save every uncached call's audio to the server's disk while Vapi
@@ -480,7 +495,7 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
 // attempted.
 router.post("/benchmark/calls/cache-audio", async (_req, res): Promise<void> => {
   const result = await rescueUncachedAudio();
-  res.json(CacheCorpusAudioResponse.parse(result));
+  respondJson(res, CacheCorpusAudioResponse, result);
 });
 
 // T-51: one call by id. The list route above is the corpus (121 calls today,
@@ -500,7 +515,7 @@ router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
     res.status(400).json({ error: "bulkId must be a uuid" });
     return;
   }
-  res.json(GetCallDisagreementResponse.parse(await callDisagreement(query.data.bulkId ?? null)));
+  respondJson(res, GetCallDisagreementResponse, await callDisagreement(query.data.bulkId ?? null));
 });
 
 // T-87: which words keep splitting the providers, per bulk / assistant.
@@ -524,7 +539,7 @@ router.get("/benchmark/words-to-watch", async (req, res): Promise<void> => {
       return;
     }
   }
-  res.json(GetWordsToWatchResponse.parse(await wordsToWatch(bulkId, assistantId?.trim() ? assistantId : null)));
+  respondJson(res, GetWordsToWatchResponse, await wordsToWatch(bulkId, assistantId?.trim() ? assistantId : null));
 });
 
 // T-112 / T-113: judge confidence + human hard-case flags per assistant.
@@ -548,7 +563,7 @@ router.get("/benchmark/assistant-signals", async (req, res): Promise<void> => {
       return;
     }
   }
-  res.json(GetAssistantSignalsResponse.parse(await assistantSignals(bulkId, assistantId?.trim() ? assistantId : null)));
+  respondJson(res, GetAssistantSignalsResponse, await assistantSignals(bulkId, assistantId?.trim() ? assistantId : null));
 });
 
 router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
@@ -566,7 +581,7 @@ router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  res.json(GetBenchmarkCallResponse.parse(serializeCall(call, await isAudioCached(call.id))));
+  respondJson(res, GetBenchmarkCallResponse, serializeCall(call, await isAudioCached(call.id)));
 });
 
 // T-72 (E.4): one call, every provider's output under the reference.
@@ -583,7 +598,7 @@ router.get("/benchmark/calls/:callId/comparison", async (req, res): Promise<void
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  res.json(GetCallComparisonResponse.parse(comparison));
+  respondJson(res, GetCallComparisonResponse, comparison);
 });
 
 router.get("/benchmark/bulks/:bulkId/calls/:callId/comparison", async (req, res): Promise<void> => {
@@ -597,7 +612,7 @@ router.get("/benchmark/bulks/:bulkId/calls/:callId/comparison", async (req, res)
     res.status(404).json({ error: "Call or bulk not found" });
     return;
   }
-  res.json(GetBulkCallComparisonResponse.parse(comparison));
+  respondJson(res, GetBulkCallComparisonResponse, comparison);
 });
 
 router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
@@ -648,7 +663,7 @@ router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
     afterState: serializeCall(call),
   });
 
-  res.json(UpdateBenchmarkCallResponse.parse(serializeCall(call)));
+  respondJson(res, UpdateBenchmarkCallResponse, serializeCall(call));
 });
 
 router.post("/benchmark/calls/:callId/attest-deid", async (req, res): Promise<void> => {
@@ -684,7 +699,7 @@ router.post("/benchmark/calls/:callId/attest-deid", async (req, res): Promise<vo
       action: "attest_deid_first",
       afterState: { deIdAttestedByLabel: approver },
     });
-    res.json(AttestBenchmarkCallDeidResponse.parse(serializeCall(call)));
+    respondJson(res, AttestBenchmarkCallDeidResponse, serializeCall(call));
     return;
   }
 
@@ -715,7 +730,7 @@ router.post("/benchmark/calls/:callId/attest-deid", async (req, res): Promise<vo
     action: "attest_deid_second",
     afterState: { deIdSecondApproverLabel: approver },
   });
-  res.json(AttestBenchmarkCallDeidResponse.parse(serializeCall(call)));
+  respondJson(res, AttestBenchmarkCallDeidResponse, serializeCall(call));
 });
 
 // Vapi's own recording URLs are short-lived signed R2/Supabase links -- the
@@ -868,7 +883,7 @@ function respondVapiError(res: Response, err: unknown): void {
 }
 
 router.get("/benchmark/vapi/accounts", async (_req, res): Promise<void> => {
-  res.json(ListVapiAccountsResponse.parse(listVapiAccounts()));
+  respondJson(res, ListVapiAccountsResponse, listVapiAccounts());
 });
 
 // 2026-08-26: bulk selection should pick real assistants directly instead
@@ -883,7 +898,7 @@ router.get("/benchmark/vapi/assistants", async (req, res): Promise<void> => {
   }
   try {
     const assistants = await fetchVapiAssistants(parsed.data.accountId);
-    res.json(ListVapiAssistantsResponse.parse(assistants));
+    respondJson(res, ListVapiAssistantsResponse, assistants);
   } catch (err) {
     respondVapiError(res, err);
   }
@@ -909,7 +924,7 @@ router.get("/benchmark/assistants/:assistantId/transcriber", async (req, res): P
       res.status(404).json({ error: `The calls for this assistant carry org label "${found.accountLabel ?? ""}", which matches no configured Vapi account.` });
       return;
     }
-    res.json(GetAssistantTranscriberResponse.parse(found.config));
+    respondJson(res, GetAssistantTranscriberResponse, found.config);
   } catch (err) {
     respondVapiError(res, err);
   }
@@ -980,10 +995,11 @@ router.post("/benchmark/vapi/preview", async (req, res): Promise<void> => {
       existingBySourceId.get(call.id) ??
       existingByLabel.get(vapiLabelFor(call.id)) ??
       null;
+    const startedAtRaw = call.startedAt ?? call.createdAt ?? null;
     return {
       vapiCallId: call.id,
       assistantId: call.assistantId ?? null,
-      startedAt: call.startedAt ?? call.createdAt ?? null,
+      startedAt: startedAtRaw ? new Date(startedAtRaw) : null,
       durationSeconds: durationSecondsOf(call),
       hasRecording: Boolean(recordingUrl),
       recordingUrl: recordingUrl ?? null,
@@ -994,8 +1010,10 @@ router.post("/benchmark/vapi/preview", async (req, res): Promise<void> => {
     };
   });
 
-  res.json(
-    PreviewVapiCallsResponse.parse({
+  respondJson(
+    res,
+    PreviewVapiCallsResponse,
+    {
       accountId: account.id,
       accountLabel: account.label,
       fetchedCount: previewCalls.length,
@@ -1003,7 +1021,7 @@ router.post("/benchmark/vapi/preview", async (req, res): Promise<void> => {
         (c) => c.hasRecording && !c.alreadyImported,
       ).length,
       calls: previewCalls,
-    }),
+    },
   );
 });
 
@@ -1165,13 +1183,16 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
   // Preserve request order so the UI table matches what the operator ticked.
   const results = parsed.data.vapiCallIds.map((id) => byId.get(id)!);
 
-  res.status(201).json(
-    ImportVapiCallsResponse.parse({
+  respondJson(
+    res,
+    ImportVapiCallsResponse,
+    {
       importedCount: results.filter((r) => r.outcome === "imported").length,
       skippedCount: results.filter((r) => r.outcome.startsWith("skipped")).length,
       failedCount: results.filter((r) => r.outcome === "failed").length,
       results,
-    }),
+    },
+    201,
   );
 });
 
@@ -1183,7 +1204,7 @@ router.get("/benchmark/providers", async (_req, res): Promise<void> => {
     .from(benchmarkProvidersTable)
     .orderBy(benchmarkProvidersTable.name);
 
-  res.json(ListBenchmarkProvidersResponse.parse(providers.map(serializeProvider)));
+  respondJson(res, ListBenchmarkProvidersResponse, providers.map(serializeProvider));
 });
 
 router.post("/benchmark/providers", async (req, res): Promise<void> => {
@@ -1221,7 +1242,7 @@ router.post("/benchmark/providers", async (req, res): Promise<void> => {
     afterState: provider,
   });
 
-  res.status(201).json(CreateBenchmarkProviderResponse.parse(serializeProvider(provider)));
+  respondJson(res, CreateBenchmarkProviderResponse, serializeProvider(provider), 201);
 });
 
 // T-104 (2026-08-30, per Abhishek: "toggle for each STT provider ... the
@@ -1276,7 +1297,7 @@ router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
         };
       }),
   );
-  res.json(ListProviderModelsResponse.parse({ vendors, fetchedAt: new Date().toISOString() }));
+  respondJson(res, ListProviderModelsResponse, { vendors, fetchedAt: new Date().toISOString() });
 });
 
 // T-104: one click on "Enable <newest model>". Creates the provider row for
@@ -1308,7 +1329,7 @@ router.post("/benchmark/providers/models/enable", async (req, res): Promise<void
   const id = providerIdForModel(parsed.data.vendor, option.apiModel);
   const [existing] = await db.select().from(benchmarkProvidersTable).where(eq(benchmarkProvidersTable.id, id)).limit(1);
   if (existing) {
-    res.status(200).json(EnableProviderModelResponse.parse({ created: false, provider: serializeProvider(existing) }));
+    respondJson(res, EnableProviderModelResponse, { created: false, provider: serializeProvider(existing) });
     return;
   }
   const [sibling] = await db
@@ -1341,7 +1362,7 @@ router.post("/benchmark/providers/models/enable", async (req, res): Promise<void
     action: "create",
     afterState: refreshed ?? created,
   });
-  res.status(201).json(EnableProviderModelResponse.parse({ created: true, provider: serializeProvider(refreshed ?? created!) }));
+  respondJson(res, EnableProviderModelResponse, { created: true, provider: serializeProvider(refreshed ?? created!) }, 201);
 });
 
 router.patch("/benchmark/providers/:providerId", async (req, res): Promise<void> => {
@@ -1389,7 +1410,7 @@ router.patch("/benchmark/providers/:providerId", async (req, res): Promise<void>
     afterState: serializeProvider(refreshed ?? provider),
   });
 
-  res.json(UpdateBenchmarkProviderResponse.parse(serializeProvider(refreshed ?? provider)));
+  respondJson(res, UpdateBenchmarkProviderResponse, serializeProvider(refreshed ?? provider));
 });
 
 // 2026-08-26, per Abhishek: a system-wide, changeable choice of (a) which
@@ -1439,16 +1460,18 @@ router.get("/benchmark/agent-models", async (_req, res): Promise<void> => {
   }
   const pinned = PINNED_AGENT_MODELS.map((id) => ({ id, priced: priced.has(id), available: live ? ids.includes(id) : null }));
   const others = ids.filter((id) => !(PINNED_AGENT_MODELS as readonly string[]).includes(id)).map((id) => ({ id, priced: priced.has(id), available: true }));
-  res.json(ListAgentModelsResponse.parse({ defaultModel: JUDGE_MODEL, pinned, others, live, fetchedAt, error }));
+  respondJson(res, ListAgentModelsResponse, { defaultModel: JUDGE_MODEL, pinned, others, live, fetchedAt, error });
 });
 
 router.get("/benchmark/settings", async (_req, res): Promise<void> => {
   const settings = await getOrCreateSettings();
-  res.json(
-    GetAppSettingsResponse.parse({
+  respondJson(
+    res,
+    GetAppSettingsResponse,
+    {
       activeProviderId: settings.activeProviderId,
       agentModel: settings.agentModel,
-    }),
+    },
   );
 });
 
@@ -1504,11 +1527,13 @@ router.patch("/benchmark/settings", async (req, res): Promise<void> => {
     afterState: { activeProviderId: updated.activeProviderId, agentModel: updated.agentModel },
   });
 
-  res.json(
-    UpdateAppSettingsResponse.parse({
+  respondJson(
+    res,
+    UpdateAppSettingsResponse,
+    {
       activeProviderId: updated.activeProviderId,
       agentModel: updated.agentModel,
-    }),
+    },
   );
 });
 
@@ -1527,10 +1552,10 @@ router.get("/benchmark/runs", async (_req, res): Promise<void> => {
     )
     .where(eq(benchmarkRunsTable.purpose, "batch"))
     .orderBy(desc(benchmarkRunsTable.createdAt));
-  res.json(
-    ListBenchmarkRunsResponse.parse(
+  respondJson(
+    res,
+    ListBenchmarkRunsResponse,
       runs.map(({ run, bulkName }) => serializeRun(run, bulkName ?? null)),
-    ),
   );
 });
 
@@ -1603,7 +1628,7 @@ router.post("/benchmark/runs", async (req, res): Promise<void> => {
     });
   }
 
-  res.status(201).json(CreateBenchmarkRunResponse.parse(serializeRun(run)));
+  respondJson(res, CreateBenchmarkRunResponse, serializeRun(run), 201);
 });
 
 router.post("/benchmark/runs/:runId/execute", async (req, res): Promise<void> => {
@@ -1628,7 +1653,7 @@ router.post("/benchmark/runs/:runId/execute", async (req, res): Promise<void> =>
     req.log.error({ err, runId: params.data.runId }, "Benchmark run execution crashed");
   });
 
-  res.status(202).json(ExecuteBenchmarkRunResponse.parse(serializeRun(existing[0])));
+  respondJson(res, ExecuteBenchmarkRunResponse, serializeRun(existing[0]), 202);
 });
 
 // RUN-01/P2-T1: export the frozen manifest exactly as stored at creation.
@@ -1649,8 +1674,12 @@ router.get("/benchmark/runs/:runId/manifest", async (req, res): Promise<void> =>
     res.status(404).json({ error: "Run not found or predates manifests" });
     return;
   }
-  res.json(
-    GetBenchmarkRunManifestResponse.parse({ ...run.manifest, runId: run.id }),
+  respondJson(
+    res,
+    GetBenchmarkRunManifestResponse,
+    // The manifest is jsonb, so its createdAt survives as the ISO string it
+    // was written as -- rehydrated to a Date for the contract's coerce.date.
+    { ...run.manifest, createdAt: new Date(run.manifest.createdAt), runId: run.id },
   );
 });
 
@@ -1696,7 +1725,7 @@ router.post("/benchmark/runs/:runId/archive", async (req, res): Promise<void> =>
     beforeState: { archivedAt: run.archivedAt?.toISOString() ?? null },
     afterState: { archivedAt: updated!.archivedAt?.toISOString() ?? null },
   });
-  res.json(SetRunArchivedResponse.parse(serializeRun(updated!)));
+  respondJson(res, SetRunArchivedResponse, serializeRun(updated!));
 });
 
 router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => {
@@ -1716,8 +1745,10 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
     .where(eq(benchmarkProviderCallResultsTable.runId, params.data.runId))
     .orderBy(desc(benchmarkProviderCallResultsTable.createdAt));
 
-  res.json(
-    ListBenchmarkRunResultsResponse.parse(
+  type RunResultRow = ZodInput<typeof ListBenchmarkRunResultsResponse>[number];
+  respondJson(
+    res,
+    ListBenchmarkRunResultsResponse,
       rows.map(({ result, score }) => {
         // 2026-08-27 (technical-fixes FIX-5/UX-7): a known, deterministic
         // failure cause (Vapi's retention window, the Supabase archive-bucket
@@ -1733,9 +1764,10 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         runId: result.runId,
         providerId: result.providerId,
         callId: result.callId,
-        status: result.status,
-        submittedAt: result.submittedAt?.toISOString() ?? null,
-        finalAt: result.finalAt?.toISOString() ?? null,
+        // Unconstrained text column; value held by the runtime parse.
+        status: result.status as RunResultRow["status"],
+        submittedAt: result.submittedAt,
+        finalAt: result.finalAt,
         httpStatus: result.httpStatus,
         hypothesisTranscript: result.hypothesisTranscript,
         errorMessage: result.errorMessage,
@@ -1750,7 +1782,7 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         // class to judge from.
         retryable: cellRetryable(result.status, result.failureClass),
         rawOutputHash: result.rawOutputHash,
-        createdAt: result.createdAt.toISOString(),
+        createdAt: result.createdAt,
         score: score
           ? {
               scoringVersion: score.scoringVersion,
@@ -1761,8 +1793,10 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
               costPerMinute: score.costPerMinute,
               diarizationScore: score.diarizationScore,
               wordDiff:
+                // The jsonb detail was written from scoring's WordDiffOp,
+                // whose op is exactly this union; the runtime parse re-checks.
                 (score.detail as { wordDiff?: unknown } | null)?.wordDiff as
-                  | Array<{ op: string; ref: string | null; hyp: string | null }>
+                  | Array<{ op: "ok" | "sub" | "del" | "ins"; ref: string | null; hyp: string | null }>
                   | undefined,
               // 2026-08-27: gold-free hybrid flagging (computeHybridFlagsForRun
               // writes flagCount/flagSeverity directly onto this row, and the
@@ -1770,13 +1804,15 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
               // missing from this serialization until now, so the UI never
               // actually saw them despite the pass computing them correctly).
               flagCount: score.flagCount,
-              flagSeverity: score.flagSeverity,
-              hybridFlags: (score.detail as { hybridFlags?: unknown } | null)?.hybridFlags,
+              // Unconstrained text column; value held by the runtime parse.
+              flagSeverity: score.flagSeverity as NonNullable<RunResultRow["score"]>["flagSeverity"],
+              // jsonb written by computeHybridFlagsForRun in this same shape; the
+              // runtime parse re-checks it on the way out.
+              hybridFlags: (score.detail as { hybridFlags?: unknown } | null)?.hybridFlags as NonNullable<RunResultRow["score"]>["hybridFlags"],
             }
           : null,
         };
       }),
-    ),
   );
 });
 
@@ -1847,12 +1883,16 @@ router.post("/benchmark/results/:resultId/analyze-failure", async (req, res): Pr
     afterState: analysis,
   });
 
-  res.json(
-    AnalyzeResultFailureResponse.parse({
+  respondJson(
+    res,
+    AnalyzeResultFailureResponse,
+    {
       resultId: updated.id,
-      diagnosis: updated.failureDiagnosis,
-      suggestedFix: updated.failureSuggestedFix,
-    }),
+      // The values this handler just wrote -- non-null by construction,
+      // where the read-back columns are nullable by type.
+      diagnosis: analysis.diagnosis,
+      suggestedFix: analysis.suggestedFix,
+    },
   );
 });
 
@@ -1877,8 +1917,9 @@ router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
           .orderBy(desc(auditLogTable.occurredAt))
       : await db.select().from(auditLogTable).orderBy(desc(auditLogTable.occurredAt));
 
-  res.json(
-    ListAuditLogResponse.parse(
+  respondJson(
+    res,
+    ListAuditLogResponse,
       rows.map((row) => ({
         id: row.id,
         entityType: row.entityType,
@@ -1887,9 +1928,8 @@ router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
         action: row.action,
         beforeState: row.beforeState,
         afterState: row.afterState,
-        occurredAt: row.occurredAt.toISOString(),
+        occurredAt: row.occurredAt,
       })),
-    ),
   );
 });
 
@@ -1981,11 +2021,17 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
     logger.warn({ err }, "Could not resolve assistant names for Rankings -- falling back to raw ids");
   }
 
-  res.json(
-    ListBenchmarkRankingsResponse.parse(
+  respondJson(
+    res,
+    ListBenchmarkRankingsResponse,
       latest.map(({ ranking }) => ({
-        runId: ranking.runId,
-        vertical: ranking.vertical,
+        // The column is nullable but the data never is: the all-time branch
+        // inner-joins runs on this id, and the bulk snapshot always records
+        // the run that wrote it (verified live: 0 of 378 rows null). The
+        // parse would still refuse a null loudly.
+        runId: ranking.runId as string,
+        // Unconstrained text column; value held by the runtime parse.
+        vertical: ranking.vertical as ZodInput<typeof ListBenchmarkRankingsResponse>[number]["vertical"],
         assistantId: ranking.assistantId,
         assistantLabel: ranking.assistantId
           ? (assistantNameById.get(ranking.assistantId) ?? ranking.assistantId)
@@ -2024,12 +2070,11 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
         },
         recommendation: ranking.recommendation,
       })),
-    ),
   );
 });
 
 router.get("/benchmark/plan", (_req, res): void => {
-  res.json(GetBenchmarkPlanResponse.parse(benchmarkPlan));
+  respondJson(res, GetBenchmarkPlanResponse, benchmarkPlan);
 });
 
 export default router;

@@ -21,87 +21,23 @@ import {
   benchmarkScoresTable,
   db,
 } from "@workspace/db";
-import { diffWords, normalizeTranscript, type WordDiffOp } from "@workspace/scoring";
+import { diffWords, normalizeTranscript } from "@workspace/scoring";
+import { GetCallComparisonResponse, type ZodInput } from "@workspace/api-zod";
 import { isFailureClass, isRetryableFailureClass, type FailureClass } from "@workspace/stt-providers";
 import { matchKnownFailure } from "./agent";
 import { bulkVerdicts } from "./verdict";
 
-export type ComparisonReference = { kind: "gold" | "draft"; text: string };
-
-export type ComparisonDiff = {
-  wordDiff: WordDiffOp[];
-  referenceWords: number;
-  wordsDiffer: number;
-  /** errors / referenceWords against THIS section's reference. Not the
-   *  retired gold WER column -- computed fresh, and null when the reference
-   *  is empty. */
-  werVsReference: number | null;
-};
-
-export type LowConfidenceWordSpan = { words: string[]; avgConfidence: number; severity: string };
-
-export type ComparisonHybridFlags = {
-  disagreementRate: number | null;
-  lowConfidenceSpans: number;
-  /** T-109: the spans themselves (the provider's own per-word confidence,
-   *  hybrid.ts signal 2), so the diff can underline the words it was unsure
-   *  of. Empty when the provider reports no confidence. */
-  lowConfidenceWordSpans: LowConfidenceWordSpan[];
-  confidenceAvailable: boolean;
-  entityMismatches: number;
-};
-
-export type ComparisonRow = {
-  providerId: string;
-  providerName: string;
-  /** "missing": the provider was in the run's provider list but no result
-   *  row exists for this call (E.5 says a missing row is still a row). */
-  status: "ok" | "failed" | "skipped_pending_review" | "pending" | "cancelled" | "missing";
-  resultId: string | null;
-  runId: string | null;
-  attemptedAt: string | null;
-  hypothesisTranscript: string | null;
-  diff: ComparisonDiff | null;
-  peerFlagCount: number | null;
-  peerFlagSeverity: string | null;
-  flagCount: number | null;
-  flagSeverity: string | null;
-  hybridFlags: ComparisonHybridFlags | null;
-  latencyFinalMs: number | null;
-  costMicrocents: number | null;
-  failureClass: FailureClass | null;
-  /** null = class unknown so retryability is unknown; never defaulted. */
-  retryable: boolean | null;
-  errorMessage: string | null;
-  failureDiagnosis: string | null;
-  failureSuggestedFix: string | null;
-  isJudgePick: boolean;
-};
-
-export type CallComparison = {
-  callId: string;
-  label: string;
-  callStatus: string;
-  durationSeconds: number;
-  reference: ComparisonReference | null;
-  audioAvailable: boolean;
-  production: { vendor: string; model: string | null } | null;
-  /** The Vapi draft as an extra row, only when the reference is gold. */
-  productionRow: { text: string; diff: ComparisonDiff | null } | null;
-  context: { bulkId: string; bulkName: string } | null;
-  ordering: "verdict_rate" | "alphabetical";
-  judge: {
-    scanId: string;
-    status: string;
-    pickProviderId: string | null;
-    reasoning: string | null;
-    /** T-108: typed verdict halves; null on pre-2026-08-30 scans. */
-    confidence: "high" | "medium" | "low" | null;
-    keyDifferences: Array<{ span: string; alternatives: string; matters: string }> | null;
-    createdAt: string;
-  } | null;
-  rows: ComparisonRow[];
-};
+// T-154: this family used to be a hand-written mirror of the contract -- the
+// exact duplicate-shape hazard T-136 came from (the mirror and the spec
+// drift, and only a runtime parse notices). Every type here is now a
+// projection of the generated response schema, so there is nothing left to
+// drift: a spec change re-types this file and its producers immediately.
+export type CallComparison = ZodInput<typeof GetCallComparisonResponse>;
+export type ComparisonReference = NonNullable<CallComparison["reference"]>;
+export type ComparisonRow = CallComparison["rows"][number];
+export type ComparisonDiff = NonNullable<ComparisonRow["diff"]>;
+export type ComparisonHybridFlags = NonNullable<ComparisonRow["hybridFlags"]>;
+export type LowConfidenceWordSpan = ComparisonHybridFlags["lowConfidenceWordSpans"][number];
 
 /** Vapi drafts (and gold transcripts written from them) carry speaker
  * labels per line ("AI: …", "User: …"). Provider output never does, so
@@ -307,7 +243,7 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
       status,
       resultId: result.id,
       runId: result.runId,
-      attemptedAt: (result.finalAt ?? result.submittedAt ?? result.createdAt)?.toISOString() ?? null,
+      attemptedAt: result.finalAt ?? result.submittedAt ?? result.createdAt ?? null,
       hypothesisTranscript: result.hypothesisTranscript,
       diff:
         reference && result.status === "ok" && result.hypothesisTranscript
@@ -378,7 +314,7 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
           reasoning: scan.agentPickReasoning ?? null,
           confidence: scan.judgeConfidence ?? null,
           keyDifferences: scan.judgeKeyDifferences ?? null,
-          createdAt: scan.createdAt.toISOString(),
+          createdAt: scan.createdAt,
         }
       : null,
     rows,
