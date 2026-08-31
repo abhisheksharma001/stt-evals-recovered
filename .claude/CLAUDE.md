@@ -151,6 +151,34 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 23: the pages, rendered.** The UI package had 39
+  tests, all on pure `src/lib` helpers; **no test had ever rendered a
+  page.** Now 84 across 13 files: a shared harness
+  (`artifacts/stt-benchmark/src/pages/__render__/harness.tsx`) with jsdom
+  shims, a `fetch` stub driven by a route table — **anything unlisted
+  answers 500 and lands in `unmatched`**, so a page depending on an
+  endpoint the test did not plan for fails instead of rendering an empty
+  section — and `renderPage()`. **Fixtures are typed as the generated
+  response types, so `pnpm run typecheck` is the contract check.** Held:
+  Overview degrades honestly (no bulk → says so and fetches no verdict;
+  vendor list unreachable → "?", never "all verified"; API down → says
+  so, never a stale build), Results keeps **"Winner" as the verdict's
+  word** (rank 1 alone reads "Ahead, not a winner"; the all-time view
+  names nobody) and asks the server for the bulk rather than filtering
+  in the browser, Calls states audio as fact (cached at 60 days is still
+  "audio saved"; unknown age gets **no chip at all**) and the rescue
+  button counts only what a click can save, Bulks **fires no launch on
+  render or expand** (every spending path is left out of the stub on
+  purpose) and never sums STT with the AI check, Setup keeps the disable
+  toggle inert on a keyless provider. Two harness lessons:
+  **duck-typing a non-200 answer by an object's `status` field corrupts
+  this API's fixtures** (`HealthStatus.status` is `"ok"`), and **an
+  assertion that still passes when you delete the behaviour is not an
+  assertion** — run ids render truncated to 8 characters and two fixture
+  ids shared those 8. **Flagged, not changed:** the template Launch
+  button has no confirm — the gate is server-side, so a bulk estimated
+  under **$50** (`BULK_COST_THRESHOLD_CENTS`) spends on one click.
+
 - **2026-08-31, batch 22: the writes batch 21 missed.** Suite 90 → 110 (25
   files). Batch 21's closing line ("every route without a network call or
   spend now has tests") **was wrong**: eight write routes had none. Now

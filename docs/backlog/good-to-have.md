@@ -1,3 +1,45 @@
+## Found 2026-08-31 (batch 23): the pages, rendered for the first time
+
+- **No page had ever been rendered by a test.** The UI package's 39 tests
+  were all pure functions in `src/lib`. Every page — Overview, Results,
+  Calls, Bulks, Setup — was covered only by someone opening a browser.
+  Five suites now render them against a stubbed API (84 tests, 13 files).
+  **Nothing was found broken**: every page degrades honestly when a
+  dependency is missing. That is worth stating plainly rather than
+  implying the sweep found bugs.
+
+- **A `status` field is not an envelope.** The harness first spotted a
+  non-200 answer by duck-typing — an object with a `status` key. Two of
+  this API's own payloads carry one (`HealthStatus.status: "ok"`,
+  `BulkDetail.status: "running"`), so those fixtures were turned into
+  `new Response(null, { status: "ok" })`, which throws a RangeError, and
+  the page under test simply showed its error state. It looked like an
+  app bug for several minutes. Non-200 answers are branded now
+  (`reply(status, body)`). **Rule: never infer a wrapper from a field
+  name that the payload could legitimately own.**
+
+- **An assertion that survives the behaviour's removal is not an
+  assertion.** The Bulks nesting test asserted that no shard run appears
+  in the ad-hoc list. Deleting `onlyAdhoc` from the embedded Runs list
+  broke nothing — run ids render truncated to their first 8 characters,
+  and the fixture ids (`run-shard-1`, `run-adhoc-9`) were identical
+  within those 8, so the check could never match either way. Found only
+  because every task in this batch is proved by breaking. Fixture ids are
+  distinct within the truncation now.
+
+- **The template Launch button has no confirm — flagged for Abhishek,
+  not changed.** Clicking Launch on a saved template posts immediately.
+  The gate is server-side and deliberate (FR-BLK-5): an estimate over
+  `BULK_COST_THRESHOLD_CENTS` (**$50** default, env-tunable) lands the
+  bulk in `awaiting_confirmation` instead of running it. So anything
+  estimated **under $50 spends on a single click**, with no second step
+  in the UI. Whether the UI should ask anyway is a product decision.
+
+- **What these tests are not.** jsdom is not a browser: no layout, no
+  real fonts, no real network, no real money. They catch a page that
+  breaks on a shape of data or loses a rule; they do not catch a page
+  that renders unreadably. The live browser pass still matters.
+
 ## Found 2026-08-31 (batch 22): the writes, and a claim that was wrong
 
 - **Batch 21's closing line overclaimed.** It said every route without a

@@ -82,8 +82,10 @@ jobs:
         run: pnpm --filter @workspace/stt-providers test
 
       # T-121: pure logic under the web app's src/lib (chip buckets, catalog
-      # age, retention state). Node environment; no DOM, no API.
-      - name: Unit tests (stt-benchmark lib)
+      # age, retention state) in node, no DOM. T-182..T-186: the pages
+      # themselves, rendered in jsdom against a stubbed fetch -- no network
+      # and no provider spend, so it belongs in this offline job.
+      - name: Unit and page-render tests (stt-benchmark)
         run: pnpm --filter @workspace/stt-benchmark test
 
       # T-26: judge contract. Offline: pins baml_src/judge.baml + JUDGE_MODEL

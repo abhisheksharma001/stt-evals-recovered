@@ -28,9 +28,11 @@ import { memoryLocation } from "wouter/memory-location"
 // ---------------------------------------------------------------------------
 
 /**
- * jsdom implements the DOM, not a browser. These four are what the app's
- * dependencies reach for and jsdom does not define; without them a render
- * throws before any assertion runs. Installed once per file, idempotent.
+ * jsdom implements the DOM, not a browser. These are what the app's
+ * dependencies reach for and jsdom does not provide; without them a render
+ * throws before any assertion runs. Call once per file. The first four are
+ * added only when missing; the media methods are always replaced, because
+ * jsdom does define them -- as functions that throw "Not implemented".
  */
 export function installBrowserShims(): void {
   const w = globalThis as unknown as Record<string, unknown>
