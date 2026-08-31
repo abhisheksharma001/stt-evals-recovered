@@ -1,10 +1,11 @@
 import * as React from "react"
 import { useListDisagreementSpans, type DisagreementSpan } from "@workspace/api-client-react"
-import { Play, Loader2 } from "lucide-react"
+import { Play, Loader2, Repeat } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { apiBase } from "@/lib/api-base"
 import { PlaybackSpeed } from "@/components/playback-speed"
+import { spanPlaybackAction } from "@/lib/span-playback"
 
 // T-08: "a disagreement is a play button" (PRD-v4-uiux D.3.2).
 // T-86: listen-only. There is no human judge in this product -- nobody
@@ -19,6 +20,11 @@ import { PlaybackSpeed } from "@/components/playback-speed"
 // transport bar to guess where it was. The word starts come from the same
 // reference timings that anchor the spans (referenceWordStartMs), so a
 // caret can never point somewhere the spans disagree with.
+//
+// T-138 (same backlog item, "loop-selection / spot-audition"): a span can be
+// put on repeat. Two seconds of a phone number played once is a guess; the
+// same two seconds on a loop is a decision. Loop applies to spans only -- a
+// caret has no end to loop back from.
 
 /** Seconds of audio played either side of the disputed words. */
 const CONTEXT_SECONDS = 0.75
@@ -172,6 +178,10 @@ export function DisagreementSpans({
   }
   const containerRef = React.useRef<HTMLDivElement | null>(null)
   const stopAtRef = React.useRef<number | null>(null)
+  // T-138: where the current span's loop restarts from. Null while a caret
+  // plays (nothing to loop) or before anything has played.
+  const loopFromRef = React.useRef<number | null>(null)
+  const [loop, setLoop] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
   const [playingIndex, setPlayingIndex] = React.useState<number | null>(null)
   // T-137: which word the caret is playing from, for the highlight. Null
@@ -212,7 +222,9 @@ export function DisagreementSpans({
       setActiveIndex(index)
       setPlayingIndex(index)
       setCaretIndex(null)
-      playFrom(span.startMs / 1000 - CONTEXT_SECONDS, span.endMs / 1000 + CONTEXT_SECONDS, () => setPlayingIndex(null))
+      const from = span.startMs / 1000 - CONTEXT_SECONDS
+      loopFromRef.current = Math.max(0, from)
+      playFrom(from, span.endMs / 1000 + CONTEXT_SECONDS, () => setPlayingIndex(null))
     },
     [spans, playFrom],
   )
@@ -227,6 +239,7 @@ export function DisagreementSpans({
       if (startMs === undefined) return
       setPlayingIndex(null)
       setCaretIndex(position)
+      loopFromRef.current = null
       playFrom(startMs / 1000 - CARET_LEAD_IN_SECONDS, null, () => setCaretIndex(null))
     },
     [wordStartMs, playFrom],
@@ -239,12 +252,22 @@ export function DisagreementSpans({
 
   const onTimeUpdate = () => {
     const audio = audioRef.current
-    if (!audio || stopAtRef.current === null) return
-    if (audio.currentTime >= stopAtRef.current) {
-      audio.pause()
-      stopAtRef.current = null
-      setPlayingIndex(null)
+    if (!audio) return
+    // T-138: the decision itself lives in lib/span-playback.ts, under test.
+    const action = spanPlaybackAction({
+      currentTime: audio.currentTime,
+      stopAt: stopAtRef.current,
+      loop,
+      loopFrom: loopFromRef.current,
+    })
+    if (action === "continue") return
+    if (action === "restart") {
+      audio.currentTime = loopFromRef.current!
+      return
     }
+    audio.pause()
+    stopAtRef.current = null
+    setPlayingIndex(null)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -259,6 +282,13 @@ export function DisagreementSpans({
     } else if (key === " " || key === "Enter") {
       e.preventDefault()
       play(activeIndex)
+    } else if (key === "l" || key === "L") {
+      // T-138: the loop toggle, without leaving the keyboard.
+      e.preventDefault()
+      setLoop((on) => !on)
+    } else if (key === "Escape") {
+      e.preventDefault()
+      audioRef.current?.pause()
     }
   }
 
@@ -294,7 +324,7 @@ export function DisagreementSpans({
       onKeyDown={onKeyDown}
       onClick={() => containerRef.current?.focus()}
       className="space-y-2 rounded-md outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      aria-label="Disagreement spans -- J/K to move, Space to play"
+      aria-label="Disagreement spans -- J/K to move, Space to play, L to loop, Esc to stop"
     >
       <audio
         ref={audioRef}
@@ -323,8 +353,24 @@ export function DisagreementSpans({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={loop ? "default" : "outline"}
+            aria-pressed={loop}
+            data-testid="loop-span"
+            onClick={(e) => {
+              e.stopPropagation()
+              setLoop((on) => !on)
+            }}
+            title="Repeat the span you play until you stop it (Esc stops, L toggles)"
+            className="h-7 gap-1 px-2 text-[11px]"
+          >
+            <Repeat className="h-3 w-3" />
+            Loop
+          </Button>
           <PlaybackSpeed value={playbackRate} onChange={applyRate} />
-          <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play · click a word to play from it</span>
+          <span className="font-mono text-[10px] text-muted-foreground">J/K move · Space play · L loop · Esc stop · click a word to play from it</span>
         </div>
       </div>
 
