@@ -1555,7 +1555,6 @@ router.get("/benchmark/runs", async (_req, res): Promise<void> => {
   respondJson(
     res,
     ListBenchmarkRunsResponse,
-    
       runs.map(({ run, bulkName }) => serializeRun(run, bulkName ?? null)),
   );
 });
@@ -1750,7 +1749,6 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
   respondJson(
     res,
     ListBenchmarkRunResultsResponse,
-    
       rows.map(({ result, score }) => {
         // 2026-08-27 (technical-fixes FIX-5/UX-7): a known, deterministic
         // failure cause (Vapi's retention window, the Supabase archive-bucket
@@ -1922,7 +1920,6 @@ router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
   respondJson(
     res,
     ListAuditLogResponse,
-    
       rows.map((row) => ({
         id: row.id,
         entityType: row.entityType,
@@ -2027,7 +2024,6 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
   respondJson(
     res,
     ListBenchmarkRankingsResponse,
-    
       latest.map(({ ranking }) => ({
         // The column is nullable but the data never is: the all-time branch
         // inner-joins runs on this id, and the bulk snapshot always records
