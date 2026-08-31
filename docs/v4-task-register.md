@@ -282,6 +282,18 @@ only there". Five rows, one PR (#52), one commit each. Evidence note in PRD-v4 P
 
 Also checked this batch: backlog items #3 (statistical significance) and #4 (decision export) turned out already shipped — the T-20 verdict has a seeded paired bootstrap (95% CI, `withinNoise`, `callsToSettle`) and T-32 renders the shareable verdict artefact. Both stay closed under their own rows.
 
+## Phase 19 — batch 14 (added 2026-08-31; register was drained after batch 13; set = a live bug found during recon plus the backlog's remaining "review workspace polish" items, zero provider spend)
+
+| ID | Task | Status |
+|---|---|---|
+| T-136 | **`GET /benchmark/disagreement-spans` answered 500 for every call** — the handler maps each span field by hand and never gained `majorityText` after T-47 made it required, so the response failed its own zod parse. Broken since the T-86 route rewrite (batch 4, PR #52); the Corpus "hear the disagreements" panel showed only its error text. | ✅ done — batch 14. Reproduced against the running production server first (`{"error":"Internal server error"}` + a zod `majorityText Required` line in the log), fixed, verified 200 live: 46 words, 3 spans, `majorityText` on every span. |
+| T-137 | **Play from caret** (backlog "review workspace polish" #1) — `referenceWordStartMs` (ms, same length/order as `referenceWords`) returned from `buildDisagreementSpans`, which already had exact timings for every reference word; every ordinary word in the reading is a click target that plays the call from there (0.12 s lead-in, no stop point). Carets switch off if the two arrays ever disagree in length. | ✅ done — batch 14. Live (real click): word "hey" → audio playing, `currentTime` 2.86 s, word highlighted; 172 caret words on a 46-word-per-span call. 2 scoring tests. |
+| T-138 | **Loop a disputed span** (backlog "review workspace polish" #2) — Loop toggle beside the speed control, `L` toggles, `Esc` stops; loop applies to spans only (a caret has no end). Boundary logic extracted to `artifacts/stt-benchmark/src/lib/span-playback.ts`. | ✅ done — batch 14. Live: with loop on, 7 samples over 6 s stayed inside the span window and wrapped (12.79 → 13.69 → 12.46 → …), still playing; with loop off the same span stopped at its end. 5 unit tests. |
+| T-139 | **Route tests for the three uncovered endpoints** — disagreement-spans (incl. the T-136 shape and T-137's word starts), run archive (ad-hoc archive/restore, shard 409, unknown 404), cache-audio (counts, no throw). Integration suite 5 → 10 tests, CI runs it. | ✅ done — batch 14. Re-breaking the route exactly as T-136 found it fails the new test with "expected 500 to be 200" — checked, not assumed. |
+| T-140 | **The retryable-cells figure says what it is made of** — `needsHuman()` groups the rows it counts by provider + reason (`retryableFailedCellGroups`); Overview shows one muted line + a hover breakdown warning that a retry costs provider money. Wording is pure (`artifacts/stt-benchmark/src/lib/retry-figure.ts`, 8 tests); no groups → bare number, never an invented explanation. | ✅ done — batch 14. Audit answered the standing question: all 15 are **Cartesia `provider_timeout` cells from 2026-08-27** — genuinely retryable, genuinely paid. Live Overview reads "15 · transcripts a retry could fix · all 15 — Cartesia, timed out". |
+
+Not taken this batch, still free: the written scoring/normalization policy (backlog #6) — the equivalence rules exist in code but no document states them. Still gated on Abhishek: folding the mined `am`/`a m` and `villaroma`/`villa roma` pairs (T-133), because folding shifts every affected provider's score.
+
 ## Deferred, by name
 
 | ID | Task | Owner |
