@@ -23,6 +23,10 @@
 // T-143 added (g): the parameter checks themselves. A malformed id, a missing
 // required parameter and a repeated parameter each answer 400 -- before
 // T-141/T-142 the first two reached the database and answered 500.
+//
+// T-150 added (h): the answers themselves. The two routes that read their
+// params raw (T-146), the JSON 404 for an unmatched path (T-149), and the
+// sentence a rejected request comes back with instead of zod's issue array.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq, inArray } from "drizzle-orm";
@@ -315,17 +319,23 @@ describe("(g) parameter validation", () => {
     // T-142: with string coercion this was `String(undefined)` -- the id
     // "undefined" -- so /volume answered 404 "no account labelled undefined"
     // and /disagreement-spans looked up a call that cannot exist.
-    for (const path of ["/api/benchmark/disagreement-spans", "/api/benchmark/volume"]) {
+    // T-150: the answer names the parameter in a sentence. It used to be
+    // zod's stringified issue array, with "Required" buried inside it.
+    const expected: Record<string, string> = {
+      "/api/benchmark/disagreement-spans": "callId is required",
+      "/api/benchmark/volume": "accountLabel is required",
+    };
+    for (const [path, sentence] of Object.entries(expected)) {
       const res = await request(app).get(path);
       expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
-      expect(res.body.error).toContain("Required");
+      expect(`${path} -> ${res.body.error}`).toBe(`${path} -> ${sentence}`);
     }
   });
 
   it("refuses a repeated parameter instead of joining it with a comma", async () => {
     const res = await request(app).get(`/api/benchmark/disagreement-spans?callId=${callId}&callId=${callId}`);
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("received array");
+    expect(res.body.error).toBe("callId must be a string, not an array");
   });
 
   it("still accepts the ids and text parameters that are genuinely valid", async () => {
@@ -341,5 +351,57 @@ describe("(g) parameter validation", () => {
       const res = await request(app).get(path);
       expect(`${path} -> ${res.status}`).toBe(`${path} -> 200`);
     }
+  });
+});
+
+describe("(h) the two routes that read their params raw, and what a refusal says", () => {
+  const junk = "not-a-uuid";
+
+  it("T-146: the audio and archive routes answer 400 for a malformed id, not 500", async () => {
+    const audio = await request(app).get(`/api/benchmark/calls/${junk}/audio`);
+    expect(`audio -> ${audio.status}`).toBe("audio -> 400");
+    expect(audio.body.error).toBe("callId must be a valid uuid");
+
+    const archive = await request(app).post(`/api/benchmark/runs/${junk}/archive`).send({ archived: true });
+    expect(`archive -> ${archive.status}`).toBe("archive -> 400");
+    expect(archive.body.error).toBe("runId must be a valid uuid");
+  });
+
+  it("T-146: a real call's audio still answers, and the archive route still validates its body", async () => {
+    // The seeded call has no cached bytes and no source recording, so the
+    // honest answer is 404 (or a Vapi error) -- never 500, and never the
+    // uuid refusal above.
+    const audio = await request(app).get(`/api/benchmark/calls/${callId}/audio`);
+    expect([200, 206, 302, 404, 502, 503]).toContain(audio.status);
+    expect(audio.status).not.toBe(400);
+
+    const [run] = await db
+      .insert(benchmarkRunsTable)
+      .values({ status: "complete", purpose: "batch", providerIds: [], callIds: [callId], callCount: 1 })
+      .returning();
+    runIds.push(run.id);
+    const noBody = await request(app).post(`/api/benchmark/runs/${run.id}/archive`).send({});
+    expect(`no body -> ${noBody.status}`).toBe("no body -> 400");
+    expect(noBody.body.error).toBe("archived is required");
+  });
+
+  it("T-149: an unmatched path answers JSON 404, not Express's HTML page", async () => {
+    for (const [method, path] of [
+      ["post", "/api/benchmark/agent/scans"],
+      ["get", "/api/benchmark/nope"],
+    ] as const) {
+      const res = await request(app)[method](path);
+      expect(`${path} -> ${res.status}`).toBe(`${path} -> 404`);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.body.error).toBe(`No such endpoint: ${method.toUpperCase()} ${path}`);
+    }
+  });
+
+  it("T-150: a rejected body says what is wrong in a sentence", async () => {
+    const res = await request(app).post("/api/benchmark/bulks").send({ label: "x" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("criteria is required");
+    // The old answer opened with zod's serialised issue array.
+    expect(res.body.error.startsWith("[")).toBe(false);
   });
 });

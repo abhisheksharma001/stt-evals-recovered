@@ -60,6 +60,7 @@ import { clientVolume } from "../lib/volume";
 import { bulkVerdicts } from "../lib/verdict";
 import { renderVerdictArtefact } from "../lib/verdict-artefact";
 import { buildCommitSha } from "../lib/build-info";
+import { respondInvalid } from "../lib/validation-error";
 import { SCORING_VERSION } from "@workspace/scoring";
 import {
   BulkDurationBandError,
@@ -154,7 +155,7 @@ async function loadBulk(bulkId: string): Promise<BenchmarkBulkRow | undefined> {
 router.get("/benchmark/bulks", async (req, res): Promise<void> => {
   const parsed = ListBulksQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const bulks = parsed.data.status
@@ -173,7 +174,7 @@ router.get("/benchmark/bulks", async (req, res): Promise<void> => {
 router.post("/benchmark/bulks", async (req, res): Promise<void> => {
   const parsed = CreateBulkBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   try {
@@ -205,7 +206,7 @@ router.post("/benchmark/bulks", async (req, res): Promise<void> => {
 router.post("/benchmark/bulks/preview", async (req, res): Promise<void> => {
   const parsed = PreviewBulkSelectionBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   try {
@@ -228,7 +229,7 @@ router.post("/benchmark/bulks/preview", async (req, res): Promise<void> => {
 router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
   const params = GetBulkParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const bulk = await loadBulk(params.data.bulkId);
@@ -475,7 +476,7 @@ router.get("/benchmark/bulks/:bulkId", async (req, res): Promise<void> => {
 router.post("/benchmark/bulks/:bulkId/launch", async (req, res): Promise<void> => {
   const params = LaunchBulkParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const bulk = await loadBulk(params.data.bulkId);
@@ -498,7 +499,7 @@ router.post("/benchmark/bulks/:bulkId/launch", async (req, res): Promise<void> =
 router.post("/benchmark/bulks/:bulkId/retry-failed", async (req, res): Promise<void> => {
   const params = RetryBulkFailedParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const bulk = await loadBulk(params.data.bulkId);
@@ -522,7 +523,7 @@ router.post("/benchmark/bulks/:bulkId/retry-failed", async (req, res): Promise<v
 router.post("/benchmark/bulks/:bulkId/cancel", async (req, res): Promise<void> => {
   const params = CancelBulkParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const bulk = await loadBulk(params.data.bulkId);
@@ -545,7 +546,7 @@ router.post("/benchmark/bulks/:bulkId/cancel", async (req, res): Promise<void> =
 router.get("/benchmark/bulks/:bulkId/provider-correlation", async (req, res): Promise<void> => {
   const params = GetBulkProviderCorrelationParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const [bulk] = await db
@@ -572,7 +573,7 @@ router.get("/benchmark/trend", async (_req, res): Promise<void> => {
 router.get("/benchmark/volume", async (req, res): Promise<void> => {
   const query = GetClientVolumeQueryParams.safeParse(req.query);
   if (!query.success) {
-    res.status(400).json({ error: query.error.message });
+    respondInvalid(res, query.error);
     return;
   }
   try {
@@ -593,7 +594,7 @@ router.get("/benchmark/volume", async (req, res): Promise<void> => {
 router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> => {
   const params = GetBulkVerdictsParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const [bulk] = await db
@@ -615,7 +616,7 @@ router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> 
 router.get("/benchmark/bulks/:bulkId/verdict.html", async (req, res): Promise<void> => {
   const params = GetBulkVerdictsParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const bulk = await loadBulk(params.data.bulkId);
@@ -645,7 +646,7 @@ router.get("/benchmark/bulks/:bulkId/verdict.html", async (req, res): Promise<vo
 router.get("/benchmark/bulks/:bulkId/manifest", async (req, res): Promise<void> => {
   const params = GetBulkManifestParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const bulk = await loadBulk(params.data.bulkId);
@@ -700,7 +701,7 @@ router.get("/benchmark/bulk-templates", async (_req, res): Promise<void> => {
 router.post("/benchmark/bulk-templates", async (req, res): Promise<void> => {
   const parsed = CreateBulkTemplateBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const actorLabel = actorFromRequest(req);
@@ -761,7 +762,7 @@ router.post("/benchmark/bulk-templates", async (req, res): Promise<void> => {
 router.delete("/benchmark/bulk-templates/:templateId", async (req, res): Promise<void> => {
   const params = DeleteBulkTemplateParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const [deleted] = await db

@@ -132,6 +132,7 @@ import { listBenchmarkCallRows } from "../lib/calls";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
 import { cachedVendorModels } from "../lib/model-list-cache";
+import { respondInvalid } from "../lib/validation-error";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
@@ -421,7 +422,7 @@ router.get("/benchmark/dashboard", async (_req, res): Promise<void> => {
 router.get("/benchmark/calls", async (req, res): Promise<void> => {
   const parsed = ListBenchmarkCallsQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
 
@@ -440,7 +441,7 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
   const parsed = CreateBenchmarkCallBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ error: parsed.error.message }, "Invalid benchmark call");
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
 
@@ -490,7 +491,7 @@ router.post("/benchmark/calls/cache-audio", async (_req, res): Promise<void> => 
 router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
   const query = GetCallDisagreementQueryParams.safeParse(req.query);
   if (!query.success) {
-    res.status(400).json({ error: query.error.message });
+    respondInvalid(res, query.error);
     return;
   }
   // A non-uuid bulkId would surface as a Postgres cast error (500); say
@@ -506,7 +507,7 @@ router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
 router.get("/benchmark/words-to-watch", async (req, res): Promise<void> => {
   const query = GetWordsToWatchQueryParams.safeParse(req.query);
   if (!query.success) {
-    res.status(400).json({ error: query.error.message });
+    respondInvalid(res, query.error);
     return;
   }
   const { assistantId } = query.data;
@@ -531,7 +532,7 @@ router.get("/benchmark/words-to-watch", async (req, res): Promise<void> => {
 router.get("/benchmark/assistant-signals", async (req, res): Promise<void> => {
   const query = GetAssistantSignalsQueryParams.safeParse(req.query);
   if (!query.success) {
-    res.status(400).json({ error: query.error.message });
+    respondInvalid(res, query.error);
     return;
   }
   const { assistantId } = query.data;
@@ -553,7 +554,7 @@ router.get("/benchmark/assistant-signals", async (req, res): Promise<void> => {
 router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   const params = GetBenchmarkCallParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const [call] = await db
@@ -574,7 +575,7 @@ router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
 router.get("/benchmark/calls/:callId/comparison", async (req, res): Promise<void> => {
   const params = GetCallComparisonParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const comparison = await callComparison(params.data.callId, null);
@@ -588,7 +589,7 @@ router.get("/benchmark/calls/:callId/comparison", async (req, res): Promise<void
 router.get("/benchmark/bulks/:bulkId/calls/:callId/comparison", async (req, res): Promise<void> => {
   const params = GetBulkCallComparisonParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const comparison = await callComparison(params.data.callId, params.data.bulkId);
@@ -603,11 +604,11 @@ router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   const params = UpdateBenchmarkCallParams.safeParse(req.params);
   const body = UpdateBenchmarkCallBody.safeParse(req.body);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   if (!body.success) {
-    res.status(400).json({ error: body.error.message });
+    respondInvalid(res, body.error);
     return;
   }
 
@@ -733,7 +734,7 @@ router.get("/benchmark/calls/:callId/audio", async (req, res): Promise<void> => 
   // Postgres threw: `GET /benchmark/calls/not-a-uuid/audio` answered 500.
   const params = GetBenchmarkCallAudioParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const callId = params.data.callId;
@@ -877,7 +878,7 @@ router.get("/benchmark/vapi/accounts", async (_req, res): Promise<void> => {
 router.get("/benchmark/vapi/assistants", async (req, res): Promise<void> => {
   const parsed = ListVapiAssistantsQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   try {
@@ -895,7 +896,7 @@ router.get("/benchmark/vapi/assistants", async (req, res): Promise<void> => {
 router.get("/benchmark/assistants/:assistantId/transcriber", async (req, res): Promise<void> => {
   const params = GetAssistantTranscriberParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   try {
@@ -917,7 +918,7 @@ router.get("/benchmark/assistants/:assistantId/transcriber", async (req, res): P
 router.post("/benchmark/vapi/preview", async (req, res): Promise<void> => {
   const parsed = PreviewVapiCallsBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const account = listVapiAccounts().find((a) => a.id === parsed.data.accountId);
@@ -1009,7 +1010,7 @@ router.post("/benchmark/vapi/preview", async (req, res): Promise<void> => {
 router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
   const parsed = ImportVapiCallsBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const account = listVapiAccounts().find((a) => a.id === parsed.data.accountId);
@@ -1188,7 +1189,7 @@ router.get("/benchmark/providers", async (_req, res): Promise<void> => {
 router.post("/benchmark/providers", async (req, res): Promise<void> => {
   const parsed = CreateBenchmarkProviderBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
 
@@ -1285,7 +1286,7 @@ router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
 router.post("/benchmark/providers/models/enable", async (req, res): Promise<void> => {
   const parsed = EnableProviderModelBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const adapter = listProviderAdapters().find((a) => vendorOf(a) === parsed.data.vendor);
@@ -1454,7 +1455,7 @@ router.get("/benchmark/settings", async (_req, res): Promise<void> => {
 router.patch("/benchmark/settings", async (req, res): Promise<void> => {
   const parsed = UpdateAppSettingsBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   if (parsed.data.activeProviderId) {
@@ -1524,7 +1525,7 @@ router.get("/benchmark/runs", async (_req, res): Promise<void> => {
 router.post("/benchmark/runs", async (req, res): Promise<void> => {
   const parsed = CreateBenchmarkRunBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
 
@@ -1596,7 +1597,7 @@ router.post("/benchmark/runs", async (req, res): Promise<void> => {
 router.post("/benchmark/runs/:runId/execute", async (req, res): Promise<void> => {
   const params = ExecuteBenchmarkRunParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
 
@@ -1624,7 +1625,7 @@ router.post("/benchmark/runs/:runId/execute", async (req, res): Promise<void> =>
 router.get("/benchmark/runs/:runId/manifest", async (req, res): Promise<void> => {
   const params = GetBenchmarkRunManifestParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const [run] = await db
@@ -1649,12 +1650,12 @@ router.get("/benchmark/runs/:runId/manifest", async (req, res): Promise<void> =>
 router.post("/benchmark/runs/:runId/archive", async (req, res): Promise<void> => {
   const params = SetRunArchivedParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
   const parsed = SetRunArchivedBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
   const [run] = await db
@@ -1689,7 +1690,7 @@ router.post("/benchmark/runs/:runId/archive", async (req, res): Promise<void> =>
 router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => {
   const params = ListBenchmarkRunResultsParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
 
@@ -1774,7 +1775,7 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
 router.post("/benchmark/results/:resultId/analyze-failure", async (req, res): Promise<void> => {
   const params = AnalyzeResultFailureParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: params.error.message });
+    respondInvalid(res, params.error);
     return;
   }
 
@@ -1846,7 +1847,7 @@ router.post("/benchmark/results/:resultId/analyze-failure", async (req, res): Pr
 router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
   const parsed = ListAuditLogQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    respondInvalid(res, parsed.error);
     return;
   }
 
@@ -1883,7 +1884,7 @@ router.get("/benchmark/audit-log", async (req, res): Promise<void> => {
 router.get("/benchmark/rankings", async (req, res): Promise<void> => {
   const parsedQuery = ListBenchmarkRankingsQueryParams.safeParse(req.query);
   if (!parsedQuery.success) {
-    res.status(400).json({ error: parsedQuery.error.message });
+    respondInvalid(res, parsedQuery.error);
     return;
   }
   const bulkId = parsedQuery.data.bulkId;
