@@ -90,6 +90,11 @@ export class Fixtures {
     this.runIds.push(id);
   }
 
+  /** Same, for a provider created through POST /benchmark/providers (T-180). */
+  adoptProvider(id: string): void {
+    this.providerIds.push(id);
+  }
+
   async run(overrides: Partial<typeof benchmarkRunsTable.$inferInsert> = {}): Promise<RunRow> {
     const [row] = await db
       .insert(benchmarkRunsTable)
