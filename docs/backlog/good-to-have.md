@@ -1,3 +1,51 @@
+## Found 2026-08-31 (batch 16): the same defect class, on the routes the fix could not reach
+
+Batch 15 swept the read endpoints and fixed malformed ids at the spec edge.
+This batch swept the write ones the same way, plus the two directions of
+spec/router drift. Five more live failures, every one of them the server
+blaming itself for the caller's mistake:
+
+    GET   /benchmark/calls/not-a-uuid/audio          500
+    POST  /benchmark/runs/not-a-uuid/archive         500
+    PATCH /benchmark/settings {"judgeModel":123}     500
+    POST  /benchmark/agent/scans                     404, as an HTML page
+    POST  /benchmark/bulks {"label":"x"}             400, as zod's issue array
+
+Four causes, all now fixed:
+
+- **A spec-level fix only binds a handler that parses its params.** T-141
+  added `format: uuid` to 30 parameters; two handlers read `req.params`
+  directly and so never saw it (T-146). The audio one matters most -- it is
+  what a reviewer's `<audio>` element points at, and it was not in the spec
+  at all, so no validator for it could have existed.
+- **A spec entry with no route is a contract that lies.**
+  `POST /benchmark/agent/scans` outlived its route by four days (T-147); orval
+  kept generating a client function for it, and calling it returned Express's
+  HTML 404, which the client cannot parse. Both directions of that drift are
+  now a CI check (T-148, `scripts/check-api-routes.mjs`) -- proved by breaking
+  it each way, not by reading it.
+- **Express answers an unmatched path in HTML.** T-76 gave thrown errors a
+  JSON body; a request that reaches no handler at all never got one (T-149).
+- **Zod strips unknown keys, so a typo can leave nothing to do.** The settings
+  PATCH then handed drizzle an empty `.set({})` and it threw (T-151). A body
+  that changes nothing is now a 400 that names the fields that exist.
+
+And the one that was not a crash: every route answered a rejected request with
+`zodError.message`, zod's own `JSON.stringify` of its issues, which the
+generated client renders verbatim onto the screen. All 43 sites now answer a
+sentence -- "criteria is required; providerIds is required" (T-150).
+
+**Lesson, next to T-141's:** a fix applied at the spec edge reaches exactly
+the handlers that read the spec. Grep for the raw accessor (`req.params`,
+`req.query`, `req.body`) after any such fix -- the handlers that never
+adopted the generated schema are precisely the ones no generated schema can
+protect. And check both directions of drift, not just the one that broke.
+
+**Process note:** `pnpm run typecheck` must run after the test files are
+written, not only after the source. Vitest strips types instead of checking
+them, so a test file that passes can still fail `tsc` -- it did here, and the
+typecheck caught it before the PR.
+
 ## Found 2026-08-31 (batch 15, T-141/T-142): every id parameter was unchecked
 
 The register was drained, so recon started by hitting all 23 GET endpoints on

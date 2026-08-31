@@ -151,6 +151,28 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 16: the routes the spec fix could not reach; spec/router
+  drift is CI now; refusals speak English.** Sweeping the *write* routes the way
+  batch 15 swept the read ones found five more live failures. Two handlers read
+  `req.params` raw, so `format: uuid` never bound them: the call-audio route
+  (also missing from the spec entirely) and the run-archive route both
+  answered **500 for a malformed id** (T-146).
+  `POST /benchmark/agent/scans` had been in the spec with no route since
+  `e0399cc`, so orval generated a client function that could only return
+  Express's **HTML** 404 (T-147) — both directions of that drift now fail CI
+  (`scripts/check-api-routes.mjs`, `pnpm run check:api-routes`; 58 operations,
+  proved by breaking it each way) (T-148). Unmatched paths answer JSON now
+  (T-149). **All 43 validation failures answer a sentence** —
+  `describeInvalidInput` / `respondInvalid` in
+  `artifacts/api-server/src/lib/validation-error.ts`, so "criteria is
+  required; providerIds is required"
+  instead of zod's stringified issue array, which the client used to render
+  straight onto the screen (T-150). `PATCH /benchmark/settings` with a typo'd
+  field crashed on drizzle's empty `.set({})`; 400 now (T-151). **Rule this
+  leaves: a fix at the spec edge reaches only handlers that read the spec —
+  grep for `req.params` / `req.query` / `req.body` after one.** Suites:
+  api-server 67 unit + 20 integration.
+
 - **2026-08-31, batch 15: ids checked at the edge; coercion narrowed; scoring
   policy written down.** Sweeping all 23 GET endpoints with bad input found
   five that answered **500 for a caller's typo**: an id was a bare
