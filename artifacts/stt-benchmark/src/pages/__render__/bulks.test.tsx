@@ -119,7 +119,10 @@ describe("Bulks", () => {
     await screen.findByTestId("bulk-runs-list")
 
     // The only POST a page load may make is the cost preview, which reads.
+    // The count is asserted first: `every` on an empty list is true, and a
+    // test that passes because nothing happened proves nothing.
     const posts = api.calls.filter((c) => c.startsWith("POST"))
+    expect(posts.length).toBeGreaterThan(0)
     expect(posts.every((p) => p.startsWith("POST /api/benchmark/bulks/preview"))).toBe(true)
     expect(api.calls.some((c) => c.includes("/launch"))).toBe(false)
     expect(api.calls.some((c) => c.includes("/retry-failed"))).toBe(false)
