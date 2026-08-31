@@ -411,6 +411,8 @@ browser had ever handed a page one.
 
 **Flagged for Abhishek, not changed:** the template **Launch** button fires the launch the moment it is clicked — no confirm dialog. The gate is server-side and by design (FR-BLK-5): an estimate over `BULK_COST_THRESHOLD_CENTS` (**$50** default) lands `awaiting_confirmation` instead of running. So a launch estimated **under $50 spends on one click, with no second step in the UI.** Whether that wants a confirm is a product decision, not a bug.
 
+**Pages still not rendered by any test**, named so the gap is not mistaken for coverage: the Sources tab (`artifacts/stt-benchmark/src/pages/Import.tsx`), the public landing page (`artifacts/stt-benchmark/src/pages/Landing.tsx`), and the per-call comparison view. `artifacts/stt-benchmark/src/pages/Runs.tsx` is exercised only through the Bulks page's embed, never on its own.
+
 What is still out of reach is unchanged from batch 22, and now includes the browser itself: these tests render pages under jsdom against a stubbed API, which is not a real browser, a real network or real money.
 
 ## Deferred, by name
