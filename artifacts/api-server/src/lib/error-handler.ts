@@ -1,4 +1,4 @@
-import type { ErrorRequestHandler } from "express";
+import type { ErrorRequestHandler, RequestHandler } from "express";
 
 /**
  * T-76 (PRD-v4-technical J.1): one JSON error handler for every route.
@@ -48,4 +48,34 @@ export const jsonErrorHandler: ErrorRequestHandler = (err, req, res, next) => {
     else log.warn({ err: err instanceof Error ? err.message : err, requestId, status }, "route error");
   }
   res.status(status).json(errorBody(err, requestId));
+};
+
+/**
+ * T-149: unmatched paths answer JSON, like every other failure.
+ *
+ * T-76 covered what a handler throws. It did not cover a request that
+ * reaches no handler at all -- that fell through to Express's built-in
+ * finalhandler, which answers `<!DOCTYPE html>...Cannot POST /api/...` with
+ * `Content-Type: text/html`. The generated client parses an error body as
+ * JSON, so a caller got a parse failure instead of a 404: exactly what
+ * `POST /benchmark/agent/scans` (T-147) did for four days.
+ *
+ * The path is echoed back because "which URL did the server not find" is the
+ * whole content of a 404 -- but it is echoed sanitised: control characters
+ * and angle brackets removed, 200 characters maximum. A JSON response is not
+ * an HTML one, but a body that reflects caller input unfiltered is a habit
+ * worth not having.
+ */
+export function describeUnmatched(method: string, path: string): string {
+  const safe = path.replace(/[\u0000-\u001f<>]/g, "").slice(0, 200);
+  return `No such endpoint: ${method} ${safe}`;
+}
+
+export const jsonNotFoundHandler: RequestHandler = (req, res) => {
+  const requestId = typeof req.id === "string" || typeof req.id === "number" ? String(req.id) : undefined;
+  const body: { error: string; requestId?: string } = {
+    error: describeUnmatched(req.method, req.originalUrl.split("?")[0] ?? ""),
+  };
+  if (requestId) body.requestId = requestId;
+  res.status(404).json(body);
 };

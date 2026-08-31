@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { errorBody, errorStatus, jsonErrorHandler } from "./error-handler";
+import { describeUnmatched, errorBody, errorStatus, jsonErrorHandler, jsonNotFoundHandler } from "./error-handler";
 
 // T-76: the handler is exercised with fake req/res objects (no supertest in
 // this package) -- what matters is the contract: JSON body, thrown status
@@ -63,5 +63,45 @@ describe("jsonErrorHandler", () => {
     jsonErrorHandler(err, req, res, next);
     expect(next).toHaveBeenCalledWith(err);
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+// T-149: the same contract for a request that reaches no handler at all.
+describe("describeUnmatched", () => {
+  it("names the method and path the server did not find", () => {
+    expect(describeUnmatched("POST", "/api/benchmark/agent/scans")).toBe(
+      "No such endpoint: POST /api/benchmark/agent/scans",
+    );
+  });
+
+  it("strips angle brackets and control characters, and caps the length", () => {
+    expect(describeUnmatched("GET", "/api/<script>alert(1)</script>")).toBe(
+      "No such endpoint: GET /api/scriptalert(1)/script",
+    );
+    expect(describeUnmatched("GET", "/api/a\nbc")).toBe("No such endpoint: GET /api/abc");
+    const long = describeUnmatched("GET", "/api/" + "x".repeat(400));
+    expect(long.length).toBe("No such endpoint: GET ".length + 200);
+  });
+});
+
+describe("jsonNotFoundHandler", () => {
+  it("answers JSON 404 with the request id, and drops the query string", () => {
+    const res = fakeRes();
+    jsonNotFoundHandler(
+      { ...fakeReq("r9"), method: "POST", originalUrl: "/api/benchmark/agent/scans?callId=x" } as any,
+      res,
+      vi.fn(),
+    );
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({
+      error: "No such endpoint: POST /api/benchmark/agent/scans",
+      requestId: "r9",
+    });
+  });
+
+  it("omits the request id when there is none", () => {
+    const res = fakeRes();
+    jsonNotFoundHandler({ ...fakeReq(), id: undefined, method: "GET", originalUrl: "/nope" } as any, res, vi.fn());
+    expect(res.body).toEqual({ error: "No such endpoint: GET /nope" });
   });
 });
