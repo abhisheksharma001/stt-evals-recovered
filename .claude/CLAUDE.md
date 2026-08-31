@@ -151,6 +151,19 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 19: the aggregate reads, swept.** Every remaining
+  bulk-derived read has seeded route tests (suite 34 → 52): words-to-watch
+  (the batch-7 canonical rule proven at the route — "four" vs "4" makes no
+  word, a real split does; spans NEED a timed reference and extraction is
+  vendor-keyed, so span fixtures use deepgram-prefixed ids + Deepgram-shaped
+  rawOutput), assistant-signals (T-35 latest-scan-per-call, "judged" =
+  reasoning present), bulks list (status filter both directions), bulk
+  detail (callsRun double-count guard, coverage-vs-spend split, three
+  agent-cost states, T-07 breakdown order + server-side retryable), trend
+  (finished bulks only; a null peer-flag count is never a clean call). Both
+  T-35 and the trend filter proved by breaking. Left without tests: volume
+  (Vapi-backed) and provider-correlation.
+
 - **2026-08-31, batch 18: the reads the compile check cannot hold.** The four
   highest-traffic read routes have seeded integration tests now (suite 20 → 34):
   dashboard (deltas; FR-P3 derived provider status; T-134 archived-run skip),
