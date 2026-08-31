@@ -1,3 +1,51 @@
+## Found 2026-08-31 (batch 15, T-141/T-142): every id parameter was unchecked
+
+The register was drained, so recon started by hitting all 23 GET endpoints on
+the running production server with real ids -- and then with bad ones. Five
+answers were `500 Internal server error` for what is plainly a caller's
+mistake:
+
+    GET /benchmark/calls/not-a-uuid                     500
+    GET /benchmark/bulks/zzz                            500
+    GET /benchmark/rankings?bulkId=zzz                  500
+    GET /benchmark/disagreement-spans (no callId)       500
+    GET /benchmark/disagreement-spans?callId=a&callId=b 500
+
+Two separate mistakes underneath, both now fixed and both worth remembering:
+
+- **Nothing checked an id's shape before the query.** Every id in the spec was
+  a bare `type: string`, so a malformed one went straight into
+  `where id = $1` against a uuid column and Postgres threw
+  `invalid input syntax for type uuid`. Our log filled with what looked like
+  our bug. Fixed by `format: uuid` on the 30 parameters backed by a uuid
+  column (T-141) -- and deliberately not on the ones backed by text:
+  `providerId` (`deepgram-nova-3`), `assistantId` (Vapi's own id),
+  `accountLabel`, the audit log's `entityId`.
+- **`zod.coerce.string()` says yes to nothing.** Coercion runs `String(value)`
+  before any check, so a parameter that was never sent became the literal
+  nine-character string `"undefined"` and passed `.min(1)`. `GET
+  /benchmark/volume` with no label answered `404 No Vapi account configured
+  with label "undefined"` -- an answer about a client that cannot exist. A
+  repeated parameter arrives as an array and was joined into `"a,b"`.
+  Coercion is now `number` only (T-142); `z.coerce.boolean()` would have been
+  worse still, since `Boolean("false")` is true.
+
+Not yet bitten in normal use -- the UI only ever sends ids it got from the API,
+and the five 500s in the log are the probes that found this. It bites the first
+time someone edits a URL, follows a stale link, or writes a script.
+
+**General lesson, next to T-136's:** a generated validator is only as strict as
+the spec it was generated from, and a permissive coercion is worse than none --
+it converts "the caller sent nothing" into a value that passes every rule.
+Sweeping every endpoint with a bad input takes ten minutes and is now the way
+each batch's recon starts.
+
+Adding the first `format:` to the spec also exposed that orval's zod output was
+never pinned: its `auto` default inferred Zod 4 from a Zod 3.25 install and
+emitted `zod.uuid()`, a v4-only form. It failed the build immediately because
+the codegen script typechecks what it generates -- the good kind of failure.
+Pinned to `version: 3`.
+
 ## Found 2026-08-31 (batch 14, T-136): the listening panel had been dead for a day
 
 `GET /benchmark/disagreement-spans` answered **500 for every call** from the

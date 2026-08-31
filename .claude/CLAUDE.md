@@ -151,6 +151,28 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 15: ids checked at the edge; coercion narrowed; scoring
+  policy written down.** Sweeping all 23 GET endpoints with bad input found
+  five that answered **500 for a caller's typo**: an id was a bare
+  `type: string` in the spec, so it reached `where id = $1` on a uuid column
+  and Postgres threw. The 30 uuid-backed parameters now carry `format: uuid`
+  (T-141); text-backed ones (`providerId`, `assistantId`, `accountLabel`,
+  audit `entityId`) deliberately do not. **`zod.coerce.string()` turned a
+  missing parameter into the literal string `"undefined"`** (and a repeated
+  one into `"a,b"`), so coercion is `number` only now (T-142) -- a URL carries
+  text, strings never need coercing, and `Boolean("false")` is true. 5 route
+  tests hold both (integration 10 → 15, T-143), proven by putting the old
+  schemas back. **`docs/scoring-policy.md` now states what is normalized away
+  before scoring** and what counts as the same words in a different convention
+  (T-144) -- with three measured gaps recorded, not fixed: `[inaudible]` in
+  gold costs a provider a deletion, entity matching is a substring match
+  (`44712` is credited with `4471`), and `normalizationVersion` is hard-coded
+  "v1". Results' bulk picker is controlled from its first render (T-145); the
+  batch-14 note blaming Corpus for that warning was read off a stale console
+  buffer and is corrected -- **clear the console before attributing a warning
+  to a page.** Orval's zod output is pinned (`version: 3`); `auto` inferred
+  Zod 4 from a Zod 3.25 install.
+
 - **2026-08-31, batch 14: spans endpoint was 500ing; play-from-caret; span
   loop; route tests; retry figure explained.** `GET /benchmark/disagreement-spans`
   had answered **500 for every call since batch 4** (the hand-written response
