@@ -22,6 +22,23 @@ Think of it as an n8n-style pipeline, but the "workflow" is: pull calls → huma
 → run all providers → score → rank → recommend. Each of those is a real pipeline stage
 with its own UI page (Corpus, Review, Runs, Rankings).
 
+## How we work (read this before picking anything up)
+
+`~/.claude/skills/mystandard/SKILL.md` is the working standard, set by Abhishek on
+2026-08-31. In one line: **a step is one PR, one PR is one win, and a weaker model must
+be able to do any step alone without asking what was meant.**
+
+- The work lives in **`docs/step-register.md`** — one step, one PR, each self-contained
+  (exact files, what is there today, what to change, an acceptance sentence, the verify
+  command, and what the step may not touch). Take the top `todo`. Do only that.
+- A feature is **grilled before it is stepped**: is it already built, is there a skill
+  for it, what is the smallest useful version, what must it never do. Only settled
+  parts become steps; the rest sit at the bottom of the register with the question
+  blocking them.
+- A big spec is not the opening move. `docs/PRD-v5-optimize.md` holds reasoning;
+  the register holds work.
+- A bug found is a spec update first, a fix second, and the fix goes next.
+
 ## Read next, in this order
 
 1. **`.claude/VISION.md`** — why this matters, what "great" looks like, the top-1%
