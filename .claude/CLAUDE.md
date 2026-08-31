@@ -151,6 +151,26 @@ with its own UI page (Corpus, Review, Runs, Rankings).
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-08-31, batch 21: the last routes.** Suite 69 → 90 (20 files):
+  per-call disagreement (agent-scan runs and failed cells never count; a
+  call that ran but was never scored is ABSENT, not zero), the two
+  reproducibility manifests (**correcting gold afterwards changes nothing**
+  — FR-REP1 held through the route; a pre-manifest run is refused, never
+  fabricated; shards compose in `shardIndex` order), the verdict JSON and
+  `verdict.html` (org grouping, production resolved to a provider row, no
+  winner under the five-shared-call floor; the artefact must contain no
+  `<script` and no `http` — it is saved and mailed, not served), the
+  offline refusals of the Vapi-backed reads (the account is inferred from
+  the majority org label on the assistant's calls; every assertion holds
+  with or without a key), and the writes that spend nothing (call PATCH
+  and settings audit actor + before/after, empty `agentModel` means null,
+  a scan is decided once). Fixtures gained `actor` so route-written audit
+  rows get cleaned. **Every route that runs without a network call or
+  provider spend now has tests**; what is left is left for a stated reason
+  (vendor list APIs, live Vapi, or real money). Lesson repeated: the
+  settings row id was written from memory as a uuid — it is the literal
+  `"default"`, exported from `@workspace/db`.
+
 - **2026-08-31, batch 20: the last reads.** Suite 52 → 69 (15 files):
   provider-correlation (excess 1.0 vs −0.5 through the route; failed-only
   provider stays out; two providers → excess null), volume/vapi-accounts
