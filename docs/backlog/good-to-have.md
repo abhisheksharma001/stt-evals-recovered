@@ -1,3 +1,25 @@
+## Found 2026-08-31 (batch 19): the aggregate reads, swept
+
+- **Transcript-only span candidates build nothing.** `buildDisagreementSpans`
+  refuses without at least one timed candidate (`no_word_timings` — the
+  reference is the clock), and `extractProviderTimedWords` is vendor-keyed
+  (T-110), so an adapterless `fx-…` provider id can never carry timings.
+  Any test or tool that wants spans must seed a vendor-prefixed provider id
+  (`deepgram-…`) with a vendor-shaped rawOutput. Zero spend stays structural:
+  an adapter only fires inside run execution, which no read route touches.
+- **The batch-7 canonical rule now has a route-level proof**: seeding
+  "four" vs "4" alongside a real split produces exactly one watch word, not
+  two (`words-to-watch.int.test.ts`).
+- Integration suite 34 → 52 (words-to-watch 4, assistant-signals 4, bulks
+  list 3, bulk detail 5, trend 2), green twice in a row, zero leftover
+  fixture rows. Two behaviors proved by breaking: the T-35 latest-scan
+  dedupe in the bulk detail handler and the null-peer-flag filter in
+  `lib/trend.ts` — each removal fails exactly one test.
+- Reads still without route tests: `GET /benchmark/volume` (live
+  Vapi-backed; a test needs a Vapi-shaped fake or asserts only the
+  no-key/unknown-label refusals) and
+  `GET /benchmark/bulks/{id}/provider-correlation`.
+
 ## Found 2026-08-31 (batch 18): the reads the compile check cannot hold
 
 - **`benchmark_agent_scans.run_id` is a plain, no-cascade FK — a scan blocks its
