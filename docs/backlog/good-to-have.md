@@ -1,3 +1,37 @@
+## Found 2026-09-02: the working copy was swept out of `/tmp`
+
+- **The repo lived in a Claude Code scratchpad under `/private/tmp`, and something
+  on the Mac sweeps that tree nightly** (every file whose atime, mtime and ctime were
+  all older than ~3 days). Found by a routine from-the-system status check: `git status`
+  showed 166 ` D` lines nobody made — `.gitignore`, `.claude/VISION.md`, 13 docs,
+  `artifacts/api-server/tsconfig.json`, source under `artifacts/` and `lib/` — plus
+  209 missing objects in `.git` (`git fsck --connectivity-only`), 64 of 107 cached
+  audio files, and enough of `node_modules` that `pnpm run typecheck` failed at a
+  commit CI had passed. The reflog showed no git operation; nothing committed was lost
+  (`HEAD` = remote = `91c2405b0ec8`). Runbook: `docs/runbooks/working-copy-location.md`.
+
+- **Security side effect, no damage done:** with `.gitignore` deleted,
+  `artifacts/api-server/.env` (real keys) was an ordinary untracked file. No `git add`
+  ran. `git restore .` brought `.gitignore` back before anything else was touched.
+  **Rule: when `.gitignore` is missing, nothing gets staged until it is back.**
+
+- **Lost for good: audio for 6 calls.** The free rescue
+  (`POST /benchmark/calls/cache-audio`) re-fetched 58 of the 64 deleted files; the
+  other 6 had crossed Vapi's 14-day window while deleted. `vapi-c1a15ed9` (Rush,
+  2026-08-17) is nameable; the other 5 are among the 14 date-unknown property-management
+  and trucking calls now marked `source_refused`, indistinguishable from the 9 refused
+  before because every uncached call was re-attempted the same day. All 6 have gold; their
+  existing scores stand, and no new provider can ever be run on them. Cached audio is now
+  101 of 121 (was 107).
+
+- **Fix in progress (S-0.1):** fresh clone at `~/gh-projects/stt-evals-recovered`
+  (fsck clean, typecheck clean), audio copied across; `.env` is Abhishek's to copy, then
+  the API is deployed from there and Claude Code restarted there.
+
+- **Seen once, not explained:** the first `pnpm install` into the empty clone failed at
+  the root `preinstall` guard with `Use pnpm instead` though pnpm was the runner; an
+  `--ignore-scripts` install then a plain one passed, and every install since passes.
+
 ## Found 2026-08-31 (batch 23): the pages, rendered for the first time
 
 - **No page had ever been rendered by a test.** The UI package's 39 tests

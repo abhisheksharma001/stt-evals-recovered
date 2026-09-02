@@ -168,6 +168,14 @@ be able to do any step alone without asking what was meant.**
   banner instead (T-120). **Convention: backticks around a path = it
   exists**; a planned or deleted name is written plain.
 
+- **2026-09-02: the working copy was swept out of `/tmp` — it lives at
+  `~/gh-projects/stt-evals-recovered` now.** A nightly sweep on this Mac deleted 166
+  tracked files, 209 git history objects, 64 cached audio files and part of
+  `node_modules` from the old scratchpad clone. Nothing committed was lost; audio for
+  **6 calls is gone for good** (cached count 107 → 101). Runbook, loss list and the
+  relocation steps: `docs/runbooks/working-copy-location.md`; register step S-0.1
+  finishes the move (`.env` copy, deploy from the new home, restart Claude Code there).
+
 - **2026-08-31, batch 23: the pages, rendered.** The UI package had 39
   tests, all on pure `src/lib` helpers; **no test had ever rendered a
   page.** Now 84 across 13 files: a shared harness
@@ -413,6 +421,11 @@ be able to do any step alone without asking what was meant.**
 
 ## Standing rules for this project specifically
 
+- **The working copy lives at `~/gh-projects/stt-evals-recovered` — never under
+  `/private/tmp` and never inside a Claude Code scratchpad.** Something on this Mac
+  sweeps `/private/tmp` nightly (2026-09-01: lost source, git history objects and six
+  calls' audio for good). If `git status` ever shows ` D` lines nobody made, read
+  `docs/runbooks/working-copy-location.md` before doing anything else.
 - **API keys**: ephemeral env-vars only. Never in the database, never sent to the
   browser, never logged, never committed (`.env`/`.env.*` are gitignored). Writing a
   real key to the local `.env` file requires the user to explicitly say so, same as
