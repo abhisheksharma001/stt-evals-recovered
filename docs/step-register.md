@@ -22,12 +22,47 @@ with the questions that must be answered before they can be stepped.
 
 ---
 
+## Part 0 — Housekeeping
+
+### S-0.1 — Finish moving the working copy out of `/tmp`
+
+**Status:** `blocked` — waiting on Abhishek to copy `artifacts/api-server/.env` into the
+new clone (Claude does not write keys into `.env` unasked). Everything else is done.
+**PR:** one (this row's docs PR is the first half; the second half is a deploy, no code).
+**Depends on:** nothing.
+**Files:** none in the tree. Disk only: `~/gh-projects/stt-evals-recovered` (fresh clone,
+fsck clean, typecheck clean, 101 audio files copied into
+`artifacts/api-server/audio-cache/`).
+**Today:** the API on `:8177` still runs from the swept scratchpad clone under
+`/private/tmp` (process cwd), whose `node_modules` no longer typechecks; Claude Code
+sessions still open there. Full story: `docs/runbooks/working-copy-location.md`.
+**Change:** once `.env` is in place — `scripts/deploy-api.sh` from the new clone (it
+stops the `:8177` process by PID and starts the new build from
+`artifacts/api-server`, so `audio-cache/` resolves), then restart Claude Code from
+`~/gh-projects/stt-evals-recovered`. The old scratchpad clone is then dead weight; leave
+it or delete it, nothing depends on it.
+**Acceptance:** WHEN `/api/healthz` is polled THEN `commitSha` SHALL equal
+`git rev-parse --short=12 HEAD` of the new clone, the listening process's cwd SHALL be
+under `~/gh-projects/stt-evals-recovered`, and every provider that read `configured`
+before the move SHALL read `configured` after it.
+**Verify:**
+```
+cd ~/gh-projects/stt-evals-recovered && scripts/deploy-api.sh
+curl -s localhost:8177/api/healthz
+for p in $(lsof -nP -iTCP:8177 -sTCP:LISTEN -t); do lsof -p $p | awk '$4=="cwd"{print $NF}'; done
+curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.audioCached)]|length'   # 101
+```
+**Must not:** print, log or commit anything from `.env`; run any STT provider; touch
+the database.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
 
 **PR:** one.
-**Depends on:** nothing.
+**Depends on:** S-0.1 (every step ends with a live deploy, and deploys come from the new home).
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
 **Today:** the expandable catalog list renders all 19 Deepgram models as a flat list, so
 `nova-2` and its eleven domain variants (`nova-2-phonecall`, `nova-2-drivethru`, …) look
