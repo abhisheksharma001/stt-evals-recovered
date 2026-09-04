@@ -161,6 +161,64 @@ describe("Setup", () => {
     api.restore()
   })
 
+  it("groups Deepgram's domain variants under their base engine and leaves a flat catalog flat (S-1)", async () => {
+    const opt = (apiModel: string, label: string, providerId: string, enabled = false): ProviderModelList["vendors"][number]["models"][number] => ({
+      apiModel,
+      label,
+      latest: false,
+      source: "live",
+      verifiedAt: daysAgo(0),
+      note: null,
+      providerId,
+      enabled,
+      rowStatus: enabled ? "ready" : null,
+    })
+    const grouped: ProviderModelList = {
+      fetchedAt: models.fetchedAt,
+      vendors: [
+        {
+          ...models.vendors[0],
+          models: [
+            // Deepgram labels every base engine `<name>-general`; variants are named after their base.
+            { ...opt("nova-3", "nova-3-general", "deepgram-nova-3", true), latest: true },
+            opt("nova", "nova-general", "deepgram-nova", true),
+            opt("nova-2", "nova-2-general", "deepgram-nova-2", true),
+            opt("nova-2-phonecall", "nova-2-phonecall", "deepgram-nova-2-phonecall"),
+            opt("nova-2-medical", "nova-2-medical", "deepgram-nova-2-medical"),
+          ],
+        },
+        {
+          vendor: "openai",
+          vendorLabel: "OpenAI",
+          adapterId: "openai-gpt-4o-transcribe",
+          apiKeyConfigured: true,
+          source: "live",
+          error: null,
+          models: [
+            // A prefixed name without a `-general` base is a feature variant, not a domain: stays a plain row.
+            { ...opt("gpt-4o-transcribe", "gpt-4o-transcribe", "openai-gpt-4o-transcribe", true), latest: true },
+            opt("gpt-4o-transcribe-diarize", "gpt-4o-transcribe-diarize", "openai-gpt-4o-transcribe-diarize"),
+          ],
+        },
+      ],
+    }
+    const withOpenAi: Provider[] = [...providers, { ...providers[0], id: "openai-gpt-4o-transcribe", name: "OpenAI", model: "gpt-4o-transcribe" }]
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/providers": withOpenAi, "GET /api/benchmark/providers/models": grouped })
+    renderPage(<Setup />, { path: "/setup" })
+
+    // Exactly one grouped row on the whole page: nova-2 with its two variants.
+    // nova-3 and nova have no variants and stay plain; OpenAI's pair stays plain.
+    expect(await screen.findByText("2 domain variants")).toBeTruthy()
+    expect(screen.getAllByTestId("domain-variants").length).toBe(1)
+    expect(screen.getByText("nova-2-phonecall")).toBeTruthy()
+    expect(screen.getByText("nova-2-medical")).toBeTruthy()
+    expect(screen.getByText("gpt-4o-transcribe-diarize")).toBeTruthy()
+    // The header still counts every model, grouped or not.
+    expect(screen.getByText(/5 models offered/)).toBeTruthy()
+    expect(screen.getByText(/2 models offered/)).toBeTruthy()
+    api.restore()
+  })
+
   it("an unreachable OpenAI list falls back to the pinned models and admits it", async () => {
     const offline: AgentModelList = { ...agentModels, pinned: agentModels.pinned, others: [], live: false, fetchedAt: null, error: "connection refused" }
     const api = stubApi({ ...baseRoutes, "GET /api/benchmark/agent-models": offline })
