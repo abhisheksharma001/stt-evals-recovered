@@ -19,7 +19,11 @@
  *         pay-as-you-go streaming, verified 2026-08-29). The catalog default
  *         is insert-only (onConflictDoNothing), so the live row needs this.
  *
- * Idempotent: re-running finds nothing to change. Prints before/after.
+ * Idempotent: an --apply with nothing left to do prints three zero counts and
+ * writes no audit row. The T-62 guard compares on a tolerance because
+ * cost_per_minute is a float4 -- the stored value reads back as
+ * 0.007699999958276749, so `<> 0.0077` matched on every apply (M-1a,
+ * 2026-09-04). Prints before/after.
  *
  *   pnpm --filter @workspace/api-server exec tsx --env-file-if-exists=.env ./src/backfill-t65-t66.ts [--apply]
  *
@@ -56,11 +60,14 @@ const reclassified = await db.execute(sql`
   set status = 'error',
       error_message = 'legacy (2026-08-24 agent_scan): every re-transcription cell for this call failed, so no candidates existed and the flags were an LLM-only guess with nothing behind them. Reclassified by T-63/T-66.'
   where ${legacyWhere}`);
-const repriced = await db.execute(sql`update benchmark_providers set cost_per_minute = 0.0077 where id = 'deepgram-flux-general-en' and cost_per_minute <> 0.0077`);
-await db.execute(sql`
-  insert into audit_log (entity_type, entity_id, actor_label, action, after_state)
-  values ('agent_scan', 'backfill', 'backfill-t65-t66', 'backfill_pick_links_and_legacy_flagged',
-          ${JSON.stringify({ relinked: relinked.rowCount, reclassified: reclassified.rowCount, fluxRepriced: repriced.rowCount })}::jsonb)`);
+const repriced = await db.execute(sql`update benchmark_providers set cost_per_minute = 0.0077 where id = 'deepgram-flux-general-en' and abs(cost_per_minute - 0.0077) > 1e-9`);
+const written = (relinked.rowCount ?? 0) + (reclassified.rowCount ?? 0) + (repriced.rowCount ?? 0);
+if (written > 0) {
+  await db.execute(sql`
+    insert into audit_log (entity_type, entity_id, actor_label, action, after_state)
+    values ('agent_scan', 'backfill', 'backfill-t65-t66', 'backfill_pick_links_and_legacy_flagged',
+            ${JSON.stringify({ relinked: relinked.rowCount, reclassified: reclassified.rowCount, fluxRepriced: repriced.rowCount })}::jsonb)`);
+}
 
 const after65 = (await db.execute(crossRun)).rows[0]!.n;
 const after66 = (await db.execute(legacy)).rows[0]!.n;
