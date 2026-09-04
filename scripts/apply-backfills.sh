@@ -8,6 +8,9 @@
 #       2. backfill-t52-started-at.ts (T-52 source_started_at + source_provider
 #                                on the 22 original calls; 14 stay null forever,
 #                                Vapi's 14-day retention has their metadata too)
+#       3. backfill-m1-clear-draft-gold.ts (M-1: the 19 gold transcripts that
+#                                are byte-identical copies of their own draft
+#                                -> null; the 2 human-edited ones are untouched)
 #
 # Both scripts are idempotent, so this is safe to re-run. It reads
 # artifacts/api-server/.env for DATABASE_URL and the Vapi keys (T-52 calls
@@ -30,6 +33,7 @@ run() {
 }
 run backfill-t65-t66.ts
 run backfill-t52-started-at.ts
+run backfill-m1-clear-draft-gold.ts
 if [[ -z "$MODE" ]]; then
   echo
   echo "Nothing written. Re-run with --apply to write."
