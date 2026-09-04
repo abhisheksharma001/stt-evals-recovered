@@ -5,7 +5,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { customerAudioPathFor, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
+import { cacheCallSidecars, customerAudioPathFor, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
+import type { VapiCall } from "./vapi";
 
 // audio-cache.ts computes its directory from process.cwd(); vitest runs
 // from the api-server package root, the same place the server runs from.
@@ -92,5 +93,111 @@ describe("the cached-id listings", () => {
     const ids = await listCachedCustomerCallIds();
     expect(ids.has(BOTH)).toBe(true);
     expect(ids.has(MONO_ONLY)).toBe(false);
+  });
+});
+
+// M-6: the importer's sidecar save. Real files again, for the same reason
+// as above -- "did the caller-only channel end up on disk" is a filesystem
+// question, and a mock would only prove the function called itself.
+//
+// Audio is fetched through fetchAudioBytes, which is global fetch: a data:
+// URL is a real fetch of known bytes, with no network and no stub.
+const dataUrl = (body: string) => `data:application/octet-stream;base64,${Buffer.from(body).toString("base64")}`;
+
+const FULL = "00000000-0000-4000-8000-00000000be11";
+const NO_CUSTOMER = "00000000-0000-4000-8000-00000000be12";
+const BAD_URL = "00000000-0000-4000-8000-00000000be13";
+const AGAIN = "00000000-0000-4000-8000-00000000be14";
+
+function vapiCall(over: Partial<NonNullable<VapiCall["artifact"]>> = {}, top: Partial<VapiCall> = {}): VapiCall {
+  return {
+    id: "vapi-call-id",
+    endedReason: "customer-ended-call",
+    analysis: { summary: "a summary" },
+    startedAt: "2026-09-04T10:00:00.000Z",
+    endedAt: "2026-09-04T10:02:00.000Z",
+    costs: [{ type: "transcriber", transcriber: { provider: "deepgram", model: "flux-general-en" } }],
+    artifact: {
+      transcript: "AI: hello\nUser: hi",
+      messages: [{ role: "user", message: "hi" }],
+      performanceMetrics: { transcriberLatencyAverage: 272 },
+      presignedCustomerUrl: dataUrl("customer-bytes"),
+      presignedAssistantUrl: dataUrl("assistant-bytes"),
+      ...over,
+    },
+    ...top,
+  };
+}
+
+function track(callId: string): void {
+  written.push(
+    path.join(CACHE_DIR, `${callId}.customer.audio`),
+    path.join(CACHE_DIR, `${callId}.assistant.audio`),
+    path.join(CACHE_DIR, `${callId}.artifact.json`),
+  );
+}
+
+describe("cacheCallSidecars", () => {
+  it("saves both channels and the artifact, in the shape the rescue script wrote", async () => {
+    track(FULL);
+    const result = await cacheCallSidecars(FULL, vapiCall());
+
+    expect(result.saved.sort()).toEqual(["artifact", "assistant", "customer"]);
+    expect(result.missing).toEqual([]);
+    expect(result.errors).toEqual([]);
+
+    expect(await fs.readFile(path.join(CACHE_DIR, `${FULL}.customer.audio`), "utf8")).toBe("customer-bytes");
+    expect(await fs.readFile(path.join(CACHE_DIR, `${FULL}.assistant.audio`), "utf8")).toBe("assistant-bytes");
+
+    // The key set is the contract M-7's backfill reads across both the
+    // hand-rescued files and the imported ones.
+    const artifact = JSON.parse(await fs.readFile(path.join(CACHE_DIR, `${FULL}.artifact.json`), "utf8"));
+    expect(Object.keys(artifact).sort()).toEqual(
+      ["analysis", "costs", "endedAt", "endedReason", "messages", "performanceMetrics", "savedAt", "startedAt", "transcript"],
+    );
+    expect(artifact.performanceMetrics.transcriberLatencyAverage).toBe(272);
+    expect(artifact.endedReason).toBe("customer-ended-call");
+  });
+
+  it("writes the caller's audio and words readable only by this server (0600)", async () => {
+    track(FULL);
+    await cacheCallSidecars(FULL, vapiCall());
+    for (const suffix of ["customer.audio", "assistant.audio", "artifact.json"]) {
+      const stat = await fs.stat(path.join(CACHE_DIR, `${FULL}.${suffix}`));
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it("names a channel Vapi did not offer instead of pretending it saved one", async () => {
+    track(NO_CUSTOMER);
+    const result = await cacheCallSidecars(NO_CUSTOMER, vapiCall({ presignedCustomerUrl: undefined }));
+
+    expect(result.missing).toEqual(["customer"]);
+    expect(result.saved).toContain("assistant");
+    expect(result.saved).toContain("artifact");
+    expect(await isCustomerAudioCached(NO_CUSTOMER)).toBe(false);
+  });
+
+  it("reports a failed download as an error and never throws", async () => {
+    track(BAD_URL);
+    const result = await cacheCallSidecars(BAD_URL, vapiCall({ presignedCustomerUrl: "https://127.0.0.1:1/nope.wav" }));
+
+    expect(result.errors.some((e) => e.includes("customer channel"))).toBe(true);
+    // The rest of the save still happened: one dead link must not cost the
+    // artifact and the other channel too.
+    expect(result.saved).toContain("artifact");
+    expect(result.saved).toContain("assistant");
+  });
+
+  it("leaves files it already wrote exactly as they are on a second run", async () => {
+    track(AGAIN);
+    await cacheCallSidecars(AGAIN, vapiCall());
+    const first = await fs.readFile(path.join(CACHE_DIR, `${AGAIN}.artifact.json`), "utf8");
+
+    const second = await cacheCallSidecars(AGAIN, vapiCall({ presignedCustomerUrl: dataUrl("different-bytes") }));
+
+    expect(second.saved).toEqual([]);
+    expect(await fs.readFile(path.join(CACHE_DIR, `${AGAIN}.artifact.json`), "utf8")).toBe(first);
+    expect(await fs.readFile(path.join(CACHE_DIR, `${AGAIN}.customer.audio`), "utf8")).toBe("customer-bytes");
   });
 });

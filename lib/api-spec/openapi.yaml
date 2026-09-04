@@ -1457,6 +1457,12 @@ components:
         # can never be fetched again, by anyone. Only the read routes
         # compute it; absent (not false) on write responses.
         audioCached: { type: "boolean" }
+        # M-6: whether the caller-only channel (<callId>.customer.audio) is
+        # on the server's disk beside the mono mix. Derived from disk exactly
+        # like audioCached, and absent (not false) on write responses for the
+        # same reason. False means this call can only be measured on the mono
+        # mix, where most of the words are the assistant's own voice.
+        customerAudioCached: { type: "boolean" }
         # T-131: outcome of the last audio-cache ATTEMPT (rescue or
         # import-time caching). "source_refused" = the source will never
         # hand this recording out again (Vapi retention 400 / unsigned

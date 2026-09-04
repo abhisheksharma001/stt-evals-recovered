@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bulkChannel, cellChannel } from "./audio-channel";
+import { bulkChannel, cellChannel, savedAudioChip } from "./audio-channel";
 
 describe("bulkChannel", () => {
   it("names the caller-only channel when the bulk froze that decision", () => {
@@ -52,3 +52,25 @@ describe("cellChannel", () => {
     expect(cellChannel("customer", false)).toBeNull();
   });
 });
+
+describe("savedAudioChip", () => {
+  it("names the caller-only channel when it is saved beside the mono mix", () => {
+    const chip = savedAudioChip(true)
+    expect(chip.short).toBe("customer audio saved")
+    expect(chip.long).toContain("caller-only channel is saved")
+  })
+
+  it("says only the mono mix is saved, and what that costs a measurement", () => {
+    const chip = savedAudioChip(false)
+    expect(chip.short).toBe("audio saved")
+    expect(chip.long).toContain("not saved")
+    expect(chip.long).toContain("assistant's own voice")
+  })
+
+  it("claims nothing about a channel nobody looked at", () => {
+    // undefined is a response that never computed the flag -- not a "false".
+    const chip = savedAudioChip(undefined)
+    expect(chip.short).toBe("audio saved")
+    expect(chip.long).not.toContain("caller-only")
+  })
+})

@@ -78,3 +78,39 @@ export function cellChannel(
   if (audioSource === "mono") return MONO
   return CELL_UNTRACKED
 }
+
+// M-6 (2026-09-05). The Calls chip used to have one thing to say about a
+// saved call: the bytes are on disk, so Vapi's 14-day clock stopped
+// mattering. Now that the importer saves the caller-only channel too, "the
+// audio is saved" splits into two facts, and only one of them means this
+// call can ever be measured on the caller alone.
+
+export type SavedAudio = {
+  /** Chip-sized, as it reads in the Calls table. */
+  short: string
+  /** One or two sentences, for the title attribute. */
+  long: string
+}
+
+const RETENTION_SENTENCE =
+  "The mono mix is on the server's disk, so Vapi's 14-day retention window no longer applies to this call."
+
+/**
+ * What the saved-audio chip says. Three states, not two, for the same
+ * reason M-5a needed three: `undefined` is a response that never looked at
+ * the customer channel, so the chip states the retention fact it does know
+ * and claims nothing about a channel nobody checked.
+ */
+export function savedAudioChip(customerAudioCached: boolean | undefined): SavedAudio {
+  if (customerAudioCached === undefined) return { short: "audio saved", long: RETENTION_SENTENCE }
+  if (customerAudioCached) {
+    return {
+      short: "customer audio saved",
+      long: `${RETENTION_SENTENCE} The caller-only channel is saved beside it, so this call can be measured on the caller's voice alone.`,
+    }
+  }
+  return {
+    short: "audio saved",
+    long: `${RETENTION_SENTENCE} The caller-only channel is not saved, so this call can only be measured on audio that also contains the assistant's own voice.`,
+  }
+}

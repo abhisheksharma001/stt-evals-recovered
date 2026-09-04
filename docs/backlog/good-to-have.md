@@ -1043,6 +1043,30 @@ stakeholder" the research kept circling back to.
   lesson is the one to keep: a suffix match on a filename is a guess about
   what else will ever be written to that directory.**
 
+- **The integration suite fails about once every ten runs, on `main` as well**
+  (measured 2026-09-05 while shipping M-6). Three failures in roughly forty
+  runs, each in a different file and never twice the same one:
+  `small-reads.int.test.ts`'s "answers 404 for an unknown call",
+  `rankings.int.test.ts`'s "all-time picks each group's newest batch run", and
+  -- on an unmodified `main`, 1 failure in 12 runs -- `riskiest-endpoints.int.test.ts`'s
+  "answers 400 for a malformed id in the query string". **It is not caused by
+  any one branch**; the first two were seen on the M-6 branch and the third on
+  `main` with nothing of M-6 in it, which is the only reason M-6 could be
+  called green at all.
+  Two of the three assert a 4xx status and got something else, which points at
+  the response rather than at leftover rows, and the suite never prints what
+  it actually got. What else is known: `fileParallelism: false` is set in
+  `artifacts/api-server/vitest.integration.config.ts`, so files do not race
+  each other; the suite shares one database, whose header comment already
+  says "the corpus is shared state"; and each file calls `pool.end()` in its
+  own `afterAll`. Reproduce by running `TEST_DATABASE_URL=... pnpm run
+  test:integration` from `artifacts/api-server` in a loop of a dozen.
+  **The lesson to keep: a suite that is green only most of the time is not
+  evidence, and an assertion that says "expected 200 to be 404" without
+  printing the body it got costs an hour every time it fires.** Stepped as
+  M-6a, whose first job is to make the next occurrence diagnosable rather
+  than to guess at a cause.
+
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,
 fine-grained RBAC, real-time collaborative editing, threaded comments/mentions,

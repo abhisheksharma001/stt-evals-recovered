@@ -135,7 +135,7 @@ import { AgentConfigError, AgentRequestError, JUDGE_MODEL, analyzeFailure, match
 import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
-import { getOrCacheAudioBytes, audioCachePathFor, isAudioCached, listCachedCallIds } from "../lib/audio-cache";
+import { cacheCallSidecars, getOrCacheAudioBytes, audioCachePathFor, isAudioCached, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
@@ -322,7 +322,12 @@ function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect
   };
 }
 
-function serializeCall(call: BenchmarkCallRow, audioCached?: boolean): ZodInput<typeof GetBenchmarkCallResponse> {
+// M-6: the two cache flags travel together in one object rather than as two
+// adjacent optional booleans -- they are both "is this file on disk", one
+// letter apart in meaning, and a swapped pair would be invisible.
+type CallCacheState = { audio: boolean; customerAudio: boolean };
+
+function serializeCall(call: BenchmarkCallRow, cache?: CallCacheState): ZodInput<typeof GetBenchmarkCallResponse> {
   return {
     id: call.id,
     label: call.label,
@@ -352,7 +357,11 @@ function serializeCall(call: BenchmarkCallRow, audioCached?: boolean): ZodInput<
     sourceSuccessEvaluation: call.sourceSuccessEvaluation,
     // T-124: only the read routes pass this -- write responses leave it
     // absent rather than claiming false without having looked.
-    audioCached,
+    audioCached: cache?.audio,
+    // M-6: same rule, for the caller-only channel. A call with the mono mix
+    // but no customer file can only be measured on audio that also contains
+    // the assistant's own voice.
+    customerAudioCached: cache?.customerAudio,
     // T-131: last audio-cache attempt (rescue/import), so the UI can name a
     // permanent source refusal instead of offering to save the unsaveable.
     audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
@@ -449,7 +458,14 @@ router.get("/benchmark/calls", async (req, res): Promise<void> => {
   // are already on disk -- the Corpus retention chips read this instead of
   // guessing from age alone.
   const cachedIds = await listCachedCallIds();
-  respondJson(res, ListBenchmarkCallsResponse, calls.map((c) => serializeCall(c, cachedIds.has(c.id))));
+  // M-6: a second readdir of the same directory, for the same reason -- one
+  // per response, not one stat per call.
+  const customerCachedIds = await listCachedCustomerCallIds();
+  respondJson(
+    res,
+    ListBenchmarkCallsResponse,
+    calls.map((c) => serializeCall(c, { audio: cachedIds.has(c.id), customerAudio: customerCachedIds.has(c.id) })),
+  );
 });
 
 router.post("/benchmark/calls", async (req, res): Promise<void> => {
@@ -581,7 +597,11 @@ router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Call not found" });
     return;
   }
-  respondJson(res, GetBenchmarkCallResponse, serializeCall(call, await isAudioCached(call.id)));
+  respondJson(
+    res,
+    GetBenchmarkCallResponse,
+    serializeCall(call, { audio: await isAudioCached(call.id), customerAudio: await isCustomerAudioCached(call.id) }),
+  );
 });
 
 // T-72 (E.4): one call, every provider's output under the reference.
@@ -1143,6 +1163,20 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
     try {
       await getOrCacheAudioBytes(created);
       await recordAudioCacheAttempt(created.id, "saved", null);
+      // M-6: the caller-only channel, the assistant channel and the call
+      // artifact, written from the SAME object the import already fetched --
+      // its presigned links are minutes old here and dead within the hour.
+      // Never fails the import: the corpus row and the mono mix are already
+      // real, and a missing channel is said out loud rather than left as a
+      // gap somebody discovers on the day they need the caller's voice.
+      const sidecars = await cacheCallSidecars(created.id, call);
+      const gaps = [
+        ...sidecars.missing.map((channel) => `Vapi offered no ${channel} channel for it`),
+        ...sidecars.errors,
+      ];
+      if (gaps.length > 0) {
+        message = `Imported with its mono audio, but ${gaps.join("; ")}.`;
+      }
     } catch (err) {
       req.log.warn({ err, callId: created.id }, "import: audio could not be cached at import time");
       const errText = err instanceof Error ? err.message : String(err);

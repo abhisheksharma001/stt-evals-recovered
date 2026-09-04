@@ -9,7 +9,9 @@
 // Free: Vapi downloads only, no STT provider. Idempotent: existing files are skipped.
 // Needs the API on :8177 for the call list. Prints counts and call-id prefixes only --
 // never env values, never transcript text. Superseded for NEW calls by the import path
-// once register step M-6 lands; still the recovery tool for anything imported before it.
+// (M-6, 2026-09-05: cacheCallSidecars in artifacts/api-server/src/lib/audio-cache.ts
+// writes the same three files); still the recovery tool for anything imported before it,
+// including a call whose mono file was already cached, which the rescue endpoint skips.
 import fs from "node:fs";
 import path from "node:path";
 const CACHE = path.resolve("audio-cache");
