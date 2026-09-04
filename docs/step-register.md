@@ -463,6 +463,19 @@ API's own binding.
 
 ### M-4 — A nightly database backup, with a restore that has been exercised
 
+**Status:** `done` 2026-09-05 (PR #85, `36cd28a`, deployed `36cd28a861ba`).
+Learned: **the guard is the whole step, and only breaking it showed that.**
+`pg_dump` writing straight to the day's filename means one failed night
+silently replaces a good 3.9 MB backup with a 0-byte file that still looks
+like one — measured, not reasoned about. Dumping to `<name>.partial` and
+renaming only on exit 0 is what holds; a `trap` clears the partial so a
+failure leaves nothing at all. Two other things only a live run could say:
+a launchd agent starts without `/usr/local/bin` and would never have found
+`docker`, so the plist sets `PATH` explicitly; and macOS ships bash 3.2 at
+`/bin/bash`, which is what launchd runs, so no `mapfile`. The restore was
+exercised, not described — all 11 tables matched live.
+**Rule this leaves: a backup nobody has restored is a guess, and a backup
+script that has never been made to fail is an unproven one.**
 **PR:** one.
 **Depends on:** nothing.
 **Files:** new file scripts/backup-db.sh (plain: not written yet), new launchd plist
@@ -488,7 +501,7 @@ bash scripts/backup-db.sh
 ls -la ~/gh-projects/stt-evals-backups/ | tail -3
 docker exec stt-evals-pg createdb -U postgres stt_evals_restore
 docker exec -i stt-evals-pg pg_restore -U postgres -d stt_evals_restore < ~/gh-projects/stt-evals-backups/$(ls -t ~/gh-projects/stt-evals-backups | head -1)
-docker exec stt-evals-pg psql -U postgres -d stt_evals_restore -c 'select count(*) from benchmark_calls'   # 121
+docker exec stt-evals-pg psql -U postgres -d stt_evals_restore -c 'select count(*) from benchmark_calls'   # must equal the live count
 docker exec stt-evals-pg dropdb -U postgres stt_evals_restore
 launchctl list | grep stt-evals
 ```
