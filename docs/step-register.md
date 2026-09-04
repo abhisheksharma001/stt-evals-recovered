@@ -66,7 +66,15 @@ the database.
 
 ### S-1 — Group Deepgram's domain variants under their base engine
 
-**PR:** one.
+**PR:** one — #75, squash `79691057495f`, live 2026-09-04.
+**Status:** `done` 2026-09-04. Learned: the register's first suggestion (strip the trailing
+domain word) would have folded OpenAI's `gpt-4o-transcribe-diarize` under
+`gpt-4o-transcribe` — a feature variant, not a domain — and changed a flat vendor's
+appearance. The key that holds is the one Deepgram already sends: a base engine's `label`
+ends in `-general`; only those three exist across every vendor's live list. Live result:
+19 → 3 rows (nova-3 +1, nova-2 +11, nova +4); every other vendor byte-identical. Loop
+lesson: **commit before proving by breaking** — a `git checkout -- file` used to undo a
+break restored the *committed* file and silently threw away the uncommitted step.
 **Depends on:** S-0.1 (every step ends with a live deploy, and deploys come from the new home).
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
 **Today:** the expandable catalog list renders all 19 Deepgram models as a flat list, so
