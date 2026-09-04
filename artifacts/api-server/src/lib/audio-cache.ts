@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fetchAudioBytes } from "@workspace/stt-providers";
-import { resolveFreshRecordingUrl, type RecordingUrlSourceCall } from "./vapi";
+import { resolveFreshRecordingUrl, type RecordingUrlSourceCall, type VapiCall } from "./vapi";
 import { logger } from "./logger";
 
 // 2026-08-27 (technical-fixes FIX-2): Vapi's own recording URL is only valid
@@ -61,6 +61,14 @@ function customerCachePathFor(callId: string): string {
  * customer-channel bulk. */
 export function customerAudioPathFor(callId: string): string {
   return customerCachePathFor(callId);
+}
+
+function assistantCachePathFor(callId: string): string {
+  return path.join(CACHE_DIR, `${callId}.assistant.audio`);
+}
+
+function artifactCachePathFor(callId: string): string {
+  return path.join(CACHE_DIR, `${callId}.artifact.json`);
 }
 
 /** Which audio channel a cell was actually transcribed from. Persisted per
@@ -132,16 +140,122 @@ export async function getOrCacheAudioBytes(
   return bytes;
 }
 
-/** Whether a call's audio has already been cached (used for the "expires
- * soon" UI warning -- a call not yet cached is still on Vapi's retention
- * clock; a cached one no longer is). */
-export async function isAudioCached(callId: string): Promise<boolean> {
+// M-6 (2026-09-05). The mono mix is one of four things Vapi will hand over
+// for a call, and the other three vanish with it when the 14-day retention
+// window closes. scripts/rescue-customer-audio.mjs saved them by hand on
+// 2026-09-04 for the 99 calls still inside the window; the 22 older ones
+// answered 400 and are gone for good. This is that same save, run at import
+// time, so no call imported from here on ever needs rescuing.
+//
+// Everything is written 0600 into the gitignored cache directory: the
+// artifact JSON carries the caller's own words, their phone number and the
+// arguments of every tool the assistant called.
+
+export type SidecarResult = {
+  /** Written by THIS call. A file already on disk is left exactly as it is. */
+  saved: Array<"customer" | "assistant" | "artifact">;
+  /** Channels Vapi offered no URL for on this call. A gap, not an error. */
+  missing: Array<"customer" | "assistant">;
+  /** Download or write problems, one sentence each. Never thrown. */
+  errors: string[];
+};
+
+async function fileExists(file: string): Promise<boolean> {
   try {
-    await fs.access(cachePathFor(callId));
+    await fs.access(file);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Saves the caller-only channel, the assistant channel and the call's
+ * artifact beside the mono mix.
+ *
+ * `call` must be a VapiCall fetched moments ago -- the presigned per-channel
+ * URLs on it are short-lived, so a stale object here writes nothing and says
+ * the download failed. Nothing in here ever throws: the corpus row and the
+ * mono mix are already real by the time this runs, and losing an extra
+ * channel must not undo an import. What did not happen comes back in the
+ * result so the caller can say it out loud instead of leaving a silent gap.
+ */
+export async function cacheCallSidecars(callId: string, call: VapiCall): Promise<SidecarResult> {
+  const result: SidecarResult = { saved: [], missing: [], errors: [] };
+  const artifact = call.artifact ?? {};
+
+  try {
+    await fs.mkdir(CACHE_DIR, { recursive: true });
+  } catch (err) {
+    result.errors.push(`the audio cache directory could not be created (${errorText(err)})`);
+    return result;
+  }
+
+  const artifactPath = artifactCachePathFor(callId);
+  if (!(await fileExists(artifactPath))) {
+    try {
+      // Field for field the shape scripts/rescue-customer-audio.mjs writes:
+      // M-7's backfill reads the hand-rescued files and the imported ones
+      // with one reader, or it reads neither.
+      await fs.writeFile(
+        artifactPath,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          messages: artifact.messages ?? null,
+          performanceMetrics: artifact.performanceMetrics ?? null,
+          transcript: artifact.transcript ?? null,
+          endedReason: call.endedReason ?? null,
+          analysis: call.analysis ?? null,
+          costs: call.costs ?? null,
+          startedAt: call.startedAt ?? null,
+          endedAt: call.endedAt ?? null,
+        }),
+        { mode: 0o600 },
+      );
+      result.saved.push("artifact");
+    } catch (err) {
+      result.errors.push(`the call artifact could not be saved (${errorText(err)})`);
+    }
+  }
+
+  const channels = [
+    { name: "customer" as const, url: artifact.presignedCustomerUrl, file: customerCachePathFor(callId) },
+    { name: "assistant" as const, url: artifact.presignedAssistantUrl, file: assistantCachePathFor(callId) },
+  ];
+  for (const channel of channels) {
+    if (await fileExists(channel.file)) continue;
+    if (!channel.url) {
+      result.missing.push(channel.name);
+      continue;
+    }
+    try {
+      await fs.writeFile(channel.file, await fetchAudioBytes(channel.url), { mode: 0o600 });
+      result.saved.push(channel.name);
+    } catch (err) {
+      result.errors.push(`the ${channel.name} channel could not be saved (${errorText(err)})`);
+    }
+  }
+
+  return result;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Whether a call's audio has already been cached (used for the "expires
+ * soon" UI warning -- a call not yet cached is still on Vapi's retention
+ * clock; a cached one no longer is). */
+export async function isAudioCached(callId: string): Promise<boolean> {
+  return fileExists(cachePathFor(callId));
+}
+
+/** M-6: the caller-only twin of isAudioCached, for the one-call read route.
+ * False is a fact about this disk, never a claim that Vapi has no such
+ * channel -- the two are different things and only one of them is knowable
+ * from here. */
+export async function isCustomerAudioCached(callId: string): Promise<boolean> {
+  return fileExists(customerCachePathFor(callId));
 }
 
 /** T-7 fix (2026-08-27, base-solidity review): a plain disk read, no Vapi

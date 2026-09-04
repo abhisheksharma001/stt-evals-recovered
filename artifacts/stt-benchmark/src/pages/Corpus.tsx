@@ -45,6 +45,7 @@ import { DisagreementSpans } from "@/components/disagreement-spans"
 import { TableStateRow, errorMessage } from "@/components/table-state"
 import { ProviderComparisonSection } from "@/components/provider-comparison-section"
 import { retentionState } from "@/lib/retention"
+import { savedAudioChip } from "@/lib/audio-channel"
 import { JudgeChip } from "@/components/judge-chip"
 
 // ---------------------------------------------------------------------------
@@ -241,7 +242,7 @@ export default function Corpus() {
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={call.status} />
                             <JudgeChip scan={latestScanByCall.get(call.id) ?? null} />
-                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} audioCached={call.audioCached} audioCacheLastOutcome={call.audioCacheLastOutcome} />
+                            <RetentionWarning sourceStartedAt={call.sourceStartedAt} audioCached={call.audioCached} customerAudioCached={call.customerAudioCached} audioCacheLastOutcome={call.audioCacheLastOutcome} />
                           </div>
                         </TableCell>
                         <TableCell>
@@ -719,17 +720,20 @@ function StatusBadge({ status }: { status: CallStatus }) {
 // from age alone (the pre-T-124 version warned "expired?" on calls that
 // were long since safely cached). The mapping lives in lib/retention.ts
 // retentionState(), unit-tested; this component only owns the CSS.
-function RetentionWarning({ sourceStartedAt, audioCached, audioCacheLastOutcome }: { sourceStartedAt?: string | null; audioCached?: boolean; audioCacheLastOutcome?: string | null }) {
+function RetentionWarning({ sourceStartedAt, audioCached, customerAudioCached, audioCacheLastOutcome }: { sourceStartedAt?: string | null; audioCached?: boolean; customerAudioCached?: boolean; audioCacheLastOutcome?: string | null }) {
   const st = retentionState(sourceStartedAt, audioCached, audioCacheLastOutcome)
   if (!st) return null
   if (st.kind === "saved") {
+    // M-6: the wording now depends on WHICH files are on disk, and lives in
+    // lib/audio-channel.ts with the rest of the channel vocabulary.
+    const saved = savedAudioChip(customerAudioCached)
     return (
       <span
         className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono uppercase text-muted-foreground"
-        title="This call's audio bytes are cached on the server -- Vapi's 14-day retention window no longer applies to it."
+        title={saved.long}
         data-testid="retention-chip"
       >
-        <TimerReset className="h-2.5 w-2.5" /> audio saved
+        <TimerReset className="h-2.5 w-2.5" /> {saved.short}
       </span>
     )
   }

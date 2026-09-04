@@ -181,6 +181,20 @@ export type VapiCall = {
     // kept as a fallback in case an account only has that.
     presignedMonoUrl?: string;
     presignedStereoUrl?: string;
+    // M-6: the caller and the assistant as separate, already-split tracks.
+    // Confirmed live 2026-09-04 on a Land And Apartment call, shapes in
+    // docs/provider-data-samples.md; the customer file has exactly the mono
+    // file's duration, so timings line up across all three. These expire on
+    // the same 14-day clock as the mono URL, which is why the importer
+    // saves them the moment a call arrives instead of when a run needs them.
+    presignedCustomerUrl?: string;
+    presignedAssistantUrl?: string;
+    // Stored verbatim by the importer and read by nothing here. M-7 pulls
+    // turn timings, tool calls and production latency out of the saved
+    // file; typing the shapes now would be guessing at fields no code in
+    // this repo reads yet.
+    messages?: unknown;
+    performanceMetrics?: unknown;
   };
   // Cost-breakdown entries, one per pipeline stage. The transcriber entry
   // (type "transcriber") is the only place Vapi's live API actually reports
@@ -536,14 +550,18 @@ export class VapiNoRecordingError extends Error {
 }
 
 /**
- * Resolves a fresh, live recording URL for a corpus call by re-asking Vapi.
+ * Re-fetches a corpus call from Vapi, retrying while its recording link
+ * comes back unsigned (see the comment inside). Returns the whole call, not
+ * just the URL, because the presigned per-channel links and the artifact
+ * live on the same object and expire on the same clock -- a caller that
+ * wants to save them (M-6) must not have to ask a second time.
+ *
  * Throws VapiConfigError (no/ambiguous account), VapiNoRecordingError (no
- * call id on file, or Vapi has no recording for it), or VapiRequestError
- * (Vapi API call itself failed) -- callers decide how to surface each.
+ * call id on file), or VapiRequestError (the Vapi API call itself failed).
  */
-export async function resolveFreshRecordingUrl(
+export async function resolveFreshVapiCall(
   call: RecordingUrlSourceCall,
-): Promise<string> {
+): Promise<VapiCall> {
   const vapiCallId = guessVapiCallId(call);
   if (!vapiCallId) {
     throw new VapiNoRecordingError(
@@ -578,20 +596,28 @@ export async function resolveFreshRecordingUrl(
   // fetched, so this only spends retries when there's an actual chance.
   const RECORDING_URL_RETRIES = 2;
   const RECORDING_URL_RETRY_DELAY_MS = 1500;
-  let freshUrl: string | undefined;
-  for (let attempt = 0; attempt <= RECORDING_URL_RETRIES; attempt++) {
-    const fresh = await fetchVapiCall(account.id, vapiCallId);
-    freshUrl = recordingUrlOf(fresh);
-    if (!freshUrl) break; // Vapi has nothing at all -- retrying won't help
-    if (freshUrl.includes("?")) break; // signed -- done
-    if (attempt < RECORDING_URL_RETRIES) {
-      await new Promise((resolve) => setTimeout(resolve, RECORDING_URL_RETRY_DELAY_MS));
-    }
+  let fresh = await fetchVapiCall(account.id, vapiCallId);
+  for (let attempt = 0; attempt < RECORDING_URL_RETRIES; attempt++) {
+    const url = recordingUrlOf(fresh);
+    if (!url) break; // Vapi has nothing at all -- retrying won't help
+    if (url.includes("?")) break; // signed -- done
+    await new Promise((resolve) => setTimeout(resolve, RECORDING_URL_RETRY_DELAY_MS));
+    fresh = await fetchVapiCall(account.id, vapiCallId);
   }
+  return fresh;
+}
+
+/**
+ * The recording URL alone, for the callers that only ever wanted that.
+ * Throws VapiNoRecordingError when Vapi answers about the call but has no
+ * recording link for it: the audio is gone on their side, which is the same
+ * permanent outcome as an explicit retention 400.
+ */
+export async function resolveFreshRecordingUrl(
+  call: RecordingUrlSourceCall,
+): Promise<string> {
+  const freshUrl = recordingUrlOf(await resolveFreshVapiCall(call));
   if (!freshUrl) {
-    // Vapi answered about the call but has no recording link for it: the
-    // audio is gone on their side, which is the same permanent outcome as
-    // an explicit retention 400.
     throw new VapiNoRecordingError(
       "Vapi has no recording URL for this call anymore.",
       "retention_expired",

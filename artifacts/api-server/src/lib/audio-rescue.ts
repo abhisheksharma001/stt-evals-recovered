@@ -11,7 +11,8 @@
 // safe to click twice.
 import { desc } from "drizzle-orm";
 import { benchmarkCallsTable, db } from "@workspace/db";
-import { getOrCacheAudioBytes, listCachedCallIds } from "./audio-cache";
+import { cacheCallSidecars, getOrCacheAudioBytes, listCachedCallIds } from "./audio-cache";
+import { resolveFreshVapiCall } from "./vapi";
 import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "./audio-attempt";
 import { drainWithConcurrency } from "./concurrency";
 import { VAPI_RETENTION_WINDOW_DAYS } from "./vapi-retention";
@@ -74,6 +75,21 @@ export async function rescueUncachedAudio(): Promise<RescueResult> {
     const call = byId.get(target.id)!;
     try {
       await getOrCacheAudioBytes(call);
+      // M-6: the caller-only channel, the assistant channel and the artifact
+      // too, on the same trip. getOrCacheAudioBytes hands back bytes and not
+      // the call object the presigned channel links live on, so this asks
+      // Vapi once more -- a metadata GET, free, on a background chore that
+      // was already making a request per call.
+      //
+      // In its own try on purpose: the mono file is on disk by the line
+      // above, and this call is "saved" whatever happens next. Letting a
+      // failure here fall into the outer catch would report a saved call as
+      // failed AND overwrite its good attempt record with a bad one.
+      try {
+        await cacheCallSidecars(call.id, await resolveFreshVapiCall(call));
+      } catch (err) {
+        logger.warn({ err, callId: call.id }, "audio rescue: mono saved, but the extra channels could not be");
+      }
       savedCount += 1;
       results.push({ callId: call.id, label: call.label, outcome: "saved", error: null });
       await recordAudioCacheAttempt(call.id, "saved", null);

@@ -42,8 +42,8 @@ function call(over: Partial<BenchmarkCall> & Pick<BenchmarkCall, "id" | "label">
 
 const calls: BenchmarkCall[] = [
   // Cached, and far older than the window: bytes on disk mean Vapi's clock
-  // stopped mattering.
-  call({ id: "call-saved", label: "A saved", audioCached: true, sourceStartedAt: daysAgo(60), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
+  // stopped mattering. Mono only -- imported before M-6 saved channels.
+  call({ id: "call-saved", label: "A saved", audioCached: true, customerAudioCached: false, sourceStartedAt: daysAgo(60), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
   // Uncached and fresh: nothing to warn about yet.
   call({ id: "call-fresh", label: "B fresh", audioCached: false, sourceStartedAt: daysAgo(3), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
   // Uncached past day 14: gone for everyone, and a click cannot fix it.
@@ -54,6 +54,8 @@ const calls: BenchmarkCall[] = [
   call({ id: "call-refused", label: "E refused", audioCached: false, sourceStartedAt: daysAgo(12), audioCacheLastOutcome: "source_refused", sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
   // Added by hand: no source date at all, so its age is unknown.
   call({ id: "call-manual", label: "F manual", audioCached: false }),
+  // M-6: imported with the caller-only channel beside the mono mix.
+  call({ id: "call-customer", label: "G customer", audioCached: true, customerAudioCached: true, sourceStartedAt: daysAgo(2), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
 ]
 
 const assistants: VapiAssistant[] = [
@@ -140,15 +142,32 @@ describe("Calls", () => {
     api.restore()
   })
 
+  // M-6: "the audio is saved" is two facts now, and only one of them means
+  // this call can ever be measured on the caller's voice alone.
+  it("says which channels a saved call actually has, and claims nothing extra for the others", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Corpus />, { path: "/corpus" })
+
+    fireEvent.click(await screen.findByText("Flat"))
+    await screen.findByText("G customer")
+
+    expect(chipFor("G customer")).toContain("customer audio saved")
+    // Mono only: the older wording, because the caller-only channel is not
+    // there and the chip must not imply it is.
+    expect(chipFor("A saved")).toContain("audio saved")
+    expect(chipFor("A saved")).not.toContain("customer")
+    api.restore()
+  })
+
   it("the rescue button counts only the calls a click can actually save", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Corpus />, { path: "/corpus" })
 
-    // Six calls: one cached, one gone, one refused. Three are savable.
+    // Seven calls: two cached, one gone, one refused. Three are savable.
     const button = await screen.findByTestId("rescue-audio-button")
     expect(button.textContent).toBe("Save audio now (3)")
     // The summary beside it counts the rows on screen.
-    expect((await screen.findByTestId("audio-retention-summary")).textContent).toContain("1 audio saved")
+    expect((await screen.findByTestId("audio-retention-summary")).textContent).toContain("2 audio saved")
     expect((await screen.findByTestId("audio-retention-summary")).textContent).toContain("1 gone for good")
     expect(api.unmatched).toEqual([])
     api.restore()

@@ -2,6 +2,8 @@
 // corpus list feeds Corpus and every picker; its filters and its newest-
 // first order are query logic the compile check cannot see. Assertions are
 // containment on this suite's own rows -- the corpus is shared state.
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
@@ -13,19 +15,35 @@ let rushId: string;
 let archivedId: string;
 let truckingId: string;
 
+// M-6: the cache flags are read off this directory, so proving them means
+// putting real files in it. Written under the seeded calls' own uuids and
+// removed in afterAll, so nothing here touches the rescued corpus audio
+// that shares the directory.
+const CACHE_DIR = path.join(process.cwd(), "audio-cache");
+const cacheFiles: string[] = [];
+
 async function listCalls(query: Record<string, string> = {}) {
   const res = await request(app).get("/api/benchmark/calls").query(query);
   expect(res.status).toBe(200);
-  return res.body as { id: string; vertical: string; status: string; audioCached: boolean }[];
+  return res.body as { id: string; vertical: string; status: string; audioCached: boolean; customerAudioCached: boolean }[];
 }
 
 beforeAll(async () => {
   rushId = (await fx.call({ vertical: "rush", status: "ready_to_run" })).id;
   archivedId = (await fx.call({ vertical: "rush", status: "archived" })).id;
   truckingId = (await fx.call({ vertical: "trucking", status: "ready_to_run" })).id;
+
+  // The rush call gets both files, as an M-6 import leaves them behind.
+  await fs.mkdir(CACHE_DIR, { recursive: true });
+  for (const suffix of ["audio", "customer.audio"]) {
+    const file = path.join(CACHE_DIR, `${rushId}.${suffix}`);
+    await fs.writeFile(file, "bytes");
+    cacheFiles.push(file);
+  }
 });
 
 afterAll(async () => {
+  await Promise.all(cacheFiles.map((f) => fs.rm(f, { force: true })));
   await fx.cleanup();
   await pool.end();
 });
@@ -63,5 +81,19 @@ describe("GET /api/benchmark/calls", () => {
     const rows = await listCalls({ vertical: "trucking" });
     const mine = rows.find((r) => r.id === truckingId);
     expect(mine?.audioCached).toBe(false);
+    // M-6: no mono file means no customer file either, and the response says
+    // so rather than leaving the field off.
+    expect(mine?.customerAudioCached).toBe(false);
+  });
+
+  it("reports customerAudioCached per call, from that call's own file", async () => {
+    const rows = await listCalls();
+    const withChannel = rows.find((r) => r.id === rushId);
+    const monoOnly = rows.find((r) => r.id === archivedId);
+    expect(withChannel?.audioCached).toBe(true);
+    expect(withChannel?.customerAudioCached).toBe(true);
+    // Same request, same directory: a call with no file of its own is not
+    // carried along by its neighbour's.
+    expect(monoOnly?.customerAudioCached).toBe(false);
   });
 });
