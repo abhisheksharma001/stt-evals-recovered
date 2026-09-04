@@ -21,6 +21,7 @@ import { VAPI_RETENTION_WINDOW_DAYS } from "./vapi-retention";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";
 import { resolveProductionProviderId } from "./verdict";
+import { describeEmptySelection, type SelectionExclusion } from "./empty-selection";
 
 // 2026-08-27, per Abhishek ("let's not take the calls which are 14 days
 // back, so we never encounter this problem again"): matches the warning
@@ -130,13 +131,10 @@ export function resolveDurationBand(input: {
   return { min, max };
 }
 
-/**
- * T-14: one named bucket per reason a call in scope did NOT make it into the
- * selection. Every call in scope lands in exactly one place -- selected, or
- * one of these -- so `inScopeCount === callIds.length + sum(excluded.count)`
- * always holds and nothing is dropped silently.
- */
-export type SelectionExclusion = { bucket: string; count: number };
+// T-14's buckets and M-3b's refusal sentence live in `empty-selection.ts`
+// (db-free so they can be unit-tested); re-exported here because this is
+// where callers have always imported them from.
+export type { SelectionExclusion };
 
 export type ResolvedCriteriaSelection = ResolvedCriteriaCallIds & {
   /** Calls that passed the "who" filters (vertical / assistant / account) or
@@ -507,13 +505,13 @@ export async function createBulkFromCriteria(input: {
     );
   }
 
-  const { callIds, excludedRetentionExpiredCount } = await resolveCriteriaCallIds(input.criteria, minDuration, maxDuration, now);
+  // M-3b: go through the full selection, not resolveCriteriaCallIds, so a
+  // refusal can say WHICH filter emptied it. The buckets already exist (T-14)
+  // and the preview endpoint already shows them; the wrapper dropped them, so
+  // a person launching a stale template only saw "matched no corpus calls".
+  const { callIds, inScopeCount, excluded, excludedRetentionExpiredCount } = await resolveCriteriaSelection(input.criteria, minDuration, maxDuration, now);
   if (callIds.length === 0) {
-    throw new BulkSelectionEmptyError(
-      excludedRetentionExpiredCount > 0
-        ? `selection criteria matched no corpus calls (${excludedRetentionExpiredCount} matched but were excluded -- past Vapi's ${VAPI_RETENTION_WINDOW_DAYS}-day retention window and never cached)`
-        : "selection criteria matched no corpus calls",
-    );
+    throw new BulkSelectionEmptyError(describeEmptySelection(inScopeCount, excluded));
   }
 
   // FR-BLK-1: freeze. A relative window becomes concrete bounds AND the

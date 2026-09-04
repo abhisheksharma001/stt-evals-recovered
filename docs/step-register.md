@@ -247,6 +247,50 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:8177/api/healthz  # 200
 
 ---
 
+### M-3b — A refused launch says which filter emptied the selection
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (`createBulk`, the
+`BulkSelectionEmptyError` message).
+**Today:** launching a bulk or a template whose criteria match nothing answers
+`400 selection criteria matched no corpus calls` and stops there. The screen
+shows that sentence and a person has no idea which filter did it. The system
+already knows: `resolveCriteriaSelection` returns `inScopeCount` and a named
+`excluded` bucket per reason (T-14), and `POST /benchmark/bulks/preview`
+renders them — but `createBulk` calls `resolveCriteriaCallIds`, a wrapper that
+narrows the result to `callIds` + `excludedRetentionExpiredCount` and throws
+the buckets away. Found live 2026-09-04 on the "weekly lindenwood heights
+chek" template (`lastNDays: 7`): 121 in scope, 107 `outside the date window`,
+14 `no start date on record`, 0 matched — the newest corpus call is
+2026-08-26 and the window started 2026-08-28.
+**Change:** in `createBulk`, call `resolveCriteriaSelection` instead of
+`resolveCriteriaCallIds` and build the message from what it returns: `no
+corpus calls matched: 0 of <inScopeCount> in scope (<bucket> <count>, <bucket>
+<count>, ...)`, buckets largest first. Keep the existing retention sentence as
+one of those buckets — it already is one. Leave `resolveCriteriaCallIds`
+alone; it is exported and named in the docs, and deleting it is not this bug.
+**Acceptance:** WHEN a bulk or template launch selects no calls THEN the 400
+SHALL name every exclusion bucket with its count and the in-scope total, so
+`lastNDays: 7` against this corpus reads `no corpus calls matched: 0 of 121 in
+scope (outside the date window 107, no start date on record 14)`.
+**Verify:**
+```
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+plus live, against the real corpus:
+```
+curl -s -X POST localhost:8177/api/benchmark/bulks -H 'content-type: application/json' \
+  -d '{"name":"m3b probe","criteria":{"lastNDays":7,"minDurationSeconds":20},"minDurationSeconds":20,"providerIds":["deepgram-nova-3"]}'
+```
+→ 400 whose message names the buckets. **This call is safe: it is refused
+before anything is created, so it spends nothing.** Prove by breaking: put the
+bare sentence back, watch the new test fail.
+**Must not:** change which calls are selected, the duration defaults, the cost
+gate, or launch anything.
+
+---
+
 ### M-3a — The UI server listens on localhost too
 
 **PR:** one.
