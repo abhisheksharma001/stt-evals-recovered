@@ -11,7 +11,11 @@ export * from "./hybrid";
 // strings ("555") -- see normalizeNumberWords/splitDigitRuns below. Old
 // (v1) scored rows are untouched; they just aren't directly comparable to
 // new ones on word-diff-derived metrics.
-export const SCORING_VERSION = "v2";
+// v3 (2026-09-04, M-2): a line-leading "AI:" / "User:" speaker label is
+// stripped before lower-casing. Vapi writes its transcripts that way, and
+// the labels were surviving as the words "ai" and "user" -- one deletion
+// charged to a provider per line of the reference.
+export const SCORING_VERSION = "v3";
 
 export type EntityType =
   | "ro_number"
@@ -157,8 +161,14 @@ export function digitizeSpokenDigits(text: string): string {
   return withDigits.replace(/\d(?:\s+\d)+/g, (run) => run.replace(/\s+/g, ""));
 }
 
+// M-2: the two speaker labels Vapi writes at the head of a line ("AI: ..." /
+// "User: ..."). Stripped before lower-casing, and only at a line start, so a
+// spoken "the user said no" mid-line keeps its word.
+const speakerLabel = /^(?:AI|User):\s*/gm;
+
 export function normalizeTranscript(value: string): string {
   const base = value
+    .replace(speakerLabel, "")
     .normalize("NFKC")
     .replace(quoteFold, "'")
     .replace(dashFold, "-")

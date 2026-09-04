@@ -40,6 +40,31 @@ describe("normalizeTranscript", () => {
     expect(spelled).toBe(formatted);
     expect(spelled).toBe("call 5 5 5 1 2 3 1 2 1 2");
   });
+
+  // M-2: Vapi writes its transcripts as speaker-labelled lines. The labels
+  // are not words anybody said -- left in, they cost a provider one deletion
+  // per line of the reference.
+  it("5c. drops a line-leading AI: / User: speaker label", () => {
+    expect(normalizeTranscript("AI: hello there\nUser: hi")).toBe("hello there hi");
+    // only the label goes: a "user" the label was standing in front of stays.
+    expect(normalizeTranscript("AI: the user said no")).toBe("the user said no");
+    // the acceptance sentence itself: a provider that heard every spoken
+    // word scores 0, not two deletions for the two labels.
+    const result = score({
+      callId: "c1",
+      vertical: "rush",
+      providerId: "p1",
+      goldTranscript: "AI: hello there\nUser: hi",
+      hypothesisTranscript: "hello there hi",
+      entities: [],
+    });
+    expect(result.wer).toBe(0);
+  });
+
+  it("5d. keeps the word 'user' when it is not a line-leading label", () => {
+    expect(normalizeTranscript("the user said no")).toBe("the user said no");
+    expect(normalizeTranscript("ask the AI: it knows")).toBe("ask the ai it knows");
+  });
 });
 
 describe("editCounts (WER building block)", () => {
