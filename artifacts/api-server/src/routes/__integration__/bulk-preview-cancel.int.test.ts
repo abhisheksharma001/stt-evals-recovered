@@ -119,3 +119,40 @@ describe("POST /api/benchmark/bulks/:bulkId/cancel", () => {
     expect(malformed.body.error).toMatch(/bulkId/);
   });
 });
+
+describe("POST /api/benchmark/bulks with a selection that matches nothing", () => {
+  it("refuses with the buckets that emptied it, and creates nothing", async () => {
+    // M-3b. The real 2026-09-04 case in miniature: a saved template asking
+    // for a window the corpus has moved out from under. Every call here is
+    // out of band, so the launch is refused before anything is created --
+    // this test cannot spend, and the provider id belongs to no adapter.
+    const accountLabel = `fx-empty-${fx.suffix}`;
+    await fx.call({ durationSeconds: 5, sourceAccountLabel: accountLabel });
+    await fx.call({ durationSeconds: 5, sourceAccountLabel: accountLabel });
+    await fx.call({ durationSeconds: 600, sourceAccountLabel: accountLabel });
+    const provider = await fx.provider({ costPerMinute: 0.5 });
+
+    const res = await request(app)
+      .post("/api/benchmark/bulks")
+      .set("x-actor", fx.actor)
+      .send({
+        name: `empty selection ${fx.suffix}`,
+        criteria: { accountLabel },
+        providerIds: [provider.id],
+        minDurationSeconds: 30,
+        maxDurationSeconds: 300,
+      });
+
+    expect(res.status).toBe(400);
+    // The whole point of M-3b: the sentence says which filter did it and how
+    // many it took, not just that the answer was empty.
+    expect(res.body.error).toBe(
+      "no corpus calls matched: 0 of 3 in scope (shorter than 30s 2, longer than 300s 1)",
+    );
+
+    // Refused means refused: no bulk row was left behind under that name.
+    const list = await request(app).get("/api/benchmark/bulks");
+    expect(list.status).toBe(200);
+    expect(list.body.find((b: { name: string }) => b.name === `empty selection ${fx.suffix}`)).toBeUndefined();
+  });
+});
