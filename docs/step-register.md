@@ -118,6 +118,18 @@ gold texts.
 
 ### M-1a — The T-62 flux reprice must stop firing on every apply
 
+**Status:** `done` 2026-09-04 (PR #78, `6e0214b`). Live after the fix:
+`bash scripts/apply-backfills.sh --apply` prints `flux repriced 0` and all three
+scripts no-op (`written 0`, `M-1: 0 to clear`); `audit_log` rows with actor
+`backfill-t65-t66` stayed at 2. Learned: (1) **the tolerance alone would not have
+met the acceptance** — the audit insert was unconditional, so a no-op apply still
+wrote a row; it is now guarded on `relinked + reclassified + repriced > 0`.
+(2) Node's ambient env beats `--env-file`, so the break-proof ran against a
+`pg_dump` copy (`stt_evals_m1a_dev`, dropped after) instead of live: old guard →
+`flux repriced 1` and audit 2 → 3; new guard → `flux repriced 0` and audit 2 → 2.
+(3) A float4 column never equals its own decimal literal — compare on a
+tolerance, or cast, any time a guard reads a `real`.
+
 **PR:** one.
 **Depends on:** nothing (found while running M-1's verify, 2026-09-04).
 **Files:** `artifacts/api-server/src/backfill-t65-t66.ts` (the `repriced` update and its
