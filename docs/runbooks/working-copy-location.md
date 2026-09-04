@@ -40,8 +40,11 @@ files). It is not this project's working copy and was left untouched.
    Vapi keeps recordings 14 days; anything older exists only in this directory. If files
    are missing, `POST /benchmark/calls/cache-audio` re-fetches whatever Vapi still holds
    (free — a Vapi download, no STT provider is called; cached calls are skipped).
-3. The database is Docker Postgres on `:5433` — a Docker volume, not in the tree.
-   Nothing to copy.
+3. The database is Docker Postgres on `:5433` — a Docker volume, not in the tree and
+   not carried by a clone. Since M-4 `scripts/backup-db.sh` dumps it nightly to
+   `~/gh-projects/stt-evals-backups/`, which is a folder on this same laptop — so it
+   is a third thing to copy by hand when moving machines, not an off-site copy.
+   The restore recipe is in `docs/runbooks/deploy-and-rollback.md`.
 
 ## Relocate or recover
 
