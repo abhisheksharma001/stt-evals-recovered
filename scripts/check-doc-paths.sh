@@ -18,6 +18,7 @@ LIVE_DOCS=(
   .claude/CLAUDE.md .claude/VISION.md .claude/REQUIREMENTS.md .claude/STANDARDS.md
   README.md docs/PRD.md docs/PRD-v4-technical.md docs/PRD-v4-uiux.md
   docs/provider-data-samples.md docs/runbooks/*.md docs/backlog/good-to-have.md
+  docs/PRD-v6-measure.md docs/step-register.md docs/scoring-policy.md
 )
 
 exists_somewhere() {

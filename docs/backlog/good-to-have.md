@@ -1,3 +1,70 @@
+## Found 2026-09-04: every WER ever shown measured agreement with Vapi, not accuracy
+
+Found by a full audit of the product against `docs/PRD.md`, read from the live system
+(API on `:8177`, the audit log, the cache on disk) — not from the docs, which turned out
+to be wrong on three claims. Full reasoning and the plan: `docs/PRD-v6-measure.md`;
+the work: `docs/step-register.md` Part M.
+
+- **19 of the 21 "gold" transcripts are byte-identical to Vapi's draft.** The audit log
+  shows who wrote them: 20 `call:update` rows by actor `claude-pipeline-test` on
+  2026-08-24 and 1 by `review-ui-test`; a person has never produced a gold transcript
+  from audio in this tool. The project's own first rule — *draft ≠ gold, ever* — was
+  broken by a test script and nothing noticed for eleven days. Evidence: the rush set
+  shows mean WER 0.62–0.71 for every provider; the draft reads "Rust Truck Center" and so
+  does the gold, so a provider hearing "Rush" is penalised. Cleared by M-1.
+
+- **The gold carried `AI:` / `User:` speaker labels as words.** `normalizeTranscript()`
+  strips punctuation and keeps the tokens, so every line cost a provider one deletion.
+  Measured on the real function: `AI: Hey. Thanks…` normalises to `ai hey thanks…`.
+  The call comparison uses the draft as its reference when no gold exists, so its diff
+  carried the same noise on every call. Fixed by M-2 (scoring version v3).
+
+- **71 % of the words the benchmark scores are the assistant's TTS voice.** Counted
+  across every draft: 10,347 assistant words, 4,154 customer words. Every cell is
+  transcribed from the mono mix; production STT only ever hears the customer channel.
+  Verified against a real call on 2026-09-04 that Vapi returns `presignedCustomerUrl`,
+  `presignedAssistantUrl` and `presignedStereoUrl` (customer = channel 0) — none of
+  which the import knew about. The 99 Land And Apartment calls' customer files were
+  saved by hand the same day (`scripts/rescue-customer-audio.mjs`), five days before
+  their 14-day cliff; the 22 Default-account calls are past it and keep mono only.
+  Runs switch to the customer file in M-5.
+
+- **Batch APIs were benchmarked; the client runs streaming.** Every adapter but
+  Cartesia calls a prerecorded endpoint. Production's model on 86 of 121 calls (Deepgram
+  Flux) is streaming-only and cannot be run by the tool at all. "Speed" on Results is
+  file turnaround — meaningless to a voice agent — and 15 % of the rank. Streaming rows
+  arrive in M-11 … M-14; latency is redefined in M-10.
+
+- **The headline verdict never touched a reference.** 70 % peer-consensus flags, 15 %
+  batch turnaround, 15 % list price. Consensus is a legitimate gold-free proxy but it was
+  never calibrated on a labelled set, and it flags the lone provider that hears a hard
+  word right as the outlier. The chip says "Winner". M-9 renames it "Least disagreement"
+  and says on screen that it is relative; M-18 measures agreement on whatever a person
+  does label; M-8 puts the production transcript (the draft's `User:` lines) into the
+  consensus so "vs production" is a real number.
+
+- **Keyword boosts were never sent.** `keywordBoosts` is on the adapter input type and
+  the run executor never sets it; the Rush assistant runs 120 Deepgram keyterms in
+  production. The Deepgram adapter also sends `keywords`, the Nova-2 parameter, where
+  Nova-3 and Flux take `keyterm`. M-19.
+
+- **Nothing protects the data.** No database backup exists (M-4); the API listens on
+  every interface with no auth (M-3); no scheduled import, so audio crosses Vapi's
+  14-day cliff whenever nobody clicks (M-17). Six calls are already gone.
+
+- **Two claims in the docs were false and are corrected where made:** `.claude/CLAUDE.md`
+  said scores are "against a human-corrected gold"; `.claude/STANDARDS.md` ticked
+  "WER against a human-corrected gold transcript" and "two-person de-identification
+  attestation" — the 21 attestations were by `claude-pipeline-test-pass-1` / `-pass-2`.
+  `docs/data-governance.md` §4's vendor-handling gate has every box unticked while six
+  vendors have received audio (open question, v6 E4).
+
+- **What was found sound, so it is not touched:** resumable runs, raw output stored, run
+  manifests (gold hash pinned), the paired bootstrap and its "provisional" honesty, cost
+  as what was paid, the audio cache and the free rescue, the scoring-form /
+  comparison-form split, words-to-watch mining, 85 UI + 110 API tests with proof by
+  breaking.
+
 ## Found 2026-09-02: the working copy was swept out of `/tmp`
 
 - **The repo lived in a Claude Code scratchpad under `/private/tmp`, and something

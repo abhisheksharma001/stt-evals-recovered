@@ -51,6 +51,70 @@ transcript could come from the exact same engine, which would make Deepgram look
 artificially accurate on this call. We now record this per call so we can flag it (see
 caveat below).
 
+### 1b. What the artifact really carries (probed live 2026-09-04, one Land And Apartment call)
+
+The sample above was the first probe (2026-08-24) and only looked at the mono URL.
+A full read of `GET /call/{id}` on 2026-09-04 found the fields that PRD v6 is built on.
+Values redacted; field names verbatim.
+
+```json
+{
+  "artifact": {
+    "presignedMonoUrl":      "…-mono.wav?…",
+    "presignedStereoUrl":    "…-stereo.wav?…",
+    "presignedCustomerUrl":  "…-customer.wav?…",
+    "presignedAssistantUrl": "…-assistant.wav?…",
+    "recording": { "mono": "…", "stereoUrl": "…" },
+    "presignedUrlsExpiresAt": "…",
+    "messages": [
+      { "role": "system", "time": 0, "message": "…" },
+      { "role": "bot",  "time": 1756169291454, "endTime": 1756169295000, "message": "…", "secondsFromStart": 0.9 },
+      { "role": "user", "time": 1756169296000, "endTime": 1756169298100, "message": "…", "duration": 2100, "secondsFromStart": 5.5, "metadata": { } },
+      { "role": "tool_calls", "time": 1756169300000, "secondsFromStart": 9.4,
+        "toolCalls": [ { "id": "call_…", "type": "function", "function": { "name": "fly-APPFOLIO_FIND_TENANT", "arguments": "{\"phoneNumber\":\"…\"}" } } ] },
+      { "role": "tool_call_result", "name": "fly-APPFOLIO_FIND_TENANT", "toolCallId": "call_…", "result": "…(615 chars of JSON text)…", "time": 1756169301000, "secondsFromStart": 10.4 }
+    ],
+    "performanceMetrics": {
+      "turnLatencies": [ { "modelLatency": 2563, "voiceLatency": 974, "transcriberLatency": 188, "endpointingLatency": 135, "turnLatency": 3886 } ],
+      "modelLatencyAverage": 2563, "voiceLatencyAverage": 974,
+      "transcriberLatencyAverage": 187.8, "endpointingLatencyAverage": 135,
+      "turnLatencyAverage": 3886.4, "fromTransportLatencyAverage": 20, "toTransportLatencyAverage": 49,
+      "numAssistantInterrupted": 2
+    },
+    "scorecards": {}, "transfers": [], "variableValues": {}, "assistantActivations": [], "nodes": [],
+    "logUrl": "…", "presignedLogUrl": "…", "transcript": "AI: …\nUser: …"
+  },
+  "analysis": { "summary": "…" },
+  "costs": [ { "type": "transcriber", "transcriber": { "provider": "deepgram", "model": "flux-general-en" } } ]
+}
+```
+
+**Measured on the files themselves:**
+
+- The stereo file is 2 channels, 16 kHz, 16-bit. Channel 0 is silent during the
+  assistant's greeting and channel 1 is not — **channel 0 = customer, channel 1 =
+  assistant**. The customer file has exactly the mono file's duration, so timings line up
+  across all three.
+- Across the 99 Land And Apartment artifacts saved 2026-09-04: `transcriberLatencyAverage`
+  min / median / max = 0 / 272 / 6651 ms; `endpointingLatencyAverage` median 102 ms;
+  `numAssistantInterrupted` ≥ 1 on 25 calls (53 interruptions); 74 calls made tool calls
+  (`transfer_call_*` 25, `fly-APPFOLIO_AVAILABILITY` 10, `FalconPoint_transfer` 8,
+  `dynamic_send_email` 7, `fly-SEND_SMS` 7, `fly-APPFOLIO_CREATE_SHOWING` 5,
+  `fly-APPFOLIO_CREATE_WORK_ORDER` 5, …); `analysis.successEvaluation` true 74 / false 13 /
+  absent 12; customer turns per call min / median / max = 0 / 2 / 24.
+- The draft (`artifact.transcript`) is the production transcriber's output for the
+  customer channel plus the assistant's LLM text, line-labelled `AI:` / `User:`. Its
+  `User:` lines are therefore **production's own STT output on exactly the audio in the
+  customer file** — the baseline transcript the tool could never run (Flux is streaming-
+  only), free on every call (PRD v6 Part B3).
+
+**What's useful here:** `presignedCustomerUrl` (score the customer, not the robot),
+`messages[].time/endTime` on `user` turns (per-turn cutting and per-turn latency later),
+`tool_calls` + `tool_call_result` (confirmed entities, PRD v6 D2), and
+`performanceMetrics` (production's real transcriber and endpointing latency, D3). All
+four expire with the 14-day recording retention on the URLs — the metadata itself was
+still readable on a call 10 days old; the 22 Default-account calls (older) answer 400.
+
 ---
 
 ## 2. AssemblyAI
