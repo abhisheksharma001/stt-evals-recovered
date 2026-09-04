@@ -67,8 +67,9 @@ be able to do any step alone without asking what was meant.**
 
 - **MVP pipeline works end-to-end, verified against real audio and real provider
   APIs**: import → human review/de-identification → run providers → score → rank.
-- **Providers wired with real keys**: AssemblyAI, Cartesia, Gladia, Deepgram.
-  ElevenLabs, OpenAI, Speechmatics have adapter code but no key yet.
+- **Providers wired with real keys** (verified live 2026-09-04 via `/api/healthz`
+  after the `.env` recovery): AssemblyAI, Cartesia, Gladia, Deepgram, ElevenLabs,
+  OpenAI. Speechmatics has adapter code but no key.
 - **Real, evidenced findings from live testing** (full detail in the backlog doc):
   some Vapi recordings never get a working signed audio URL (storage-bucket-specific,
   not fixable from here); Cartesia has an intermittent server-side mid-call drop not
@@ -96,10 +97,11 @@ be able to do any step alone without asking what was meant.**
   correctly refuses to guess, which would have silently broken re-fetching
   audio for the entire existing corpus. Backfilled `sourceAccountLabel =
   "Default"` on all 22 (safe: the new key didn't exist when they were
-  imported, so none could be ambiguous). **Adding a third Vapi account
-  later needs the same check** — anything with an empty `sourceAccountLabel`
-  at that point is genuinely ambiguous and needs a real decision, not another
-  blind backfill.
+  imported, so none could be ambiguous). A third account, **Leasing Dev**
+  (`VAPI_API_KEY_LEASING_DEV`), exists as of 2026-09-04 — whether its calls
+  went through the same empty-`sourceAccountLabel` check is not recorded
+  anywhere; treat any empty label as genuinely ambiguous, not a backfill
+  candidate.
 - **OpenAI key added** — also lit up the `openai-gpt-4o-transcribe` STT
   provider adapter for free (same env var both use).
 - **AI check (transcript-quality agent) runs on every run** — it started
@@ -173,8 +175,10 @@ be able to do any step alone without asking what was meant.**
   tracked files, 209 git history objects, 64 cached audio files and part of
   `node_modules` from the old scratchpad clone. Nothing committed was lost; audio for
   **6 calls is gone for good** (cached count 107 → 101). Runbook, loss list and the
-  relocation steps: `docs/runbooks/working-copy-location.md`; register step S-0.1
-  finishes the move (`.env` copy, deploy from the new home, restart Claude Code there).
+  relocation steps: `docs/runbooks/working-copy-location.md`. **S-0.1 done 2026-09-04:**
+  the sweep took `.env` too, so the keys were recovered from the running API process
+  through Node's inspector (recipe in the runbook) and the API now runs from the new
+  home (`eaaf9ccbd940`). Claude Code must be started from the new directory.
 
 - **2026-08-31, batch 23: the pages, rendered.** The UI package had 39
   tests, all on pure `src/lib` helpers; **no test had ever rendered a

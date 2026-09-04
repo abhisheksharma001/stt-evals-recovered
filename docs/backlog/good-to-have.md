@@ -28,6 +28,16 @@
   (fsck clean, typecheck clean), audio copied across; `.env` is Abhishek's to copy, then
   the API is deployed from there and Claude Code restarted there.
 
+- **2026-09-04, follow-up: the sweep took `.env` before it was copied.** Two more
+  nights → 174 deletions in the old tree, the keys file among them. The only copy left
+  was the running API process; recovered through Node's `SIGUSR1` inspector
+  (`process.env` minus the exec-time environment = the 12 names `.env` held), written
+  with mode 600, values never printed. Recipe in `docs/runbooks/working-copy-location.md`.
+  **Rule: when relocating, the keys file moves first, the same day.** Verified after:
+  every keyed vendor `ready`, three Vapi accounts (Default, Land And Apartment, Leasing
+  Dev), 101 cached audio files — and two stale CLAUDE.md claims corrected (ElevenLabs
+  and OpenAI keys exist; the third Vapi account already exists).
+
 - **Seen once, not explained:** the first `pnpm install` into the empty clone failed at
   the root `preinstall` guard with `Use pnpm instead` though pnpm was the runner; an
   `--ignore-scripts` install then a plain one passed, and every install since passes.

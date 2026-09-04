@@ -26,8 +26,13 @@ with the questions that must be answered before they can be stepped.
 
 ### S-0.1 — Finish moving the working copy out of `/tmp`
 
-**Status:** `blocked` — waiting on Abhishek to copy `artifacts/api-server/.env` into the
-new clone (Claude does not write keys into `.env` unasked). Everything else is done.
+**Status:** `done` 2026-09-04. Learned: the sweep took the old `.env` too before it could be
+copied, so the keys were recovered from the still-running API process through Node's
+localhost inspector (recipe in `docs/runbooks/working-copy-location.md`), with Abhishek's
+explicit go. Deployed `91c2405b0ec8 → eaaf9ccbd940`; process cwd, 101 cached audio files,
+3 Vapi accounts and every keyed vendor `ready` verified live. Also learned: CLAUDE.md
+was stale on two facts (ElevenLabs and OpenAI keys exist; a third Vapi account, Leasing
+Dev, exists) — corrected where made.
 **PR:** one (this row's docs PR is the first half; the second half is a deploy, no code).
 **Depends on:** nothing.
 **Files:** none in the tree. Disk only: `~/gh-projects/stt-evals-recovered` (fresh clone,

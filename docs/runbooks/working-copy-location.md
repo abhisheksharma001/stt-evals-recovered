@@ -29,7 +29,7 @@ files). It is not this project's working copy and was left untouched.
 
 ## What lives only on disk and must be carried by hand
 
-1. `artifacts/api-server/.env` — the real provider and Vapi keys. **Copy it yourself.**
+1. `artifacts/api-server/.env` — the real provider and Vapi keys. **Copy it first, the same day.**
    Claude does not write keys into `.env` without being told to.
    ```
    cp <old-tree>/artifacts/api-server/.env ~/gh-projects/stt-evals-recovered/artifacts/api-server/.env
@@ -63,6 +63,30 @@ root `preinstall` guard with `Use pnpm instead` although pnpm was the runner.
 `pnpm install --frozen-lockfile --ignore-scripts` followed by a plain `pnpm install`
 passed, and every install since has passed. If it recurs, that is the workaround; the
 cause is not known.
+
+## If `.env` is gone but the API is still running
+
+The sweep takes `.env` like any other old file (it did on 2026-09-03). While the API
+process is alive its `process.env` still holds everything `--env-file-if-exists=.env`
+loaded, and Node opens a localhost-only inspector on `SIGUSR1`. **Do not restart, deploy,
+or reboot first** — the process is the last copy. With Abhishek's explicit go:
+
+1. `ps -Eww -o command= -p <pid>` → the names in the exec-time environment (the shell's
+   variables — these were **not** in `.env`).
+2. `kill -USR1 <pid>`; `curl http://127.0.0.1:9229/json` gives the WebSocket URL.
+3. Over that socket send `Runtime.evaluate` with `JSON.stringify(process.env)`,
+   `returnByValue: true`. Keep only names absent from step 1: that set is exactly what
+   `.env` held (2026-09-04: 12 names — six vendor keys, three Vapi accounts,
+   `DATABASE_URL`, `LOG_LEVEL`, `NODE_ENV`).
+4. Write them to the new `.env` with mode `600` from inside the script. Print names and
+   counts only — never a value, not to the terminal, not to a log.
+5. Close the inspector from the same session:
+   `process.getBuiltinModule('node:inspector').close()`, then confirm `:9229` no longer
+   answers.
+
+The script used on 2026-09-04 was a 30-line `.mjs` using Node 22's global `WebSocket`;
+it lived in the session scratchpad and is not kept — the five steps above are the whole
+of it.
 
 ## How to tell it happened again
 
