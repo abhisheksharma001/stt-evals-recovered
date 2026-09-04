@@ -574,6 +574,27 @@ export async function createBulkFromCriteria(input: {
             .where(eq(benchmarkRunsTable.bulkId, oldest.id)),
         ),
       );
+      // M-3c: benchmark_agent_scans.run_id has no ON DELETE, so a scan row
+      // blocks the cascade into benchmark_runs and the whole launch answered
+      // 500. The scans were folded into the run executor in e0399cc, after
+      // this eviction was written, and nobody came back. Detached, not
+      // deleted: a scan is keyed by CALL, the corpus is never touched by
+      // eviction, and its judge verdict cost real OpenAI money. Every
+      // run-scoped query matches on runId with eq/inArray, so a null runId
+      // simply stops matching the run that no longer exists, while the call
+      // comparison still finds the verdict by callId.
+      await tx
+        .update(benchmarkAgentScansTable)
+        .set({ runId: null })
+        .where(
+          inArray(
+            benchmarkAgentScansTable.runId,
+            tx
+              .select({ id: benchmarkRunsTable.id })
+              .from(benchmarkRunsTable)
+              .where(eq(benchmarkRunsTable.bulkId, oldest.id)),
+          ),
+        );
       await tx
         .delete(benchmarkBulksTable)
         .where(eq(benchmarkBulksTable.id, oldest.id));

@@ -95,6 +95,11 @@ export class Fixtures {
     this.providerIds.push(id);
   }
 
+  /** Same, for a bulk created through POST /benchmark/bulks (M-3c). */
+  adoptBulk(id: string): void {
+    this.bulkIds.push(id);
+  }
+
   async run(overrides: Partial<typeof benchmarkRunsTable.$inferInsert> = {}): Promise<RunRow> {
     const [row] = await db
       .insert(benchmarkRunsTable)
