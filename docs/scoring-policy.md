@@ -33,6 +33,12 @@ difference you may want to see. It just never **raises a flag** or fills a
 
 Applied in this order by `normalizeTranscript()`:
 
+0. **A line-leading speaker label is removed.** Vapi writes a transcript as
+   `AI: …` / `User: …` lines, and those two labels are not words anybody said.
+   Only `^AI:` and `^User:` at the start of a line match, before lower-casing,
+   so a spoken `the user said no` keeps its word. Left in, they cost a provider
+   one deletion per line of the reference — which is what every call scored
+   before 2026-09-04 was charged (M-2, `SCORING_VERSION` `v3`).
 1. **Unicode is folded** (NFKC), then curly quotes (`’`) become `'` and the
    dash family (`–` `—` `−`) becomes `-`. Found the hard way: without this,
    `it’s` and `it's` were two different words and WER could double on an
@@ -126,14 +132,17 @@ normalized transcript.
    under-credits.
 3. **`normalizationVersion` on a stored score is hard-coded `"v1"`** and has
    never moved, even though normalization itself changed when `SCORING_VERSION`
-   went to `v2` (spoken digits). `scoringVersion` is the field that actually
-   tells you which rules produced a row; treat `normalizationVersion` as
-   decoration until it is either maintained or removed.
-4. **Speaker labels count as words (found 2026-09-04, fixed by register step M-2).**
-   Vapi's draft is written as `AI: …` / `User: …` lines; brackets and colons are
-   punctuation, so `ai` and `user` survive as words. Measured: `AI: Hey. Thanks…`
-   normalises to `ai hey thanks…`, one deletion per line for every provider. Until M-2
-   lands, a gold pasted from a draft must have its labels removed by hand.
+   went to `v2` (spoken digits) and again at `v3` (speaker labels).
+   `scoringVersion` is the field that actually tells you which rules produced a
+   row; treat `normalizationVersion` as decoration until it is either
+   maintained or removed.
+4. **Speaker labels counted as words — closed 2026-09-04 by M-2 (`v3`).** Vapi's
+   draft is written as `AI: …` / `User: …` lines; colons are punctuation, so `ai` and
+   `user` used to survive as words — `AI: Hey. Thanks…` normalised to
+   `ai hey thanks…`, one deletion per line for every provider. Rule 0 above now
+   strips them, so a gold pasted from a draft no longer needs its labels removed by
+   hand. Scores stored before `v3` still carry the charge; `scoringVersion` on the
+   row says which rules produced it.
 5. **The audio was the mixed recording (found 2026-09-04, fixed by M-5).** 71 % of
    scored words were the assistant's TTS voice. Nothing in scoring changes for this —
    the fix is which bytes the run sends — but any number produced before M-5 is a
