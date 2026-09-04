@@ -21,6 +21,14 @@ const port = (() => {
 
 const basePath = process.env.BASE_PATH ?? '/';
 
+// M-3a: loopback only unless UI_HOST says otherwise. This server proxies
+// /api to the API from *this* machine, so binding every interface handed the
+// LAN an unauthenticated Launch button no matter what the API itself binds.
+// The `--host` flag was dropped from the dev/serve scripts in package.json at
+// the same time: a CLI flag beats this value, so leaving it there would have
+// made the setting look applied while changing nothing.
+const uiHost = process.env.UI_HOST ?? '127.0.0.1';
+
 // T-39: stamp the UI bundle with the commit it was built from, the same way
 // artifacts/api-server/build.mjs stamps the API. The badge in layout.tsx
 // shows both when they disagree, which is what a browser serving a stale
@@ -81,7 +89,7 @@ export default defineConfig(async ({ command }) => ({
   server: {
     port,
     strictPort: true,
-    host: '0.0.0.0',
+    host: uiHost,
     allowedHosts: true,
     fs: {
       strict: true,
@@ -103,7 +111,7 @@ export default defineConfig(async ({ command }) => ({
   },
   preview: {
     port,
-    host: '0.0.0.0',
+    host: uiHost,
     allowedHosts: true,
   },
 }));

@@ -39,17 +39,20 @@ and a bulk launch spends real provider money, so anything that can reach the
 port can spend. Local callers are unaffected; another machine on the same
 network is refused.
 
-**This is not the whole fence yet.** The Vite server on `:5173` still binds
-`0.0.0.0` and proxies `/api` to the API from *this* machine, so the LAN can
-still reach everything through it — see M-3a in `docs/step-register.md`.
+The UI dev server on `127.0.0.1:5173` is loopback only too, since M-3a. It
+proxies `/api` to the API from *this* machine, so a LAN-bound UI would have
+handed the network everything the API refuses it. Both ends of the fence are
+now closed.
 
-`HOST=0.0.0.0 scripts/deploy-api.sh` binds every interface again. Only for a
-deliberate reason (showing the UI on a phone, say), and only for as long as
-that reason lasts — there is still no auth in front of it. Check which one is
-live with:
+`HOST=0.0.0.0 scripts/deploy-api.sh` binds every interface again, and
+`UI_HOST=0.0.0.0 pnpm dev` in `artifacts/stt-benchmark` does the same for the
+UI. Only for a deliberate reason (showing the UI on a phone, say), and only
+for as long as that reason lasts — there is still no auth in front of either.
+Check which one is live with:
 
 ```bash
 lsof -nP -iTCP:8177 -sTCP:LISTEN | tail -n +2 | awk '{print $9}'
+lsof -nP -iTCP:5173 -sTCP:LISTEN | tail -n +2 | awk '{print $9}'
 ```
 
 ## Verify
