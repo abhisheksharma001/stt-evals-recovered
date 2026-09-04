@@ -610,6 +610,37 @@ Prove by breaking: force `requireCustomerAudio` to undefined on the fixture
 bulk, the "not recorded" wording appears instead of a channel name.
 **Must not:** launch or execute a run; change any stored value; infer a
 bulk's channel from its cells instead of from its frozen criteria.
+**Status:** done 2026-09-05 (PR #87, cd47083, deployed cd47083ce7e4).
+Three surfaces, two sources, no derivations: a bulk's line comes from its
+own frozen `selectionCriteria.requireCustomerAudio`, a cell's chip from
+its own `audio_source`, and the all-time Results view shows no line at
+all -- it pools bulks measured on different channels, and one label over
+a mixture is a claim about audio that was never all the same audio.
+
+Three things learned.
+
+(1) The step said `audio_source` was "already on the API's run-results
+response", and it was -- but the surface the UI actually renders per row
+is `GET /benchmark/calls/:id/comparison`, whose `ComparisonRow` did not
+carry it. A field being on *an* endpoint is not the same as being on the
+endpoint the screen reads. Check which response the component consumes
+before assuming the data is reachable.
+
+(2) A duplicate `<ChannelLine>` got pasted into the bulk detail dialog by
+a half-applied edit. Typecheck was clean, 97 tests passed, and nothing
+caught it, because no test ever opened that dialog. Self-review of the
+diff caught it. **A surface with no test is a surface where "it compiles
+and the suite is green" means nothing at all** -- the fix commit adds a
+test that opens the dialog and counts, so the duplicate now fails loudly.
+
+(3) Every bulk on the live system predates M-5, so every one of them now
+renders "channel not recorded" rather than a channel name, and every
+existing result cell renders "mono (recorded before this was tracked)".
+That is the correct output, not a gap: those rows really were mono
+because no other code path existed, but the row does not record it, and
+the distinction between "it says so" and "we know it must be" is the
+whole product. **Resisting a true-but-underived default is what makes the
+recorded ones worth believing.**
 
 ---
 
