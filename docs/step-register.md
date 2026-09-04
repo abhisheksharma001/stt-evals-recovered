@@ -164,6 +164,19 @@ provider.
 
 ### M-2 — Speaker labels never count as words
 
+**Status:** `done` 2026-09-04 (PR #79, `7b5c629`, deployed `7b5c62927927`).
+Live proof on call `e38b42af-31f2-41e9-90ef-62d4f21f8fb0` (draft has 6 `AI:` /
+`User:` lines): the AssemblyAI diff now starts at `this`, holds **0** `ai`/`user`
+tokens in 134 reference words, and reads WER **0.0746** — it was 16 errors over
+140 words, **0.1143**, a third of which was the labels. Learned: (1)
+`canonicalTranscript()` needed no edit — it composes `normalizeTranscript()`, so
+flags, spans and words-to-watch inherited the strip for free. (2) The two tests
+had to be split so the mid-line case passes **with and without** the strip;
+first draft put an `AI:`-prefixed assertion in it, both failed on the break, and
+a test that only fails alongside the other one proves nothing extra. (3) Stored
+rows keep `scoringVersion: "v2"` and their old charge — that is what the field
+is for; nothing was re-scored.
+
 **PR:** one.
 **Depends on:** nothing (M-1 removes today's cases; this protects the manual path).
 **Files:** `lib/scoring/src/index.ts` (`normalizeTranscript()`, `SCORING_VERSION`),
