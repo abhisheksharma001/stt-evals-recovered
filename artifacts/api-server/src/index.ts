@@ -17,13 +17,19 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+// Loopback only unless HOST says otherwise (M-3). There is no auth on this
+// API and a bulk spends real provider money, so binding every interface put
+// that button on the local network. Set HOST=0.0.0.0 deliberately, never by
+// default.
+const host = process.env["HOST"] ?? "127.0.0.1";
+
+app.listen(port, host, (err?: Error) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
 
-  logger.info({ port }, "Server listening");
+  logger.info({ port, host }, "Server listening");
 
   // Re-enter runs stranded as queued/running by a previous process death
   // (safe: execution is resumable/idempotent) and recompute mid-flight bulk

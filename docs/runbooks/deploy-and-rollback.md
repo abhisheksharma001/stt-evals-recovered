@@ -30,6 +30,22 @@ point, so fix and re-run.
 experiments only — the healthz sha will carry a `-dirty` suffix and the
 build badge in the sidebar shows it.
 
+## Where it listens
+
+`127.0.0.1:8177` — loopback only, since M-3. The API has no authentication
+and a bulk launch spends real provider money, so anything that can reach the
+port can spend. `http://localhost:8177` is unaffected; another machine on the
+same network is refused.
+
+`HOST=0.0.0.0 scripts/deploy-api.sh` binds every interface again. Only for a
+deliberate reason (showing the UI on a phone, say), and only for as long as
+that reason lasts — there is still no auth in front of it. Check which one is
+live with:
+
+```bash
+lsof -nP -iTCP:8177 -sTCP:LISTEN | tail -n +2 | awk '{print $9}'
+```
+
 ## Verify
 
 ```bash
