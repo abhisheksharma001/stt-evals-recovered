@@ -558,6 +558,59 @@ excluded under the named bucket. Prove by breaking: remove the preference in
 **Must not:** launch or execute a run (spends money); delete or rename any cache file;
 change how mono is resolved for a call with no customer file.
 
+**Status:** `done` 2026-09-05 (PR #86, `ee125e1`, deployed `ee125e1951c6`).
+Learned: **the step's own spec contained a bug that only writing it out
+revealed** -- "cells whose `audioSource` equals the bulk's (otherwise
+`mono`)" cannot be right while the executor always prefers customer, because
+a `requireCustomerAudio: false` bulk would then produce customer cells that
+its own ranking filter throws away. Resolved by letting the bulk's frozen
+flag drive the executor as well as the filter, which is also what makes
+"a pre-M-5 template keeps producing its own numbers" true rather than
+merely intended. The second thing only self-review caught: **wanting the
+customer channel and refusing to run without it are two different flags.**
+One flag would have failed every ad-hoc run over the 56 calls whose caller
+track was never rescued -- typechecked fine, tests green, still wrong.
+Third: the default had to be resolved *before* selection, not frozen after
+it, or a bulk claims the caller-only track while holding calls that have
+none. Live after deploy: the same corpus goes 106 -> 52 matched, and the 54
+dropped calls are named on screen (`no customer-channel audio on file`), not
+silently absent.
+**Rule this leaves: a filter and the thing it filters must be driven by one
+stored decision, or they will disagree the first time someone re-runs
+something.**
+
+---
+
+### M-5a — The screen says which channel a number was measured on
+
+**PR:** one.
+**Depends on:** M-5 (`audio_source` is already on every new result row and
+already on the API's run-results response).
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx`,
+`artifacts/stt-benchmark/src/pages/Bulks.tsx`,
+`artifacts/stt-benchmark/src/pages/Corpus.tsx`.
+**Today:** M-5 records the channel and the API returns it, but no screen
+renders it. A person reading a ranking cannot tell a caller-only measurement
+from a mono one, which is exactly the confusion M-5 exists to remove -- so
+"and say so" is currently only true of the API, not of the product.
+**Change:** a bulk's card states its channel in words ("measured on the
+caller-only channel" / "measured on the mono mix, which includes the
+assistant's voice"), read from the bulk's frozen
+`selectionCriteria.requireCustomerAudio`, never re-derived from the cells.
+A result row shows its own `audioSource` where the cell's other provenance
+already shows. A null `audioSource` on a cell that transcribed something
+renders as "mono (recorded before this was tracked)", never as blank and
+never as a confident "mono".
+**Acceptance:** WHEN a bulk created after M-5 is opened THEN the page SHALL
+name the audio channel it was measured on, and WHEN a result row written
+before M-5 is shown THEN it SHALL say the channel was not recorded rather
+than assert one.
+**Verify:** `pnpm run typecheck`; open a bulk in the UI and read the line.
+Prove by breaking: force `requireCustomerAudio` to undefined on the fixture
+bulk, the "not recorded" wording appears instead of a channel name.
+**Must not:** launch or execute a run; change any stored value; infer a
+bulk's channel from its cells instead of from its frozen criteria.
+
 ---
 
 ### M-6 — Import saves the customer channel, the assistant channel and the artifact
