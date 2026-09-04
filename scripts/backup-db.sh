@@ -46,6 +46,7 @@ db="${db%%\?*}"           # drop any ?query
 
 mkdir -p "$DEST"
 out="$DEST/stt-evals-$(date +%F).dump"
+trap 'rm -f "$out.partial"' EXIT   # a failed run leaves nothing behind, not even debris
 
 say "dump $db out of $CONTAINER"
 docker exec "$CONTAINER" pg_dump -U postgres -Fc "$db" > "$out.partial"
