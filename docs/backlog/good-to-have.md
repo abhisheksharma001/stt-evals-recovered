@@ -85,6 +85,15 @@ provider money. Queued as M-3a. **Rule this leaves: when a service is split acro
 processes, binding one of them proves nothing about reachability — test the address a
 person actually types.**
 
+**Fixed 2026-09-05 (M-3a, PR #84, `b3aa91fbd994`).** `server.host` and `preview.host`
+read `UI_HOST ?? '127.0.0.1'`; both ports now refuse the LAN address. One thing the
+step's own spec had missed: `artifacts/stt-benchmark/package.json` also passed
+`--host 0.0.0.0` on the command line for `dev` and `serve`, and a Vite CLI flag beats
+the config, so the config edit alone would have changed nothing. Verified by putting the
+flag back with the config fixed — bind stayed `*:5173`, LAN `/api/healthz` stayed 200.
+**Second rule this leaves: a config value is not the setting until nothing on the command
+line overrides it.**
+
 ## Found 2026-09-04 (verifying M-3): two docs said the API serves the UI; it never has
 
 `docs/runbooks/deploy-and-rollback.md` opened with "the API runs on `:8177` and the UI

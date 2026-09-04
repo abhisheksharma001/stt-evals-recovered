@@ -412,10 +412,25 @@ where con.contype = 'f'
 
 ### M-3a — The UI server listens on localhost too
 
+**Status:** `done` 2026-09-05 (PR #84, `b3aa91f`, deployed `b3aa91fbd994`).
+Learned: **this row's `Files` list was wrong and the step could not have
+worked as written.** `artifacts/stt-benchmark/package.json` passed
+`--host 0.0.0.0` on the command line in both the `dev` and `serve` scripts,
+and a Vite CLI flag beats `server.host` in the config — so editing
+`vite.config.ts` alone would have shipped a change that read as a fix and
+moved nothing. Proved it on purpose: with the config fixed and the flag put
+back, the bind was still `*:5173` and the LAN still got 200 from
+`/api/healthz`. The flag is gone from both scripts and the value now comes
+from one place. The `Files` line below is corrected to match.
+**Rule this leaves: a config value is not the setting until nothing on the
+command line overrides it — read the script that starts the process, not just
+the file it loads.**
 **PR:** one.
 **Depends on:** M-3 (done).
 **Files:** `artifacts/stt-benchmark/vite.config.ts` (`server.host`,
-`preview.host`), `docs/runbooks/deploy-and-rollback.md` ("Where it listens").
+`preview.host`), `artifacts/stt-benchmark/package.json` (the `--host 0.0.0.0`
+flag on the `dev` and `serve` scripts — corrected 2026-09-05, see Status),
+`docs/runbooks/deploy-and-rollback.md` ("Where it listens").
 **Today:** M-3 made the API loopback-only, and the LAN reaches it anyway
 through the UI. `vite.config.ts` sets `host: '0.0.0.0'` on both `server` and
 `preview`, and proxies `/api` to `API_PROXY_TARGET` **from this machine**, so
