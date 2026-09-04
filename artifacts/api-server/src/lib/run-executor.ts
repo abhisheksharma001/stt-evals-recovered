@@ -314,18 +314,28 @@ async function executeBenchmarkRunInner(
   ]);
 
   // M-5: which audio channel THIS run transcribes from, decided once here.
-  // A bulk shard takes its bulk's frozen `requireCustomerAudio` -- so every
-  // cell of a bulk reads the same channel and its rankings compare like
-  // with like. An ad-hoc (non-bulk) run prefers the caller-only track and
-  // falls back to the mono mix per call, recording which it used either way.
-  let runAudioSource: CellAudioSource = "customer";
+  // Wanting the caller-only track and REFUSING to run without it are two
+  // different things, and conflating them would fail every ad-hoc run over
+  // the 56 corpus calls whose caller track was never rescued:
+  //
+  //   ad-hoc run              prefer, do not require -- best channel per
+  //                           call, recording which one it got
+  //   bulk requireCustomerAudio  prefer AND require -- every cell of the
+  //                           bulk is the same channel, so its rankings
+  //                           compare like with like
+  //   bulk without it         neither: the mono mix, byte-for-byte the
+  //                           pre-M-5 behaviour, so a bulk saved before
+  //                           this step keeps producing its own numbers
+  let runPrefersCustomer = true;
+  let runRequiresCustomer = false;
   if (run.bulkId) {
     const [bulk] = await db
       .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
       .from(benchmarkBulksTable)
       .where(eq(benchmarkBulksTable.id, run.bulkId))
       .limit(1);
-    runAudioSource = bulk?.selectionCriteria.requireCustomerAudio === true ? "customer" : "mono";
+    runPrefersCustomer = bulk?.selectionCriteria.requireCustomerAudio === true;
+    runRequiresCustomer = runPrefersCustomer;
   }
 
   const alreadyOk = new Set(
@@ -491,20 +501,26 @@ async function executeBenchmarkRunInner(
    * transcribing the mono mix and filing the number under a customer-channel
    * bulk, is the mixing this whole step exists to end. */
   async function readCellAudio(call: BenchmarkCallRow): Promise<CellAudio> {
+    let audio: CellAudio;
     try {
-      const audio = await readCellAudioSource(call.id, { preferCustomer: runAudioSource === "customer" });
-      if (runAudioSource === "customer" && audio.source !== "customer") {
+      audio = await readCellAudioSource(call.id, { preferCustomer: runPrefersCustomer });
+    } catch {
+      if (runRequiresCustomer) {
         throw new Error(
-          `this run reads the customer channel, but ${call.id} has no <callId>.customer.audio on disk`,
+          `this run reads the customer channel, but ${call.id} has no audio on disk at all`,
         );
       }
-      return audio;
-    } catch (err) {
-      if (runAudioSource === "customer") throw err;
-      // A mono run keeps the pre-M-5 fallback exactly: a test/rehearsal
-      // resolver that never touches the standard cache still works.
+      // Nothing cached: the pre-M-5 fallback, unchanged -- a test or
+      // rehearsal resolver that never writes to the standard disk cache
+      // still works, and its bytes are the mono mix by definition.
       return { bytes: await audioResolver(call), source: "mono" };
     }
+    if (runRequiresCustomer && audio.source !== "customer") {
+      throw new Error(
+        `this run reads the customer channel, but ${call.id} has no <callId>.customer.audio on disk`,
+      );
+    }
+    return audio;
   }
 
   // Materialize the full cell list up front so progress logging has a real
@@ -1168,11 +1184,12 @@ function aggregateRankingRows(
   // runs on the mono mix. That mixing is across CALLS, never across the
   // providers being compared -- every provider gets the same bytes for a
   // given call -- so the provider-vs-provider comparison stays honest.
-  if (audioSource !== undefined) {
-    // Pre-M-5 rows carry null; those runs all read the mono mix, which is
-    // what null means here and nowhere else in this file.
-    results = results.filter((r) => (r.result.audioSource ?? "mono") === audioSource);
-  }
+  // Pre-M-5 rows carry null; those runs all read the mono mix, which is what
+  // null means here and nowhere else in this file.
+  const onChannel =
+    audioSource === undefined
+      ? results
+      : results.filter((r) => (r.result.audioSource ?? "mono") === audioSource);
   // 2026-08-27, per Abhishek: group by real assistant instead of vertical --
   // null (no sourceAssistantId, i.e. a manually-added call) buckets into a
   // single "Other" group rather than being dropped. `NO_ASSISTANT_KEY` is a
@@ -1192,7 +1209,7 @@ function aggregateRankingRows(
 
   for (const assistantKey of assistantKeys) {
     const assistantId = assistantKey === NO_ASSISTANT_KEY ? null : assistantKey;
-    const rowsForGroup = results.filter(
+    const rowsForGroup = onChannel.filter(
       (r) => (callById.get(r.result.callId)?.sourceAssistantId ?? NO_ASSISTANT_KEY) === assistantKey,
     );
 
