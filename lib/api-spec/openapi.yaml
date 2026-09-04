@@ -1898,7 +1898,7 @@ components:
         werVsReference: { type: ["number", "null"], description: "wordsDiffer / referenceWords; null when the reference is empty." }
     ComparisonRow:
       type: object
-      required: [providerId, providerName, status, resultId, runId, attemptedAt, hypothesisTranscript, diff, peerFlagCount, peerFlagSeverity, flagCount, flagSeverity, hybridFlags, latencyFinalMs, costMicrocents, failureClass, retryable, errorMessage, failureDiagnosis, failureSuggestedFix, isJudgePick]
+      required: [providerId, providerName, status, resultId, runId, attemptedAt, hypothesisTranscript, diff, peerFlagCount, peerFlagSeverity, flagCount, flagSeverity, hybridFlags, latencyFinalMs, costMicrocents, audioSource, failureClass, retryable, errorMessage, failureDiagnosis, failureSuggestedFix, isJudgePick]
       properties:
         providerId: { type: string }
         providerName: { type: string }
@@ -1938,6 +1938,16 @@ components:
             entityMismatches: { type: number }
         latencyFinalMs: { type: ["number", "null"] }
         costMicrocents: { type: ["number", "null"], description: "Micro-cents (1 cent = 10,000). null = not recorded, never zero." }
+        # M-5a: the channel this one cell was transcribed from, carried
+        # through from the result row so the comparison can label each
+        # provider's output without re-deriving anything. null = a cell
+        # that transcribed nothing, or one written before M-5 added the
+        # column (those are all mono, and the screen says so in words).
+        audioSource:
+          oneOf:
+            - type: string
+              enum: [customer, mono]
+            - type: "null"
         failureClass:
           oneOf:
             - type: string

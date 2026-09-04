@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ComparisonDiff } from './comparisonDiff';
+import type { ComparisonRowAudioSource } from './comparisonRowAudioSource';
 import type { ComparisonRowFailureClass } from './comparisonRowFailureClass';
 import type { ComparisonRowHybridFlags } from './comparisonRowHybridFlags';
 import type { ComparisonRowStatus } from './comparisonRowStatus';
@@ -40,6 +41,7 @@ export interface ComparisonRow {
      * @nullable
      */
   costMicrocents: number | null;
+  audioSource: ComparisonRowAudioSource;
   failureClass: ComparisonRowFailureClass;
   /** @nullable */
   retryable: boolean | null;

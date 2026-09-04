@@ -87,6 +87,7 @@ export * from './clientVolume';
 export * from './clientVolumeAssistantsItem';
 export * from './comparisonDiff';
 export * from './comparisonRow';
+export * from './comparisonRowAudioSource';
 export * from './comparisonRowFailureClass';
 export * from './comparisonRowHybridFlags';
 export * from './comparisonRowHybridFlagsLowConfidenceWordSpansItem';

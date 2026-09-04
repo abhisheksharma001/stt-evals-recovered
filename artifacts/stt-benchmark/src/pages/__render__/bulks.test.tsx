@@ -203,6 +203,57 @@ describe("Bulks", () => {
     api.restore()
   })
 
+  // M-5a. Two bulks with identical costs are not comparable if one of them
+  // measured the assistant's own synthesised voice, so the card has to say
+  // which audio it read before any number on it can be trusted.
+  it("a bulk that froze the caller-only decision names that channel on its card", async () => {
+    const onCustomer: Bulk[] = [
+      { ...bulks[0], selectionCriteria: { ...bulks[0].selectionCriteria, requireCustomerAudio: true } },
+      bulks[1],
+    ]
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks": onCustomer })
+    renderPage(<Bulks />, { path: "/bulks" })
+
+    await screen.findByText("Most recent bulk")
+    const line = screen.getAllByTestId("channel-line")[0]
+    expect(line.getAttribute("data-channel")).toBe("customer")
+    expect(line.textContent).toContain("caller-only channel")
+    api.restore()
+  })
+
+  it("a bulk with no channel frozen says it was not recorded, and never names one", async () => {
+    // The fixture bulks predate M-5 exactly as the real ones do: no flag in
+    // their criteria at all. Those runs did read the mono mix -- there was
+    // no other code path -- but the BULK does not record that, and a card
+    // that printed "mono mix" here would be stating a derivation as data.
+    const api = stubApi(baseRoutes)
+    renderPage(<Bulks />, { path: "/bulks" })
+
+    await screen.findByText("Most recent bulk")
+    const line = screen.getAllByTestId("channel-line")[0]
+    expect(line.getAttribute("data-channel")).toBe("untracked")
+    expect(line.textContent).toContain("not recorded")
+    expect(line.textContent).not.toContain("Measured on")
+    api.restore()
+  })
+
+  // Found by reading the diff, not by any of the above: the same line was
+  // pasted into the detail dialog twice, and every test still passed because
+  // none of them opened it. Counting is the assertion -- a page that says
+  // the same true thing twice reads as two different measurements.
+  it("says the channel exactly once per bulk surface, on the card and in the dialog", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Bulks />, { path: "/bulks" })
+
+    await screen.findByText("Most recent bulk")
+    expect(screen.getAllByTestId("channel-line").length).toBe(1)
+
+    fireEvent.click(screen.getByText("Open detail"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getAllByTestId("channel-line").length).toBe(1)
+    api.restore()
+  })
+
   it("a dead bulks endpoint names the failure and offers a retry", async () => {
     const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks": reply(500, { error: "bulks query failed" }) })
     renderPage(<Bulks />, { path: "/bulks" })

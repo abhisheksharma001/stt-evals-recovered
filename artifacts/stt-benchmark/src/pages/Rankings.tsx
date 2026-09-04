@@ -20,6 +20,8 @@ import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
 import { formatCents, formatMicrocents, formatPerMinute } from "@/lib/utils"
 import { paidVsListDiffers } from "@/lib/paid-vs-list"
+import { bulkChannel } from "@/lib/audio-channel"
+import { ChannelLine } from "@/components/channel-line"
 
 // T-123: recharts (~450 kB minified) rides only in the trend strip, and the
 // trend strip lives behind the closed-by-default "More evidence" fold. A
@@ -740,6 +742,17 @@ export default function Rankings() {
 
       {/* T-21: the answer first. */}
       {viewMode === "bulk" && selectedBulkId && <BulkVerdictBanner bulkId={selectedBulkId} groupLabels={{}} />}
+
+      {/* M-5a: which audio these numbers were measured on, said before any
+          of them are read. Taken from the bulk's own frozen criteria -- the
+          instruction the executor obeyed -- never re-derived from the cells
+          underneath, which would be a second source of truth free to
+          disagree. The all-time view deliberately has no such line: it
+          pools bulks that were measured on different channels, and one
+          label over the lot would be a claim about a mixture. */}
+      {viewMode === "bulk" && bulkDetail && (
+        <ChannelLine channel={bulkChannel(bulkDetail.selectionCriteria.requireCustomerAudio)} />
+      )}
 
       {/* Cost + coverage as tiles. STT and agent spend are different
           budgets, never combined into one figure. */}

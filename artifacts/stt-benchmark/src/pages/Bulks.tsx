@@ -38,6 +38,8 @@ import {
   type BenchmarkRun,
 } from "@workspace/api-client-react"
 import { RunStages } from "@/components/run-stages"
+import { ChannelLine } from "@/components/channel-line"
+import { bulkChannel } from "@/lib/audio-channel"
 import { Layers, Play, RotateCw, XCircle, FileJson, Plus, Rocket, Database, Server, AlertTriangle, Trash2, GitMerge, ChevronRight, ChevronDown, Activity } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -913,6 +915,14 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
             {current.providerIds.length} provider(s)
           </div>
 
+          {/* M-5a: which audio this bulk was measured on, in words, from its
+              own frozen criteria -- the instruction its runs obeyed. Never
+              read back from the cells: the criteria are the decision, the
+              cells are its outcome, and a reader shown the outcome cannot
+              tell a deliberate mono bulk from a customer bulk that
+              silently fell back. */}
+          <ChannelLine channel={bulkChannel(current.selectionCriteria.requireCustomerAudio)} />
+
           {/* T-74 (E.1 proximity): the estimate, the cost-gate state and the
               launch button were ~120 lines apart in this dialog (header
               text vs footer button, with the over-threshold reason only in
@@ -1246,6 +1256,11 @@ function LiveBulkCard({ bulk }: { bulk: Bulk }) {
         </div>
         {/* T-105: three stages, spinner on the live one, real counts. */}
         {p && <RunStages p={p} inFlight={inFlight} />}
+        {/* M-5a: the channel above the money. Two bulks with the same cost
+            are not comparable if one of them measured the assistant's own
+            voice, so the reader is told which this is before reading a
+            single figure. From the bulk's frozen criteria, never the cells. */}
+        <ChannelLine channel={bulkChannel((detail ?? bulk).selectionCriteria.requireCustomerAudio)} />
         <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
           <div>
             <div className="text-[10px] font-mono uppercase text-muted-foreground">STT cost{hasActual ? "" : " (estimate)"}</div>
