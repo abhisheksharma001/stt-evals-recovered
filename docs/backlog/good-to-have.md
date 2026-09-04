@@ -13,7 +13,11 @@ it: `docs/runbooks/pending-backfills.md` says both scripts are idempotent and th
 header says re-running finds nothing to change. Reproduce:
 `docker exec stt-evals-pg psql -U postgres -d stt_evals -c "select (cost_per_minute <>
 0.0077) from benchmark_providers where id='deepgram-flux-general-en';"` → `t`.
-Fix queued as M-1a (compare on the float, or `abs(cost_per_minute - 0.0077) > 1e-9`).
+**Fixed by M-1a, 2026-09-04**: the guard is `abs(cost_per_minute - 0.0077) > 1e-9`, and
+the audit row is only inserted when at least one of the three writes actually changed a
+row — an `--apply` with nothing to do now writes nothing at all. Proved by putting the
+old `<> 0.0077` guard back on a copy of the live database: `flux repriced 1` and a new
+`backfill-t65-t66` audit row; with the tolerance, `flux repriced 0` and no row.
 
 ## Found 2026-09-04: every WER ever shown measured agreement with Vapi, not accuracy
 

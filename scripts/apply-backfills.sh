@@ -12,9 +12,9 @@
 #                                are byte-identical copies of their own draft
 #                                -> null; the 2 human-edited ones are untouched)
 #
-# All three are safe to re-run: t52 and m1 find nothing to do the second
-# time, and t65 rewrites the same flux price each apply (its guard compares
-# a float4 column to a numeric literal -- logged as M-1a). It reads
+# All three are safe to re-run: a second --apply finds nothing to do and
+# writes nothing at all, not even an audit row (t65's flux guard compares on
+# a tolerance since M-1a -- cost_per_minute is a float4). It reads
 # artifacts/api-server/.env for DATABASE_URL and the Vapi keys (T-52 calls
 # Vapi) and never prints either. No API restart is needed: all three write
 # only to the database. Rankings already computed before the T-62 price change

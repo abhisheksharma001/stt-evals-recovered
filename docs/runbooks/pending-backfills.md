@@ -70,6 +70,10 @@ bash scripts/apply-backfills.sh --apply    # writes; safe to re-run
 ```
 
 Then re-run the dry run: every count should read 0 and the flux price 0.0077.
+A second `--apply` is a true no-op — `relinked 0 ... reclassified 0 ... flux
+repriced 0`, `T-52 ... written 0`, `M-1: 0 to clear` — and writes no audit row
+(M-1a, 2026-09-04: the flux guard used to match on every apply because
+`cost_per_minute` is a float4).
 No API restart needed (database-only writes).
 
 ## What changes afterwards, and what does not
