@@ -9,6 +9,8 @@ import {
 } from "@workspace/api-client-react"
 import { ChevronDown, ChevronRight, Trophy, AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { ChannelChip } from "@/components/channel-line"
+import { cellChannel } from "@/lib/audio-channel"
 import { WordDiffView } from "@/components/word-diff-view"
 import { NoOutputChip, NoOutputDetail, MissingCounts, missingByProvider, type NoOutputStatus } from "@/components/no-output"
 import { TranscriptSideBySide } from "@/components/transcript-side-by-side"
@@ -319,6 +321,15 @@ function ProviderRow({
           {!ok && (
             <NoOutputChip status={row.status as NoOutputStatus} failureClass={row.failureClass} retryable={row.retryable} errorMessage={row.errorMessage} />
           )}
+          {/* M-5a: which channel THIS cell was read from. Per row, not per
+              call: rows here can come from different runs, and a run that
+              re-read the caller-only track sits next to one that never
+              did. A cell with no output gets no chip -- there is no
+              measurement for a channel to qualify. */}
+          {(() => {
+            const channel = cellChannel(row.audioSource, ok)
+            return channel ? <ChannelChip channel={channel} /> : null
+          })()}
         </span>
         <span className="text-right font-mono text-xs" title={row.diff ? `${row.diff.wordsDiffer} of ${row.diff.referenceWords} reference words differ` : undefined}>
           {ok ? (row.diff ? `${row.diff.wordsDiffer}/${row.diff.referenceWords}` : <span className="text-muted-foreground">—</span>) : ""}

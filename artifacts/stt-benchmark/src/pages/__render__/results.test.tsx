@@ -18,6 +18,7 @@ import type {
   AppSettings,
   BenchmarkCall,
   Bulk,
+  BulkDetail,
   BulkVerdicts,
   Provider,
   VerticalRanking,
@@ -179,6 +180,26 @@ const verdicts: BulkVerdicts = {
   ],
 }
 
+// M-5a: the channel line reads the BULK's frozen criteria, so it needs the
+// detail response the rest of this file deliberately does without.
+function detailFor(requireCustomerAudio: boolean | undefined): BulkDetail {
+  return {
+    ...bulks[0],
+    selectionCriteria: { ...bulks[0].selectionCriteria, requireCustomerAudio },
+    progress: {
+      callsTotal: 12, callsRun: 12, cellsTotal: 24, cellsOk: 24, cellsFailed: 0,
+      cellsPending: 0, cellsCancelled: 0, cellsSkippedPendingReview: 0,
+      agentCallsTotal: 12, agentCallsChecked: 12, agentCallsInFlight: 0,
+    },
+    runs: [],
+    actualCost: {
+      sttCostMicrocents: 500_000, agentCostMicrocents: 120_000, agentCallsChecked: 12,
+      agentCallsFlagged: 3, agentCallsResolved: 0, agentCallsErrored: 0, agentCallsJudged: 3,
+    },
+    failureBreakdown: [],
+  }
+}
+
 const baseRoutes: StubRoutes = {
   "GET /api/benchmark/providers": providers,
   "GET /api/benchmark/bulks": bulks,
@@ -242,6 +263,41 @@ describe("Results", () => {
     expect(chips.length).toBe(1)
     expect(chips[0].textContent).toContain("0.0077")
     expect(chips[0].title).toContain("This bulk paid")
+    api.restore()
+  })
+
+  // M-5a. This page is where the decision is read off, so it has to say
+  // what the decision was measured on before it is read.
+  it("the bulk view names the channel the bulk was measured on", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks/bulk-1": detailFor(true) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("channel-line")
+    expect(line.getAttribute("data-channel")).toBe("customer")
+    expect(line.textContent).toContain("caller-only channel")
+    api.restore()
+  })
+
+  it("a bulk with no channel frozen says not recorded rather than asserting mono", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks/bulk-1": detailFor(undefined) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("channel-line")
+    expect(line.getAttribute("data-channel")).toBe("untracked")
+    expect(line.textContent).toContain("not recorded")
+    api.restore()
+  })
+
+  it("all-time claims no channel, because it pools bulks measured on different ones", async () => {
+    // The same reason this view claims no verdict (T-183 above): one label
+    // over a mixture would be a statement about audio that was never all
+    // the same audio.
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks/bulk-1": detailFor(true) })
+    renderPage(<Results />, { path: "/results" })
+
+    expect(await screen.findByTestId("channel-line")).toBeTruthy()
+    fireEvent.click(screen.getByText("All-time combined"))
+    expect(screen.queryByTestId("channel-line")).toBeNull()
     api.restore()
   })
 

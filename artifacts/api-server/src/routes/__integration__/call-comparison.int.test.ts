@@ -40,6 +40,9 @@ beforeAll(async () => {
 
   const okResult = await fx.result(runId, callId, okProviderId, {
     hypothesisTranscript: "the quick brown fox jumped",
+    // M-5a: the channel this cell was actually read from, as the executor
+    // recorded it. The comparison must carry it through unchanged.
+    audioSource: "customer",
   });
   await fx.score(okResult.id, { peerFlagCount: 1, peerFlagSeverity: "low", flagCount: 1, flagSeverity: "low" });
   await fx.result(runId, callId, failedProviderId, {
@@ -90,6 +93,22 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
     expect(missingRow.status).toBe("missing");
     expect(missingRow.resultId).toBeNull();
     expect(missingRow.runId).toBe(runId);
+  });
+
+  // M-5a: the row is where a reader compares providers, so each row has to
+  // carry the audio it was measured on. Not per call: rows here can come
+  // from different runs, and a re-read on the caller-only channel sits next
+  // to one that never got re-read.
+  it("carries each cell's own channel through, and invents none for cells that have none", async () => {
+    const res = await request(app).get(`/api/benchmark/calls/${callId}/comparison`);
+    expect(res.status).toBe(200);
+    const byProvider = new Map<string, any>(res.body.rows.map((r: any) => [r.providerId, r]));
+
+    expect(byProvider.get(okProviderId).audioSource).toBe("customer");
+    // The failed cell read nothing successfully; the missing cell has no row
+    // at all. Both stay null -- "mono" here would be a guess dressed as data.
+    expect(byProvider.get(failedProviderId).audioSource).toBeNull();
+    expect(byProvider.get(missingProviderId).audioSource).toBeNull();
   });
 
   it("404s on an unknown call and refuses a malformed id with a sentence", async () => {

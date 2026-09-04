@@ -830,6 +830,14 @@ export type ComparisonRowHybridFlags = {
   entityMismatches: number;
 } | null;
 
+export type ComparisonRowAudioSource = typeof ComparisonRowAudioSource[keyof typeof ComparisonRowAudioSource] | null;
+
+
+export const ComparisonRowAudioSource = {
+  customer: 'customer',
+  mono: 'mono',
+} as const;
+
 export type ComparisonRowFailureClass = typeof ComparisonRowFailureClass[keyof typeof ComparisonRowFailureClass] | null;
 
 
@@ -874,6 +882,7 @@ export interface ComparisonRow {
      * @nullable
      */
   costMicrocents: number | null;
+  audioSource: ComparisonRowAudioSource;
   failureClass: ComparisonRowFailureClass;
   /** @nullable */
   retryable: boolean | null;

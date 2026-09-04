@@ -224,6 +224,7 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
         hybridFlags: null,
         latencyFinalMs: null,
         costMicrocents: null,
+        audioSource: null,
         failureClass: null,
         retryable: null,
         errorMessage: null,
@@ -256,6 +257,10 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
       hybridFlags: hybridFlagsOf(score?.detail ?? null),
       latencyFinalMs: score?.latencyFinalMs ?? null,
       costMicrocents: score?.costMicrocents ?? null,
+      // M-5a: the channel the executor actually read for this cell,
+      // verbatim from the result row. Never inferred from what is on disk
+      // now, and never filled in with a guess when it is null.
+      audioSource: result.audioSource,
       failureClass,
       retryable: cellRetryable(result.status, failureClass),
       errorMessage: result.errorMessage,
