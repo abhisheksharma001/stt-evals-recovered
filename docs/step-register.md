@@ -675,6 +675,45 @@ chip; live: import one new call from the Leasing Dev account (free — a Vapi do
 then `ls artifacts/api-server/audio-cache | grep <callId>` shows four files.
 **Must not:** run any STT provider; change the mono path; store the artifact anywhere
 but the gitignored cache directory (it contains caller PII).
+**Status:** done 2026-09-05 (PR #88, 673908e, deployed 673908ee7de1).
+Proved live, not only by test: one Leasing Dev call imported free (a Vapi
+download, no provider) landed four files -- `.audio`, `.customer.audio`,
+`.assistant.audio` and a 59.5K `.artifact.json` with 22 messages and a
+`transcriberLatencyAverage` of 733.7 ms -- and `GET /benchmark/calls` reports
+`customerAudioCached: true` for it. The corpus is 176 calls, 100 of which now
+have a caller channel: the 99 rescued by hand plus the first one that got it
+without anybody asking.
+
+Four things learned.
+
+(1) The step's own acceptance had no automated proof and never could have
+had one cheaply: the import handler talks to Vapi, and nothing in the test
+suite can reach it. So the guard set covers what is testable --
+`cacheCallSidecars` itself, and the flag the UI reads -- and the wiring
+between them was proved live. Naming that split up front is better than
+letting a green suite imply the route was covered.
+
+(2) **A test that cannot fail is worse than no test**, because it looks like
+one. The first version of the `customerAudioCached` integration case seeded a
+call with both files and a call with neither, so reading the flag off the
+mono-file set -- the exact mistake it existed to catch -- would have passed
+it. It needed a third call with the mono mix and no caller channel, which is
+also the state 76 of the corpus's cached calls are actually in. Two files
+without a third told me nothing.
+
+(3) The suite failed twice on this branch, and the tempting move was to re-run
+until green and ship. Measuring instead took forty runs and found three
+failures in three different files, one of them on an untouched `main` -- which
+is what made it honest to call this branch green, and what turned "flaky
+tests" into M-6a with evidence attached. **"It passed the second time" is how
+a real bug ships.**
+
+(4) Looking at the bytes on disk, rather than at the test output, is what
+found the fourth file's mode. Three files at 0600 and the mono mix beside
+them at 0644, holding the same caller's voice. It is one argument to fix and
+it was tempting, but the step forbade touching the mono path, so it is M-6b
+instead. **The find came from `ls -l`, not from any assertion I would have
+thought to write.**
 
 ---
 
@@ -704,6 +743,31 @@ failure output now contains the body.
 **Must not:** loosen an assertion (a 500 must still fail the test that expected a 404);
 retry, sleep, or otherwise paper over the intermittency -- the cause is still unknown and
 hiding it is worse than the flake.
+
+---
+
+### M-6b — The mono file gets the same file mode as the three beside it
+
+**PR:** one.
+**Depends on:** M-6 (which established 0600 as the mode for cached call audio).
+**Files:** `artifacts/api-server/src/lib/audio-cache.ts` (`getOrCacheAudioBytes`),
+`artifacts/api-server/src/lib/audio-cache.test.ts`.
+**Today:** the first M-6 import wrote four files for one call:
+`<id>.customer.audio`, `<id>.assistant.audio` and `<id>.artifact.json` at 0600, and
+`<id>.audio` at 0644. The mono mix carries the caller's voice exactly as the customer
+channel does, so three locked files beside one open one protect nothing. The 0644 is not
+a decision: `fs.writeFile` with no mode is 0666 minus the umask.
+**Change:** pass `{ mode: 0o600 }` on the mono write in `getOrCacheAudioBytes`, and add a
+case asserting the mode, next to the M-6 one that already asserts it for the other three.
+Existing files keep whatever mode they have -- this step does not chmod the 176 already
+on disk, because a sweep over a directory of caller audio is its own decision.
+**Acceptance:** WHEN a call's mono audio is cached THEN the file SHALL be 0600, and every
+file in the cache directory written from that point SHALL have the same mode.
+**Verify:** `cd artifacts/api-server && pnpm test`. Prove by breaking: drop the mode
+argument and watch the new case fail with `expected 420 to be 384`.
+**Must not:** chmod files already on disk; change where the mono file is written, what it
+contains, or when it is fetched.
+
 ---
 
 ### M-7 — Production signals stored per call and shown

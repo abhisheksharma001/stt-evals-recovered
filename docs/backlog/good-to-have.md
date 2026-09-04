@@ -1066,6 +1066,17 @@ stakeholder" the research kept circling back to.
   printing the body it got costs an hour every time it fires.** Stepped as
   M-6a, whose first job is to make the next occurrence diagnosable rather
   than to guess at a cause.
+- **The mono file is the only one of the four written world-readable**
+  (found 2026-09-05 by looking at the first M-6 import on disk). The three
+  files M-6 writes are 0600; the mono mix beside them, written by
+  `getOrCacheAudioBytes` since 2026-08-27, is 0644 -- `fs.writeFile` with no
+  mode, so 0666 minus the umask. The mono mix contains the caller's voice
+  exactly as the customer channel does, so locking down three of four files
+  and leaving the fourth open protects nothing. It is one argument to fix,
+  but M-6's own "must not" forbade touching the mono path, so it is stepped
+  rather than smuggled in: **M-6b**. Low severity today -- the directory is a
+  local, gitignored folder on a single-user laptop -- and it stops being low
+  the moment this moves to a shared box or real object storage.
 
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,
