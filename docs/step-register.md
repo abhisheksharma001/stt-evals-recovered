@@ -678,6 +678,34 @@ but the gitignored cache directory (it contains caller PII).
 
 ---
 
+### M-6a — When the integration suite fails, it must say what it actually got
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/routes/__integration__/small-reads.int.test.ts`,
+`artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`,
+`artifacts/api-server/src/routes/__integration__/rankings.int.test.ts`.
+**Today:** the suite fails roughly once in ten runs, in a different file each time, on
+`main` as much as on a feature branch -- three failures in about forty runs, measured
+2026-09-05 and written up in `docs/backlog/good-to-have.md`. Two of the three assert an
+HTTP status (`expect(res.status).toBe(404)`, `toBe(400)`) and got something else, and the
+assertion prints only the two numbers. Nobody knows what the server said, so every
+occurrence costs a re-run and teaches nothing.
+**Change:** in those three files, replace the bare status assertions with one that carries
+the response: `expect({ status: res.status, body: res.body }).toMatchObject({ status: 404 })`
+(or an equivalent that prints the body on failure). No behaviour, no fixture, no
+production code changes -- this step exists only so the NEXT failure arrives with
+evidence attached.
+**Acceptance:** WHEN one of those assertions fails THEN the failure message SHALL include
+the response body the server returned, not only the status number.
+**Verify:** `cd artifacts/api-server && TEST_DATABASE_URL=... pnpm run test:integration`
+passes. Prove by breaking: change one expected status to a wrong value and confirm the
+failure output now contains the body.
+**Must not:** loosen an assertion (a 500 must still fail the test that expected a 404);
+retry, sleep, or otherwise paper over the intermittency -- the cause is still unknown and
+hiding it is worse than the flake.
+---
+
 ### M-7 — Production signals stored per call and shown
 
 **PR:** one.
