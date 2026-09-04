@@ -77,7 +77,105 @@ scripts/deploy-api.sh
 The revert is a real commit on the branch, so the history says what happened
 and CI runs on it. If the bad change touched the schema, revert the code
 first (this script), then decide about the data separately — a schema push
-is never reverted blind.
+is never reverted blind, and the data has its own section below.
+
+## Back up and restore the database
+
+The corpus, every paid provider output and every score live in the Docker
+volume behind `stt-evals-pg` — none of it is in the tree and none of it is on
+GitHub. If that volume goes, the money already spent on those transcriptions
+goes with it.
+
+`scripts/backup-db.sh` dumps it. launchd runs that script daily at 02:00 as
+`ai.ellavox.stt-evals.backup`; dumps land in `~/gh-projects/stt-evals-backups/`
+as `stt-evals-YYYY-MM-DD.dump` (pg_dump custom format), newest 30 kept. Running
+it by hand is the same command and safe to repeat — it rewrites the day's file:
+
+```bash
+bash scripts/backup-db.sh
+ls -lt ~/gh-projects/stt-evals-backups/ | head -3
+```
+
+**This is a folder on this laptop, not off-site.** One dead disk takes the
+database and its backups together. A second destination is open question v6 E1
+in `docs/step-register.md`; until it is answered, that risk is real and
+unmitigated.
+
+### Restore
+
+Never into the live database. Restore into a scratch one, look at it, and only
+then decide what to move across:
+
+```bash
+DUMP=~/gh-projects/stt-evals-backups/$(ls -t ~/gh-projects/stt-evals-backups | head -1)
+docker exec stt-evals-pg createdb -U postgres stt_evals_restore
+docker exec -i stt-evals-pg pg_restore -U postgres -d stt_evals_restore < "$DUMP"
+docker exec stt-evals-pg psql -U postgres -d stt_evals_restore -c 'select count(*) from benchmark_calls'
+docker exec stt-evals-pg dropdb -U postgres stt_evals_restore    # when finished
+```
+
+**Exercised 2026-09-05** (M-4). The 3.8 MB dump restored into
+`stt_evals_restore` and every table matched the live database: 175
+benchmark_calls, 1151 benchmark_provider_call_results, 999 benchmark_scores,
+22 benchmark_runs, 3 benchmark_bulks, 298 benchmark_agent_scans — 11 tables in
+all. Do it again after any schema change. A dump nobody has restored is a
+guess, not a backup.
+
+### The schedule
+
+```bash
+launchctl list | grep stt-evals                                # loaded?
+tail ~/Library/Logs/stt-evals-backup.log                       # what the last run said
+launchctl kickstart gui/$(id -u)/ai.ellavox.stt-evals.backup   # run it right now
+```
+
+`launchctl list` prints `-  0  ai.ellavox.stt-evals.backup`; the middle column
+is the last exit status, so `0` is a good night and anything else means read
+the log. If the laptop is asleep at 02:00 launchd runs the job at the next
+wake, so one missed night corrects itself.
+
+The plist names absolute paths, which makes it specific to this machine — it
+lives outside the repo at `~/Library/LaunchAgents/ai.ellavox.stt-evals.backup.plist`
+and cannot be committed. Recreate it there verbatim:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.ellavox.stt-evals.backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/abhisheksharma/gh-projects/stt-evals-recovered/scripts/backup-db.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>2</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/abhisheksharma/Library/Logs/stt-evals-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/abhisheksharma/Library/Logs/stt-evals-backup.log</string>
+</dict>
+</plist>
+```
+
+`PATH` is set explicitly because a launchd agent starts with a bare
+`/usr/bin:/bin:/usr/sbin:/sbin` and would never find `docker`. Load it, reload
+it after an edit, or remove it:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.ellavox.stt-evals.backup.plist
+launchctl bootout   gui/$(id -u)/ai.ellavox.stt-evals.backup   # bootstrap again to reload
+```
 
 ## When something is half-deployed
 
