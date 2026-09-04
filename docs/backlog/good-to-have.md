@@ -1,3 +1,37 @@
+## Found 2026-09-04 (verifying M-3): the Vite dev server walks around the loopback bind
+
+M-3 bound the API to `127.0.0.1`, and that part holds — `lsof` reads `127.0.0.1:8177`
+and the LAN address is refused. It does **not** close the network path, because the UI is
+a second process. `artifacts/stt-benchmark/vite.config.ts` sets `host: '0.0.0.0'` and
+`allowedHosts: true` on both `server` and `preview`, and proxies `/api` to
+`API_PROXY_TARGET` **server-side** — so the proxy dials the API from the laptop, where
+loopback is allowed. Evidence, live on 2026-09-04 straight after the M-3 deploy:
+
+```
+curl http://192.168.1.9:8177/api/healthz   -> refused        (M-3 working)
+curl http://192.168.1.9:5173/              -> 200            (whole UI)
+curl http://192.168.1.9:5173/api/healthz   -> 200 {"status":"ok","commitSha":"78449739a880",…}
+```
+
+Anyone on the same WiFi can still open the tool and press Launch, which spends real
+provider money. Queued as M-3a. **Rule this leaves: when a service is split across two
+processes, binding one of them proves nothing about reachability — test the address a
+person actually types.**
+
+## Found 2026-09-04 (verifying M-3): two docs said the API serves the UI; it never has
+
+`docs/runbooks/deploy-and-rollback.md` opened with "the API runs on `:8177` and the UI
+bundle is served by the same process", and the M-3 register row repeated it ("The UI is
+served by the same process, so `http://localhost:8177` keeps working"), which made it
+into M-3's acceptance sentence. Both were false. `artifacts/api-server/src/app.ts` mounts
+only `app.use("/api", router)` and its own comment says "This server serves nothing but
+the API"; `curl localhost:8177/` answers `{"error":"No such endpoint: GET /"}`. The UI is
+served by Vite on `:5173`. `scripts/deploy-api.sh` does build the UI bundle
+(`vite build` → `artifacts/stt-benchmark/dist/public`), which is probably where the belief
+came from — nothing serves that directory. Both claims corrected 2026-09-04; M-3's
+acceptance is recorded as met on its first clause only, with the second struck as never
+having been true of this architecture.
+
 ## Found 2026-09-04 (running M-1): the T-62 flux reprice fires on every `--apply`
 
 `backfill-t65-t66.ts` guards its price write with `cost_per_minute <> 0.0077`, but

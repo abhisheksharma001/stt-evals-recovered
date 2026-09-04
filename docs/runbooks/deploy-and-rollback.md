@@ -1,9 +1,11 @@
 # Deploy and rollback (T-78)
 
 One command, one process, one log. Local dev host only today — the API runs
-on `:8177` and the UI bundle is served by the same process. Nothing here
-touches the database schema (that is `pnpm --filter @workspace/db run push`,
-a separate, deliberate step).
+on `:8177`. It serves **only** `/api`; the UI is a separate Vite process on
+`:5173` (this script builds the UI bundle, but nothing serves that directory —
+corrected 2026-09-04, the earlier line here said the API served it). Nothing
+here touches the database schema (that is `pnpm --filter @workspace/db run
+push`, a separate, deliberate step).
 
 ## Deploy
 
@@ -34,8 +36,12 @@ build badge in the sidebar shows it.
 
 `127.0.0.1:8177` — loopback only, since M-3. The API has no authentication
 and a bulk launch spends real provider money, so anything that can reach the
-port can spend. `http://localhost:8177` is unaffected; another machine on the
-same network is refused.
+port can spend. Local callers are unaffected; another machine on the same
+network is refused.
+
+**This is not the whole fence yet.** The Vite server on `:5173` still binds
+`0.0.0.0` and proxies `/api` to the API from *this* machine, so the LAN can
+still reach everything through it — see M-3a in `docs/step-register.md`.
 
 `HOST=0.0.0.0 scripts/deploy-api.sh` binds every interface again. Only for a
 deliberate reason (showing the UI on a phone, say), and only for as long as

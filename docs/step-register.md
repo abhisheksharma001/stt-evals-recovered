@@ -201,6 +201,29 @@ still passes.
 
 ### M-3 — The API listens on localhost only
 
+**Status:** `done` 2026-09-04 (PR #80, `7844973`, deployed `78449739a880`).
+Live: `lsof` reads `127.0.0.1:8177`, `localhost/api/healthz` 200, the LAN
+address refused. Proved by breaking on a scratch port `:8178` against the
+built bundle — with the fix `127.0.0.1:8178` and the LAN refused (curl exit
+7); with the fix removed and rebuilt, `*:8178` and the LAN answered **200**;
+with the fix and `HOST=0.0.0.0`, `*:8178` and 200 again, so the documented
+escape hatch really works through the deploy script's `nohup node
+--env-file-if-exists=.env` (ambient env beats `--env-file`, and `.env` sets no
+`HOST`). Learned: (1) **This did not close the network path.** The UI is a
+second process and `vite.config.ts` binds `0.0.0.0` and proxies `/api`
+server-side, so `http://<lan-ip>:5173/api/healthz` still answers 200 — logged
+in the backlog, queued as M-3a. When a service is split across two processes,
+binding one proves nothing about reachability; test the address a person types.
+(2) **The second half of the acceptance below was never true** — the API
+serves nothing but `/api` (`app.ts` says so in a comment; `GET /` answers
+`{"error":"No such endpoint: GET /"}`). This step is recorded as meeting its
+first clause only; the runbook line that made the same claim is corrected.
+(3) `git checkout HEAD~1 -- <file>` writes the **index** as well, so the
+follow-up `git checkout -- <file>` restores that stale index, not HEAD — the
+break-proof looked restored and was not. Use `git restore --source=HEAD
+--staged --worktree <file>`, and read `git status --porcelain` rather than
+trusting an `echo`.
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/index.ts` (`app.listen(port, …)`),
@@ -211,7 +234,9 @@ auth. Anyone on the same network can launch a bulk (spends money) or read call a
 the same process, so `http://localhost:8177` keeps working. Note the `HOST` override in
 the runbook.
 **Acceptance:** WHEN the API starts without `HOST` THEN it SHALL listen on
-`127.0.0.1:8177` only, and the UI SHALL load at `http://localhost:8177`.
+`127.0.0.1:8177` only. (The clause "and the UI SHALL load at
+`http://localhost:8177`" was struck on 2026-09-04: the API has never served the
+UI — that is Vite on `:5173`.)
 **Verify:**
 ```
 scripts/deploy-api.sh
@@ -219,6 +244,42 @@ lsof -nP -iTCP:8177 -sTCP:LISTEN | tail -n +2 | awk '{print $9}'   # 127.0.0.1:8
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8177/api/healthz  # 200
 ```
 **Must not:** add auth, change the port, or touch the deploy script's PID logic.
+
+---
+
+### M-3a — The UI server listens on localhost too
+
+**PR:** one.
+**Depends on:** M-3 (done).
+**Files:** `artifacts/stt-benchmark/vite.config.ts` (`server.host`,
+`preview.host`), `docs/runbooks/deploy-and-rollback.md` ("Where it listens").
+**Today:** M-3 made the API loopback-only, and the LAN reaches it anyway
+through the UI. `vite.config.ts` sets `host: '0.0.0.0'` on both `server` and
+`preview`, and proxies `/api` to `API_PROXY_TARGET` **from this machine**, so
+loopback on the API is no obstacle. Measured 2026-09-04:
+`curl http://192.168.1.9:5173/` → 200 and
+`curl http://192.168.1.9:5173/api/healthz` → 200 with the live `commitSha`.
+There is no auth on any of it and Launch spends real provider money.
+**Change:** in `vite.config.ts`, both `server.host` and `preview.host` become
+`process.env.UI_HOST ?? '127.0.0.1'`. Leave `allowedHosts` alone — it decides
+which `Host:` headers are accepted, not which interfaces are bound, and with a
+loopback bind it cannot be reached from off-machine anyway. Add the `UI_HOST`
+override to the runbook's "Where it listens" beside `HOST`, and delete the
+warning there that says the fence is incomplete.
+**Acceptance:** WHEN `pnpm dev` runs without `UI_HOST` THEN `lsof -nP
+-iTCP:5173 -sTCP:LISTEN` SHALL read `127.0.0.1:5173`, `http://localhost:5173`
+SHALL load the UI, and `curl --max-time 4 http://<this machine's LAN
+IP>:5173/api/healthz` SHALL fail to connect.
+**Verify:**
+```
+lsof -nP -iTCP:5173 -sTCP:LISTEN | tail -n +2 | awk '{print $9}'   # 127.0.0.1:5173
+curl -s -o /dev/null -w '%{http_code}\n' localhost:5173           # 200
+curl -s --max-time 4 -o /dev/null -w '%{http_code}\n' http://$(ipconfig getifaddr en0):5173/api/healthz   # 000
+```
+Prove by breaking: put `'0.0.0.0'` back, restart the dev server, watch the LAN
+curl answer 200 again.
+**Must not:** add auth, change the port, touch `strictPort`, the proxy, or the
+API's own binding.
 
 ---
 
