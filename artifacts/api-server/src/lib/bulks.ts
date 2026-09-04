@@ -583,6 +583,24 @@ export async function createBulkFromCriteria(input: {
       // run-scoped query matches on runId with eq/inArray, so a null runId
       // simply stops matching the run that no longer exists, while the call
       // comparison still finds the verdict by callId.
+      // M-3d: and the SAME table's agent_pick_result_id, which points at a
+      // result cell that cascades from the run -- the other half of this
+      // bug. Checked against pg_constraint rather than guessed: these two
+      // are the ONLY foreign keys into the bulk -> runs -> results -> scores
+      // cascade that are not themselves ON DELETE CASCADE.
+      await tx
+        .update(benchmarkAgentScansTable)
+        .set({ agentPickResultId: null })
+        .where(
+          inArray(
+            benchmarkAgentScansTable.agentPickResultId,
+            tx
+              .select({ id: benchmarkProviderCallResultsTable.id })
+              .from(benchmarkProviderCallResultsTable)
+              .innerJoin(benchmarkRunsTable, eq(benchmarkProviderCallResultsTable.runId, benchmarkRunsTable.id))
+              .where(eq(benchmarkRunsTable.bulkId, oldest.id)),
+          ),
+        );
       await tx
         .update(benchmarkAgentScansTable)
         .set({ runId: null })

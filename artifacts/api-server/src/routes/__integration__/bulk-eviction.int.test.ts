@@ -33,8 +33,17 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
 
     const scannedCall = await fx.call({ durationSeconds: 60 });
     const doomedRun = await fx.run({ bulkId: doomed.id, purpose: "batch" });
-    // The row that used to block the whole thing.
-    const scan = await fx.scan(scannedCall.id, { runId: doomedRun.id, status: "flagged" });
+    const pickedProvider = await fx.provider({ costPerMinute: 0.1 });
+    const pickedResult = await fx.result(doomedRun.id, scannedCall.id, pickedProvider.id);
+    // A REAL scan row: both of its plain (no-cascade) references into the
+    // eviction path are set. M-3c set only runId here and passed on a half
+    // fix -- agent_pick_result_id blocked the very next live launch. A
+    // fixture thinner than production proves less than it looks like it does.
+    const scan = await fx.scan(scannedCall.id, {
+      runId: doomedRun.id,
+      agentPickResultId: pickedResult.id,
+      status: "flagged",
+    });
 
     const accountLabel = `fx-evict-${fx.suffix}`;
     const fresh = await fx.call({ durationSeconds: 60, sourceAccountLabel: accountLabel });
@@ -68,7 +77,11 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
     const [kept] = await db.select().from(benchmarkAgentScansTable).where(eq(benchmarkAgentScansTable.id, scan.id));
     expect(kept).toBeDefined();
     expect(kept.runId).toBeNull();
+    expect(kept.agentPickResultId).toBeNull();
     expect(kept.callId).toBe(scannedCall.id);
+    // The judge's reasoning is not what the pointer was -- the verdict text
+    // and status survive the run that produced them.
+    expect(kept.status).toBe("flagged");
     // The call it describes is untouched -- eviction never reaches the corpus.
     const stillThere = await request(app).get(`/api/benchmark/calls/${scannedCall.id}`);
     expect(stillThere.status).toBe(200);
