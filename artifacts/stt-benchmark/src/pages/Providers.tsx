@@ -17,6 +17,7 @@ import {
   getListProviderModelsQueryKey,
   useEnableProviderModel,
   type Provider,
+  type ProviderModelOption,
 } from "@workspace/api-client-react"
 import { Server, Plus, Check, X, Shield, Activity, Zap, KeyRound, Ban, Power, Settings, AlertTriangle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
@@ -133,6 +134,66 @@ export default function Providers() {
 // verified against the vendor's docs on a dated day. The newest model gets
 // a one-click Enable that creates its own provider row -- old results stay
 // on the old row, so nothing is silently re-labelled.
+type ModelGroup = { base: ProviderModelOption; variants: ProviderModelOption[] }
+
+// S-1: Deepgram names a base engine's label `<name>-general` (`nova-2` carries
+// `label: "nova-2-general"`) and names each domain variant after its base
+// (`nova-2-phonecall`). So: a model whose label ends in `-general` is a base,
+// never a variant; every other model belongs to the longest base whose
+// apiModel prefixes its own, or stands alone. A vendor with no `-general`
+// label has no bases and renders flat -- OpenAI's `gpt-4o-transcribe-diarize`
+// is a feature variant, not a domain, and must stay a plain row.
+export function groupByBaseEngine(models: ProviderModelOption[]): ModelGroup[] {
+  const isBase = (m: ProviderModelOption) => m.label.endsWith("-general")
+  const bases = models.filter(isBase)
+  const parentOf = (m: ProviderModelOption) =>
+    bases.filter((b) => m.apiModel.startsWith(`${b.apiModel}-`)).sort((a, b) => b.apiModel.length - a.apiModel.length)[0]
+  const groups: ModelGroup[] = []
+  const groupFor = (base: ProviderModelOption) => {
+    let g = groups.find((x) => x.base.apiModel === base.apiModel)
+    if (!g) {
+      g = { base, variants: [] }
+      groups.push(g)
+    }
+    return g
+  }
+  for (const m of models) {
+    const parent = isBase(m) ? undefined : parentOf(m)
+    if (parent) groupFor(parent).variants.push(m)
+    else groupFor(m)
+  }
+  return groups
+}
+
+function EnableCell({ model, pending, onEnable }: { model: ProviderModelOption; pending: boolean; onEnable: (apiModel: string) => void }) {
+  if (model.enabled) return <span className="ml-auto text-success">enabled</span>
+  return (
+    <button
+      type="button"
+      className="ml-auto text-primary hover:underline"
+      disabled={pending}
+      // Inside a <summary> a click would also toggle the group open/closed.
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onEnable(model.apiModel)
+      }}
+    >
+      enable
+    </button>
+  )
+}
+
+function ModelRow({ model, pending, onEnable }: { model: ProviderModelOption; pending: boolean; onEnable: (apiModel: string) => void }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span className="font-mono">{model.apiModel}</span>
+      {model.note && <span className="truncate text-muted-foreground/80">{model.note}</span>}
+      <EnableCell model={model} pending={pending} onEnable={onEnable} />
+    </li>
+  )
+}
+
 function VendorModelsLine({ providers }: { providers: Provider[] }) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -151,6 +212,7 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
   if (isLoading) return <p className="text-[11px] text-muted-foreground">Checking the vendor's model list…</p>
   if (!vendor) return null
   if (vendor.error) return <p className="text-[11px] text-muted-foreground" data-testid="vendor-models">Model list unavailable: {vendor.error}</p>
+  const onEnable = (apiModel: string) => enable.mutate({ data: { vendor: vendor.vendor, apiModel } })
   const latest = vendor.models.find((m) => m.latest)
   // T-107: a catalog list has no API behind it -- it is only as fresh as the
   // day someone last checked the vendor's docs. Say how old that check is,
@@ -187,19 +249,30 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
         <details className="text-[11px] text-muted-foreground">
           <summary className="cursor-pointer hover:text-foreground">{vendor.models.length} models offered · {vendor.models.filter((m) => m.enabled).length} enabled here</summary>
           <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto pl-1">
-            {vendor.models.map((m) => (
-              <li key={m.apiModel} className="flex items-center gap-2">
-                <span className="font-mono">{m.apiModel}</span>
-                {m.note && <span className="truncate text-muted-foreground/80">{m.note}</span>}
-                {m.enabled ? (
-                  <span className="ml-auto text-success">enabled</span>
-                ) : (
-                  <button type="button" className="ml-auto text-primary hover:underline" disabled={enable.isPending} onClick={() => enable.mutate({ data: { vendor: vendor.vendor, apiModel: m.apiModel } })}>
-                    enable
-                  </button>
-                )}
-              </li>
-            ))}
+            {groupByBaseEngine(vendor.models).map(({ base, variants }) =>
+              variants.length === 0 ? (
+                <ModelRow key={base.apiModel} model={base} pending={enable.isPending} onEnable={onEnable} />
+              ) : (
+                <li key={base.apiModel}>
+                  <details>
+                    <summary className="cursor-pointer hover:text-foreground">
+                      <span className="inline-flex w-[calc(100%-1.25rem)] items-center gap-2 align-top">
+                        <span className="font-mono">{base.apiModel}</span>
+                        <span className="text-muted-foreground/80" data-testid="domain-variants">
+                          {variants.length} domain variant{variants.length === 1 ? "" : "s"}
+                        </span>
+                        <EnableCell model={base} pending={enable.isPending} onEnable={onEnable} />
+                      </span>
+                    </summary>
+                    <ul className="mt-0.5 space-y-0.5 pl-4">
+                      {variants.map((m) => (
+                        <ModelRow key={m.apiModel} model={m} pending={enable.isPending} onEnable={onEnable} />
+                      ))}
+                    </ul>
+                  </details>
+                </li>
+              ),
+            )}
           </ul>
         </details>
       )}
