@@ -73,6 +73,16 @@ otherwise; the streaming steps name their spend.
 
 ### M-1 — Clear the 19 draft-copied gold transcripts
 
+**Status:** `done` 2026-09-04 (PR #77, `856059dd26e5`). Applied live: `cleared 19; draft
+copies now 0; calls still carrying gold: 2`, both remaining ones differing from their
+draft; 19 audit rows written; all 121 calls still `ready_to_run` and all 994 score rows
+untouched. Learned: (a) an idempotent guard has to be *inside* the update, not only in
+the select — the update repeats `gold = draft` in its own `where`, which is why a second
+`--apply` writes nothing and adds no audit row; (b) running the shared door found a real
+bug in a neighbour, `backfill-t65-t66.ts`'s price guard compares a Postgres `real`
+column to a numeric literal, so it fires every time and had already written a second
+audit row — queued as M-1a; (c) no deploy was needed, the write is database-only and
+the live API reads it immediately.
 **PR:** one.
 **Depends on:** nothing.
 **Files:** new file artifacts/api-server/src/backfill-m1-clear-draft-gold.ts (plain: not
