@@ -1,3 +1,20 @@
+## Found 2026-09-04 (running M-1): the T-62 flux reprice fires on every `--apply`
+
+`backfill-t65-t66.ts` guards its price write with `cost_per_minute <> 0.0077`, but
+`benchmark_providers.cost_per_minute` is a Postgres `real` (float4). Comparing it to the
+numeric literal promotes the stored value to `0.007699999958276749`, which is never equal
+to `0.0077`, so the `update` matches every time. Evidence, live on 2026-09-04 after
+T-111 had already applied it on 2026-08-30: the run printed `flux repriced 1 (now
+0.007699999958276749)`, and `audit_log` holds two `backfill-t65-t66` rows, one per apply.
+
+Effect is harmless — the same value is written back — but two claims are wrong because of
+it: `docs/runbooks/pending-backfills.md` says both scripts are idempotent and that after
+`--apply` "every count should read 0 and the flux price 0.0077", and the script's own
+header says re-running finds nothing to change. Reproduce:
+`docker exec stt-evals-pg psql -U postgres -d stt_evals -c "select (cost_per_minute <>
+0.0077) from benchmark_providers where id='deepgram-flux-general-en';"` → `t`.
+Fix queued as M-1a (compare on the float, or `abs(cost_per_minute - 0.0077) > 1e-9`).
+
 ## Found 2026-09-04: every WER ever shown measured agreement with Vapi, not accuracy
 
 Found by a full audit of the product against `docs/PRD.md`, read from the live system

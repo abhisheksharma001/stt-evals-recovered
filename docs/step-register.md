@@ -106,6 +106,40 @@ gold texts.
 
 ---
 
+### M-1a — The T-62 flux reprice must stop firing on every apply
+
+**PR:** one.
+**Depends on:** nothing (found while running M-1's verify, 2026-09-04).
+**Files:** `artifacts/api-server/src/backfill-t65-t66.ts` (the `repriced` update and its
+header comment), `docs/runbooks/pending-backfills.md` (the "every count should read 0"
+sentence).
+**Today:** the guard is `cost_per_minute <> 0.0077`, but
+`benchmark_providers.cost_per_minute` is a Postgres `real`. Comparing it to the numeric
+literal promotes the stored value to `0.007699999958276749`, which never equals `0.0077`,
+so the update matches on every `--apply`. Live proof after T-111 already applied it on
+2026-08-30: today's run printed `flux repriced 1 (now 0.007699999958276749)` and
+`audit_log` holds two `backfill-t65-t66` rows, one per apply. The written value is
+correct, so nothing is broken — but the script's header ("re-running finds nothing to
+change") and the runbook ("every count should read 0 and the flux price 0.0077") are
+both wrong as written.
+**Change:** compare with a tolerance —
+`where id = 'deepgram-flux-general-en' and abs(cost_per_minute - 0.0077) > 1e-9` — so a
+row already at the price is not rewritten. Correct the two sentences named above to say
+what the dry run really prints.
+**Acceptance:** WHEN `bash scripts/apply-backfills.sh --apply` is run twice in a row
+THEN the second run SHALL print `flux repriced 0` and `audit_log` SHALL gain no new
+`backfill-t65-t66` row.
+**Verify:**
+```
+bash scripts/apply-backfills.sh --apply | grep "flux repriced"     # flux repriced 0
+docker exec stt-evals-pg psql -U postgres -d stt_evals -tAc \
+  "select count(*) from audit_log where actor_label='backfill-t65-t66';"   # unchanged
+```
+**Must not:** change the price itself, touch the T-65/T-63/T-66 clauses, or run any STT
+provider.
+
+---
+
 ### M-2 — Speaker labels never count as words
 
 **PR:** one.
