@@ -129,6 +129,15 @@ normalized transcript.
    went to `v2` (spoken digits). `scoringVersion` is the field that actually
    tells you which rules produced a row; treat `normalizationVersion` as
    decoration until it is either maintained or removed.
+4. **Speaker labels count as words (found 2026-09-04, fixed by register step M-2).**
+   Vapi's draft is written as `AI: …` / `User: …` lines; brackets and colons are
+   punctuation, so `ai` and `user` survive as words. Measured: `AI: Hey. Thanks…`
+   normalises to `ai hey thanks…`, one deletion per line for every provider. Until M-2
+   lands, a gold pasted from a draft must have its labels removed by hand.
+5. **The audio was the mixed recording (found 2026-09-04, fixed by M-5).** 71 % of
+   scored words were the assistant's TTS voice. Nothing in scoring changes for this —
+   the fix is which bytes the run sends — but any number produced before M-5 is a
+   number on mixed audio, and the result row's `audioSource` says which.
 
 ## When any of this changes
 

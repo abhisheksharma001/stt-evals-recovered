@@ -14,8 +14,9 @@ AssemblyAI, Cartesia, Gladia, ElevenLabs, OpenAI, Speechmatics) with real trade-
 accuracy, speed, and cost — none of them win at everything. This tool answers "which
 STT provider should we actually use for this client's calls?" with evidence instead of
 a guess: it takes real recorded calls from a client's Vapi account, runs the same audio
-through every candidate provider, scores each one against a human-corrected "gold"
-transcript, and produces a ranked recommendation per vertical (Rush truck parts,
+through every candidate provider, compares the outputs against each other (gold-free
+consensus — a human-corrected "gold" transcript is optional per call and, as of
+2026-09-04, none exists), and produces a ranked recommendation per vertical (Rush truck parts,
 property management, trucking dispatch — expect more verticals as more clients come on).
 
 Think of it as an n8n-style pipeline, but the "workflow" is: pull calls → human review
@@ -64,6 +65,21 @@ be able to do any step alone without asking what was meant.**
    deeper technical decisions, as needed.
 
 ## Current state (keep this updated)
+
+- **2026-09-04: the audit — every WER ever shown measured agreement with Vapi, not
+  accuracy.** 19 of 21 "gold" transcripts were the draft, copied by a test script;
+  71 % of scored words were the assistant's TTS voice (mono mix sent; production hears
+  the customer channel only); batch APIs were benchmarked while the client runs
+  streaming (Flux, production on 86/121 calls, cannot be run here at all); the verdict
+  is 70 % consensus flags + 15 % batch turnaround + 15 % list price with no reference.
+  Decisions: no human gold gate (manual, optional; bulk path is the recommended one);
+  clear the 19; streaming yes ($3–5). Plan: `docs/PRD-v6-measure.md`; work:
+  `docs/step-register.md` Part M (M-1 … M-21, before S-2 … S-7). Same day, free: the
+  99 Land And Apartment calls' customer-channel + assistant-channel audio and Vapi
+  artifacts (turn timings, tool calls, `performanceMetrics` — production transcriber
+  latency median 272 ms) were saved into the cache (`scripts/rescue-customer-audio.mjs`)
+  five days before their 14-day cliff. Also found: no DB backup, API bound to every
+  interface, no scheduled import, boosts never sent to candidates.
 
 - **MVP pipeline works end-to-end, verified against real audio and real provider
   APIs**: import → human review/de-identification → run providers → score → rank.

@@ -16,9 +16,11 @@ self-review → PR → CI → squash-merge → fast-forward → deploy → verif
 
 ## Where the steps come from
 
-`docs/PRD-v5-optimize.md` holds the reasoning. This file holds the work. Only the parts
-that have been **grilled and settled** appear as steps; the rest are listed at the bottom
-with the questions that must be answered before they can be stepped.
+`docs/PRD-v6-measure.md` (measurement — the reference, the audio, the product under
+test) and `docs/PRD-v5-optimize.md` (Setup polish, Tune mode) hold the reasoning. This
+file holds the work. Only the parts that have been **grilled and settled** appear as
+steps; the rest are listed at the bottom with the questions that must be answered before
+they can be stepped. **Order as of 2026-09-04: Part M first (M-1 … M-21), then S-2 … S-7.**
 
 ---
 
@@ -59,6 +61,590 @@ curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.audioCached)]|leng
 ```
 **Must not:** print, log or commit anything from `.env`; run any STT provider; touch
 the database.
+
+---
+
+## Part M — Measure the thing the client actually runs (`docs/PRD-v6-measure.md`)
+
+Order agreed with Abhishek 2026-09-04: truth → bind → backup → customer channel → verdict
+wording → streaming → anchors → scheduler and band → boosts → then Part A/C below (S-2 …
+S-7). Take M-1 first. Every step here spends nothing unless its **Must not** says
+otherwise; the streaming steps name their spend.
+
+### M-1 — Clear the 19 draft-copied gold transcripts
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** new file artifacts/api-server/src/backfill-m1-clear-draft-gold.ts (plain: not
+written yet), one entry in `scripts/apply-backfills.sh`, one section in
+`docs/runbooks/pending-backfills.md`.
+**Today:** 21 calls have a `goldTranscript`; 19 are byte-identical to their
+`draftTranscript` (written by actor `claude-pipeline-test` on 2026-08-24 — audit log,
+`call:update`). They are Vapi's own live output with `AI:` / `User:` labels, not a
+reference. Every WER on them is wrong by construction (rush set reads 0.62–0.71).
+**Change:** a script in the shape of `artifacts/api-server/src/backfill-t65-t66.ts`
+(dry run by default, `--apply` writes): select calls where `gold_transcript IS NOT NULL
+AND gold_transcript = draft_transcript`; set `gold_transcript = NULL`; write one audit row
+per call through `writeAudit` in `artifacts/api-server/src/lib/audit.ts` (entity `call`,
+action `update`, actor `backfill-m1-clear-draft-gold`, before/after carrying the two
+fields). Leave `status` as is (`ready_to_run`; gold is optional). Do not touch the two
+calls whose gold differs from the draft (`3559ea45…`, `64d8f463…`). Existing
+`benchmark_scores` rows are untouched (history; the run manifest explains them).
+**Acceptance:** WHEN the backfill has been applied THEN `GET /benchmark/calls` SHALL
+return exactly 2 calls with a non-empty `goldTranscript`, both differing from their
+`draftTranscript`, and the audit log SHALL hold 19 rows with actor
+`backfill-m1-clear-draft-gold`.
+**Verify:**
+```
+bash scripts/apply-backfills.sh            # dry run prints "19 to clear"
+bash scripts/apply-backfills.sh --apply
+curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.goldTranscript!=null and .goldTranscript!="")]|length'   # 2
+curl -s "localhost:8177/api/benchmark/audit-log?limit=2000" | jq '[.[]|select(.actorLabel=="backfill-m1-clear-draft-gold")]|length'  # 19
+```
+**Must not:** delete score rows, change any call's status, or touch the 2 human-edited
+gold texts.
+
+---
+
+### M-2 — Speaker labels never count as words
+
+**PR:** one.
+**Depends on:** nothing (M-1 removes today's cases; this protects the manual path).
+**Files:** `lib/scoring/src/index.ts` (`normalizeTranscript()`, `SCORING_VERSION`),
+`lib/scoring/src/index.test.ts`, `docs/scoring-policy.md`.
+**Today:** a gold or draft text in Vapi's format (`AI: …` / `User: …` lines) keeps `ai`
+and `user` as words after normalisation, so a provider is charged one deletion per line.
+The call comparison (`artifacts/api-server/src/lib/call-comparison.ts`) uses the draft
+as the reference when no gold exists, so its diff carries that noise on every call.
+**Change:** in `normalizeTranscript()`, before lower-casing, strip a line-leading
+`AI:` or `User:` (the two labels Vapi writes; match `^(AI|User):\s*` per line, case as
+written). Bump `SCORING_VERSION` to `v3`. Document as rule 0 in `docs/scoring-policy.md`
+("When any of this changes" says to bump the version in the same commit — do that).
+**Acceptance:** WHEN gold `AI: hello there\nUser: hi` is scored against hypothesis
+`hello there hi` THEN WER SHALL be 0, and a transcript containing the word "user" mid-line
+("the user said no") SHALL keep it.
+**Verify:** `cd lib/scoring && pnpm run test` — two new cases (the label case, the
+mid-line case). Prove by breaking: remove the strip, the first case fails, the second
+still passes.
+**Must not:** fold anything else; `canonicalTranscript()` is untouched.
+
+---
+
+### M-3 — The API listens on localhost only
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/index.ts` (`app.listen(port, …)`),
+`docs/runbooks/deploy-and-rollback.md`.
+**Today:** `lsof -nP -iTCP:8177 -sTCP:LISTEN` shows `*:8177` — every interface, no
+auth. Anyone on the same network can launch a bulk (spends money) or read call audio.
+**Change:** `app.listen(port, process.env.HOST ?? "127.0.0.1", …)`. The UI is served by
+the same process, so `http://localhost:8177` keeps working. Note the `HOST` override in
+the runbook.
+**Acceptance:** WHEN the API starts without `HOST` THEN it SHALL listen on
+`127.0.0.1:8177` only, and the UI SHALL load at `http://localhost:8177`.
+**Verify:**
+```
+scripts/deploy-api.sh
+lsof -nP -iTCP:8177 -sTCP:LISTEN | tail -n +2 | awk '{print $9}'   # 127.0.0.1:8177
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8177/api/healthz  # 200
+```
+**Must not:** add auth, change the port, or touch the deploy script's PID logic.
+
+---
+
+### M-4 — A nightly database backup, with a restore that has been exercised
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** new file scripts/backup-db.sh (plain: not written yet), new launchd plist
+under `~/Library/LaunchAgents/` (outside the repo; its contents go in the runbook),
+`docs/runbooks/deploy-and-rollback.md` (restore recipe),
+`docs/runbooks/working-copy-location.md` ("what lives only on disk" gains the backup
+folder).
+**Today:** no backup exists. The corpus, every paid raw provider output and every score
+live in the Docker volume of container `stt-evals-pg` (`postgres:16-alpine`, port 5433).
+**Change:** the new scripts/backup-db.sh runs `docker exec stt-evals-pg pg_dump -U postgres -Fc
+<db>` (the database name is the last path segment of `DATABASE_URL` in
+`artifacts/api-server/.env` — read it, never print it) into
+`~/gh-projects/stt-evals-backups/stt-evals-YYYY-MM-DD.dump`, keeps the newest 30, prints
+the file size. A launchd agent (`ai.ellavox.stt-evals.backup`) runs it daily at 02:00.
+The runbook gains the restore recipe (`pg_restore` into a fresh database) and records
+the date it was exercised.
+**Acceptance:** WHEN the script runs THEN a dump SHALL exist under
+`~/gh-projects/stt-evals-backups/` and WHEN it is restored into a scratch database
+`stt_evals_restore` THEN `select count(*) from benchmark_calls` SHALL equal the live count.
+**Verify:**
+```
+bash scripts/backup-db.sh
+ls -la ~/gh-projects/stt-evals-backups/ | tail -3
+docker exec stt-evals-pg createdb -U postgres stt_evals_restore
+docker exec -i stt-evals-pg pg_restore -U postgres -d stt_evals_restore < ~/gh-projects/stt-evals-backups/$(ls -t ~/gh-projects/stt-evals-backups | head -1)
+docker exec stt-evals-pg psql -U postgres -d stt_evals_restore -c 'select count(*) from benchmark_calls'   # 121
+docker exec stt-evals-pg dropdb -U postgres stt_evals_restore
+launchctl list | grep stt-evals
+```
+**Must not:** write the dump anywhere under `/tmp` or the repo; print any value from
+`.env`; drop or alter the live database.
+
+---
+
+### M-5 — Runs use the customer channel when it exists, and say so
+
+**PR:** one.
+**Depends on:** nothing (the 99 customer files already exist in
+`artifacts/api-server/audio-cache/` as `<callId>.customer.audio`, saved 2026-09-04 by
+`scripts/rescue-customer-audio.mjs`).
+**Files:** `artifacts/api-server/src/lib/audio-cache.ts`,
+`artifacts/api-server/src/lib/run-executor.ts` (`readCellAudio`, the manifest builder,
+`aggregateRankingRows`), `lib/db/src/schema/benchmark-results.ts`,
+`lib/db/src/schema/benchmark-runs.ts` (manifest type), `artifacts/api-server/src/lib/bulks.ts`
+(preview / selection), `lib/db/src/schema/benchmark-bulks.ts` (criteria type),
+`artifacts/api-server/src/lib/verdict.ts`, `lib/api-spec/openapi.yaml`, and a case in
+`artifacts/api-server/src/routes/__integration__/`.
+**Today:** every cell is transcribed from `<callId>.audio`, the mono mix — 71 % of its
+words are the assistant's TTS voice. Nothing records which audio a cell used.
+**Change:**
+1. `audio-cache.ts`: `customerAudioPathFor(callId)` → `<callId>.customer.audio`;
+   `readCellAudioSource(callId)` returns `{ bytes, source: "customer" | "mono" }`,
+   preferring the customer file.
+2. `run-executor.ts` `readCellAudio` uses it; the result row stores `audioSource` (new
+   `text` column, values `customer` | `mono`, on `benchmark_results`; `pnpm --filter
+   @workspace/db run push`); the run manifest's `calls[]` entries gain `audioSource`.
+3. Bulk criteria gain `requireCustomerAudio?: boolean` (default `true` for new bulks;
+   templates saved before this step read as `false` so they keep matching what they
+   matched). The preview excludes calls with no customer file under a named bucket
+   ("no customer-channel audio — N").
+4. `aggregateRankingRows` and `bulkVerdicts` take only cells whose `audioSource` equals
+   the bulk's (a bulk with `requireCustomerAudio` is `customer`; otherwise `mono`).
+   Pre-existing result rows have `audioSource = null`; treat null as `mono`.
+5. The spec exposes `audioSource` on the run-results row and `requireCustomerAudio` on
+   bulk create/preview; `pnpm --filter @workspace/api-spec run codegen`.
+**Acceptance:** WHEN a bulk is previewed on Land And Apartment with the default criteria
+THEN it SHALL match only calls that have a customer file, and WHEN one of its cells
+completes THEN its result row SHALL read `audioSource: "customer"`; a run over a
+Default-account call SHALL read `mono` on that row.
+**Verify:**
+```
+pnpm run typecheck
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+New integration case: seed a call with a customer file present (write a small WAV into
+the cache dir under a fixture id, clean it up), preview with default criteria → matched;
+preview with `requireCustomerAudio: false` → also matched; a call without the file →
+excluded under the named bucket. Prove by breaking: remove the preference in
+`readCellAudioSource`, the source assertion fails. Live: launch nothing here.
+**Must not:** launch or execute a run (spends money); delete or rename any cache file;
+change how mono is resolved for a call with no customer file.
+
+---
+
+### M-6 — Import saves the customer channel, the assistant channel and the artifact
+
+**PR:** one.
+**Depends on:** M-5 (the file names).
+**Files:** `artifacts/api-server/src/lib/vapi.ts` (the `VapiCall` artifact type: add
+`presignedCustomerUrl`, `presignedAssistantUrl`, `messages`, `performanceMetrics` —
+shapes in `docs/provider-data-samples.md`), `artifacts/api-server/src/lib/audio-cache.ts`,
+`artifacts/api-server/src/routes/benchmark.ts` (the `vapi/import` handler and the
+`calls/cache-audio` rescue), `artifacts/stt-benchmark/src/pages/Corpus.tsx` (the audio
+chip), `lib/api-spec/openapi.yaml` (`BenchmarkCall.customerAudioCached`).
+**Today:** import caches the mono file only. The customer file, the assistant file and
+the artifact JSON (messages with turn timings and tool calls, `performanceMetrics`) were
+saved for the 99 existing calls by hand (`scripts/rescue-customer-audio.mjs`). A call
+imported tomorrow gets none of them.
+**Change:** at import (and in the free `cache-audio` rescue), after the mono file:
+download `presignedCustomerUrl` → `<callId>.customer.audio`, `presignedAssistantUrl` →
+`<callId>.assistant.audio`, and write `<callId>.artifact.json` with `messages`,
+`performanceMetrics`, `transcript`, `endedReason`, `analysis`, `costs`, `startedAt`,
+`endedAt` — the same shape the rescue script writes. A missing URL is recorded in the
+import outcome message, never fails the import. `BenchmarkCall` gains
+`customerAudioCached` (derived from disk like `audioCached`); the Calls chip reads
+"customer audio saved" when true.
+**Acceptance:** WHEN a call is imported from Vapi THEN three new files SHALL exist in the
+cache beside its mono file, and `GET /benchmark/calls` SHALL report
+`customerAudioCached: true` for it.
+**Verify:** `pnpm run typecheck`; the Calls render test
+(`artifacts/stt-benchmark/src/pages/__render__/calls.test.tsx`) gains a case for the
+chip; live: import one new call from the Leasing Dev account (free — a Vapi download),
+then `ls artifacts/api-server/audio-cache | grep <callId>` shows four files.
+**Must not:** run any STT provider; change the mono path; store the artifact anywhere
+but the gitignored cache directory (it contains caller PII).
+
+---
+
+### M-7 — Production signals stored per call and shown
+
+**PR:** one.
+**Depends on:** M-6 (the artifact file; a one-time backfill reads the 99 saved ones).
+**Files:** `lib/db/src/schema/benchmark-calls.ts`, `artifacts/api-server/src/routes/benchmark.ts`
+(import handler + call mapping), new file artifacts/api-server/src/backfill-m7-production-signals.ts
+(plain: not written yet) + entry in `scripts/apply-backfills.sh`, `lib/api-spec/openapi.yaml`,
+`artifacts/stt-benchmark/src/pages/Corpus.tsx`, `artifacts/stt-benchmark/src/pages/Rankings.tsx`
+(the production line), `artifacts/api-server/src/lib/verdict.ts` (`production` object).
+**Today:** the tool knows which model production ran and nothing about how it did.
+Vapi records per call: `performanceMetrics.transcriberLatencyAverage` (median 272 ms
+across the 99 saved artifacts), `endpointingLatencyAverage` (median 102 ms),
+`numAssistantInterrupted` (25 of 99 calls ≥ 1), plus tool calls (74 of 99) and their
+results.
+**Change:** four nullable columns on `benchmark_calls`:
+`prodTranscriberLatencyMs` (real), `prodEndpointingLatencyMs` (real),
+`prodAssistantInterruptions` (integer), `prodToolCalls` (integer). Filled at import from
+the artifact; the backfill fills them from the saved `<callId>.artifact.json` files for
+calls that have one. Exposed on `BenchmarkCall`. The Calls row shows "prod 272 ms" in
+the measurements group; the Results org card's production line becomes "Production today:
+Deepgram flux-general-en · 272 ms transcriber latency (median) · 25 of 99 calls
+interrupted" from the group's calls (median, not mean; absent → "not recorded").
+**Acceptance:** WHEN the backfill has run THEN `GET /benchmark/calls` SHALL carry
+`prodTranscriberLatencyMs` on every call with an artifact file and null on the rest, and
+WHEN the Land And Apartment card renders THEN it SHALL read a median in ms and an
+interruption count, never "0" for a call with no artifact.
+**Verify:** `pnpm run typecheck`; Results render test asserts the line with a fixture
+median and the "not recorded" fallback; `bash scripts/apply-backfills.sh --apply`; then
+`curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.prodTranscriberLatencyMs!=null)]|length'` → 99.
+**Must not:** compute a mean (one 6,651 ms call distorts it); show a zero for an absent
+value.
+
+---
+
+### M-8 — The production transcript joins the consensus
+
+**PR:** one.
+**Depends on:** M-2 (labels stripped), M-5 (customer cells).
+**Files:** `lib/scoring/src/hybrid.ts` (`computeCrossProviderDisagreement`,
+`computeHybridFlags`), `lib/scoring/src/hybrid.test.ts`, `lib/scoring/src/verdict.ts`
+(`vsProductionPct`, `productionProviderId`), `artifacts/api-server/src/lib/run-executor.ts`
+(`computeHybridFlagsForRun` — where candidates are assembled per call),
+`artifacts/api-server/src/lib/verdict.ts`, `artifacts/stt-benchmark/src/pages/Rankings.tsx`.
+**Today:** production (Flux) is streaming-only and never runs here; the verdict's
+"vs production" resolves to a provider row (`deepgram-flux-general-en`) that has no
+cells, so the line is empty. The draft's `User:` lines ARE production's customer-channel
+transcript for every call.
+**Change:** `computeHybridFlagsForRun` adds one more candidate per call —
+`{ providerId: "production", transcript: <the draft's User: lines joined> }` — to the
+consensus input only (it gets no flags row of its own written as a provider result, and
+never appears in rankings as a pickable row). `computeCrossProviderDisagreement` returns
+its disagreement rate like any other candidate; the executor stores it on the run as
+`productionDisagreement` per call (new jsonb on `benchmark_runs`, keyed by call id, or a
+small new table — pick the smaller change and say which in the PR). `verdict.ts` reports
+`vsProductionPct` from those numbers; Results' production line adds "disagreed with the
+pack N.N / 100 words — vs leader M.M".
+**Acceptance:** WHEN a bulk on Land And Apartment is (re-)executed THEN the verdict's
+`vsProductionPct` SHALL be a number computed from the draft's customer turns, and the
+Rankings table SHALL NOT contain a row named "production".
+**Verify:** `cd lib/scoring && pnpm run test` — a case with three candidates plus
+production where production is the outlier; `pnpm run typecheck`; the integration case
+for rankings asserts no `production` row. Re-executing a bulk spends money: **do not**;
+prove on the unit and integration level, and record the live number after the next
+scheduled bulk (M-11's first run) instead.
+**Must not:** write a `benchmark_results` row for "production"; let it be ranked or
+picked; execute a run.
+
+---
+
+### M-9 — "Least disagreement", not "Winner", and the line that says what it is
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the chip reading "Winner"
+and the T-57 comment), `artifacts/api-server/src/lib/verdict-artefact.ts` (the
+`winner: "Winner"` label and the explanatory paragraph),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+`artifacts/api-server/src/lib/verdict-artefact.test.ts`.
+**Today:** rank 1 with a settled verdict is chipped "Winner". A client reading it hears
+"most accurate". Nothing on the page says the number is relative.
+**Change:** chip and artefact label read **"Least disagreement"**. Under the verdict, one
+permanent muted line: *"Relative: how often each provider disagreed with the others on
+the same customer audio. Not a measured accuracy — no transcript here was checked by a
+person."* The artefact paragraph that begins "**Winner** = fewest disagreements…" is
+rewritten to start with "**Least disagreement** = …" and to end with the same sentence.
+(M-18 appends the agreement figure to this line later.)
+**Acceptance:** WHEN Results or `verdict.html` renders a settled verdict THEN the word
+"Winner" SHALL NOT appear anywhere in the rendered output, and the relative line SHALL
+be visible without interaction.
+**Verify:** `cd artifacts/stt-benchmark && pnpm run test` (results test asserts the chip
+text and the line); `cd artifacts/api-server && pnpm run test` (artefact test asserts no
+"Winner" in the HTML and the line present); `grep -rn "Winner" artifacts/stt-benchmark/src artifacts/api-server/src | grep -v test` → comments only.
+**Must not:** change `decision` values in `lib/scoring/src/verdict.ts` (`"winner"` stays
+as an enum value — it is code, not copy).
+
+---
+
+### M-10 — Latency means end-of-speech latency, or nothing
+
+**PR:** one.
+**Depends on:** M-5 (`audioSource` exists; batch vs streaming is known per provider row
+via `supportsStreaming` on `benchmark_providers`, but that flag today means "the vendor
+can stream", not "this row streams" — this step fixes the meaning).
+**Files:** `lib/db/src/schema/benchmark-providers.ts` (new `mode: "batch" | "streaming"`,
+default `batch`; the Cartesia row is `streaming`), `lib/scoring/src/hybrid.ts`
+(`hybridCompositeScore`, `HYBRID_RANKING_WEIGHTS`), `lib/scoring/src/hybrid.test.ts`,
+`artifacts/api-server/src/lib/run-executor.ts` (`aggregateRankingRows` — pass the mode),
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` ("Speed" column label and hover),
+`lib/api-spec/openapi.yaml`.
+**Today:** `latencyFinalMs` is file turnaround for batch rows (10 s for a 30 s call means
+nothing to a voice agent) and roughly the call's length for Cartesia (our adapter streams
+at real time). It is 15 % of the composite; it punishes the streaming adapter and rewards
+the fastest batch API.
+**Change:** for `mode = batch` rows the latency component is dropped (weight
+redistributed: flags 0.85, cost 0.15); for `mode = streaming` rows latency is
+end-of-audio → final (what the Cartesia adapter already measures from the last chunk),
+and the composite keeps flags 0.70 / latency 0.15 / cost 0.15. The "Speed" column reads
+"—" with hover "batch API: file turnaround, not comparable" for batch rows, and "end of
+speech → final, median" for streaming rows; production's own transcriber latency (M-7)
+is printed in the column header for the group.
+**Acceptance:** WHEN rankings are computed for a bulk with batch rows THEN changing any
+batch row's `latencyFinalMs` SHALL NOT change any rank, and WHEN a streaming row is
+present THEN its latency SHALL feed its composite.
+**Verify:** `cd lib/scoring && pnpm run test` — two cases (batch latency inert; streaming
+latency active). Prove by breaking: restore the old weights, the first case fails.
+`pnpm run typecheck`; Results render test for the column text.
+**Must not:** touch cost or flag weights for streaming rows; change stored score rows.
+
+---
+
+### M-11 — Deepgram streaming rows: nova-3 and Flux
+
+**PR:** one.
+**Depends on:** M-5 (customer audio), M-10 (`mode`).
+**Files:** new file lib/stt-providers/src/adapters/deepgram-streaming.ts (plain: not
+written yet), `lib/stt-providers/src/registry.ts` (`providerCatalog` entries
+`deepgram-nova-3-streaming`, `deepgram-flux-general-en-streaming`),
+`lib/stt-providers/src/adapters/parsers.test.ts` (reduce a recorded message sequence to
+a final transcript + first-partial time, as the Cartesia tests do),
+`docs/provider-data-samples.md` (one real Flux message sample, redacted).
+**Today:** every Deepgram row calls `POST /v1/listen` (batch). Flux — production for 86
+of 121 calls — has no batch endpoint and cannot be run.
+**Change:** a WebSocket adapter modelled on `lib/stt-providers/src/adapters/cartesia.ts`:
+`wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000…` for
+nova-3 and `wss://api.deepgram.com/v2/listen?model=flux-general-en…` for Flux (Flux
+requires v2). Audio is sent in 20 ms chunks paced at real time from the customer file;
+`firstPartialAt` = first non-empty transcript message; `finalAt` = the final transcript
+after the close/finalize message; `latencyFinalMs` is measured from the moment the last
+audio chunk was sent (end of speech), not from the first. Raw output = the full message
+log. Price: nova-3 streaming $0.0043/min (list), Flux $0.0065/min (Deepgram pricing page,
+read 2026-09-04) — both rows created `mode: streaming`, disabled until the first live
+check passes.
+**Acceptance:** WHEN one cached customer file is streamed at real time to each row THEN
+the cell SHALL store a final transcript, a `latencyFinalMs` under 2,000 ms, a
+`firstPartialAt`, and a raw message log — and the adapter SHALL never send faster than
+real time.
+**Verify:** `pnpm run typecheck`; `cd lib/stt-providers && pnpm run test` (parser cases
+on a recorded sample). Live, with the go already given ("spend $3–5", 2026-09-04): an
+ad-hoc run of ONE Land And Apartment call on both rows (≈ $0.02), then read the result
+rows. Record the two latencies in the PR body.
+**Must not:** run more than one call before the single-call check is green; enable the
+rows for bulks before Abhishek sees the first numbers; send audio faster than real time.
+
+---
+
+### M-12 — AssemblyAI Universal-Streaming row
+
+**PR:** one.
+**Depends on:** M-11 (the streaming adapter pattern and the `mode` plumbing are proven).
+**Files:** new file lib/stt-providers/src/adapters/assemblyai-streaming.ts (plain),
+`lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/adapters/parsers.test.ts`,
+`docs/provider-data-samples.md`.
+**Today:** AssemblyAI runs batch (`/v2/upload` + `/v2/transcript`).
+**Change:** Universal-Streaming WebSocket per AssemblyAI's streaming docs, same pacing and
+timing rules as M-11; row `assemblyai-universal-streaming`, $0.15/hr (pricing page read
+2026-09-04), `mode: streaming`, disabled until the single-call check passes.
+**Acceptance / Verify / Must not:** as M-11, one call, ≈ $0.01.
+
+---
+
+### M-13 — ElevenLabs Scribe v2 Realtime row
+
+**PR:** one.
+**Depends on:** M-11.
+**Files:** new file lib/stt-providers/src/adapters/elevenlabs-streaming.ts (plain),
+`lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/adapters/parsers.test.ts`,
+`docs/provider-data-samples.md`.
+**Change:** Scribe v2 Realtime WebSocket; row `elevenlabs-scribe-v2-realtime`, $0.39/hr
+(ElevenLabs API pricing, read 2026-09-04); otherwise as M-11.
+**Acceptance / Verify / Must not:** as M-11, one call.
+
+---
+
+### M-14 — Gladia live row
+
+**PR:** one.
+**Depends on:** M-11.
+**Files:** new file lib/stt-providers/src/adapters/gladia-streaming.ts (plain),
+`lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/adapters/parsers.test.ts`,
+`docs/provider-data-samples.md`.
+**Change:** Gladia live v2 WebSocket (init via `POST /v2/live`, then the socket); row
+`gladia-solaria-live`, $0.75/hr self-serve (read 2026-09-04); otherwise as M-11.
+**Acceptance / Verify / Must not:** as M-11, one call.
+
+---
+
+### M-15 — Confirmed-entity references from tool calls — grill script first
+
+**PR:** one (the script and its findings; the feature is a later step only if the numbers
+justify it).
+**Depends on:** M-6 (artifact files exist for the 99).
+**Files:** new file artifacts/api-server/src/mine-confirmed-entities.ts (plain: not
+written yet, same shape as `artifacts/api-server/src/mine-reading-pairs.ts`),
+`docs/PRD-v6-measure.md` (Part D2 gets the numbers).
+**Today:** 74 of 99 calls made tool calls; `fly-APPFOLIO_FIND_TENANT`, `CREATE_SHOWING`,
+`FIND_SHOWING`, `AVAILABILITY`, `CREATE_WORK_ORDER`, `SEND_SMS`, `dynamic_send_email`
+carry arguments the customer said (phone, email, name, date). Whether those values
+appear verbatim in the customer's turns — the condition for using them as a reference —
+is unknown.
+**Change:** the script reads every `<callId>.artifact.json`, collects `(tool, argument
+name, value)` for string arguments, checks whether the tool result reports success
+(result text without `error`/`not found`, or a status field — read three real results
+first and write the rule down), and whether the value (after `normalizeEntity()`) occurs
+in the joined `User:` turns of the draft. Prints counts only: candidates, confirmed,
+present-in-customer-turns, by tool and argument name. No values printed.
+**Acceptance:** WHEN the script runs THEN it SHALL print the three counts per tool, and
+the PR SHALL state whether ≥ 10 usable references exist.
+**Verify:** `pnpm --filter @workspace/api-server exec tsx ./src/mine-confirmed-entities.ts`.
+**Must not:** write to the database; print argument values (PII).
+
+---
+
+### M-16 — The selection band counts customer words
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (the band beside
+`resolveDurationBand`), `lib/db/src/schema/benchmark-bulks.ts` (criteria type),
+`lib/api-spec/openapi.yaml`, `artifacts/stt-benchmark/src/pages/Bulks.tsx` (Advanced
+field + the excluded bucket), `artifacts/api-server/src/routes/__integration__/` (the
+bulk preview case).
+**Today:** the band is seconds (default 60–120 s). Half the corpus has ≤ 12 customer
+words; a call can be 90 s of assistant speech and one customer word.
+**Change:** `minCustomerWords?: number` on the criteria (default 30), counted from the
+draft's `User:` lines (words = whitespace tokens after `normalizeTranscript()`); the
+preview excludes under a named bucket "fewer than N customer words — M". The seconds band
+stays and still applies.
+**Acceptance:** WHEN a bulk is previewed with default criteria THEN every matched call
+SHALL have ≥ 30 customer words and the excluded bucket SHALL name the count.
+**Verify:** integration case seeds two calls (40 and 5 customer words) and asserts one
+matched, one excluded under the bucket; prove by breaking (drop the filter, the
+excluded call matches). `pnpm run typecheck`.
+**Must not:** change the seconds band or any saved template's stored criteria.
+
+---
+
+### M-17 — A daily import so nothing crosses the 14-day cliff again
+
+**PR:** one.
+**Depends on:** M-6 (import saves everything worth saving).
+**Files:** new file scripts/daily-import.sh (plain: not written yet), launchd plist
+under `~/Library/LaunchAgents/` (contents in the runbook),
+`docs/runbooks/working-copy-location.md`.
+**Today:** import is a button. Vapi deletes audio after 14 days; 6 calls are gone for
+good already; the 99-call client corpus was saved by hand five days before its cliff.
+**Change:** the script asks `GET /benchmark/vapi/preview` per configured account for
+the last 3 days, imports the ids not yet present via `POST /benchmark/vapi/import`
+(`x-actor: scheduler`), and stops. Free: Vapi downloads only. A launchd agent runs it at
+03:00 (after M-4's backup).
+**Acceptance:** WHEN the agent runs THEN new Vapi calls from the last 3 days SHALL exist
+in `benchmark_calls` with their four cache files, and the audit log SHALL show
+`call:import_vapi` rows with actor `scheduler`.
+**Verify:** run the script by hand once; `curl -s "localhost:8177/api/benchmark/audit-log?limit=50" | jq '[.[]|select(.actorLabel=="scheduler")]|length'` ≥ 1.
+**Must not:** launch a bulk or run any provider; import calls older than the window.
+
+---
+
+### M-18 — The manual place counts: proxy-agreement endpoint and line
+
+**PR:** one.
+**Depends on:** M-9 (the line it appends to).
+**Files:** `lib/api-spec/openapi.yaml` (`GET /benchmark/proxy-agreement`),
+`artifacts/api-server/src/routes/benchmark.ts`, new file
+artifacts/api-server/src/lib/proxy-agreement.ts (plain), `lib/scoring/src/verdict.ts`
+or a new pure helper for Kendall τ (put it in `lib/scoring/src/`),
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`, `artifacts/api-server/src/routes/__integration__/`.
+**Today:** the gold editor on a call exists and nothing uses what it produces.
+**Change:** for every call with a human gold (`goldTranscript` non-empty and different
+from `draftTranscript`), rank the providers that scored it by WER and by consensus
+disagreement; report `n`, `top1Agreement` (fraction of calls where the two rankings
+share a top-1) and `kendallTau` (mean over calls). `n = 0` → `{ n: 0, top1Agreement:
+null, kendallTau: null }`. M-9's line gains: "On N calls a person did check, this
+ranking agreed with the transcript-checked ranking X % of the time." — only when `n > 0`.
+**Acceptance:** WHEN no human gold exists THEN the endpoint SHALL answer `n: 0` with
+null figures and the line SHALL show nothing extra; WHEN two labelled calls exist THEN
+`n` SHALL be 2 and the figures numbers in [0, 1] / [−1, 1].
+**Verify:** integration case seeds two calls with gold ≠ draft and scored cells; unit
+test for τ on a known permutation; render test for the line with `n: 0` and `n: 2`.
+**Must not:** count a draft-copied gold; render a number when `n = 0`.
+
+---
+
+### M-19 — Candidates get the assistant's own boosts, and Deepgram gets `keyterm`
+
+**PR:** one.
+**Depends on:** M-5.
+**Files:** `lib/stt-providers/src/adapters/deepgram.ts` (`keywords` → `keyterm` for
+nova-3 and Flux; keep `keywords` for nova-2 and older), the streaming adapters from
+M-11…M-14, `artifacts/api-server/src/lib/assistant-transcriber.ts` (already reads the
+live config), `artifacts/api-server/src/lib/run-executor.ts` (pass `keywordBoosts`),
+`artifacts/api-server/src/lib/bulks.ts` (`boosts: "production" | "none"` on the bulk),
+`lib/db/src/schema/benchmark-runs.ts` (manifest gains `boostsSha256`),
+`lib/api-spec/openapi.yaml`, `artifacts/stt-benchmark/src/pages/Bulks.tsx`.
+**Today:** `keywordBoosts` is on the adapter input type and the executor never sets it.
+Production Rush runs 120 Deepgram keyterms; every candidate runs naked. The Deepgram
+adapter sends `keywords`, the Nova-2 parameter; Nova-3 and Flux take `keyterm`.
+**Change:** a bulk carries `boosts` (default `none`, so nothing changes silently). With
+`production`, the executor reads the assistant's transcriber config once per assistant,
+takes its keyterm list, and passes it per vendor: Deepgram `keyterm` (nova-3, Flux) /
+`keywords` (nova-2), AssemblyAI `word_boost` (batch) or `keyterms_prompt` (streaming),
+Gladia `custom_vocabulary`, Speechmatics `additional_vocab`; vendors without a boost
+parameter get none and the cell records `boostsApplied: false`. The manifest stores the
+terms' SHA-256 (FR-P2, R6). Two bulks on the same calls are the paired experiment (OD-8).
+**Acceptance:** WHEN a bulk with `boosts: production` runs THEN its manifest SHALL carry
+`boostsSha256` and every Deepgram nova-3 request SHALL carry `keyterm` parameters; WHEN
+`boosts: none` THEN no adapter SHALL receive `keywordBoosts`.
+**Verify:** unit test on the Deepgram URL builder (nova-3 → `keyterm`, nova-2 →
+`keywords`); integration case on the manifest hash; `pnpm run typecheck`. Live run only
+with a "go spend".
+**Must not:** default to `production`; send a boost list longer than the vendor's cap
+(Deepgram: 100 terms / 500 tokens — truncate and record `boostsTruncated: true`).
+
+---
+
+### M-20 — The judge gets a scorecard only when it can be measured
+
+**PR:** one.
+**Depends on:** M-18 (the labelled set and its query).
+**Files:** artifacts/api-server/src/lib/proxy-agreement.ts (created by M-18, plain),
+`lib/api-spec/openapi.yaml`, `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the
+judge-confidence lines on the assistant card).
+**Today:** the judge's pick is shown as a verdict input; its accuracy has never been
+measured (the judge-accuracy report was removed in batch 4).
+**Change:** for each labelled call (as M-18), the judge's pick either is or is not the
+lowest-WER provider. Report `n`, `agree`, and render "judge accuracy: X % of N" when
+`n ≥ 20`, else "judge accuracy: not measured (N of 20)".
+**Acceptance:** WHEN fewer than 20 labelled calls exist THEN the card SHALL say "not
+measured (N of 20)" and no percentage.
+**Verify:** render test for both branches; integration case with two labelled calls.
+**Must not:** change the judge prompt (any prompt edit needs `pnpm run judge:contract:record`, paid).
+
+---
+
+### M-21 — A drift canary on a fixed set
+
+**PR:** one.
+**Depends on:** M-5, M-11 (so the canary runs on customer audio and includes the
+production vendor's streaming row).
+**Files:** `artifacts/api-server/src/lib/trend.ts`, `lib/scoring/src/trend.ts`,
+`artifacts/stt-benchmark/src/pages/Providers.tsx` (the chip),
+`docs/runbooks/pending-backfills.md` (the template's call ids).
+**Today:** vendors update models without notice; nothing here would notice.
+**Change:** a saved bulk template "canary — 20 fixed calls" (20 named Land And Apartment
+call ids with customer audio, ≥ 30 customer words each) meant to be launched monthly by
+hand (about $0.50). The trend already exists; a provider whose disagreement rate on the
+canary moves more than 2 points from its own median across canary bulks gets a chip on
+its Setup card: "changed since last month: +2.4". Threshold from Hamming's drift guide.
+**Acceptance:** WHEN two canary bulks exist and a provider moved > 2 points THEN Setup
+SHALL show the chip on that provider only.
+**Verify:** unit test on the chip rule with three synthetic canary points; render test.
+Launching the canary is a "go spend" each time.
+**Must not:** launch anything on its own; alert on non-canary bulks.
 
 ---
 
@@ -265,3 +851,7 @@ described but not grilled, so they stay here with the questions that block them.
 | D3 | Fixed-cause failures stop reading as open | Should the 15 stale cells be retried once to clear them, or just relabelled? Retrying costs provider money. |
 | E | Tune mode and the tuning report | The largest item. Needs a full grill: which client first, which provider, and what a person does with the report once they have it. |
 | F | Write a transcriber back to Vapi | Dev accounts only, or production too? |
+| v6 E4 | Vendor data-handling record in `docs/data-governance.md` §4 (six vendors already sent audio; every checkbox unticked) | Who signs the DPAs — Ellavox as processor for the client's callers? A legal answer the tool can only record. |
+| v6 F2 | Deepgram keyterm cap test on the Rush assistant (120 terms sent; Deepgram caps at 100 / 500 tokens) | Three paid Deepgram calls — pre-approved as cents, or a "go spend" each time? |
+| v6 E1 | Backup destination | Local folder only, or also a cloud bucket / iCloud Drive? Local-only dies with the laptop. |
+| v6 E3 | Customer-word floor | 30 words as the default, or lower for the transfer-heavy Land And Apartment assistants (median 2 customer turns per call)? M-16 ships with 30 and the question stays open. |

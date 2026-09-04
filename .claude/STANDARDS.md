@@ -8,7 +8,9 @@ as things actually ship — it should always reflect reality, not intent.
 
 - ✅ Same audio bytes to every provider in a comparison (no re-encoding differences
   sneaking in as "accuracy")
-- ✅ Word Error Rate against a human-corrected gold transcript
+- ⬜ The customer's audio, not the mixed recording — 71 % of scored words were the assistant's TTS voice until PRD v6 M-5
+- ⬜ The product the client runs (streaming), not the batch endpoint — PRD v6 M-11 … M-14
+- ⬜ Word Error Rate against a human-corrected gold transcript — **corrected 2026-09-04:** the 21 gold texts were Vapi's draft copied by a test script; no person has produced one. Gold is optional now (PRD v6); the bulk path is consensus-based and says so
 - ✅ Multiple verticals, not one blended number
 - ✅ Cost and latency captured alongside accuracy, not accuracy alone
 - ✅ Raw provider output stored, not just the parsed transcript (so a scoring bug
@@ -27,8 +29,8 @@ as things actually ship — it should always reflect reality, not intent.
   recorded, so it can be excluded/flagged when that same provider is a candidate)
 - ✅ Sample-size confidence caveat surfaced automatically on any ranking below a
   real threshold, not hidden in fine print
-- ✅ Two-person de-identification attestation before a call is usable (compliance,
-  not just accuracy)
+- ⬜ Two-person de-identification attestation before a call is usable (compliance,
+  not just accuracy) — **corrected 2026-09-04:** the mechanism exists; the 21 attestations on file are by `claude-pipeline-test-pass-1` / `-pass-2`, and 99 imported calls carry none
 - ⬜ Statistical rigor on rankings: paired per-call comparison (same calls, not two
   independent averages), decided-in-advance primary metric — `docs/backlog/good-to-have.md` #3
 - ⬜ Confidence-score-based low-quality-audio flagging (3 of 4 live providers already
