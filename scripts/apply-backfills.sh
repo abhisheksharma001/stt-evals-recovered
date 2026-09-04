@@ -8,11 +8,16 @@
 #       2. backfill-t52-started-at.ts (T-52 source_started_at + source_provider
 #                                on the 22 original calls; 14 stay null forever,
 #                                Vapi's 14-day retention has their metadata too)
+#       3. backfill-m1-clear-draft-gold.ts (M-1: the 19 gold transcripts that
+#                                are byte-identical copies of their own draft
+#                                -> null; the 2 human-edited ones are untouched)
 #
-# Both scripts are idempotent, so this is safe to re-run. It reads
+# All three are safe to re-run: t52 and m1 find nothing to do the second
+# time, and t65 rewrites the same flux price each apply (its guard compares
+# a float4 column to a numeric literal -- logged as M-1a). It reads
 # artifacts/api-server/.env for DATABASE_URL and the Vapi keys (T-52 calls
-# Vapi) and never prints either. No API restart is needed: both write only
-# to the database. Rankings already computed before the T-62 price change
+# Vapi) and never prints either. No API restart is needed: all three write
+# only to the database. Rankings already computed before the T-62 price change
 # keep the old $/min in their stored score rows -- re-execute or re-rank a
 # bulk if that matters (see docs/runbooks/pending-backfills.md).
 set -euo pipefail
@@ -30,6 +35,7 @@ run() {
 }
 run backfill-t65-t66.ts
 run backfill-t52-started-at.ts
+run backfill-m1-clear-draft-gold.ts
 if [[ -z "$MODE" ]]; then
   echo
   echo "Nothing written. Re-run with --apply to write."

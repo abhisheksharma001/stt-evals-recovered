@@ -23,6 +23,45 @@ How they were found again: dry-running both scripts on 2026-08-30 printed
 `T-65 cross-run pick links: 106; ... legacy ...: 5; T-62 flux $/min: 0.0043`
 and `resolved 8, unresolved 14, written 0`.
 
+## M-1 (2026-09-04) — clear the 19 draft-copied gold transcripts
+
+Added to the same door by register row M-1 (PRD v6 Part A) and **applied
+2026-09-04**: `cleared 19; draft copies now 0; calls still carrying gold: 2`.
+A second `--apply` right after printed `M-1: 0 to clear` and wrote no further
+audit row. The table below is what the database showed **before** that.
+
+| Row | What is wrong live | Script |
+|---|---|---|
+| M-1 | 19 of the 21 calls carrying a `gold_transcript` hold a byte-identical copy of their own `draft_transcript` — Vapi's own live output, `AI:` / `User:` labels and all, written by actor `claude-pipeline-test` on 2026-08-24 | `backfill-m1-clear-draft-gold.ts` |
+
+A draft is not a reference. Scored against it, a provider is measured on how
+closely it agrees with whichever transcriber Vapi ran that day, not on how
+right it is — so every WER ever shown for those calls is wrong by
+construction (the rush set reads 0.62–0.71). Clearing the copies puts those
+calls on the gold-free consensus path, which is the recommended one.
+
+The dry run prints `M-1: <n> to clear` and lists each call's id prefix and
+length; it reads 0 now that the write has been applied.
+
+What it does **not** touch: the two calls a person really edited
+(`3559ea45…`, `64d8f463…`) differ from their draft and are never selected;
+call `status` stays as it is (gold is optional, so `ready_to_run` is still
+true); existing `benchmark_scores` rows stay as history — each run's manifest
+records the gold it saw.
+
+Verified live after the write: `GET /benchmark/calls` returns 2 calls with a
+non-empty `goldTranscript` (`3559ea45…`, `64d8f463…`), both differing from
+their draft; `audit_log` holds 19 rows with actor `backfill-m1-clear-draft-gold`;
+all 121 calls still read `ready_to_run` and all 994 `benchmark_scores` rows are
+still there.
+
+What changes afterwards: WER and the word diff fall back to the draft as a
+*reference for reading* on those 19 calls (call comparison already does this
+when gold is absent), and no new score is computed against a fake gold. One
+audit row per call is written with actor `backfill-m1-clear-draft-gold`,
+carrying both transcripts before and after — a restore is a copy of the draft
+back into gold.
+
 ## Run it
 
 ```bash
