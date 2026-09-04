@@ -249,6 +249,19 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:8177/api/healthz  # 200
 
 ### M-3b — A refused launch says which filter emptied the selection
 
+**Status:** `done` 2026-09-04 (PR #81, `01775e0`, deployed `01775e073487`).
+Live against the real corpus: `no corpus calls matched: 0 of 121 in scope
+(outside the date window 107, no start date on record 14)`, and no bulk row
+left behind. Learned: (1) the numbers were already computed one function away
+— the wrapper `resolveCriteriaCallIds` narrowed them off. **When a refusal is
+vague, look for the value the caller already had and dropped.** (2) The
+buckets must NOT be re-sorted for the message: `resolveCriteriaSelection`
+already orders them (count desc, ties alphabetical), and my first draft
+re-sorted with a weaker tie-break, which would have let the refusal and the
+preview list the same buckets in different orders. (3) `bulks.ts` opens the
+database at import time, so anything in it is untestable offline — the pure
+helper had to move to `lib/empty-selection.ts` before a unit test could exist.
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/lib/bulks.ts` (`createBulk`, the
@@ -293,6 +306,13 @@ gate, or launch anything.
 
 ### M-3c — Evicting a bulk must not trip over its agent scans
 
+**Status:** `done` 2026-09-04 (PR #82, `a1712f4`, deployed `a1712f44618b`) —
+**and incomplete; finished by M-3d.** It detached `run_id` and the next live
+launch failed on `agent_pick_result_id`, the same table's other no-cascade
+reference. Learned, and the reason M-3d exists: **the test's scan row was
+thinner than a production one** — it set only `runId`, so a half fix passed.
+A fixture that omits a column cannot fail on that column.
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/lib/bulks.ts` (the FR-BLK-10 eviction
@@ -335,6 +355,15 @@ touch the corpus, change `MAX_LIVE_BULKS`, or alter the cost gate.
 ---
 
 ### M-3d — The other no-cascade reference on the same table
+
+**Status:** `done` 2026-09-04 (PR #83, `24ff70f`, deployed `24ff70ffe090`).
+The template then launched for real: `weekly lindenwood heights chek
+2026-09-04`, 54 calls, $1.66 estimated. Learned: (1) after a
+foreign-key failure, **ask `pg_constraint` for every non-cascading key into
+the whole delete path** instead of fixing the one in the error — two fixes
+and two deploys became one question. (2) The strengthened test fails on
+exactly the live constraint when only M-3c's half is applied, which is what
+makes it a real guard rather than a second copy of M-3c's.
 
 **PR:** one.
 **Depends on:** M-3c.

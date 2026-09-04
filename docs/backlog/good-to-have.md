@@ -1,3 +1,50 @@
+## Found 2026-09-04: no bulk could be launched at all — two no-cascade FKs
+
+Reported from the UI as `Launch failed — HTTP 400 Bad Request: selection
+criteria matched no corpus calls`. Three separate problems sat behind that one
+toast, and only the first was the one on screen.
+
+1. **The 400 was correct and useless.** The saved template `weekly lindenwood
+   heights chek` carries `{"lastNDays": 7, "minDurationSeconds": 20}`; the
+   newest corpus call started 2026-08-26 and the window opened 2026-08-28.
+   `POST /benchmark/bulks/preview` had the answer all along — 121 in scope,
+   107 `outside the date window`, 14 `no start date on record` — but
+   `createBulk` went through `resolveCriteriaCallIds`, which narrows the
+   result and drops the buckets. Fixed by **M-3b**: the refusal now names them.
+
+2. **Behind that, every launch was answering 500.** FR-BLK-10 evicts the
+   oldest bulk once `MAX_LIVE_BULKS` (3) is reached — this instance had
+   exactly 3 — and `benchmark_agent_scans.run_id` has no `ON DELETE`, so the
+   scan row blocked the cascade into `benchmark_runs` and the transaction
+   rolled back. The eviction code already handled `benchmark_rankings`
+   explicitly for the same reason; scans were folded into the run executor
+   afterwards (`e0399cc`) and nobody came back. `fixtures.ts`'s cleanup
+   comment has described the trap since batch 18 — the tests knew, the
+   production path never did. Fixed by **M-3c**.
+
+3. **M-3c fixed half of it.** The next live launch failed on
+   `agent_pick_result_id`, the same table's other plain reference, into a
+   result cell that cascades from the run. M-3c's test set only `runId` on its
+   scan, so a fixture thinner than a production row passed a half fix. Fixed
+   by **M-3d**, after asking `pg_constraint` for every non-cascading key into
+   the `bulks -> runs -> results -> scores` path rather than fixing the one
+   named in the error: there are exactly two, both on `benchmark_agent_scans`.
+
+Scans are **detached** (`run_id` / `agent_pick_result_id` set to null), never
+deleted — a scan is keyed by `call_id`, eviction never touches the corpus, and
+the judge verdict on it cost real OpenAI money.
+
+**Rules this leaves.** A vague refusal usually means a caller computed the
+answer and dropped it — look one function up before adding a query. After a
+foreign-key failure, ask the catalog for every non-cascading key into the
+whole delete path, not the one in the message. And a fixture that omits a
+column cannot fail on that column.
+
+**Still open (not fixed here):** both columns should carry `ON DELETE SET
+NULL` so the class cannot recur. That is a schema change (`drizzle-kit push`,
+worktree) and was not worth doing under a live blocker; the code fix mirrors
+the pattern already used for rankings two lines above.
+
 ## Found 2026-09-04 (verifying M-3): the Vite dev server walks around the loopback bind
 
 M-3 bound the API to `127.0.0.1`, and that part holds — `lsof` reads `127.0.0.1:8177`
