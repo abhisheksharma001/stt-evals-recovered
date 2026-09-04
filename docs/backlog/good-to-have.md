@@ -1,3 +1,23 @@
+## Found 2026-09-04: "microcents" everywhere actually holds microdollars
+
+`benchmark_scores.cost_microcents`, `benchmark_agent_scans.judge_cost_microcents`,
+the API's `actualCost.sttCostMicrocents` / `agentCostMicrocents`, and the UI's
+`formatMicrocents()` all carry **microdollars**, not microcents. Verified on a
+single cell: a 44s call at Deepgram's configured $0.0043/min costs
+`44/60 x 0.0043 = $0.0031533`, and the stored value is `3153`.
+
+**Nothing on screen is wrong.** `formatMicrocents()` divides by 1,000,000 and
+formats the result as dollars, which is right for microdollars, and the
+finished bulk reconciles: estimated $1.36 STT / $0.30 agent against actual
+$1.36 / $0.39. The defect is purely the name, and it is consistent from the
+column through the API contract to the helper -- which is exactly why it has
+survived.
+
+It is not harmless, though: reading the table directly, the name led to a
+100x misreading of a real bulk's spend in this session. Renaming touches a
+database column and a published API field, so it is a deliberate step, not a
+drive-by.
+
 ## Found 2026-09-04: no bulk could be launched at all — two no-cascade FKs
 
 Reported from the UI as `Launch failed — HTTP 400 Bad Request: selection
