@@ -1841,6 +1841,18 @@ components:
             - type: string
               enum: [retention_expired, audio_url_forbidden, provider_timeout, provider_5xx, rate_limited, audio_decode, provider_auth, unknown]
             - type: "null"
+        # M-5 (2026-09-05): which audio channel this cell was transcribed
+        # from. "customer" = the caller-only track rescued from Vapi's call
+        # artifact; "mono" = the mixed track, ~71% of whose words are the
+        # assistant's own TTS voice. Null on a cell that never transcribed
+        # anything (failed / cancelled / skipped), and also null on rows
+        # written before this existed -- those all read the mono mix, and
+        # readers treat them as such.
+        audioSource:
+          oneOf:
+            - type: string
+              enum: [customer, mono]
+            - type: "null"
         failureDiagnosis: { type: ["string", "null"], description: "2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed)." }
         failureSuggestedFix: { type: ["string", "null"] }
         # T-73 (E.5). Decided server-side by isRetryableFailureClass() -- the
@@ -2275,6 +2287,14 @@ components:
           type: array
           items: { type: string }
         successEvaluation: { type: string }
+        # M-5: true = this bulk transcribes the caller-only channel, and
+        # calls with no `<callId>.customer.audio` on the server are excluded
+        # from selection under a named bucket in the preview. Absent means
+        # "no opinion": POST /benchmark/bulks reads it as true, a template
+        # launch reads it as false so a template saved before M-5 keeps
+        # matching exactly what it matched. Frozen to a real boolean on
+        # every bulk at creation, so a bulk's channel is never inferred.
+        requireCustomerAudio: { type: boolean }
         callIds:
           type: array
           items: { type: string }

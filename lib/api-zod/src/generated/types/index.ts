@@ -132,6 +132,7 @@ export * from './listVapiAssistantsParams';
 export * from './planTask';
 export * from './provider';
 export * from './providerCallResult';
+export * from './providerCallResultAudioSource';
 export * from './providerCallResultFailureClass';
 export * from './providerCallResultStatus';
 export * from './providerInput';

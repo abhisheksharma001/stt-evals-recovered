@@ -10,6 +10,7 @@
 // stale snapshot of its own.
 import { and, eq, inArray } from "drizzle-orm";
 import {
+  benchmarkBulksTable,
   benchmarkCallsTable,
   benchmarkProviderCallResultsTable,
   benchmarkProvidersTable,
@@ -54,6 +55,18 @@ export function resolveProductionProviderId(
 }
 
 export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
+  const [bulkRow] = await db
+    .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
+    .from(benchmarkBulksTable)
+    .where(eq(benchmarkBulksTable.id, bulkId))
+    .limit(1);
+  // M-5: the channel this bulk declares. The verdict reads only cells that
+  // came off it, for the same reason the rankings do -- a headline that
+  // averages caller-only and mono cells together is one number describing
+  // two different measurements. Pre-M-5 rows carry null and are mono.
+  const bulkAudioSource: "customer" | "mono" =
+    bulkRow?.selectionCriteria.requireCustomerAudio === true ? "customer" : "mono";
+
   const runs = await db
     .select({ id: benchmarkRunsTable.id, callIds: benchmarkRunsTable.callIds, providerIds: benchmarkRunsTable.providerIds })
     .from(benchmarkRunsTable)
@@ -90,6 +103,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
         providerId: benchmarkProviderCallResultsTable.providerId,
         transcript: benchmarkProviderCallResultsTable.hypothesisTranscript,
         peerFlagCount: benchmarkScoresTable.peerFlagCount,
+        audioSource: benchmarkProviderCallResultsTable.audioSource,
       })
       .from(benchmarkProviderCallResultsTable)
       .innerJoin(benchmarkScoresTable, eq(benchmarkScoresTable.resultId, benchmarkProviderCallResultsTable.id))
@@ -101,12 +115,14 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       ),
   ]);
 
+  const cellsOnChannel = cells.filter((c) => (c.audioSource ?? "mono") === bulkAudioSource);
+
   // Which providers report per-word confidence: decided from ONE real ok
   // response per provider through the same extractor hybrid flagging uses
   // -- not from a hardcoded list -- so it stays true to what each API
   // actually returned. One row per provider keeps rawOutput reads cheap.
   const sampleIdByProvider = new Map<string, string>();
-  for (const c of cells) if (!sampleIdByProvider.has(c.providerId)) sampleIdByProvider.set(c.providerId, c.id);
+  for (const c of cellsOnChannel) if (!sampleIdByProvider.has(c.providerId)) sampleIdByProvider.set(c.providerId, c.id);
   const samples = sampleIdByProvider.size
     ? await db
         .select({ providerId: benchmarkProviderCallResultsTable.providerId, rawOutput: benchmarkProviderCallResultsTable.rawOutput })
@@ -149,7 +165,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       productionProviderId = resolveProductionProviderId(vendor, model || null, providers);
     }
 
-    const verdictCells: VerdictCell[] = cells
+    const verdictCells: VerdictCell[] = cellsOnChannel
       .filter((c) => groupCallIds.has(c.callId))
       .map((c) => ({
         callId: c.callId,

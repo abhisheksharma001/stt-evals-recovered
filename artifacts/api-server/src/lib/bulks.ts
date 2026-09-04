@@ -16,7 +16,7 @@ import { buildRunManifest } from "./manifest";
 import { isFailureClass, isRetryableFailureClass } from "@workspace/stt-providers";
 import { executeBenchmarkRun, requestRunCancellation } from "./run-executor";
 import { drainWithConcurrency, envInt } from "./concurrency";
-import { audioCachePathFor } from "./audio-cache";
+import { audioCachePathFor, listCachedCustomerCallIds } from "./audio-cache";
 import { VAPI_RETENTION_WINDOW_DAYS } from "./vapi-retention";
 import { writeAudit } from "./audit";
 import { logger } from "./logger";
@@ -106,6 +106,18 @@ export const DEFAULT_MIN_DURATION_SECONDS = 60;
 export const DEFAULT_MAX_DURATION_SECONDS = 120;
 
 export class BulkDurationBandError extends Error {}
+
+/** M-5: fills in `requireCustomerAudio` when the criteria do not state one,
+ * so preview and create can be given the same answer and cannot disagree.
+ * Criteria that DO state one are returned untouched, whatever they say. */
+export function withCustomerAudioDefault(
+  criteria: BulkSelectionCriteria,
+  fallback: boolean,
+): BulkSelectionCriteria {
+  return criteria.requireCustomerAudio === undefined
+    ? { ...criteria, requireCustomerAudio: fallback }
+    : criteria;
+}
 
 /** Resolve the (min, max) band from explicit input, criteria, then defaults. */
 export function resolveDurationBand(input: {
@@ -286,18 +298,18 @@ export async function resolveCriteriaSelection(
   }
 
   const retentionCutoff = new Date(now.getTime() - VAPI_RETENTION_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const callIds: string[] = [];
+  const runnable: CandidateRow[] = [];
   let excludedRetentionExpiredCount = 0;
   await Promise.all(
     passing.map(async (c) => {
       const expired = c.sourceStartedAt !== null && c.sourceStartedAt < retentionCutoff;
       if (!expired) {
-        callIds.push(c.id);
+        runnable.push(c);
         return;
       }
       try {
         await fs.access(audioCachePathFor(c.id));
-        callIds.push(c.id); // aged out, but already cached -- still runnable
+        runnable.push(c); // aged out, but already cached -- still runnable
       } catch {
         excludedRetentionExpiredCount += 1;
       }
@@ -308,6 +320,28 @@ export async function resolveCriteriaSelection(
       `past Vapi's ${VAPI_RETENTION_WINDOW_DAYS}-day retention window and never cached`,
       excludedRetentionExpiredCount,
     );
+  }
+
+  // M-5: a customer-channel bulk can only contain calls that HAVE a customer
+  // channel. This runs last, and applies to explicit picks too (like the
+  // retention pass above, and unlike the "who"/window/band filters): a
+  // hand-picked call with no caller-only track still cannot satisfy a bulk
+  // whose whole premise is the caller-only track. Silently falling back to
+  // the mono mix for those calls is exactly the mixing this step exists to
+  // end.
+  const callIds: string[] = [];
+  if (criteria.requireCustomerAudio) {
+    const withCustomerAudio = await listCachedCustomerCallIds();
+    let excludedNoCustomerAudio = 0;
+    for (const c of runnable) {
+      if (withCustomerAudio.has(c.id)) callIds.push(c.id);
+      else excludedNoCustomerAudio += 1;
+    }
+    if (excludedNoCustomerAudio > 0) {
+      buckets.set("no customer-channel audio on file", excludedNoCustomerAudio);
+    }
+  } else {
+    for (const c of runnable) callIds.push(c.id);
   }
 
   // Stable order: biggest bucket first, ties alphabetical, so the preview
@@ -417,9 +451,14 @@ export async function previewBulkSelection(input: {
   providerIds?: string[];
   minDurationSeconds?: number;
   maxDurationSeconds?: number | null;
+  /** M-5: what an absent `criteria.requireCustomerAudio` means here. Must
+   *  match what the creator this preview stands in for will use, or the
+   *  count in the dialog is not the count that gets frozen. */
+  requireCustomerAudioDefault: boolean;
 }): Promise<BulkPreviewResult> {
   const { min, max } = resolveDurationBand(input);
-  const selection = await resolveCriteriaSelection(input.criteria, min, max);
+  const criteria = withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault);
+  const selection = await resolveCriteriaSelection(criteria, min, max);
   const providerIds = input.providerIds ?? [];
   let estimate: BulkPreviewResult["estimate"] = null;
   if (providerIds.length > 0) {
@@ -490,6 +529,16 @@ export async function createBulkFromCriteria(input: {
   maxDurationSeconds?: number | null;
   confirm?: boolean;
   actorLabel: string;
+  /**
+   * M-5: what an absent `criteria.requireCustomerAudio` means for THIS
+   * creation. Required, not defaulted, on purpose -- the two callers want
+   * opposite things and neither should inherit the other's answer:
+   * POST /benchmark/bulks passes true (a bulk created from now on measures
+   * the caller-only track), a template launch passes false (a template
+   * saved before M-5 has no opinion on file and must keep matching exactly
+   * what it matched, and producing the numbers it produced).
+   */
+  requireCustomerAudioDefault: boolean;
 }): Promise<CreateBulkResult> {
   const now = new Date();
   const { min: minDuration, max: maxDuration } = resolveDurationBand(input);
@@ -509,16 +558,21 @@ export async function createBulkFromCriteria(input: {
   // refusal can say WHICH filter emptied it. The buckets already exist (T-14)
   // and the preview endpoint already shows them; the wrapper dropped them, so
   // a person launching a stale template only saw "matched no corpus calls".
-  const { callIds, inScopeCount, excluded, excludedRetentionExpiredCount } = await resolveCriteriaSelection(input.criteria, minDuration, maxDuration, now);
+  // M-5: resolve the channel BEFORE selecting, not after. Freezing a
+  // `requireCustomerAudio: true` onto a call set that was selected without
+  // it would give a bulk that claims the caller-only track while holding
+  // calls that have none -- the exact dishonesty this step removes.
+  const criteria = withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault);
+  const { callIds, inScopeCount, excluded, excludedRetentionExpiredCount } = await resolveCriteriaSelection(criteria, minDuration, maxDuration, now);
   if (callIds.length === 0) {
     throw new BulkSelectionEmptyError(describeEmptySelection(inScopeCount, excluded));
   }
 
   // FR-BLK-1: freeze. A relative window becomes concrete bounds AND the
   // exact resolved call set -- re-viewing this bulk later never shifts.
-  const { from, to } = resolveDateWindow(input.criteria, now);
+  const { from, to } = resolveDateWindow(criteria, now);
   const frozenCriteria: BulkSelectionCriteria = {
-    ...input.criteria,
+    ...criteria,
     lastNDays: undefined,
     startedAtFrom: from?.toISOString(),
     startedAtTo: to?.toISOString(),
@@ -716,7 +770,9 @@ export async function launchBulk(
   const runs: (typeof benchmarkRunsTable.$inferSelect)[] = [];
   for (let shardIndex = 0; shardIndex < shards.length; shardIndex++) {
     const shardCallIds = shards[shardIndex];
-    const manifest = await buildRunManifest(shardCallIds, bulk.providerIds);
+    const manifest = await buildRunManifest(shardCallIds, bulk.providerIds, {
+      preferCustomer: bulk.selectionCriteria.requireCustomerAudio === true,
+    });
     const [run] = await db
       .insert(benchmarkRunsTable)
       .values({

@@ -23,6 +23,12 @@ export type BenchmarkRunManifest = {
     id: string;
     label: string;
     goldTranscriptSha256: string | null;
+    // M-5: which audio channel this run intends to transcribe this call
+    // from, decided at creation from what is on disk plus the run's own
+    // preference -- so a replay can tell a customer-channel run from a
+    // mono one without re-reading the cache directory (whose contents
+    // change). Absent on manifests written before M-5; those runs are mono.
+    audioSource?: "customer" | "mono";
   }>;
   providers: Array<{
     id: string;

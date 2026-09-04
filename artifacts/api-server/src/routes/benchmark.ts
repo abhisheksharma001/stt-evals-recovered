@@ -1781,6 +1781,10 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
         // executor and the bulk failure groups; null when there is no
         // class to judge from.
         retryable: cellRetryable(result.status, result.failureClass),
+        // M-5: which channel this number was measured on, so a reader never
+        // has to assume. Null on a cell that transcribed nothing, and on
+        // rows written before the column existed (those are mono).
+        audioSource: result.audioSource,
         rawOutputHash: result.rawOutputHash,
         createdAt: result.createdAt,
         score: score

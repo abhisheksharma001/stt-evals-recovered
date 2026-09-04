@@ -1028,6 +1028,20 @@ stakeholder" the research kept circling back to.
   (`lib/scoring/src/index.ts`) and never moved when normalization changed under
   `SCORING_VERSION` v2. Either maintain it or drop it; today it is decoration
   and `scoringVersion` is the field that means anything.
+- **`listCachedCallIds` counted channel files as calls** (found 2026-09-05
+  during M-5, **fixed in the same PR** because it is the same function's
+  handling of the same filenames the step introduces). It matched on the
+  `.audio` suffix, and the 2026-09-04 customer-audio rescue wrote
+  `<callId>.customer.audio` and `<callId>.assistant.audio` beside every mono
+  file -- so the set came back with 353 entries (155 real ids plus 198 shaped
+  `<uuid>.customer` / `<uuid>.assistant`) instead of 155. Nothing rendered
+  wrong, because a junk id matches no call, so no screen was visibly broken;
+  every caller's "how many calls are cached" number was simply inflated, in
+  `lib/overview.ts`, `lib/audio-rescue.ts` and the calls-list route. Now
+  matched on the call-id shape (`artifacts/api-server/src/lib/audio-cache.ts`),
+  with a case in `artifacts/api-server/src/lib/audio-cache.test.ts`. **The
+  lesson is the one to keep: a suffix match on a filename is a guess about
+  what else will ever be written to that directory.**
 
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,

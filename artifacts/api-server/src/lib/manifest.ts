@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
 import { inArray } from "drizzle-orm";
 import {
   benchmarkCallsTable,
@@ -7,6 +8,7 @@ import {
   type BenchmarkRunManifest,
 } from "@workspace/db";
 import { SCORING_VERSION } from "@workspace/scoring";
+import { customerAudioPathFor } from "./audio-cache";
 
 // RUN-01 / P2-T1: frozen record of exactly what a run executed against.
 // Written once at run creation, never mutated -- editing a gold transcript
@@ -34,9 +36,19 @@ function providerConfigHash(provider: {
     .digest("hex");
 }
 
+/**
+ * M-5: which channel this run will transcribe each call from, frozen at
+ * creation like everything else in the manifest. `preferCustomer` is the
+ * run's intent (a customer-channel bulk sets it; a mono bulk does not);
+ * the per-call answer is that intent AND what is actually on disk right
+ * now. Recording it here is what lets a replay months later say "this run
+ * was scored on the caller-only track" without trusting a cache directory
+ * that has changed since.
+ */
 export async function buildRunManifest(
   callIds: string[],
   providerIds: string[],
+  options: { preferCustomer: boolean } = { preferCustomer: false },
 ): Promise<BenchmarkRunManifest> {
   const [calls, providers] = await Promise.all([
     callIds.length
@@ -53,6 +65,22 @@ export async function buildRunManifest(
       : [],
   ]);
 
+  // One stat per call, only when the run actually wants the customer
+  // channel -- a mono run does no filesystem work here at all.
+  const audioSourceByCallId = new Map<string, "customer" | "mono">();
+  if (options.preferCustomer) {
+    await Promise.all(
+      calls.map(async (call) => {
+        try {
+          await fs.access(customerAudioPathFor(call.id));
+          audioSourceByCallId.set(call.id, "customer");
+        } catch {
+          audioSourceByCallId.set(call.id, "mono");
+        }
+      }),
+    );
+  }
+
   return {
     manifestVersion: 1,
     scoringVersion: SCORING_VERSION,
@@ -63,6 +91,7 @@ export async function buildRunManifest(
       goldTranscriptSha256: call.goldTranscript
         ? createHash("sha256").update(call.goldTranscript).digest("hex")
         : null,
+      audioSource: audioSourceByCallId.get(call.id) ?? "mono",
     })),
     providers: providers.map((provider) => ({
       id: provider.id,
