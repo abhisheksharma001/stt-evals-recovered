@@ -291,6 +291,49 @@ gate, or launch anything.
 
 ---
 
+### M-3c — Evicting a bulk must not trip over its agent scans
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (the FR-BLK-10 eviction
+block in `createBulk`),
+`artifacts/api-server/src/routes/__integration__/bulk-eviction.int.test.ts`
+(new), `artifacts/api-server/src/routes/__integration__/fixtures.ts`
+(`adoptBulk`).
+**Today:** every bulk launch answers **500** once `MAX_LIVE_BULKS` (3) is
+reached. FR-BLK-10 evicts the oldest bulk in the same transaction and lets the
+delete cascade into `benchmark_runs`, but `benchmark_agent_scans.run_id`
+carries a plain reference with no `ON DELETE`, so a scan row blocks the
+cascade and the whole transaction rolls back:
+`update or delete on table "benchmark_runs" violates foreign key constraint
+"benchmark_agent_scans_run_id_benchmark_runs_id_fk"`. The eviction code
+already handles `benchmark_rankings` explicitly for exactly this reason; the
+scans were folded into the run executor later (`e0399cc`, 2026-08-27) and
+nobody came back. `fixtures.ts`'s own cleanup comment has described the trap
+since batch 18 — only the tests ever worked around it. Found live 2026-09-04
+launching the `weekly lindenwood heights chek` template.
+**Change:** in the eviction block, before deleting the bulk, set `run_id =
+null` on every scan whose run belongs to the evicted bulk, using the same
+subquery shape the rankings delete uses. **Detach, do not delete:** a scan is
+keyed by `call_id`, the corpus is never touched by eviction, and the judge
+verdict on it cost real OpenAI money. Every run-scoped query matches on
+`runId` with `eq`/`inArray`, so a null simply stops matching the run that no
+longer exists, while the call comparison still finds the verdict by `callId`.
+**Acceptance:** WHEN a bulk is created at the cap AND the oldest bulk has a
+run with an agent scan THEN the create SHALL answer 201, the oldest bulk SHALL
+be gone, and that scan SHALL still exist with `runId` null and its `callId`
+unchanged.
+**Verify:**
+```
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+Prove by breaking: remove the update, watch that one test fail with the
+foreign-key violation.
+**Must not:** change the schema (no `drizzle-kit push`), delete any scan row,
+touch the corpus, change `MAX_LIVE_BULKS`, or alter the cost gate.
+
+---
+
 ### M-3a — The UI server listens on localhost too
 
 **PR:** one.
