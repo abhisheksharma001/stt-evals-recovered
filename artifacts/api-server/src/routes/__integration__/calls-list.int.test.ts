@@ -33,13 +33,21 @@ beforeAll(async () => {
   archivedId = (await fx.call({ vertical: "rush", status: "archived" })).id;
   truckingId = (await fx.call({ vertical: "trucking", status: "ready_to_run" })).id;
 
-  // The rush call gets both files, as an M-6 import leaves them behind.
+  // Three states, on purpose: the rush call has both files (an M-6 import),
+  // the archived one has only the mono mix (imported before M-6, or rescued
+  // after its channels expired), the trucking one has neither. Without the
+  // middle case the two flags could be read off the same set and no test
+  // would notice.
   await fs.mkdir(CACHE_DIR, { recursive: true });
-  for (const suffix of ["audio", "customer.audio"]) {
-    const file = path.join(CACHE_DIR, `${rushId}.${suffix}`);
-    await fs.writeFile(file, "bytes");
-    cacheFiles.push(file);
-  }
+  const seedCacheFiles = async (callId: string, suffixes: string[]) => {
+    for (const suffix of suffixes) {
+      const file = path.join(CACHE_DIR, `${callId}.${suffix}`);
+      await fs.writeFile(file, "bytes");
+      cacheFiles.push(file);
+    }
+  };
+  await seedCacheFiles(rushId, ["audio", "customer.audio"]);
+  await seedCacheFiles(archivedId, ["audio"]);
 });
 
 afterAll(async () => {
@@ -92,8 +100,10 @@ describe("GET /api/benchmark/calls", () => {
     const monoOnly = rows.find((r) => r.id === archivedId);
     expect(withChannel?.audioCached).toBe(true);
     expect(withChannel?.customerAudioCached).toBe(true);
-    // Same request, same directory: a call with no file of its own is not
-    // carried along by its neighbour's.
+    // The one that separates the two flags: cached audio, no caller channel.
+    // Reading customerAudioCached off the mono set would pass every other
+    // assertion in this file and fail this one.
+    expect(monoOnly?.audioCached).toBe(true);
     expect(monoOnly?.customerAudioCached).toBe(false);
   });
 });
