@@ -31,7 +31,10 @@ describe("POST /api/benchmark/bulks/preview", () => {
     const res = await request(app)
       .post("/api/benchmark/bulks/preview")
       .send({
-        criteria: { accountLabel },
+        // M-5: this case is about the duration band, not the audio
+        // channel -- said out loud so the new customer-channel default
+        // does not silently empty it.
+        criteria: { accountLabel, requireCustomerAudio: false },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,
@@ -64,7 +67,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
 
     const res = await request(app)
       .post("/api/benchmark/bulks/preview")
-      .send({ criteria: { callIds: [shorty.id] }, providerIds: [], minDurationSeconds: 30, maxDurationSeconds: 300 });
+      .send({ criteria: { callIds: [shorty.id], requireCustomerAudio: false }, providerIds: [], minDurationSeconds: 30, maxDurationSeconds: 300 });
     expect(res.status).toBe(200);
     expect(res.body.inScopeCount).toBe(1);
     expect(res.body.matchedCount).toBe(1);
@@ -76,7 +79,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
 
     const noProviders = await request(app)
       .post("/api/benchmark/bulks/preview")
-      .send({ criteria: { callIds: [call.id] }, providerIds: [] });
+      .send({ criteria: { callIds: [call.id], requireCustomerAudio: false }, providerIds: [] });
     expect(noProviders.status).toBe(200);
     expect(noProviders.body.matchedCount).toBe(1);
     // No providers picked yet is "unknown", not "free".
@@ -84,7 +87,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
 
     const band = await request(app)
       .post("/api/benchmark/bulks/preview")
-      .send({ criteria: { callIds: [call.id] }, providerIds: [], minDurationSeconds: 120, maxDurationSeconds: 30 });
+      .send({ criteria: { callIds: [call.id], requireCustomerAudio: false }, providerIds: [], minDurationSeconds: 120, maxDurationSeconds: 30 });
     expect(band.status).toBe(400);
     expect(band.body.error).toMatch(/must be >= minDurationSeconds/);
   });
@@ -137,7 +140,9 @@ describe("POST /api/benchmark/bulks with a selection that matches nothing", () =
       .set("x-actor", fx.actor)
       .send({
         name: `empty selection ${fx.suffix}`,
-        criteria: { accountLabel },
+        // M-5: still a 400, but it has to be the BAND that empties this,
+        // not the audio channel -- the assertion below names the filter.
+        criteria: { accountLabel, requireCustomerAudio: false },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,

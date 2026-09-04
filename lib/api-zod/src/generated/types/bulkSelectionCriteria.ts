@@ -28,6 +28,7 @@ export interface BulkSelectionCriteria {
   includeEndedReasons?: string[];
   excludeEndedReasons?: string[];
   successEvaluation?: string;
+  requireCustomerAudio?: boolean;
   callIds?: string[];
   resolvedCallIds?: string[];
   /** @nullable */

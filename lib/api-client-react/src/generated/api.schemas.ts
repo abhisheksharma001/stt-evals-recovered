@@ -647,6 +647,14 @@ export const ProviderCallResultFailureClass = {
   unknown: 'unknown',
 } as const;
 
+export type ProviderCallResultAudioSource = typeof ProviderCallResultAudioSource[keyof typeof ProviderCallResultAudioSource] | null;
+
+
+export const ProviderCallResultAudioSource = {
+  customer: 'customer',
+  mono: 'mono',
+} as const;
+
 export type WordDiffOpOp = typeof WordDiffOpOp[keyof typeof WordDiffOpOp];
 
 
@@ -762,6 +770,7 @@ export interface ProviderCallResult {
   /** @nullable */
   errorMessage?: string | null;
   failureClass?: ProviderCallResultFailureClass;
+  audioSource?: ProviderCallResultAudioSource;
   /**
      * 2026-08-26 -- set by POST .../analyze-failure; null until analyzed (or if this cell never failed).
      * @nullable
@@ -1277,6 +1286,7 @@ export interface BulkSelectionCriteria {
   includeEndedReasons?: string[];
   excludeEndedReasons?: string[];
   successEvaluation?: string;
+  requireCustomerAudio?: boolean;
   callIds?: string[];
   resolvedCallIds?: string[];
   /** @nullable */

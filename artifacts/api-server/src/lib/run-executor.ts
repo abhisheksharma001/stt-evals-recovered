@@ -36,7 +36,7 @@ import {
 import { logger } from "./logger";
 import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
-import { getOrCacheAudioBytes, readCachedAudioBytes } from "./audio-cache";
+import { getOrCacheAudioBytes, readCellAudioSource, type CellAudio, type CellAudioSource } from "./audio-cache";
 import { computeHybridFlagsForRun } from "./hybrid-flagging";
 import { runAutoAgentVerificationForRun } from "./agent-verify";
 import { drainWithConcurrency, envInt } from "./concurrency";
@@ -313,6 +313,31 @@ async function executeBenchmarkRunInner(
       .where(eq(benchmarkProviderCallResultsTable.runId, runId)),
   ]);
 
+  // M-5: which audio channel THIS run transcribes from, decided once here.
+  // Wanting the caller-only track and REFUSING to run without it are two
+  // different things, and conflating them would fail every ad-hoc run over
+  // the 56 corpus calls whose caller track was never rescued:
+  //
+  //   ad-hoc run              prefer, do not require -- best channel per
+  //                           call, recording which one it got
+  //   bulk requireCustomerAudio  prefer AND require -- every cell of the
+  //                           bulk is the same channel, so its rankings
+  //                           compare like with like
+  //   bulk without it         neither: the mono mix, byte-for-byte the
+  //                           pre-M-5 behaviour, so a bulk saved before
+  //                           this step keeps producing its own numbers
+  let runPrefersCustomer = true;
+  let runRequiresCustomer = false;
+  if (run.bulkId) {
+    const [bulk] = await db
+      .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
+      .from(benchmarkBulksTable)
+      .where(eq(benchmarkBulksTable.id, run.bulkId))
+      .limit(1);
+    runPrefersCustomer = bulk?.selectionCriteria.requireCustomerAudio === true;
+    runRequiresCustomer = runPrefersCustomer;
+  }
+
   const alreadyOk = new Set(
     existingResults
       .filter((r) => r.status === "ok")
@@ -466,13 +491,36 @@ async function executeBenchmarkRunInner(
    * first (cheap; warmed by the pre-pass above for the production
    * getOrCacheAudioBytes resolver), falling back to audioResolver(call)
    * directly so a test/rehearsal's substitute resolver (which may not write
-   * to the standard disk cache at all) still works unchanged. */
-  async function readCellAudio(call: BenchmarkCallRow): Promise<Buffer> {
+   * to the standard disk cache at all) still works unchanged.
+   *
+   * M-5: also says WHICH channel the bytes came from, and refuses to
+   * quietly substitute. A run that wants the caller-only track and cannot
+   * find it fails the cell here, before the provider is called (so it costs
+   * nothing) -- selection already excluded those calls, so reaching this is
+   * a file disappearing mid-run, not a normal path. The alternative,
+   * transcribing the mono mix and filing the number under a customer-channel
+   * bulk, is the mixing this whole step exists to end. */
+  async function readCellAudio(call: BenchmarkCallRow): Promise<CellAudio> {
+    let audio: CellAudio;
     try {
-      return await readCachedAudioBytes(call.id);
+      audio = await readCellAudioSource(call.id, { preferCustomer: runPrefersCustomer });
     } catch {
-      return audioResolver(call);
+      if (runRequiresCustomer) {
+        throw new Error(
+          `this run reads the customer channel, but ${call.id} has no audio on disk at all`,
+        );
+      }
+      // Nothing cached: the pre-M-5 fallback, unchanged -- a test or
+      // rehearsal resolver that never writes to the standard disk cache
+      // still works, and its bytes are the mono mix by definition.
+      return { bytes: await audioResolver(call), source: "mono" };
     }
+    if (runRequiresCustomer && audio.source !== "customer") {
+      throw new Error(
+        `this run reads the customer channel, but ${call.id} has no <callId>.customer.audio on disk`,
+      );
+    }
+    return audio;
   }
 
   // Materialize the full cell list up front so progress logging has a real
@@ -545,8 +593,8 @@ async function executeBenchmarkRunInner(
     try {
       // T-7: read this cell's bytes only once it actually has a provider
       // slot -- a cell queued waiting for a slot holds no buffer at all.
-      const audioBytes = await readCellAudio(call);
-      const outcome = await runCell(runId, call, provider, audioBytes);
+      const audio = await readCellAudio(call);
+      const outcome = await runCell(runId, call, provider, audio);
       if (outcome === "ok") {
         okCells += 1;
         callIdsWithNewEvidence.add(call.id);
@@ -719,8 +767,9 @@ async function runCell(
   runId: string,
   call: BenchmarkCallRow,
   provider: BenchmarkProviderRow,
-  audioBytes: Buffer,
+  audio: CellAudio,
 ): Promise<"ok" | "failed" | "config_blocked"> {
+  const { bytes: audioBytes, source: audioSource } = audio;
   const adapter = getProviderAdapter(provider.id);
   if (!adapter) {
     await insertResult(runId, call.id, provider.id, {
@@ -838,6 +887,10 @@ async function runCell(
     const firstPartialAt = result.firstPartialAt ? new Date(result.firstPartialAt) : null;
 
     const resultRow = await upsertResult(runId, call.id, provider.id, {
+      // M-5: the channel these bytes actually came from, recorded by the
+      // code that opened the file -- never re-derived later from what
+      // happens to be in the cache directory by then.
+      audioSource,
       status: result.status,
       submittedAt,
       firstPartialAt,
@@ -1018,6 +1071,12 @@ async function insertResult(
         : null,
       errorMessage: fields.errorMessage,
       failureClass: fields.failureClass,
+      // M-5: every row this writer produces is a failure, a cancellation or
+      // a skip -- no audio was ever transcribed, so there is no channel to
+      // name. Null here means "no transcription happened", which is a
+      // different thing from the null on pre-M-5 rows (those are mono); the
+      // status column is what tells them apart.
+      audioSource: null,
     },
     options,
   );
@@ -1035,6 +1094,7 @@ type CellResultFields = Pick<
   | "rawOutputHash"
   | "errorMessage"
   | "failureClass"
+  | "audioSource"
 >;
 
 // T-27: the single writer for benchmark_provider_call_results. The table
@@ -1112,8 +1172,24 @@ function aggregateRankingRows(
   results: RankingResultRow[],
   calls: (typeof benchmarkCallsTable.$inferSelect)[],
   providers: (typeof benchmarkProvidersTable.$inferSelect)[],
+  audioSource?: CellAudioSource,
 ): Array<Omit<typeof benchmarkRankingsTable.$inferInsert, "id" | "runId" | "bulkId">> {
   const callById = new Map(calls.map((c) => [c.id, c]));
+  // M-5: a bulk's ranking is computed only from cells read off the channel
+  // that bulk declares. Without this, re-executing a customer-channel bulk
+  // over cells an earlier (pre-M-5, mono) execution left behind would
+  // average the two together and present the result as one number.
+  // Undefined = no filter, which is what an ad-hoc run wants: its cells may
+  // legitimately mix, because a call with no rescued caller track still
+  // runs on the mono mix. That mixing is across CALLS, never across the
+  // providers being compared -- every provider gets the same bytes for a
+  // given call -- so the provider-vs-provider comparison stays honest.
+  // Pre-M-5 rows carry null; those runs all read the mono mix, which is what
+  // null means here and nowhere else in this file.
+  const onChannel =
+    audioSource === undefined
+      ? results
+      : results.filter((r) => (r.result.audioSource ?? "mono") === audioSource);
   // 2026-08-27, per Abhishek: group by real assistant instead of vertical --
   // null (no sourceAssistantId, i.e. a manually-added call) buckets into a
   // single "Other" group rather than being dropped. `NO_ASSISTANT_KEY` is a
@@ -1133,7 +1209,7 @@ function aggregateRankingRows(
 
   for (const assistantKey of assistantKeys) {
     const assistantId = assistantKey === NO_ASSISTANT_KEY ? null : assistantKey;
-    const rowsForGroup = results.filter(
+    const rowsForGroup = onChannel.filter(
       (r) => (callById.get(r.result.callId)?.sourceAssistantId ?? NO_ASSISTANT_KEY) === assistantKey,
     );
 
@@ -1436,7 +1512,17 @@ export async function computeRankingsForBulk(bulkId: string): Promise<void> {
         ),
       );
 
-    const rows = aggregateRankingRows(results, calls, providers);
+    const [bulk] = await db
+      .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
+      .from(benchmarkBulksTable)
+      .where(eq(benchmarkBulksTable.id, bulkId))
+      .limit(1);
+    const rows = aggregateRankingRows(
+      results,
+      calls,
+      providers,
+      bulk?.selectionCriteria.requireCustomerAudio === true ? "customer" : "mono",
+    );
 
     await db.transaction(async (tx) => {
       await tx.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.bulkId, bulkId));

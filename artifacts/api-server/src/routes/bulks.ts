@@ -91,6 +91,9 @@ function criteriaFromBody(criteria: {
   includeEndedReasons?: string[];
   excludeEndedReasons?: string[];
   successEvaluation?: string;
+  // M-5: absent means "no opinion" and the caller's default decides -- see
+  // withCustomerAudioDefault; it is NOT read as false here.
+  requireCustomerAudio?: boolean;
   callIds?: string[];
 }): BulkSelectionCriteria {
   const iso = (value?: Date | string): string | undefined =>
@@ -197,6 +200,9 @@ router.post("/benchmark/bulks", async (req, res): Promise<void> => {
       maxDurationSeconds: parsed.data.maxDurationSeconds,
       confirm: parsed.data.confirm,
       actorLabel: actorFromRequest(req),
+      // M-5: a bulk created from now on measures the caller-only track
+      // unless the caller says otherwise in the criteria.
+      requireCustomerAudioDefault: true,
     });
     respondJson(res, CreateBulkResponse, serializeBulk(bulk), 201);
   } catch (err) {
@@ -225,6 +231,9 @@ router.post("/benchmark/bulks/preview", async (req, res): Promise<void> => {
       providerIds: parsed.data.providerIds,
       minDurationSeconds: parsed.data.minDurationSeconds,
       maxDurationSeconds: parsed.data.maxDurationSeconds,
+      // M-5: this endpoint previews what POST /benchmark/bulks would do,
+      // so it must carry that route's default, not its own.
+      requireCustomerAudioDefault: true,
     });
     respondJson(res, PreviewBulkSelectionResponse, preview);
   } catch (err) {
@@ -839,6 +848,11 @@ router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Pr
       maxDurationSeconds: template.maxDurationSeconds ?? null,
       confirm: body.data.confirm,
       actorLabel,
+      // M-5: a template saved before this step has no opinion on file. It
+      // keeps matching exactly what it matched and keeps producing the
+      // numbers it produced -- the caller-only track is opted into by
+      // saving a template that says so, never applied retroactively.
+      requireCustomerAudioDefault: false,
     });
 
   try {

@@ -38,6 +38,16 @@ export type BulkSelectionCriteria = {
   excludeEndedReasons?: string[];
   // Exact match on the stored string ("true" / "false" today).
   successEvaluation?: string;
+  // M-5 (2026-09-05): which audio channel this bulk's runs transcribe.
+  // true  -> the caller-only track; calls with no `<id>.customer.audio` on
+  //          disk are excluded from selection under their own named bucket,
+  //          so every cell in the bulk is comparable to every other.
+  // false -> the mono mix, exactly as every bulk behaved before M-5.
+  // Absent -> false. Templates saved before this step therefore keep
+  // matching precisely what they matched and keep producing the same
+  // numbers; only a bulk created after M-5 gets the new default of true
+  // (applied at create time in bulks.ts, not read as a default here).
+  requireCustomerAudio?: boolean;
   // Explicit corpus picks; merged with filter matches.
   callIds?: string[];
   // Frozen resolution, set on bulks only, at creation time.

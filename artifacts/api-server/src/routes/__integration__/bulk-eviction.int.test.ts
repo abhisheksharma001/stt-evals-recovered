@@ -54,7 +54,10 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
       .set("x-actor", fx.actor)
       .send({
         name: `evicts the oldest ${fx.suffix}`,
-        criteria: { accountLabel },
+        // M-5: this case is about bulk eviction at the cap, not the audio
+        // channel -- stated so the new customer-channel default does not
+        // empty the selection and turn a 201 into a 400.
+        criteria: { accountLabel, requireCustomerAudio: false },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,

@@ -60,6 +60,21 @@ export const benchmarkProviderCallResultsTable = pgTable(
     // re-billed) every time the row is viewed.
     failureDiagnosis: text("failure_diagnosis"),
     failureSuggestedFix: text("failure_suggested_fix"),
+    // M-5 (2026-09-05): WHICH audio channel this cell was transcribed from
+    // -- "customer" = the caller-only track rescued from Vapi's artifact,
+    // "mono" = the mixed track, 71% of whose words are the assistant's own
+    // TTS voice. Recorded by the executor at read time from the file it
+    // actually opened, never inferred later from what happens to be on disk
+    // now (a customer file can be added after a run).
+    //
+    // Null on every row written before this column existed. Null is NOT
+    // "unknown pending investigation": those rows are all mono, because the
+    // customer channel did not exist as a concept when they ran -- readers
+    // treat null as "mono" and say so where they do it.
+    //
+    // Text, not a Postgres enum, for the same reason failureClass is (see
+    // above): adding a channel is a code change, not a lockstep migration.
+    audioSource: text("audio_source").$type<"customer" | "mono">(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

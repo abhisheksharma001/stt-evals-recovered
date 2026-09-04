@@ -1084,6 +1084,7 @@ export const ListBenchmarkRunResultsResponseItem = zod.object({
   "hypothesisTranscript": zod.string().nullish(),
   "errorMessage": zod.string().nullish(),
   "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]).optional(),
+  "audioSource": zod.union([zod.enum(['customer', 'mono']),zod.null()]).optional(),
   "failureDiagnosis": zod.string().nullish().describe('2026-08-26 -- set by POST ...\/analyze-failure; null until analyzed (or if this cell never failed).'),
   "failureSuggestedFix": zod.string().nullish(),
   "retryable": zod.boolean().nullish(),
@@ -1293,6 +1294,7 @@ export const ListBulksResponseItem = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1345,6 +1347,7 @@ export const CreateBulkBody = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1379,6 +1382,7 @@ export const CreateBulkResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1425,6 +1429,7 @@ export const PreviewBulkSelectionBody = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1488,6 +1493,7 @@ export const GetBulkResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1573,6 +1579,7 @@ export const LaunchBulkResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1622,6 +1629,7 @@ export const RetryBulkFailedResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1671,6 +1679,7 @@ export const CancelBulkResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1820,6 +1829,7 @@ export const GetBulkManifestResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1875,6 +1885,7 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1922,6 +1933,7 @@ export const CreateBulkTemplateBody = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1954,6 +1966,7 @@ export const CreateBulkTemplateResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -2016,6 +2029,7 @@ export const LaunchBulkTemplateResponse = zod.object({
   "includeEndedReasons": zod.array(zod.string()).optional(),
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
+  "requireCustomerAudio": zod.boolean().optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
