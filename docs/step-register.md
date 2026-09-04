@@ -334,6 +334,53 @@ touch the corpus, change `MAX_LIVE_BULKS`, or alter the cost gate.
 
 ---
 
+### M-3d — The other no-cascade reference on the same table
+
+**PR:** one.
+**Depends on:** M-3c.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (the FR-BLK-10 eviction
+block), `artifacts/api-server/src/routes/__integration__/bulk-eviction.int.test.ts`.
+**Today:** M-3c detached `benchmark_agent_scans.run_id` before eviction and
+the very next live launch still answered 500 --
+`update or delete on table "benchmark_provider_call_results" violates foreign
+key constraint "benchmark_agent_scans_agent_pick_result_id_..."`. The same
+table carries a second plain reference, `agent_pick_result_id`, into a result
+cell that cascades from the run. M-3c's test set only `runId` on its scan, so
+a fixture thinner than a production row passed a half fix.
+**Change:** in the same eviction block, before the delete, also set
+`agent_pick_result_id = null` on scans whose picked result belongs to a run of
+the evicted bulk (join results to runs on `bulkId`). Give the test's scan both
+pointers so it models a real row.
+**Acceptance:** WHEN a bulk is created at the cap AND the oldest bulk has a
+run with a scan that carries BOTH `runId` and `agentPickResultId` THEN the
+create SHALL answer 201 and the scan SHALL survive with both null, its
+`callId` and `status` unchanged.
+**Verify:**
+```
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+Prove by breaking: remove either update, watch that one test fail on the
+matching constraint.
+**Must not:** change the schema, delete any scan row, or touch the corpus.
+
+**Checked, not guessed:** `pg_constraint` says these two are the ONLY foreign
+keys into the `benchmark_bulks -> benchmark_runs -> benchmark_provider_call_results
+-> benchmark_scores` cascade that are not themselves `ON DELETE CASCADE`.
+Query kept here so the next person does not have to re-derive it:
+```sql
+select cl.relname, att.attname, cl2.relname, con.confdeltype
+from pg_constraint con
+join pg_class cl on cl.oid = con.conrelid
+join pg_class cl2 on cl2.oid = con.confrelid
+join unnest(con.conkey) k(attnum) on true
+join pg_attribute att on att.attrelid = cl.oid and att.attnum = k.attnum
+where con.contype = 'f'
+  and cl2.relname in ('benchmark_bulks','benchmark_runs',
+                      'benchmark_provider_call_results','benchmark_scores');
+```
+
+---
+
 ### M-3a — The UI server listens on localhost too
 
 **PR:** one.
