@@ -237,6 +237,23 @@ describe("Bulks", () => {
     api.restore()
   })
 
+  // Found by reading the diff, not by any of the above: the same line was
+  // pasted into the detail dialog twice, and every test still passed because
+  // none of them opened it. Counting is the assertion -- a page that says
+  // the same true thing twice reads as two different measurements.
+  it("says the channel exactly once per bulk surface, on the card and in the dialog", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Bulks />, { path: "/bulks" })
+
+    await screen.findByText("Most recent bulk")
+    expect(screen.getAllByTestId("channel-line").length).toBe(1)
+
+    fireEvent.click(screen.getByText("Open detail"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getAllByTestId("channel-line").length).toBe(1)
+    api.restore()
+  })
+
   it("a dead bulks endpoint names the failure and offers a retry", async () => {
     const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks": reply(500, { error: "bulks query failed" }) })
     renderPage(<Bulks />, { path: "/bulks" })

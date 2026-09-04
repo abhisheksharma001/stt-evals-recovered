@@ -923,14 +923,6 @@ function BulkDetailDialog({ bulk, children }: { bulk: Bulk; children: React.Reac
               silently fell back. */}
           <ChannelLine channel={bulkChannel(current.selectionCriteria.requireCustomerAudio)} />
 
-          {/* M-5a: which audio this bulk was measured on, in words, from its
-              own frozen criteria -- the instruction its runs obeyed. Never
-              read back from the cells: the criteria are the decision, the
-              cells are its outcome, and a reader who is told the outcome
-              cannot tell a deliberate mono bulk from a customer bulk that
-              silently fell back. */}
-          <ChannelLine channel={bulkChannel(current.selectionCriteria.requireCustomerAudio)} />
-
           {/* T-74 (E.1 proximity): the estimate, the cost-gate state and the
               launch button were ~120 lines apart in this dialog (header
               text vs footer button, with the over-threshold reason only in
