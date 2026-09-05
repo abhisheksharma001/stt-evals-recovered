@@ -40,6 +40,7 @@ import {
   benchmarkRunsTable,
 } from "@workspace/db";
 import app from "../../app";
+import { expectStatus, serverSaid } from "./expect-status";
 import { upsertResult } from "../../lib/run-executor";
 
 const suffix = Math.random().toString(36).slice(2, 10);
@@ -143,11 +144,11 @@ describe("(b) POST /api/benchmark/bulks/:id/launch", () => {
   it("accepts the first launch and refuses the second with 409", async () => {
     const bulk = await seedBulk("t77 launch", "draft");
     const first = await request(app).post(`/api/benchmark/bulks/${bulk.id}/launch`).send();
-    expect(first.status).toBe(202);
+    expectStatus(first, 202);
     expect(first.body.status).toBe("running");
 
     const second = await request(app).post(`/api/benchmark/bulks/${bulk.id}/launch`).send();
-    expect(second.status).toBe(409);
+    expectStatus(second, 409);
     expect(second.body.error).toMatch(/not launchable/);
 
     // Let the offline shard finish (no audio -> failed cells) before teardown.
@@ -159,26 +160,26 @@ describe("(b) POST /api/benchmark/bulks/:id/launch", () => {
 
   it("404s on an unknown bulk", async () => {
     const res = await request(app).post(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/launch`).send();
-    expect(res.status).toBe(404);
+    expectStatus(res, 404);
   });
 });
 
 describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
   it("404s on an unknown bulk", async () => {
     const json = await request(app).get(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts`);
-    expect(json.status).toBe(404);
+    expectStatus(json, 404);
     const html = await request(app).get(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdict.html`);
-    expect(html.status).toBe(404);
+    expectStatus(html, 404);
   });
 
   it("returns the verdict shape and a dated HTML page for a seeded bulk", async () => {
     const bulk = await seedBulk("t77 verdicts", "complete");
     const json = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
-    expect(json.status).toBe(200);
+    expectStatus(json, 200);
     expect(json.body).toEqual({ bulkId: bulk.id, providers: [], groups: [] });
 
     const html = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
-    expect(html.status).toBe(200);
+    expectStatus(html, 200);
     expect(html.headers["content-type"]).toMatch(/text\/html/);
     expect(html.text).toContain(`STT verdict: ${bulk.name}`);
     expect(html.text).toContain("Winner");
@@ -188,7 +189,7 @@ describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
 describe("(d) GET /api/benchmark/disagreement-spans", () => {
   it("404s on an unknown call", async () => {
     const res = await request(app).get("/api/benchmark/disagreement-spans").query({ callId: "00000000-0000-4000-8000-000000000000" });
-    expect(res.status).toBe(404);
+    expectStatus(res, 404);
   });
 
   it("answers the full schema, majorityText included, for two disagreeing providers", async () => {
@@ -213,7 +214,7 @@ describe("(d) GET /api/benchmark/disagreement-spans", () => {
     const res = await request(app).get("/api/benchmark/disagreement-spans").query({ callId, runId: run.id });
     // A 500 here is the T-136 regression: the response did not satisfy its
     // own schema, which no typecheck can catch.
-    expect(res.status).toBe(200);
+    expectStatus(res, 200);
     expect(res.body.unavailableReason).toBeNull();
     expect(res.body.referenceWords).toEqual(["book", "the", "load"]);
     // T-137: one start per reference word, in order, milliseconds.
@@ -238,11 +239,11 @@ describe("(e) POST /api/benchmark/runs/:runId/archive", () => {
     runIds.push(adhoc.id);
 
     const archived = await request(app).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: true });
-    expect(archived.status).toBe(200);
+    expectStatus(archived, 200);
     expect(archived.body.archivedAt).not.toBeNull();
 
     const restored = await request(app).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: false });
-    expect(restored.status).toBe(200);
+    expectStatus(restored, 200);
     expect(restored.body.archivedAt).toBeNull();
 
     // A shard belongs to its bulk; hiding one would silently change what the
@@ -254,19 +255,19 @@ describe("(e) POST /api/benchmark/runs/:runId/archive", () => {
       .returning();
     runIds.push(shard.id);
     const refused = await request(app).post(`/api/benchmark/runs/${shard.id}/archive`).send({ archived: true });
-    expect(refused.status).toBe(409);
+    expectStatus(refused, 409);
   });
 
   it("404s on an unknown run", async () => {
     const res = await request(app).post("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/archive").send({ archived: true });
-    expect(res.status).toBe(404);
+    expectStatus(res, 404);
   });
 });
 
 describe("(f) POST /api/benchmark/calls/cache-audio", () => {
   it("answers with counts, and never throws when there is nothing to save", async () => {
     const res = await request(app).post("/api/benchmark/calls/cache-audio").send();
-    expect(res.status).toBe(200);
+    expectStatus(res, 200);
     // The endpoint takes no body: it sweeps every uncached call. The seeded
     // call has no recording anywhere, so it can only be a failure -- what
     // matters here is that one bad call does not throw, and that every call
@@ -299,7 +300,7 @@ describe("(g) parameter validation", () => {
     ];
     for (const path of paths) {
       const res = await request(app).get(path);
-      expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
+      expectStatus(res, 400, path);
     }
   });
 
@@ -311,7 +312,7 @@ describe("(g) parameter validation", () => {
       `/api/benchmark/assistant-signals?bulkId=${junk}`,
     ]) {
       const res = await request(app).get(path);
-      expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
+      expectStatus(res, 400, path);
     }
   });
 
@@ -327,14 +328,14 @@ describe("(g) parameter validation", () => {
     };
     for (const [path, sentence] of Object.entries(expected)) {
       const res = await request(app).get(path);
-      expect(`${path} -> ${res.status}`).toBe(`${path} -> 400`);
+      expectStatus(res, 400, path);
       expect(`${path} -> ${res.body.error}`).toBe(`${path} -> ${sentence}`);
     }
   });
 
   it("refuses a repeated parameter instead of joining it with a comma", async () => {
     const res = await request(app).get(`/api/benchmark/disagreement-spans?callId=${callId}&callId=${callId}`);
-    expect(res.status).toBe(400);
+    expectStatus(res, 400);
     expect(res.body.error).toBe("callId must be a string, not an array");
   });
 
@@ -349,7 +350,7 @@ describe("(g) parameter validation", () => {
     ];
     for (const path of ok) {
       const res = await request(app).get(path);
-      expect(`${path} -> ${res.status}`).toBe(`${path} -> 200`);
+      expectStatus(res, 200, path);
     }
   });
 });
@@ -359,11 +360,11 @@ describe("(h) the two routes that read their params raw, and what a refusal says
 
   it("T-146: the audio and archive routes answer 400 for a malformed id, not 500", async () => {
     const audio = await request(app).get(`/api/benchmark/calls/${junk}/audio`);
-    expect(`audio -> ${audio.status}`).toBe("audio -> 400");
+    expectStatus(audio, 400, "audio");
     expect(audio.body.error).toBe("callId must be a valid uuid");
 
     const archive = await request(app).post(`/api/benchmark/runs/${junk}/archive`).send({ archived: true });
-    expect(`archive -> ${archive.status}`).toBe("archive -> 400");
+    expectStatus(archive, 400, "archive");
     expect(archive.body.error).toBe("runId must be a valid uuid");
   });
 
@@ -372,8 +373,8 @@ describe("(h) the two routes that read their params raw, and what a refusal says
     // honest answer is 404 (or a Vapi error) -- never 500, and never the
     // uuid refusal above.
     const audio = await request(app).get(`/api/benchmark/calls/${callId}/audio`);
-    expect([200, 206, 302, 404, 502, 503]).toContain(audio.status);
-    expect(audio.status).not.toBe(400);
+    expect([200, 206, 302, 404, 502, 503], serverSaid(audio)).toContain(audio.status);
+    expect(audio.status, serverSaid(audio)).not.toBe(400);
 
     const [run] = await db
       .insert(benchmarkRunsTable)
@@ -381,7 +382,7 @@ describe("(h) the two routes that read their params raw, and what a refusal says
       .returning();
     runIds.push(run.id);
     const noBody = await request(app).post(`/api/benchmark/runs/${run.id}/archive`).send({});
-    expect(`no body -> ${noBody.status}`).toBe("no body -> 400");
+    expectStatus(noBody, 400, "no body");
     expect(noBody.body.error).toBe("archived is required");
   });
 
@@ -391,7 +392,7 @@ describe("(h) the two routes that read their params raw, and what a refusal says
       ["get", "/api/benchmark/nope"],
     ] as const) {
       const res = await request(app)[method](path);
-      expect(`${path} -> ${res.status}`).toBe(`${path} -> 404`);
+      expectStatus(res, 404, path);
       expect(res.headers["content-type"]).toContain("application/json");
       expect(res.body.error).toBe(`No such endpoint: ${method.toUpperCase()} ${path}`);
     }
@@ -402,14 +403,14 @@ describe("(h) the two routes that read their params raw, and what a refusal says
     // both used to reach drizzle's `.set({})` and answer 500.
     for (const body of [{}, { judgeModel: 123 }]) {
       const res = await request(app).patch("/api/benchmark/settings").send(body);
-      expect(`${JSON.stringify(body)} -> ${res.status}`).toBe(`${JSON.stringify(body)} -> 400`);
+      expectStatus(res, 400, JSON.stringify(body));
       expect(res.body.error).toContain("Name at least one setting to change");
     }
   });
 
   it("T-150: a rejected body says what is wrong in a sentence", async () => {
     const res = await request(app).post("/api/benchmark/bulks").send({ label: "x" });
-    expect(res.status).toBe(400);
+    expectStatus(res, 400);
     expect(res.body.error).toContain("criteria is required");
     // The old answer opened with zod's serialised issue array.
     expect(res.body.error.startsWith("[")).toBe(false);

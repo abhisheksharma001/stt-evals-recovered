@@ -1044,18 +1044,32 @@ stakeholder" the research kept circling back to.
   what else will ever be written to that directory.**
 
 - **The integration suite fails about once every ten runs, on `main` as well**
-  (measured 2026-09-05 while shipping M-6). Three failures in roughly forty
-  runs, each in a different file and never twice the same one:
+  (measured 2026-09-05 while shipping M-6 and M-6a). Five failures in roughly
+  fifty runs, never twice the same test. The four whose detail was captured,
+  each in a different file:
   `small-reads.int.test.ts`'s "answers 404 for an unknown call",
-  `rankings.int.test.ts`'s "all-time picks each group's newest batch run", and
-  -- on an unmodified `main`, 1 failure in 12 runs -- `riskiest-endpoints.int.test.ts`'s
-  "answers 400 for a malformed id in the query string". **It is not caused by
-  any one branch**; the first two were seen on the M-6 branch and the third on
-  `main` with nothing of M-6 in it, which is the only reason M-6 could be
-  called green at all.
-  Two of the three assert a 4xx status and got something else, which points at
-  the response rather than at leftover rows, and the suite never prints what
-  it actually got. What else is known: `fileParallelism: false` is set in
+  `rankings.int.test.ts`'s "all-time picks each group's newest batch run",
+  `riskiest-endpoints.int.test.ts`'s "answers 400 for a malformed id in the
+  query string" -- that one on an unmodified `main`, 1 failure in 12 runs --
+  and, while shipping M-6a itself, `bulk-preview-cancel.int.test.ts`'s
+  "answers 404 for an unknown bulk and a sentence for a malformed id".
+  **It is not caused by any one branch**; the first two were seen on the M-6
+  branch, the third on `main` with nothing of M-6 in it, and the fourth on a
+  branch that had touched none of the four files -- which is the only reason
+  M-6 could be called green at all.
+  The fourth occurrence corrects the inference written here first. Two of the
+  four assert a 4xx status and got something else, so this entry said the cause
+  pointed at the response rather than at leftover rows. The fourth did not
+  assert anything at all: it failed with `Error: socket hang up`, meaning the
+  request never got an answer, and the three runs immediately after it were
+  clean. **So there may be two faults here, or one that shows up two ways, and
+  neither is diagnosed.**
+  The fifth fired minutes later and its detail was lost: the command was piped
+  through `tail -4`, so the exit code was seen and the failing test was not.
+  **Making the assertion talk is only half of it -- whoever runs the suite has
+  to keep the output.** Run it as `... pnpm run test:integration 2>&1 | tee
+  /tmp/int.log` and read the log, never a short tail.
+  What else is known: `fileParallelism: false` is set in
   `artifacts/api-server/vitest.integration.config.ts`, so files do not race
   each other; the suite shares one database, whose header comment already
   says "the corpus is shared state"; and each file calls `pool.end()` in its
@@ -1065,7 +1079,8 @@ stakeholder" the research kept circling back to.
   evidence, and an assertion that says "expected 200 to be 404" without
   printing the body it got costs an hour every time it fires.** Stepped as
   M-6a, whose first job is to make the next occurrence diagnosable rather
-  than to guess at a cause.
+  than to guess at a cause -- and M-6a covers only the status half: a socket
+  that hangs up has no body to print, so that half is stepped separately.
 - **The mono file is the only one of the four written world-readable**
   (found 2026-09-05 by looking at the first M-6 import on disk). The three
   files M-6 writes are 0600; the mono mix beside them, written by
