@@ -884,6 +884,8 @@ costing a re-run.
 
 ### M-6b — The mono file gets the same file mode as the three beside it
 
+**Status:** done 2026-09-06 (PR #91, `5561668`, deployed `556166893bf2`).
+
 **PR:** one.
 **Depends on:** M-6 (which established 0600 as the mode for cached call audio).
 **Files:** `artifacts/api-server/src/lib/audio-cache.ts` (`getOrCacheAudioBytes`),
@@ -895,14 +897,56 @@ channel does, so three locked files beside one open one protect nothing. The 064
 a decision: `fs.writeFile` with no mode is 0666 minus the umask.
 **Change:** pass `{ mode: 0o600 }` on the mono write in `getOrCacheAudioBytes`, and add a
 case asserting the mode, next to the M-6 one that already asserts it for the other three.
-Existing files keep whatever mode they have -- this step does not chmod the 176 already
+Existing files keep whatever mode they have -- this step does not chmod the ~~176~~ already
 on disk, because a sweep over a directory of caller audio is its own decision.
+**Corrected 2026-09-06 while shipping this step: 156, not 176.** Counted on disk the day
+the step ran: 156 mono `.audio` files at 0644, and 300 sidecars (100 each of
+`.customer.audio`, `.assistant.audio`, `.artifact.json`) at 0600, 456 files in all. 156
+is also what the numbers already written down predict -- `audio-cache.ts` records 155
+cached calls at M-5 time and M-6's first import added one. 176 matches nothing and was
+never counted.
 **Acceptance:** WHEN a call's mono audio is cached THEN the file SHALL be 0600, and every
 file in the cache directory written from that point SHALL have the same mode.
 **Verify:** `cd artifacts/api-server && pnpm test`. Prove by breaking: drop the mode
 argument and watch the new case fail with `expected 420 to be 384`.
 **Must not:** chmod files already on disk; change where the mono file is written, what it
 contains, or when it is fetched.
+
+**Learned:**
+1. The step was right about the code, and wrong about one number. Every claim it made
+   about the source held up when checked (`getOrCacheAudioBytes` is the only writer of
+   the mono path, repo-wide), and the one claim about the world -- 176 files on disk --
+   was wrong. A count is a fact about a machine at a moment; it goes stale in a way a
+   code claim does not, and it has to be re-counted rather than quoted.
+2. The acceptance sentence claims more than the one-line change does: "every file in the
+   cache directory written from that point SHALL have the same mode" is about the whole
+   directory, not this function. Checked all three production writers before marking it
+   met -- `getOrCacheAudioBytes` (mono), `cacheCallSidecars` (the three sidecars) and
+   `scripts/rescue-customer-audio.mjs` (artifact + two channels). All 0600. Met. The
+   rescue script's artifact write briefly looked like a gap because a truncated grep line
+   hid its `{ mode: 0o600 }`; reading the line in full is what settled it, not the grep.
+3. `mode` on `fs.writeFile` applies at file creation only -- it never chmods a file that
+   already exists. It does not matter here, because `getOrCacheAudioBytes` returns cached
+   bytes without reaching the write when the file exists, but it means this step could
+   not have fixed the 156 old files even if it had wanted to. A chmod sweep would be a
+   different step doing a different thing.
+4. The test had to stub `resolveFreshRecordingUrl`, because the only writer asks Vapi for
+   a fresh URL before it writes. That is the single network reach in the file; the rest of
+   `./vapi` stays real via `importOriginal`. Nothing was spent.
+5. A cache test can pass on a file it did not write. The case `rm`s its target first and
+   asserts the returned bytes as well as the mode, so a file left behind by a crashed
+   earlier run cannot be the thing measured.
+6. Self-review caught placement, not correctness: `vi.mock` is hoisted wherever it sits,
+   so it worked at the bottom of the file, but nobody reading the imports would have
+   known `./vapi` was stubbed. Moved under the imports.
+7. **What this did not do:** the 156 files already on disk are still 0644. The directory
+   is only as protected as its weakest file until a separate step sweeps them, and that
+   step does not exist yet.
+8. **The flake fired during this step and its evidence was thrown away** -- by me, piping
+   the run through `tail -8`. M-6a and M-6c exist to make exactly that occurrence
+   readable, and the very next one was discarded by the person who built them. See
+   `docs/backlog/good-to-have.md`; the rule is now written down there rather than
+   remembered.
 
 ---
 

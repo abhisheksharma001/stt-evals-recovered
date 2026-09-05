@@ -1100,6 +1100,19 @@ stakeholder" the research kept circling back to.
   name of the running test.** Measuring what the tool already does came before
   writing the file, as on M-6a, and it is the second step in a row whose
   prescribed change did not survive being run.
+  **It fired again on 2026-09-06 during M-6b, and the evidence was thrown
+  away.** One test of 119 failed; the run had been piped through `tail -8`, so
+  the failing file, the failing case and any `[integration]` line the M-6c
+  setup file printed all went with it. Two re-runs immediately after were
+  119/119 with zero `[integration]` lines, and the change under test cannot be
+  involved -- it touches `getOrCacheAudioBytes`, which the two integration
+  files that use the audio cache never call; both write their own fixtures.
+  So the occurrence is spent and the cause is still unknown. **The rule, now
+  written down instead of remembered: run the integration suite through
+  `tee <file>` and read the file. Never a short `tail`, and never a re-run
+  before the log has been read** -- a re-run that passes destroys the only
+  evidence the previous failure produced. This is the whole point of M-6a and
+  M-6c, discarded on the first occurrence after shipping them.
 - **The mono file is the only one of the four written world-readable**
   (found 2026-09-05 by looking at the first M-6 import on disk). The three
   files M-6 writes are 0600; the mono mix beside them, written by
@@ -1111,6 +1124,15 @@ stakeholder" the research kept circling back to.
   rather than smuggled in: **M-6b**. Low severity today -- the directory is a
   local, gitignored folder on a single-user laptop -- and it stops being low
   the moment this moves to a shared box or real object storage.
+  **Fixed forward 2026-09-06 (M-6b, PR #91): new mono files are written 0600.**
+  Every production writer into that directory now agrees -- `getOrCacheAudioBytes`,
+  `cacheCallSidecars` and `scripts/rescue-customer-audio.mjs`. **The 156 mono
+  files already on disk are still 0644**, because `mode` applies at creation and
+  because a chmod sweep over a directory of caller audio is its own decision, not
+  a side effect of a one-line change. Until that sweep is stepped and run, the
+  directory is still only as protected as its weakest file, and the "stops being
+  low the moment this moves to a shared box" sentence above still stands for the
+  old files.
 
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,
