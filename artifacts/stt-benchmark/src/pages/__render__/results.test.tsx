@@ -388,6 +388,33 @@ describe("Results", () => {
     api.restore()
   })
 
+  // M-7c: the per-card silence above is right per card and invisible in
+  // aggregate -- live, 7 of the 29 groups the all-time view renders say
+  // nothing at all. The denominator is the groups THIS page renders, not the
+  // 32 in the corpus.
+  it("the page says once how many groups have a production latency at all", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/calls": measuredCalls })
+    renderPage(<Results />, { path: "/results" })
+
+    // Two groups render: asst-rush (three timed calls) and the unassigned
+    // bucket (no calls of its own, so nothing was ever timed for it).
+    const line = await screen.findByTestId("production-coverage")
+    expect(line.textContent).toContain("1 of 2")
+    expect(line.textContent).toContain("assistant groups")
+    api.restore()
+  })
+
+  it("nothing is said when every group on the page has one", async () => {
+    const all = [...measuredCalls, signalCall("m-6", { sourceAssistantId: null, prodTranscriberLatencyMs: 640 })]
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/calls": all })
+    renderPage(<Results />, { path: "/results" })
+
+    // Both cards carry a latency, so the page has no coverage caveat to make.
+    expect((await screen.findAllByTestId("prod-latency")).length).toBe(2)
+    expect(screen.queryByTestId("production-coverage")).toBeNull()
+    api.restore()
+  })
+
   it("the page explains its own arrows before any number is read", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Results />, { path: "/results" })

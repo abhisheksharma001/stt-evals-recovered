@@ -674,6 +674,24 @@ export default function Rankings() {
     return [...byKey.values()].sort((a, b) => b.calls - a.calls || (a.label ?? "~").localeCompare(b.label ?? "~"))
   }, [groupedRankings, verdicts, assistantOrg, calls, viewMode])
 
+  // M-7c: M-7b's per-card latency clause is correctly silent when no call in
+  // a group was ever timed -- and on the page that silence reads exactly like
+  // a group nobody has looked at yet. Say the count once, over the groups
+  // THIS page renders: the corpus holds 32 assistant groups, this page shows
+  // 29 all-time and 17 on the newest bulk, so the corpus figure would be a
+  // true number about a page nobody is looking at. Same predicate as the card
+  // (countMeasured > 0), so the line and the cards cannot disagree.
+  const latencyCoverage = React.useMemo(() => {
+    const keys = Object.keys(groupedRankings)
+    if (keys.length === 0 || !calls) return null
+    const measured = keys.filter((aKey) => {
+      const assistantId = groupedRankings[aKey][0]?.assistantId ?? null
+      const groupCalls = calls.filter((c) => (c.sourceAssistantId ?? null) === assistantId)
+      return countMeasured(groupCalls.map((c) => c.prodTranscriberLatencyMs)) > 0
+    }).length
+    return { measured, total: keys.length }
+  }, [groupedRankings, calls])
+
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setAsc((v) => !v)
     else {
@@ -722,6 +740,17 @@ export default function Rankings() {
           <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags, speed and price
           (↓). Higher is better for clean calls and speakers told apart (↑). Hover a column for exactly what it measures.
         </p>
+        {latencyCoverage && latencyCoverage.measured < latencyCoverage.total && (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="production-coverage">
+            Production latency is measured on{" "}
+            <span className="font-medium text-foreground">
+              {latencyCoverage.measured} of {latencyCoverage.total}
+            </span>{" "}
+            assistant groups below. The other {latencyCoverage.total - latencyCoverage.measured} carry no call with
+            one: either no Vapi artifact was saved before the 14-day window closed, or the artifact that was saved
+            reported no turn timings. Their cards say nothing rather than 0 ms.
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
