@@ -129,7 +129,11 @@ export async function getOrCacheAudioBytes(
 
   try {
     await fs.mkdir(CACHE_DIR, { recursive: true });
-    await fs.writeFile(cachePath, bytes);
+    // M-6b: same 0600 as the three sidecars written beside this file. The mono
+    // mix carries the caller's voice exactly as `<id>.customer.audio` does, so
+    // three locked files beside one open one protect nothing. The 0644 this
+    // replaces was never a decision -- it is writeFile's 0666 minus the umask.
+    await fs.writeFile(cachePath, bytes, { mode: 0o600 });
   } catch (err) {
     // Never fail the run over a cache-write problem (disk full, permissions)
     // -- the bytes are already in hand and good for this run; just log it so
