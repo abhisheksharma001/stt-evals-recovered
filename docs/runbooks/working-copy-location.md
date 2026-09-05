@@ -61,11 +61,14 @@ curl -s localhost:8177/api/healthz    # commitSha must equal: git rev-parse --sh
 Then start Claude Code **from the new directory** — its working directory and scratchpad
 follow wherever it was launched.
 
-Observed once, not explained: the first `pnpm install` into the empty clone failed at the
-root `preinstall` guard with `Use pnpm instead` although pnpm was the runner.
-`pnpm install --frozen-lockfile --ignore-scripts` followed by a plain `pnpm install`
-passed, and every install since has passed. If it recurs, that is the workaround; the
-cause is not known.
+Explained and fixed 2026-09-06 (S-0.2, PR #95): the first `pnpm install` into the empty
+clone failed at the root `preinstall` guard with `Use pnpm instead` although pnpm was the
+runner. The guard tested `$npm_config_user_agent`, which pnpm 11 leaves empty when it runs
+a **workspace root's** own lifecycle scripts -- a phase it runs after linking, which is
+also why that failed install still left a fully linked `node_modules` behind. The guard now
+tests the basename of `$npm_execpath`, which is set in every phase. No workaround is
+needed: a fresh clone runs `pnpm install --frozen-lockfile` and then `pnpm run typecheck`
+straight through.
 
 ## If `.env` is gone but the API is still running
 
