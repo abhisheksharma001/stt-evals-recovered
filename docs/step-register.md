@@ -719,6 +719,8 @@ thought to write.**
 
 ### M-6a — When the integration suite fails, it must say what it actually got
 
+**Status:** done 2026-09-05 (PR #89, `a191d26`, deployed `a191d2698c17`).
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/routes/__integration__/small-reads.int.test.ts`,
@@ -743,6 +745,69 @@ failure output now contains the body.
 **Must not:** loosen an assertion (a 500 must still fail the test that expected a 404);
 retry, sleep, or otherwise paper over the intermittency -- the cause is still unknown and
 hiding it is worse than the flake.
+
+**Learned:**
+
+(1) The form this step prescribed does not work. `expect({ status, body })
+.toMatchObject({ status: 404 })` prints `(3 matching properties omitted from
+actual)` and shows only the status -- exactly what it does today. It was written
+into the step because it looked right, and it was never run. Vitest's second
+argument to `expect()` does carry the message, so that is what shipped, and the
+dead end is recorded in the helper's own header comment. **A step written by the
+same person who will execute it can still specify something that has never been
+executed.**
+
+(2) The evidence lands in the one-line summary, which is the part CI keeps when
+it truncates the rest, and CI does run this suite (`.github/workflows/ci.yml`,
+against a postgres service) -- so the payoff is not only local.
+
+(3) The suite failed twice more while this was being shipped, and both taught
+something. The fourth occurrence was in a fourth file, `bulk-preview-cancel`,
+with `Error: socket hang up` -- no answer to print at all, which disproves the
+inference the backlog carried ("points at the response rather than at leftover
+rows"). It is a different class, stepped as M-6c rather than folded in here.
+
+(4) The fifth fired minutes later and I lost it, by piping the run through
+`tail -4`: the exit code was seen and the failing test was not. **Making the
+assertion talk is half the job; keeping the output is the other half**, and I
+had just spent an hour on the first half. The backlog now says to `tee` the run.
+
+(5) Applied to every status assertion in the three files, not only the bare
+ones. Three of them already carried the path by comparing `` `${path} ->
+${status}` `` strings -- which names the request and still never the answer, and
+one of those loops is the case that failed on `main`.
+
+---
+
+### M-6c — A request that gets no answer at all must say why
+
+**PR:** one.
+**Depends on:** nothing (M-6a covered the half of the flake that has a response).
+**Files:** `artifacts/api-server/vitest.integration.config.ts`, new file
+artifacts/api-server/src/routes/__integration__/setup.ts (plain: not written yet).
+**Today:** the fourth measured occurrence of the flake was
+`bulk-preview-cancel.int.test.ts`'s "answers 404 for an unknown bulk and a sentence for
+a malformed id" failing with `Error: socket hang up`, on a branch that had touched none
+of the files involved. The request never got an answer, so M-6a's message argument has
+nothing to print. A socket hang up from supertest means the server closed the connection
+before responding -- an unhandled rejection, an error thrown out of the error handler, or
+a process being torn down while a request is open -- and none of that reaches the test
+output today.
+**Change:** add a `setupFiles` entry to `vitest.integration.config.ts` pointing at a new
+setup file that registers `process.on("unhandledRejection")` and
+`process.on("uncaughtException")` handlers which print the error with its stack, and an
+`app`-level check that the express error handler is not itself throwing. The goal is one
+printed cause, not a fix: the next hang up must name what closed the socket.
+**Acceptance:** WHEN a request in the integration suite fails with `socket hang up` THEN
+the run output SHALL also contain the underlying error and its stack, rather than the
+hang up alone.
+**Verify:** `cd artifacts/api-server && TEST_DATABASE_URL=... pnpm run test:integration
+2>&1 | tee /tmp/int.log` passes. Prove by breaking: add a route (or a test-only handler)
+that rejects asynchronously without awaiting, confirm the run prints the rejection, then
+remove it.
+**Must not:** retry a request, add a sleep, raise a timeout, or mark the test as flaky --
+the cause is still unknown and every one of those hides it. Do not change any route's
+behaviour; this step only makes the process talk.
 
 ---
 
