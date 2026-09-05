@@ -46,6 +46,7 @@ import { TableStateRow, errorMessage } from "@/components/table-state"
 import { ProviderComparisonSection } from "@/components/provider-comparison-section"
 import { retentionState } from "@/lib/retention"
 import { savedAudioChip } from "@/lib/audio-channel"
+import { roundMs } from "@/lib/production-signals"
 import { JudgeChip } from "@/components/judge-chip"
 
 // ---------------------------------------------------------------------------
@@ -859,6 +860,11 @@ function ProductionTranscriberPanel({ call }: { call: any }) {
   const { data: providers } = useListBenchmarkProviders()
   const vendor: string | null = call.sourceTranscriberProvider ?? null
   const model: string | null = call.sourceTranscriberModel ?? null
+  // M-7b: what that transcriber actually did on THIS call, from the columns
+  // M-7a filled. Rounded because drizzle real() hands 378.3 back as
+  // 378.29998779296875.
+  const transcriberMs = roundMs(call.prodTranscriberLatencyMs)
+  const endpointingMs = roundMs(call.prodEndpointingLatencyMs)
 
   if (!vendor && !model) {
     return (
@@ -896,6 +902,14 @@ function ProductionTranscriberPanel({ call }: { call: any }) {
           <Badge variant="outline" className="text-[10px] uppercase">not benchmarked</Badge>
         )}
       </div>
+      {/* A row is ABSENT -- never "0 ms", never a dash -- when Vapi timed
+          nothing: 23 of the 100 saved artifacts report a latency of 0 with
+          an empty turnLatencies array, and 76 of the corpus's 176 calls
+          aged out of Vapi's 14-day window before an artifact was saved at
+          all. A 0 here would read as "instant", which is the opposite of
+          what happened. */}
+      {transcriberMs !== null && <DetailRow label="Transcriber latency" value={`${transcriberMs} ms`} mono />}
+      {endpointingMs !== null && <DetailRow label="Endpointing latency" value={`${endpointingMs} ms`} mono />}
       {!benchmarked && (
         <p className="text-xs text-warning">
           No enabled provider matches this model, so every candidate is being compared against a
