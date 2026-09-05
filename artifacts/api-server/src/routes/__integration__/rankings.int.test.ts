@@ -13,6 +13,7 @@ import request from "supertest";
 import { eq } from "drizzle-orm";
 import { benchmarkRunsTable, db, pool } from "@workspace/db";
 import app from "../../app";
+import { expectStatus } from "./expect-status";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -24,7 +25,7 @@ const asstAgent = `fx-asst-agent-${fx.suffix}`;
 
 async function getRankings(query: Record<string, string> = {}) {
   const res = await request(app).get("/api/benchmark/rankings").query(query);
-  expect(res.status).toBe(200);
+  expectStatus(res, 200);
   return res.body as { assistantId: string | null; assistantLabel: string; providerId: string; rank: number; runId: string }[];
 }
 
@@ -81,7 +82,7 @@ describe("GET /api/benchmark/rankings", () => {
 
   it("rejects a malformed bulkId with a sentence, not a 500", async () => {
     const res = await request(app).get("/api/benchmark/rankings").query({ bulkId: "not-a-uuid" });
-    expect(res.status).toBe(400);
+    expectStatus(res, 400);
     expect(res.body.error).toMatch(/bulkId/);
   });
 });
