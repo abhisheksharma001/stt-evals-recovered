@@ -16,6 +16,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.int.test.ts"],
+    // M-6c: names the request behind a "socket hang up", which node's
+    // client-side error cannot.
+    setupFiles: ["./src/routes/__integration__/setup.ts"],
     env: { DATABASE_URL: url, LOG_LEVEL: process.env.LOG_LEVEL ?? "silent" },
     testTimeout: 30_000,
     hookTimeout: 30_000,

@@ -1081,6 +1081,25 @@ stakeholder" the research kept circling back to.
   M-6a, whose first job is to make the next occurrence diagnosable rather
   than to guess at a cause -- and M-6a covers only the status half: a socket
   that hangs up has no body to print, so that half is stepped separately.
+  **What the hang-up half prints, measured 2026-09-05 while shipping M-6c:
+  nothing.** A response socket destroyed by the server reaches supertest as
+  `Error: socket hang up` with no stack, no method and no URL -- node's http
+  client builds that error after the fact and its stack carries no frame from
+  the test. Two deliberately different failures, one where the server had sent
+  headers and one where it had sent none, printed the same single line, and
+  vitest showed that line's body once for both: the request that died was not
+  even identifiable. M-6c asks the other end of the socket instead. The
+  integration config now loads
+  `artifacts/api-server/src/routes/__integration__/setup.ts`, which wraps
+  `http.createServer` for this suite only and prints, for any response whose
+  socket closes before it finished, the method, the URL, whether headers had
+  gone out and with which status, and how many milliseconds in.
+  **The correction to keep: M-6c had prescribed `process.on` handlers for
+  unhandled rejections and uncaught exceptions, and both are redundant --
+  vitest 3.2.7 already prints those with a full stack, the source frame and the
+  name of the running test.** Measuring what the tool already does came before
+  writing the file, as on M-6a, and it is the second step in a row whose
+  prescribed change did not survive being run.
 - **The mono file is the only one of the four written world-readable**
   (found 2026-09-05 by looking at the first M-6 import on disk). The three
   files M-6 writes are 0600; the mono mix beside them, written by
