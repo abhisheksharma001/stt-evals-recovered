@@ -783,8 +783,8 @@ one of those loops is the case that failed on `main`.
 
 **PR:** one.
 **Depends on:** nothing (M-6a covered the half of the flake that has a response).
-**Files:** `artifacts/api-server/vitest.integration.config.ts`, new file
-artifacts/api-server/src/routes/__integration__/setup.ts (plain: not written yet).
+**Files:** `artifacts/api-server/vitest.integration.config.ts`,
+`artifacts/api-server/src/routes/__integration__/setup.ts`.
 **Today:** the fourth measured occurrence of the flake was
 `bulk-preview-cancel.int.test.ts`'s "answers 404 for an unknown bulk and a sentence for
 a malformed id" failing with `Error: socket hang up`, on a branch that had touched none
@@ -793,18 +793,44 @@ nothing to print. A socket hang up from supertest means the server closed the co
 before responding -- an unhandled rejection, an error thrown out of the error handler, or
 a process being torn down while a request is open -- and none of that reaches the test
 output today.
-**Change:** add a `setupFiles` entry to `vitest.integration.config.ts` pointing at a new
+**Change:** ~~add a `setupFiles` entry to `vitest.integration.config.ts` pointing at a new
 setup file that registers `process.on("unhandledRejection")` and
 `process.on("uncaughtException")` handlers which print the error with its stack, and an
-`app`-level check that the express error handler is not itself throwing. The goal is one
-printed cause, not a fix: the next hang up must name what closed the socket.
-**Acceptance:** WHEN a request in the integration suite fails with `socket hang up` THEN
+`app`-level check that the express error handler is not itself throwing.~~ **Corrected
+2026-09-05 before building, by measuring what vitest already does.** Both handlers are
+redundant: vitest 3.2.7 prints an unhandled rejection and an uncaught exception with a
+full stack, the source frame and the name of the running test, and adding a listener for
+either would print a second copy of what is already there. Neither fires for a hang up
+anyway -- a destroyed socket raises no error in this process at all.
+
+What is actually missing is the other end of the socket. Add a `setupFiles` entry to
+`vitest.integration.config.ts` pointing at a new setup file that wraps
+`http.createServer` -- the one function supertest goes through to start a server for an
+express app -- and, for every response whose socket closes before the response finished,
+prints the method, the URL, whether headers had already gone out and with which status,
+and how long the request had been open. The goal is one printed cause, not a fix: the
+next hang up must name what closed the socket.
+**Acceptance:** ~~WHEN a request in the integration suite fails with `socket hang up` THEN
 the run output SHALL also contain the underlying error and its stack, rather than the
-hang up alone.
+hang up alone.~~ **Corrected 2026-09-05: there is no underlying error to contain.** A
+socket destroyed by the server produces an error object only in node's http *client*,
+built after the fact and carrying no frame from the test; the server side raises nothing.
+WHEN a request in the integration suite fails with `socket hang up` THEN the run output
+SHALL also name that request's method and URL and say how far the server had got with it,
+rather than the hang up alone.
 **Verify:** `cd artifacts/api-server && TEST_DATABASE_URL=... pnpm run test:integration
-2>&1 | tee /tmp/int.log` passes. Prove by breaking: add a route (or a test-only handler)
+2>&1 | tee /tmp/int.log` passes **and the log contains no `[integration]` line** -- a
+healthy run has to stay quiet, or the check becomes noise nobody reads. Prove by
+breaking, in two guards: (1) add `res.socket?.destroy(); return;` as the first two lines
+of the cancel handler in `artifacts/api-server/src/routes/bulks.ts` and run
+`bulk-preview-cancel.int.test.ts` -- both failures must each be accompanied by a line
+naming their own request, including the `/api` prefix; (2) with that still armed, delete
+the `setupFiles` entry from the config and confirm both failures fall back to a bare
+`socket hang up` with no line at all. Restore each with `git restore --source=HEAD
+--staged --worktree <file>`. ~~Prove by breaking: add a route (or a test-only handler)
 that rejects asynchronously without awaiting, confirm the run prints the rejection, then
-remove it.
+remove it.~~ **Corrected 2026-09-05: that proves vitest works, not this file** -- an
+unhandled rejection is printed with or without the setup file.
 **Must not:** retry a request, add a sleep, raise a timeout, or mark the test as flaky --
 the cause is still unknown and every one of those hides it. Do not change any route's
 behaviour; this step only makes the process talk.
