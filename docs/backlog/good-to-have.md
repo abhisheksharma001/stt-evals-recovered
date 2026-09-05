@@ -1,3 +1,30 @@
+## Found 2026-09-06 (shipping M-7b): a silent card and a loud card look the same
+
+The Results production line drops its latency clause when no call in the group
+carries `prodTranscriberLatencyMs` -- correct, and what M-7b's Must-not
+requires. But live, **8 of the corpus's 32 assistant groups render no clause at
+all**, including the 22-call `Default` group. A reader scrolling Results sees a
+card with "495 ms transcriber latency" and a card with nothing, and has no way
+to tell "production is being measured and this is the number" from "nobody ever
+measured this group". The absence is honest per card and invisible in
+aggregate.
+
+What would close it: one page-level line stating the coverage once -- "N of M
+assistant groups have no production measurement; their calls aged out of Vapi's
+14-day window before an artifact was saved" -- so the silence is stated instead
+of merely observed. Not a placeholder on the card, which is the thing M-7b
+forbids on purpose.
+
+Second, smaller: the largest per-group median in the corpus is **3,093 ms, from
+a single measured call**. The line does say "median of 1 measured call", which
+is the whole defence, but a one-sample median next to a 19-sample one carries
+the same visual weight. Worth revisiting if a client ever reads these cards
+unaccompanied.
+
+Evidence, 2026-09-06, `GET /api/benchmark/calls` on the live build
+`3af08f2cfbbb`: 176 calls, 32 assistant groups, per-group medians spanning
+63 ms to 3,093 ms; 8 groups with no measured latency on any call.
+
 ## Found 2026-09-04: "microcents" everywhere actually holds microdollars
 
 `benchmark_scores.cost_microcents`, `benchmark_agent_scans.judge_cost_microcents`,

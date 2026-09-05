@@ -1129,29 +1129,124 @@ Tool calls: 75 of 100 have at least one, not 74 of 99.
 
 ### M-7b — The production signals on screen
 
+**Status:** done 2026-09-06 (PR #93, `3af08f2`, deployed `3af08f2cfbbb`).
+
 **PR:** one.
 **Depends on:** M-7a (nothing to render until the columns are filled).
-**Files:** `artifacts/stt-benchmark/src/pages/Corpus.tsx`,
-`artifacts/stt-benchmark/src/pages/Rankings.tsx` (the `ProductionBaselineNote` line),
-`artifacts/api-server/src/lib/verdict.ts` (the `production` object),
-`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
-**Today:** the Calls row shows nothing about how production performed, and the Results
-org card's production line names the vendor and model only.
-**Change:** the Calls row shows "prod 378 ms" in the measurements group, and nothing at
-all (not "0", not "--") when the column is null. The Results org card's production line
-becomes "Production today: Deepgram flux-general-en · 378 ms transcriber latency (median
-of N calls) · M of N calls interrupted", each clause dropped rather than zeroed when the
-group has no call carrying that column. `verdict.ts` adds the medians to the `production`
-object it already builds.
+**Files:** `artifacts/stt-benchmark/src/lib/production-signals.ts` (new -- the rules,
+stated once), `artifacts/stt-benchmark/src/lib/production-signals.test.ts` (new),
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` (`useProductionBaseline` and
+`ProductionBaselineNote`), `artifacts/stt-benchmark/src/pages/Corpus.tsx`
+(`ProductionTranscriberPanel`),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/calls.test.tsx`.
+
+**Two things this step said were wrong. Corrected here, where they were written:**
+
+1. "the Calls row shows prod 378 ms in the **measurements group**" -- there is no
+   measurements group on the Calls table. Its columns are Call ID / Label,
+   Disagreements, Vertical, Duration, Status, Hard Cases, Actions. The signals went to
+   `ProductionTranscriberPanel` instead, which already names the transcriber that
+   produced them and renders in BOTH the expanded row and the details dialog, so one
+   edit reaches two surfaces.
+2. "**`verdict.ts` adds the medians** to the `production` object" -- deliberately not
+   done, and `artifacts/api-server/src/lib/verdict.ts` was not touched. `bulkVerdicts`
+   groups per ORG (`sourceAccountLabel`); the card this line renders on groups per
+   ASSISTANT. Nothing renders `verdict.production`'s medians today, so adding them
+   would have been an unrendered field at the wrong grain. If the exported
+   `verdict.html` ever wants an org-level figure, that is its own step.
+
+**Today (before this step):** the Calls row and its panels showed nothing about how
+production performed, and the Results card's production line named the vendor and model
+only.
+**Change (as built):** four pure functions in
+`artifacts/stt-benchmark/src/lib/production-signals.ts` -- `medianMs` (measured values
+only, rounded to whole ms), `countMeasured`, `interruptedShare` (calls with an
+interruption over calls Vapi gave a count for), `roundMs`. `useProductionBaseline`
+computes them over the assistant's calls; `ProductionBaselineNote` appends
+"`<n>` ms transcriber latency (median of `<n>` measured calls)." and "Assistant
+interrupted on `<m>` of `<n>` measured calls." to the "Production today:" line, each
+clause absent when nothing carries it. `ProductionTranscriberPanel` gains a Transcriber
+latency and an Endpointing latency row on the same rule.
 **Acceptance:** WHEN the Land And Apartment card renders THEN it SHALL read a median in
 ms computed only from calls whose `prodTranscriberLatencyMs` is non-null, and WHEN no
 call in the group carries one THEN the clause SHALL be absent -- the rendered output
-SHALL NOT contain "0 ms".
+SHALL NOT contain "0 ms". **Met**, and the absent path is live, not hypothetical: of the
+32 assistant groups in the corpus, **8 render no latency clause at all**, including the
+22-call `Default` group.
 **Verify:** `pnpm run typecheck`; the Results render test asserts the line from a fixture
 median, and a second case with every signal null asserts neither "0 ms" nor "0 of" is
 rendered.
 **Must not:** compute a mean; render a zero, a dash or a "not recorded" placeholder
 where the number is absent -- drop the clause; execute a run.
+
+**Live after deploy** (`GET /api/benchmark/calls`, 176 calls, 32 assistant groups):
+
+| assistant group | calls | renders |
+| --- | --- | --- |
+| Land And Apartment `b3914788` | 39 | 495 ms (median of 19 measured) · interrupted on 3 of 16 |
+| `Default` (no assistant) | 22 | nothing -- no call carries either column |
+| Land And Apartment `8a0bd090` | 18 | 206 ms (median of 8) · interrupted on 1 of 3 |
+| Land And Apartment `70f3da18` | 15 | 699 ms (median of 6) · interrupted on 2 of 2 |
+| Land And Apartment `60522198` | 3 | no latency clause · **interrupted on 0 of 3** |
+| Land And Apartment `2d08db3a` | 2 | 63 ms (median of 1) · **interrupted on 0 of 1** |
+
+**Learned:**
+
+1. **The corpus median describes no assistant.** M-7a's honest 378.3 ms is the median
+   across all 77 measured calls; the per-assistant medians live between **63 ms and
+   3,093 ms**. A single org number on a client card would have been true and useless.
+   The grain of a number has to match the grain of the card it sits on.
+2. **A rendered 0 is not always wrong.** Two groups show "interrupted on 0 of N measured
+   calls" and that is the honest read: Vapi counted, the assistant did not interrupt.
+   The same 0 in the latency clause would be a lie. Null-vs-zero stays a per-field
+   decision on screen exactly as it was in storage (M-7a).
+3. **The step's own Files list was the tell.** It named `verdict.ts`, a server file, for
+   a change whose acceptance is a rendered card. Reading who actually feeds that card
+   (`useProductionBaseline`, client-side, per assistant) is what surfaced the grain
+   mismatch -- before any code was written, not after.
+4. **`ProductionTranscriberPanel` renders twice.** The expanded Calls row and the
+   details dialog both mount it. Putting the two rows there cost one edit and reached
+   both, where a new table column would have reached neither dialog nor panel.
+5. **Proof by breaking, twice, committed first.** (a) `medianMs`'s filter changed to map
+   an unmeasured call to 0 -- the exact PRD bug -- fails 4 tests, including
+   `expected 207 to be 378` and `expected '207 ms transcriber latency (median of...' to
+   contain '378 ms transcriber latency'`: the contaminated median rendering on a
+   client-facing card. (b) the latency clause rendered unconditionally with `?? 0` fails
+   exactly one test, the acceptance one:
+   `expected <span data-testid="prod-latency"></span> to be null`.
+6. **114 tests in `@workspace/stt-benchmark`, was 102** -- 9 unit, 2 Results render, 1
+   Calls render. No provider was called; nothing was spent.
+
+---
+
+### M-7c — Say once how many groups have no production measurement
+
+**PR:** one.
+**Depends on:** M-7b (the per-card clause exists and is correctly silent).
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the page-level header area
+above the group sections, beside the existing legend),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+**Today:** M-7b's production line drops its latency clause when no call in the group
+carries `prodTranscriberLatencyMs` -- right per card, invisible in aggregate. Live on
+`3af08f2cfbbb`, **8 of the 32 assistant groups render no clause at all**, including the
+22-call `Default` group. A reader cannot tell "measured, and this is the number" from
+"nobody measured this group" by scrolling. Logged in
+`docs/backlog/good-to-have.md` ("a silent card and a loud card look the same").
+**Change:** one muted line near the Results legend, computed from the same
+`useListBenchmarkCalls()` data the cards use: "Production latency is measured on N of M
+assistant groups. The rest have no call with a saved Vapi artifact -- their audio aged
+out of the 14-day window before it could be saved." The line is absent when N === M
+(nothing to explain) and absent when M === 0. No placeholder appears on any card: the
+per-card silence M-7b ships stays exactly as it is.
+**Acceptance:** WHEN Results renders with at least one assistant group carrying no
+`prodTranscriberLatencyMs` THEN the page SHALL state the covered-group count and the
+total once, and WHEN every group carries one THEN that line SHALL NOT render.
+**Verify:** `pnpm run typecheck`; two Results render cases -- a mixed fixture asserts the
+counts, an all-measured fixture asserts the line is absent. Break it by making the line
+unconditional and watch the all-measured case fail.
+**Must not:** put a placeholder, a dash or a "not recorded" on any group card; change
+what a card with measurements says; execute a run.
 
 ---
 
