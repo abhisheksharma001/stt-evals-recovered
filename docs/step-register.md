@@ -781,6 +781,8 @@ one of those loops is the case that failed on `main`.
 
 ### M-6c — A request that gets no answer at all must say why
 
+**Status:** done 2026-09-05 (PR #90, `8bcd047`, deployed `8bcd047e77d7`).
+
 **PR:** one.
 **Depends on:** nothing (M-6a covered the half of the flake that has a response).
 **Files:** `artifacts/api-server/vitest.integration.config.ts`,
@@ -834,6 +836,49 @@ unhandled rejection is printed with or without the setup file.
 **Must not:** retry a request, add a sleep, raise a timeout, or mark the test as flaky --
 the cause is still unknown and every one of those hides it. Do not change any route's
 behaviour; this step only makes the process talk.
+
+**Learned:**
+
+(1) **The second step in a row whose prescribed change did not survive being run.** M-6a
+prescribed an assertion form that hides the body; M-6c prescribed two `process.on`
+handlers that vitest 3.2.7 already installs, printing an unhandled rejection and an
+uncaught exception with a full stack, the source frame and the name of the running test.
+Both were caught the same way -- by running the prescribed thing before building on it.
+The habit is now the rule: **measure what the tool already does before writing the file
+that does it.**
+
+(2) **The acceptance sentence was unachievable and had to be corrected, not met.** It
+asked for "the underlying error and its stack". A socket destroyed by the server raises
+nothing on the server side; the error object exists only in node's http *client*, built
+after the fact, with no frame from the test in its stack. What vitest prints for a hang
+up is one line -- `→ socket hang up` -- with no method, no URL and no stack, and it
+prints the same line for two different failures. **An acceptance sentence can be wrong;
+correct it in place rather than reaching for it.**
+
+(3) **A `clientError` listener would have manufactured the failure it was meant to
+explain.** It was written, then measured against a raw socket rather than against the
+documentation: a malformed request line gets `HTTP/1.1 400 Bad Request` with no listener
+and an **empty response** with one, because node disables its own default handling as
+soon as a listener is registered. It is not in the file, and the measurement is in the
+comment so nobody adds it back.
+
+(4) **`http.createServer(app)` registers express as the first `request` listener, and
+express rewrites `req.url` synchronously.** The first draft printed `/benchmark/...`
+without the `/api` prefix for exactly that reason. Fixed with `prependListener` and by
+capturing the method and URL when the request arrives rather than when the socket closes.
+
+(5) **A diagnostic that also fires on a healthy run is noise nobody reads**, so the
+check prints only when `res.writableFinished` is false -- verified as zero lines across
+27 files and 119 passing tests, twice.
+
+(6) CI runs `pnpm --filter @workspace/api-server run test:integration` against a
+`postgres:16` service container in the same job as the typecheck (`.github/workflows/ci.yml`),
+so the setup file is loaded there too and a hang up in CI will name its request as well.
+
+(7) **What this did not do:** the flake is still undiagnosed. Five failures in roughly
+fifty runs, in two shapes, and neither shape has a cause yet. M-6a and M-6c together buy
+one thing -- the next occurrence of either shape is identifiable from the log instead of
+costing a re-run.
 
 ---
 
