@@ -217,6 +217,40 @@ describe("Calls", () => {
     api.restore()
   })
 
+  // M-7b: how production's own transcriber performed on this call, on the
+  // panel that already names it. Absent is absent -- a 0 here would read as
+  // "answered instantly", which is the opposite of "nobody timed it".
+  it("an expanded call gives production's latency, and says nothing when it was never timed", async () => {
+    const timed = call({
+      id: "call-timed", label: "H timed",
+      sourceTranscriberProvider: "deepgram", sourceTranscriberModel: "flux-general-en",
+      // What Postgres real() hands back for 378.3 and 120.4.
+      prodTranscriberLatencyMs: 378.29998779296875, prodEndpointingLatencyMs: 120.40000152587891,
+    })
+    const untimed = call({
+      id: "call-untimed", label: "I untimed",
+      sourceTranscriberProvider: "deepgram", sourceTranscriberModel: "flux-general-en",
+    })
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/calls": [timed, untimed] })
+    renderPage(<Corpus />, { path: "/corpus" })
+
+    fireEvent.click(await screen.findByText("Flat"))
+    const timedRow = (await screen.findByText("H timed")).closest("tr")!
+    fireEvent.click(within(timedRow).getByText("Listen"))
+    expect(await screen.findByText("Transcriber latency")).toBeTruthy()
+    expect(screen.getByText("378 ms")).toBeTruthy()
+    expect(screen.getByText("120 ms")).toBeTruthy()
+
+    // The other call knows its transcriber but carries no measurement: the
+    // panel keeps naming the vendor and drops the rows entirely.
+    const untimedRow = screen.getByText("I untimed").closest("tr")!
+    fireEvent.click(within(untimedRow).getByText("Listen"))
+    expect(await screen.findByText("Transcribed in production by")).toBeTruthy()
+    expect(screen.queryByText("Transcriber latency")).toBeNull()
+    expect(screen.queryByText("Endpointing latency")).toBeNull()
+    api.restore()
+  })
+
   it("a dead calls endpoint names the failure and offers a retry", async () => {
     const api = stubApi({ ...baseRoutes, "GET /api/benchmark/calls": reply(503, { error: "calls query failed" }) })
     renderPage(<Corpus />, { path: "/corpus" })

@@ -20,6 +20,7 @@ import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
 import { formatCents, formatMicrocents, formatPerMinute } from "@/lib/utils"
 import { paidVsListDiffers } from "@/lib/paid-vs-list"
+import { countMeasured, interruptedShare, medianMs } from "@/lib/production-signals"
 import { bulkChannel } from "@/lib/audio-channel"
 import { ChannelLine } from "@/components/channel-line"
 
@@ -216,7 +217,20 @@ function useProductionBaseline(assistantId: string | null) {
     const matchedProviderId =
       (providers ?? []).find((p) => norm(p.name) === norm(vendor) && (model ? norm(p.model) === norm(model) : false))
         ?.id ?? null
-    return { vendor, model: model || null, matchedProviderId, coverage: top[1], total: groupCalls.length }
+    // M-7b: how that transcriber actually performed on these calls, from
+    // the columns M-7a filled. Per ASSISTANT, because that is the grain of
+    // this card -- the corpus's assistant medians run 206 ms to 1200 ms, so
+    // one org-wide number would describe none of them.
+    return {
+      vendor,
+      model: model || null,
+      matchedProviderId,
+      coverage: top[1],
+      total: groupCalls.length,
+      latencyMedianMs: medianMs(groupCalls.map((c) => c.prodTranscriberLatencyMs)),
+      latencyMeasured: countMeasured(groupCalls.map((c) => c.prodTranscriberLatencyMs)),
+      interrupted: interruptedShare(groupCalls.map((c) => c.prodAssistantInterruptions)),
+    }
   }, [calls, providers, assistantId])
 }
 
@@ -237,12 +251,30 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
   const baselineRow = baseline.matchedProviderId ? ranks.find((r) => r.providerId === baseline.matchedProviderId) : null
 
   return (
-    <div className="flex flex-wrap items-start gap-2.5 border-t border-border bg-primary/5 px-4 py-3 text-sm">
+    <div data-testid="production-baseline" className="flex flex-wrap items-start gap-2.5 border-t border-border bg-primary/5 px-4 py-3 text-sm">
       <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <p className="text-foreground">
         <span className="font-semibold">Production today:</span>{" "}
         <span className="font-mono">{baseline.vendor}{baseline.model ? ` / ${baseline.model}` : ""}</span>
         {" "}({baseline.coverage}/{baseline.total} of this group's calls).{" "}
+        {/* M-7b: how that transcriber actually performed, from the columns
+            M-7a filled. A clause is ABSENT -- never "0 ms", never a dash --
+            when no call in this group carries it: 76 of the corpus's 176
+            calls aged out of Vapi's 14-day window before their artifact
+            could be saved, and 23 of the saved ones report a latency of 0
+            with an empty turnLatencies array, meaning nothing was timed. */}
+        {baseline.latencyMedianMs !== null && (
+          <span data-testid="prod-latency">
+            {baseline.latencyMedianMs} ms transcriber latency (median of {baseline.latencyMeasured} measured
+            {baseline.latencyMeasured === 1 ? " call" : " calls"}).{" "}
+          </span>
+        )}
+        {baseline.interrupted && (
+          <span data-testid="prod-interrupted">
+            Assistant interrupted on {baseline.interrupted.interrupted} of {baseline.interrupted.measured} measured
+            {baseline.interrupted.measured === 1 ? " call" : " calls"}.{" "}
+          </span>
+        )}
         {baselineRow && winner && baselineRow.providerId !== winner.providerId ? (
           <>
             <span className="font-semibold">This bulk's top candidate:</span>{" "}

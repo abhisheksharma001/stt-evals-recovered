@@ -141,6 +141,35 @@ const calls: BenchmarkCall[] = [
   },
 ]
 
+// M-7b: the same assistant's calls, carrying the production signals M-7a
+// stores. Deliberately mixed: three calls Vapi timed, two it never did.
+// 378.29998779296875 is what Postgres real() hands back for 378.3.
+function signalCall(id: string, over: Partial<BenchmarkCall>): BenchmarkCall {
+  return {
+    id,
+    label: id,
+    vertical: "rush",
+    durationSeconds: 120,
+    status: "ready_to_run",
+    hardCases: [],
+    entityReferences: [],
+    sourceAccountLabel: "Default",
+    sourceAssistantId: "asst-rush",
+    sourceTranscriberProvider: "deepgram",
+    sourceTranscriberModel: "nova-3",
+    createdAt: "2026-08-20T09:00:00.000Z",
+    ...over,
+  }
+}
+
+const measuredCalls: BenchmarkCall[] = [
+  signalCall("m-1", { prodTranscriberLatencyMs: 206.5, prodAssistantInterruptions: 0 }),
+  signalCall("m-2", { prodTranscriberLatencyMs: 378.29998779296875, prodAssistantInterruptions: 2 }),
+  signalCall("m-3", { prodTranscriberLatencyMs: 495, prodAssistantInterruptions: 0 }),
+  signalCall("m-4", {}),
+  signalCall("m-5", {}),
+]
+
 const settings: AppSettings = { activeProviderId: "deepgram-nova-3", agentModel: "gpt-4o" }
 
 const verdicts: BulkVerdicts = {
@@ -321,6 +350,41 @@ describe("Results", () => {
     expect(await screen.findByText(/Failed to load rankings/)).toBeTruthy()
     expect(screen.getByText("Retry")).toBeTruthy()
     expect(document.body.textContent).toContain("rankings query blew up")
+    api.restore()
+  })
+
+  // M-7b. The production line is the one number on this page that is not
+  // about the candidates -- it is what the client is paying for today. A
+  // median that counted the calls nobody timed as 0 ms is what dropped the
+  // corpus figure from 378 ms to 274 ms in the PRD.
+  it("the production line's median comes only from calls that were measured", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/calls": measuredCalls })
+    renderPage(<Results />, { path: "/results" })
+
+    const latency = await screen.findByTestId("prod-latency")
+    // Median of 206.5 / 378.3 / 495 -- not of five values, and not their mean
+    // (359 ms). The float4 round-trip is rounded to whole ms.
+    expect(latency.textContent).toContain("378 ms transcriber latency")
+    expect(latency.textContent).toContain("median of 3 measured calls")
+    // Two of the three counted calls reported no interruption: a real 0 that
+    // belongs in the denominator, unlike the two Vapi never counted.
+    expect(screen.getByTestId("prod-interrupted").textContent).toContain("1 of 3 measured calls")
+    api.restore()
+  })
+
+  it("a group with no signal on any call says nothing, never 0 ms", async () => {
+    const blank = measuredCalls.map((c) => signalCall(c.id, {}))
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/calls": blank })
+    renderPage(<Results />, { path: "/results" })
+
+    // The line itself still renders -- the vendor IS known, only its
+    // measurements are missing.
+    const note = await screen.findByTestId("production-baseline")
+    expect(note.textContent).toContain("Production today:")
+    expect(screen.queryByTestId("prod-latency")).toBeNull()
+    expect(screen.queryByTestId("prod-interrupted")).toBeNull()
+    expect(note.textContent).not.toContain("0 ms")
+    expect(note.textContent).not.toContain("0 of")
     api.restore()
   })
 
