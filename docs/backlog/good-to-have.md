@@ -1,5 +1,13 @@
 ## Found 2026-09-06 (shipping M-7b): a silent card and a loud card look the same
 
+**Closed 2026-09-06 by M-7c (PR #94, deployed `681483c03902`)** -- for the first half.
+The second half (a one-sample median carrying the same weight as a 19-sample one) is
+still open. Two things below were corrected in shipping it, and are struck through
+rather than rewritten: the coverage line counts the groups the **page renders** (29
+all-time, 17 on the newest bulk), not the corpus's 32, and the silence has **two**
+causes, not one -- group `60522198` has three saved artifacts, all reporting no turn
+latencies.
+
 The Results production line drops its latency clause when no call in the group
 carries `prodTranscriberLatencyMs` -- correct, and what M-7b's Must-not
 requires. But live, **8 of the corpus's 32 assistant groups render no clause at
@@ -9,11 +17,12 @@ to tell "production is being measured and this is the number" from "nobody ever
 measured this group". The absence is honest per card and invisible in
 aggregate.
 
-What would close it: one page-level line stating the coverage once -- "N of M
-assistant groups have no production measurement; their calls aged out of Vapi's
-14-day window before an artifact was saved" -- so the silence is stated instead
-of merely observed. Not a placeholder on the card, which is the thing M-7b
-forbids on purpose.
+What closed it: one page-level line stating the coverage once. As shipped it reads
+"Production latency is measured on **22 of 29** assistant groups below. The other 7
+carry no call with one: either no Vapi artifact was saved before the 14-day window
+closed, or the artifact that was saved reported no turn timings." ~~their calls aged
+out of Vapi's 14-day window before an artifact was saved~~ was one cause of two. No
+placeholder appears on any card, which is the thing M-7b forbids on purpose.
 
 Second, smaller: the largest per-group median in the corpus is **3,093 ms, from
 a single measured call**. The line does say "median of 1 measured call", which
@@ -23,7 +32,9 @@ unaccompanied.
 
 Evidence, 2026-09-06, `GET /api/benchmark/calls` on the live build
 `3af08f2cfbbb`: 176 calls, 32 assistant groups, per-group medians spanning
-63 ms to 3,093 ms; 8 groups with no measured latency on any call.
+63 ms to 3,093 ms; 8 groups with no measured latency on any call. Of those 8,
+`GET /api/benchmark/rankings` renders 7 (the eighth, `60522198`, is in no bulk) --
+which is why the shipped line counts 29, not 32.
 
 ## Found 2026-09-04: "microcents" everywhere actually holds microdollars
 

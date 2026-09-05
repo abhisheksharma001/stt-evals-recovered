@@ -1222,31 +1222,75 @@ where the number is absent -- drop the clause; execute a run.
 
 ### M-7c — Say once how many groups have no production measurement
 
+**Status:** done 2026-09-06 (PR #94, `681483c`, deployed `681483c03902`).
 **PR:** one.
 **Depends on:** M-7b (the per-card clause exists and is correctly silent).
-**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the page-level header area
-above the group sections, beside the existing legend),
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx`,
 `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
-**Today:** M-7b's production line drops its latency clause when no call in the group
-carries `prodTranscriberLatencyMs` -- right per card, invisible in aggregate. Live on
-`3af08f2cfbbb`, **8 of the 32 assistant groups render no clause at all**, including the
-22-call `Default` group. A reader cannot tell "measured, and this is the number" from
-"nobody measured this group" by scrolling. Logged in
-`docs/backlog/good-to-have.md` ("a silent card and a loud card look the same").
-**Change:** one muted line near the Results legend, computed from the same
-`useListBenchmarkCalls()` data the cards use: "Production latency is measured on N of M
-assistant groups. The rest have no call with a saved Vapi artifact -- their audio aged
-out of the 14-day window before it could be saved." The line is absent when N === M
-(nothing to explain) and absent when M === 0. No placeholder appears on any card: the
-per-card silence M-7b ships stays exactly as it is.
-**Acceptance:** WHEN Results renders with at least one assistant group carrying no
-`prodTranscriberLatencyMs` THEN the page SHALL state the covered-group count and the
-total once, and WHEN every group carries one THEN that line SHALL NOT render.
-**Verify:** `pnpm run typecheck`; two Results render cases -- a mixed fixture asserts the
-counts, an all-measured fixture asserts the line is absent. Break it by making the line
-unconditional and watch the all-measured case fail.
+**Today (was):** M-7b's production line drops its latency clause when no call in the
+group carries `prodTranscriberLatencyMs` -- right per card, invisible in aggregate. A
+reader cannot tell "measured, and this is the number" from "nobody measured this group"
+by scrolling. Logged in `docs/backlog/good-to-have.md` ("a silent card and a loud card
+look the same").
+
+**Two things this step said were wrong. Corrected here, where they were written:**
+
+1. **The denominator.** The step said "**8 of the 32** assistant groups render no clause
+   at all". 32 is the corpus's group count; the page does not render 32. Rankings are
+   bulk-scoped, so Results shows **29** groups all-time and **17** on the newest bulk.
+   Shipping "of 32" would have been a true number about a page nobody is looking at --
+   the same grain mistake M-7b caught in its own step text one step earlier. The line
+   counts the groups the page renders: live it reads **22 of 29** all-time and **11 of
+   17** on the newest bulk.
+2. **The cause.** The step gave one: "their audio aged out of the 14-day window before
+   it could be saved." Probed on disk before the sentence was written -- 7 of the 8
+   silent corpus groups have no artifact file at all, but group `60522198` has **three
+   saved artifacts, every one reporting no turn latencies**. Vapi saved the call and
+   gave no timings. Two causes, so the shipped line names both.
+
+**Change (as built):** one muted line beside the Results legend, from the same
+`useListBenchmarkCalls()` data the cards use: "Production latency is measured on
+**N of M** assistant groups below. The other K carry no call with one: either no Vapi
+artifact was saved before the 14-day window closed, or the artifact that was saved
+reported no turn timings. Their cards say nothing rather than 0 ms." Absent when
+N === M, and absent while rankings are still loading. The group is counted measured by
+the card's own predicate -- `countMeasured(...) > 0`, the same function
+`useProductionBaseline` medians with -- so the line and the cards cannot disagree. No
+placeholder appears on any card.
+**Acceptance:** **Met.** WHEN Results renders with at least one assistant group carrying
+no `prodTranscriberLatencyMs` THEN the page SHALL state the covered-group count and the
+total once, and WHEN every group carries one THEN that line SHALL NOT render. Live on
+`681483c03902`: all-time reads "22 of 29 ... The other 7", newest bulk reads "11 of 17
+... The other 6".
+**Verify:** `pnpm run typecheck` (4 projects); `@workspace/stt-benchmark` **116 tests /
+15 files**, was 114; `check:cycles`, `check:doc-paths`, `check:api-routes`,
+`check:response-edge` all clean.
 **Must not:** put a placeholder, a dash or a "not recorded" on any group card; change
-what a card with measurements says; execute a run.
+what a card with measurements says; execute a run. -- Held: the diff is +56 lines, none
+of them inside `ProductionBaselineNote`; no provider was called.
+
+**Learned:**
+
+1. **The denominator is the page, not the store.** Twice in two steps the register named
+   a corpus-wide figure for a page-scoped claim. The check is one line: ask the endpoint
+   the page actually calls (`/api/benchmark/rankings`, and with `?bulkId=`) and count
+   the groups it returns -- 29 and 17, against the corpus's 32.
+2. **Share the predicate, not the number.** The line asks `countMeasured(...) > 0`, the
+   same function the card medians with. Any future change to what counts as measured
+   moves both together; a second, parallel definition would have been free to drift.
+3. **A one-sentence cause is worth probing.** The step's "aged out of the window" reading
+   was right for 7 of 8 groups and wrong for the eighth, and the eighth is the one that
+   already renders "interrupted on 0 of 3" -- artifact saved, timings absent. Reading
+   the files cost one script and changed the copy that ships.
+4. **Proof by breaking, twice, committed first.** (a) the line rendered unconditionally
+   fails exactly one test, the acceptance one:
+   `expected <p ...(2)><span ...(1)></span></p> to be null`. (b) the denominator swapped
+   to the corpus's groups fails exactly one test:
+   `Unable to find an element by: [data-testid="production-coverage"]` -- with the
+   fixture's single corpus group, measured === total and the line vanishes entirely.
+   The second break is the grain guard, and nothing else in the suite catches it.
+5. **No new module.** Four lines reusing `countMeasured` beat a `lib/` helper with its own
+   test file for a value used once; the two render cases are the enforcer.
 
 ---
 
