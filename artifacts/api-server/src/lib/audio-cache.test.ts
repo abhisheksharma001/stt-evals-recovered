@@ -8,6 +8,16 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { cacheCallSidecars, customerAudioPathFor, getOrCacheAudioBytes, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
 import type { VapiCall } from "./vapi";
 
+// M-6b. getOrCacheAudioBytes is the only writer of the mono `<id>.audio`
+// file, and it asks Vapi for a fresh recording URL before writing -- the one
+// path in this file that would reach the network. Only that function is
+// replaced; the rest of ./vapi stays real.
+vi.mock("./vapi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./vapi")>()),
+  resolveFreshRecordingUrl: async () =>
+    `data:application/octet-stream;base64,${Buffer.from("mono-bytes").toString("base64")}`,
+}));
+
 // audio-cache.ts computes its directory from process.cwd(); vitest runs
 // from the api-server package root, the same place the server runs from.
 const CACHE_DIR = path.join(process.cwd(), "audio-cache");
@@ -202,16 +212,6 @@ describe("cacheCallSidecars", () => {
     expect(await fs.readFile(path.join(CACHE_DIR, `${AGAIN}.customer.audio`), "utf8")).toBe("customer-bytes");
   });
 });
-
-// M-6b. getOrCacheAudioBytes is the only writer of the mono `<id>.audio`
-// file, and it asks Vapi for a fresh recording URL before writing -- the one
-// path in this file that would reach the network. Only that function is
-// replaced; the rest of ./vapi stays real.
-vi.mock("./vapi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./vapi")>()),
-  resolveFreshRecordingUrl: async () =>
-    `data:application/octet-stream;base64,${Buffer.from("mono-bytes").toString("base64")}`,
-}));
 
 describe("getOrCacheAudioBytes", () => {
   it("writes the mono mix readable only by this server (0600), like the three files beside it", async () => {
