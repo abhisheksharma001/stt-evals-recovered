@@ -64,6 +64,35 @@ the database.
 
 ---
 
+### S-0.2 — The "use pnpm" guard rejects pnpm
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `package.json` (the root `preinstall` script).
+**Today:** the root `preinstall` fails unless `$npm_config_user_agent` starts with
+`pnpm/`. pnpm 11 launched through corepack -- which is how it runs on this laptop --
+does not set that variable for lifecycle scripts, so `pnpm install` fails its own
+"use pnpm" check while being pnpm. pnpm 11 then re-verifies dependencies before every
+`pnpm run`, so after that failure `pnpm run typecheck` fails too, with an install error
+instead of a type error. A fresh clone or `git worktree` on this machine can run
+nothing until someone knows the two workarounds
+(`--ignore-scripts`, then `npm_config_verify_deps_before_run=false`). CI never sees it:
+`pnpm/action-setup@v4` installs a real binary that does set the variable.
+**Change:** make the guard test something corepack also sets -- `$npm_execpath`
+containing `pnpm` -- or delete the guard. `pnpm-lock.yaml` plus `--frozen-lockfile`
+already stop an npm or yarn install from succeeding quietly, which is what the guard
+was for.
+**Acceptance:** WHEN `pnpm install --frozen-lockfile` is run in a freshly created
+worktree with no `node_modules` THEN it SHALL complete without `--ignore-scripts`, and
+`pnpm run typecheck` SHALL then run to completion in that worktree.
+**Verify:** `git worktree add ../stt-evals-guardcheck main`, then in it
+`pnpm install --frozen-lockfile` and `pnpm run typecheck`; both finish. Then
+`npm install` in the same worktree still fails.
+**Must not:** touch the lockfile; change any dependency version; weaken the guard to
+the point that a plain `npm install` succeeds.
+
+---
+
 ## Part M — Measure the thing the client actually runs (`docs/PRD-v6-measure.md`)
 
 Order agreed with Abhishek 2026-09-04: truth → bind → backup → customer channel → verdict
@@ -903,8 +932,10 @@ on disk, because a sweep over a directory of caller audio is its own decision.
 the step ran: 156 mono `.audio` files at 0644, and 300 sidecars (100 each of
 `.customer.audio`, `.assistant.audio`, `.artifact.json`) at 0600, 456 files in all. 156
 is also what the numbers already written down predict -- `audio-cache.ts` records 155
-cached calls at M-5 time and M-6's first import added one. 176 matches nothing and was
-never counted.
+cached calls at M-5 time and M-6's first import added one. 176 matches nothing on disk and was
+never counted. **Where it came from, found while shipping M-7a:** the corpus holds
+exactly **176 calls**. The number was true and attached to the wrong noun -- a call
+count written down as a file count.
 **Acceptance:** WHEN a call's mono audio is cached THEN the file SHALL be 0600, and every
 file in the cache directory written from that point SHALL have the same mode.
 **Verify:** `cd artifacts/api-server && pnpm test`. Prove by breaking: drop the mode
@@ -950,7 +981,33 @@ contains, or when it is fetched.
 
 ---
 
+### M-6d — The 156 mono files written before M-6b are still 0644
+
+**PR:** one.
+**Depends on:** M-6b (done -- new files are 0600; these are the old ones).
+**Files:** new file scripts/chmod-audio-cache.sh (plain: not written yet).
+**Today:** every file the server writes into `artifacts/api-server/audio-cache/` is
+0600 since M-6b, but `mode` applies at creation only, so the 156 mono `<id>.audio`
+files written before it are still 0644 -- world-readable caller audio beside 300
+sidecars that are not. The directory is only as protected as its weakest file.
+**Change:** a script that chmods `0600` every file under that directory, prints the
+count it changed and the count already correct, and is a dry run unless given
+`--apply`. It touches file modes only -- never contents, never names, never the
+database.
+**Acceptance:** WHEN the script has been run with `--apply` THEN
+`find artifacts/api-server/audio-cache -type f ! -perm 600 | wc -l` SHALL be 0.
+**Verify:** `find artifacts/api-server/audio-cache -type f ! -perm 600 | wc -l` before
+(156) and after (0); `ls -l` on one known mono file shows `-rw-------`; the API still
+serves that call's audio afterwards (`curl -s -o /dev/null -w '%{http_code}'` on the
+audio route → 200).
+**Must not:** delete or move a file; change any file's contents; chmod anything outside
+that one directory; run without a dry run first.
+
+---
+
 ### M-7a — Production signals stored per call
+
+**Status:** done 2026-09-06 (PR #92, `fce59ac`, deployed `fce59ac67359`).
 
 **PR:** one.
 **Depends on:** M-6 (the artifact file; the backfill reads the saved ones off disk).
@@ -1005,6 +1062,58 @@ equals the dry run's own measured-latency count, and
 **Must not:** store a `0` as if it were a measurement; write `0` where Vapi sent no
 field; compute a mean anywhere (one 6,651 ms call distorts it); call Vapi or any
 provider -- the backfill reads the disk only and spends nothing.
+
+**Live after the backfill** (`GET /benchmark/calls`, 176 calls, 2026-09-06):
+`prodTranscriberLatencyMs` non-null on 77 with **0 stored zeros**, `prodEndpointingLatencyMs`
+on 72, `prodAssistantInterruptions` on 47 (21 of them a real `0`), `prodToolCalls` on 100
+(25 of them a real `0`). Median transcriber latency across the measured calls: **378.3 ms**.
+Second `--apply` wrote 0.
+
+**Learned:**
+
+1. **Two steps in a row, the register's numbers did not survive the disk.** M-6b's file
+   count was wrong and so were three of M-7's. The pattern is the same: a count written
+   into a spec is a fact about one machine at one moment, and it decays. Counting first
+   is now the first action of a step, not a check at the end.
+2. **Where "176" came from.** M-6b's register line claimed 176 cached files. The corpus
+   has exactly **176 calls**. The number was real and attached to the wrong noun -- a
+   call count read as a file count. Worth remembering as a shape: a plausible number in
+   a spec may be a true fact about something else.
+3. **A zero is a claim, and this one was false.** 23 of the 100 artifacts report a
+   transcriber latency of `0`; 21 of them carry an EMPTY `turnLatencies` array, so
+   nothing was timed at all. Storing those as `0` would have put "0 ms" beside a
+   client's slowest calls. Same for `numAssistantInterrupted`, absent on 53 calls: a
+   stored `0` would have reported a calm call nobody observed. Both stay null. Tool
+   calls went the other way -- `messages` is on every artifact, so "none" is a real
+   measurement and 25 calls legitimately store `0`. Null and zero had to be decided
+   field by field; there was no single rule.
+4. **The contaminated median is the one that would have been quoted.** 272 ms (the PRD)
+   and 274 ms (all 100) both count unmeasured calls as instant. The honest figure across
+   the 77 measured calls is **378.3 ms** -- about a third higher. Had M-7b shipped in the
+   same PR, that number was going straight onto an org card in front of a client.
+5. **M-7 was two steps.** Its acceptance was two sentences about two systems (an API and
+   a screen), which is the reliable tell. Split into M-7a (store and serve) and M-7b
+   (show). The UI is now built on numbers that were verified first.
+6. **One reader, or the corpus splits in half.** 100 calls got their artifact from M-6's
+   importer, and the rest of the corpus was hand-rescued by
+   `scripts/rescue-customer-audio.mjs`. `readProductionSignals` is called by both paths
+   and `artifactCachePathFor` was exported rather than re-joined, so an imported call and
+   a rescued one cannot be measured differently.
+7. **Three independent counts agreed.** A standalone python pass over the artifact files,
+   the backfill's dry run against the database, and the live API after the write all
+   produced 77 / 72 / 47 / 100. Any one of them alone would have been a claim.
+8. **Proof by breaking, twice.** `measuredLatency` relaxed from `> 0` to `>= 0` failed
+   exactly one test (`expected +0 to be null`); `serializeCall` given the `|| null` a
+   hurried reader writes failed exactly one other (`expected null to be +0`). The second
+   break is the one worth keeping: `||` is the natural thing to type and it silently
+   erases the 21 real zeros.
+9. **What this did not do.** 76 of the 176 calls have no artifact file and never will --
+   they aged out of Vapi's 14-day window before the rescue ran, so their four columns are
+   null permanently and no future backfill can change that. And the backfill is the only
+   door: a NEW rescue that saves an artifact does not fill the columns by itself, it
+   needs `bash scripts/apply-backfills.sh --apply` run again.
+10. **`real` is float4.** 378.3 comes back as 378.29998…; the test asserts with
+    `toBeCloseTo` and M-7b must round to whole ms rather than print what the column holds.
 
 **Corrected 2026-09-06 while splitting this step.** The original M-7 was written from
 the PRD's numbers and three of them were wrong against the disk: the artifacts are

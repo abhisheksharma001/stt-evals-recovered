@@ -1134,6 +1134,23 @@ stakeholder" the research kept circling back to.
   low the moment this moves to a shared box" sentence above still stands for the
   old files.
 
+- **A fresh checkout cannot run a single pnpm script on this laptop.** Found
+  2026-09-06 while making a worktree for M-7a. The root `preinstall` guard
+  rejects anything whose `npm_config_user_agent` does not start with `pnpm/`;
+  pnpm 11 launched through **corepack** (which is how it runs here --
+  `~/.cache/node/corepack/v1/pnpm/11.1.2`) does not set that variable for
+  lifecycle scripts, so `pnpm install` fails its own "use pnpm" check while
+  being pnpm. Worse, pnpm 11 re-verifies dependencies before every `run`, so
+  after the failure `pnpm run typecheck` also fails -- with an install error,
+  not a type error. CI is unaffected: `pnpm/action-setup@v4` installs a real
+  binary that does set the variable, which is why this has never gone red.
+  Workaround used: `pnpm install --frozen-lockfile --ignore-scripts` once, then
+  `npm_config_verify_deps_before_run=false` on each command. The fix is a step
+  of its own (relax the guard to check `$npm_execpath`, or drop it -- the
+  lockfile and `--frozen-lockfile` already stop a npm/yarn install); it is a
+  root `package.json` change on the path of every future clone, so it does not
+  get made as a side effect of an unrelated step.
+
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,
 fine-grained RBAC, real-time collaborative editing, threaded comments/mentions,
