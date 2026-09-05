@@ -1172,22 +1172,34 @@ stakeholder" the research kept circling back to.
   low the moment this moves to a shared box" sentence above still stands for the
   old files.
 
-- **A fresh checkout cannot run a single pnpm script on this laptop.** Found
-  2026-09-06 while making a worktree for M-7a. The root `preinstall` guard
-  rejects anything whose `npm_config_user_agent` does not start with `pnpm/`;
-  pnpm 11 launched through **corepack** (which is how it runs here --
-  `~/.cache/node/corepack/v1/pnpm/11.1.2`) does not set that variable for
-  lifecycle scripts, so `pnpm install` fails its own "use pnpm" check while
-  being pnpm. Worse, pnpm 11 re-verifies dependencies before every `run`, so
-  after the failure `pnpm run typecheck` also fails -- with an install error,
-  not a type error. CI is unaffected: `pnpm/action-setup@v4` installs a real
-  binary that does set the variable, which is why this has never gone red.
-  Workaround used: `pnpm install --frozen-lockfile --ignore-scripts` once, then
-  `npm_config_verify_deps_before_run=false` on each command. The fix is a step
-  of its own (relax the guard to check `$npm_execpath`, or drop it -- the
-  lockfile and `--frozen-lockfile` already stop a npm/yarn install); it is a
-  root `package.json` change on the path of every future clone, so it does not
-  get made as a side effect of an unrelated step.
+- **A fresh checkout cannot run a single pnpm script on this laptop.**
+  **Closed 2026-09-06 by S-0.2 (PR #95).** Found 2026-09-06 while making a
+  worktree for M-7a. The root `preinstall` guard rejected anything whose
+  `npm_config_user_agent` did not start with `pnpm/`, so `pnpm install` failed
+  its own "use pnpm" check while being pnpm. pnpm 11 also re-verifies
+  dependencies before every `run`, so after the failure `pnpm run typecheck`
+  failed too -- with an install error, not a type error
+  (`runDepsStatusCheck` re-runs the same install). CI never saw it:
+  `pnpm/action-setup@v4` installs a real binary. Workaround, no longer needed:
+  `pnpm install --frozen-lockfile --ignore-scripts` once, then
+  `npm_config_verify_deps_before_run=false` on each command.
+
+  **This entry blamed the wrong thing, corrected here.** It said corepack "does
+  not set that variable for lifecycle scripts". Corepack is not the cause: a
+  plain single-package `pnpm install` through the same shim
+  (`~/.cache/node/corepack/v1/pnpm/11.1.2`) sets it to
+  `pnpm/11.1.2 npm/? node/v22.22.2 darwin arm64`. The variable is empty only for
+  a **workspace root's** own lifecycle scripts, which pnpm 11 runs in a separate
+  phase *after* linking -- which is also why the failed install still left all
+  579 packages linked in `node_modules`, looking installed while every later
+  command re-ran the install. The fix guards on the basename of `$npm_execpath`,
+  which is set in both phases: `pnpm.mjs` (corepack) and `pnpm.cjs`
+  (`pnpm/action-setup`) pass; `npm-cli.js`, `yarn-*.cjs` and an unset value are
+  rejected. Basename rather than whole path, because npm installed under pnpm's
+  own global directory (`~/Library/pnpm/...`) carries "pnpm" in its execpath.
+  Separately noted while verifying: `npm install` never reaches the guard in
+  this repo anyway -- npm dies first on the pnpm workspace with
+  `Cannot read properties of null (reading 'isDescendantOf')`.
 
 ## Explicitly not doing, at this team size (2-3 reviewers)
 Workflow builder, consensus/duplicate-annotation engine, annotator leaderboards,
