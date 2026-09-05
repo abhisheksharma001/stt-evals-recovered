@@ -4,8 +4,8 @@
 // preference IS a filesystem question.
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { cacheCallSidecars, customerAudioPathFor, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { cacheCallSidecars, customerAudioPathFor, getOrCacheAudioBytes, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
 import type { VapiCall } from "./vapi";
 
 // audio-cache.ts computes its directory from process.cwd(); vitest runs
@@ -108,6 +108,7 @@ const FULL = "00000000-0000-4000-8000-00000000be11";
 const NO_CUSTOMER = "00000000-0000-4000-8000-00000000be12";
 const BAD_URL = "00000000-0000-4000-8000-00000000be13";
 const AGAIN = "00000000-0000-4000-8000-00000000be14";
+const MONO_MODE = "00000000-0000-4000-8000-00000000be21";
 
 function vapiCall(over: Partial<NonNullable<VapiCall["artifact"]>> = {}, top: Partial<VapiCall> = {}): VapiCall {
   return {
@@ -199,5 +200,36 @@ describe("cacheCallSidecars", () => {
     expect(second.saved).toEqual([]);
     expect(await fs.readFile(path.join(CACHE_DIR, `${AGAIN}.artifact.json`), "utf8")).toBe(first);
     expect(await fs.readFile(path.join(CACHE_DIR, `${AGAIN}.customer.audio`), "utf8")).toBe("customer-bytes");
+  });
+});
+
+// M-6b. getOrCacheAudioBytes is the only writer of the mono `<id>.audio`
+// file, and it asks Vapi for a fresh recording URL before writing -- the one
+// path in this file that would reach the network. Only that function is
+// replaced; the rest of ./vapi stays real.
+vi.mock("./vapi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./vapi")>()),
+  resolveFreshRecordingUrl: async () =>
+    `data:application/octet-stream;base64,${Buffer.from("mono-bytes").toString("base64")}`,
+}));
+
+describe("getOrCacheAudioBytes", () => {
+  it("writes the mono mix readable only by this server (0600), like the three files beside it", async () => {
+    const file = path.join(CACHE_DIR, `${MONO_MODE}.audio`);
+    written.push(file);
+    // A file left behind by a crashed earlier run would be returned from the
+    // cache without the write below ever running, and its mode would be the
+    // thing asserted.
+    await fs.rm(file, { force: true });
+
+    const bytes = await getOrCacheAudioBytes({
+      id: MONO_MODE,
+      sourceCallId: "vapi-call-id",
+      sourceAccountLabel: null,
+      audioObjectPath: null,
+    });
+
+    expect(bytes.toString("utf8")).toBe("mono-bytes");
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
   });
 });
