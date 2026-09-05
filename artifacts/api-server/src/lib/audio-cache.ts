@@ -67,7 +67,11 @@ function assistantCachePathFor(callId: string): string {
   return path.join(CACHE_DIR, `${callId}.assistant.audio`);
 }
 
-function artifactCachePathFor(callId: string): string {
+/** M-7a: exported so backfill-m7a-production-signals.ts reads exactly the
+ * file cacheCallSidecars() below writes. A second copy of this join is how
+ * the backfill and the writer would quietly stop agreeing about which file
+ * belongs to which call. */
+export function artifactCachePathFor(callId: string): string {
   return path.join(CACHE_DIR, `${callId}.artifact.json`);
 }
 

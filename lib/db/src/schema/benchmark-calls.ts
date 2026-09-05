@@ -2,6 +2,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -100,6 +101,20 @@ export const benchmarkCallsTable = pgTable("benchmark_calls", {
   audioCacheLastAttemptAt: timestamp("audio_cache_last_attempt_at", {
     withTimezone: true,
   }),
+  // M-7a: what PRODUCTION's own pipeline measured on this call, read from
+  // Vapi's `artifact.performanceMetrics` at import and from the saved
+  // `<callId>.artifact.json` by the backfill -- lib/production-signals.ts is
+  // the only writer of all four. Null means "not measured", and it is not the
+  // same thing as zero: 23 of the first 100 saved artifacts report a
+  // transcriber latency of 0 with an empty `turnLatencies` array (nothing was
+  // timed), and `numAssistantInterrupted` is absent altogether on 53 of them.
+  // A 0 stored here would be read as a fast call and a calm call. Tool calls
+  // are the exception: `messages` is present on every artifact, so an empty
+  // one is a real zero and is stored as 0.
+  prodTranscriberLatencyMs: real("prod_transcriber_latency_ms"),
+  prodEndpointingLatencyMs: real("prod_endpointing_latency_ms"),
+  prodAssistantInterruptions: integer("prod_assistant_interruptions"),
+  prodToolCalls: integer("prod_tool_calls"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

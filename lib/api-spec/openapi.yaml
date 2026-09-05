@@ -1471,6 +1471,18 @@ components:
         audioCacheLastOutcome: { type: ["string", "null"], enum: [saved, failed, source_refused, null] }
         audioCacheLastError: { type: ["string", "null"] }
         audioCacheLastAttemptAt: { type: ["string", "null"], format: date-time }
+        # M-7a: what PRODUCTION's own pipeline measured on this call, from
+        # Vapi's artifact.performanceMetrics. Null means Vapi measured
+        # nothing -- NOT that the call was fast or calm. 23 of the first 100
+        # saved artifacts report a transcriber latency of 0 with no turn
+        # timed at all, and 53 carry no interruption count; both arrive here
+        # as null. prodToolCalls is the one honest zero: the messages array
+        # is present on every artifact, so "no tool was called" is a real
+        # measurement. Latencies are milliseconds, as Vapi reports them.
+        prodTranscriberLatencyMs: { type: ["number", "null"] }
+        prodEndpointingLatencyMs: { type: ["number", "null"] }
+        prodAssistantInterruptions: { type: ["integer", "null"] }
+        prodToolCalls: { type: ["integer", "null"] }
         createdAt: { type: string, format: date-time }
     BenchmarkCallInput:
       type: object

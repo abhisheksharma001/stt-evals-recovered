@@ -14,6 +14,7 @@ const fx = new Fixtures();
 let rushId: string;
 let archivedId: string;
 let truckingId: string;
+let measuredId: string;
 
 // M-6: the cache flags are read off this directory, so proving them means
 // putting real files in it. Written under the seeded calls' own uuids and
@@ -25,13 +26,38 @@ const cacheFiles: string[] = [];
 async function listCalls(query: Record<string, string> = {}) {
   const res = await request(app).get("/api/benchmark/calls").query(query);
   expect(res.status).toBe(200);
-  return res.body as { id: string; vertical: string; status: string; audioCached: boolean; customerAudioCached: boolean }[];
+  return res.body as {
+    id: string;
+    vertical: string;
+    status: string;
+    audioCached: boolean;
+    customerAudioCached: boolean;
+    prodTranscriberLatencyMs: number | null;
+    prodEndpointingLatencyMs: number | null;
+    prodAssistantInterruptions: number | null;
+    prodToolCalls: number | null;
+  }[];
 }
 
 beforeAll(async () => {
   rushId = (await fx.call({ vertical: "rush", status: "ready_to_run" })).id;
   archivedId = (await fx.call({ vertical: "rush", status: "archived" })).id;
   truckingId = (await fx.call({ vertical: "trucking", status: "ready_to_run" })).id;
+  // M-7a: one call carrying production's own measurements, with a stored 0
+  // in each of the two columns where 0 is a real answer -- the assistant was
+  // never interrupted, no tool was called. The trucking call above carries
+  // none of the four, which is the pair this suite needs: a zero that
+  // survives the round trip and a null that is not turned into one.
+  measuredId = (
+    await fx.call({
+      vertical: "trucking",
+      status: "ready_to_run",
+      prodTranscriberLatencyMs: 378.5,
+      prodEndpointingLatencyMs: 120.25,
+      prodAssistantInterruptions: 0,
+      prodToolCalls: 0,
+    })
+  ).id;
 
   // Three states, on purpose: the rush call has both files (an M-6 import),
   // the archived one has only the mono mix (imported before M-6, or rescued
@@ -105,5 +131,26 @@ describe("GET /api/benchmark/calls", () => {
     // assertion in this file and fail this one.
     expect(monoOnly?.audioCached).toBe(true);
     expect(monoOnly?.customerAudioCached).toBe(false);
+  });
+
+  it("carries production's own measurements, keeping a stored 0 apart from a null", async () => {
+    const rows = await listCalls({ vertical: "trucking" });
+    const measured = rows.find((r) => r.id === measuredId);
+    const unmeasured = rows.find((r) => r.id === truckingId);
+
+    expect(measured?.prodTranscriberLatencyMs).toBeCloseTo(378.5, 1);
+    expect(measured?.prodEndpointingLatencyMs).toBeCloseTo(120.25, 2);
+    // Both stored as 0 by a real reading, and both must arrive as 0. A
+    // serializer using `?? null` here would erase the answer.
+    expect(measured?.prodAssistantInterruptions).toBe(0);
+    expect(measured?.prodToolCalls).toBe(0);
+
+    // And the call nobody measured stays unmeasured. `toBeNull` and not
+    // `toBeFalsy`: 0 is falsy, and telling a client "0 ms" about a call Vapi
+    // never timed is the whole failure this step exists to prevent.
+    expect(unmeasured?.prodTranscriberLatencyMs).toBeNull();
+    expect(unmeasured?.prodEndpointingLatencyMs).toBeNull();
+    expect(unmeasured?.prodAssistantInterruptions).toBeNull();
+    expect(unmeasured?.prodToolCalls).toBeNull();
   });
 });

@@ -950,37 +950,99 @@ contains, or when it is fetched.
 
 ---
 
-### M-7 — Production signals stored per call and shown
+### M-7a — Production signals stored per call
 
 **PR:** one.
-**Depends on:** M-6 (the artifact file; a one-time backfill reads the 99 saved ones).
-**Files:** `lib/db/src/schema/benchmark-calls.ts`, `artifacts/api-server/src/routes/benchmark.ts`
-(import handler + call mapping), new file artifacts/api-server/src/backfill-m7-production-signals.ts
-(plain: not written yet) + entry in `scripts/apply-backfills.sh`, `lib/api-spec/openapi.yaml`,
-`artifacts/stt-benchmark/src/pages/Corpus.tsx`, `artifacts/stt-benchmark/src/pages/Rankings.tsx`
-(the production line), `artifacts/api-server/src/lib/verdict.ts` (`production` object).
+**Depends on:** M-6 (the artifact file; the backfill reads the saved ones off disk).
+**Files:** `lib/db/src/schema/benchmark-calls.ts`,
+`artifacts/api-server/src/lib/production-signals.ts` (new -- the one reader),
+`artifacts/api-server/src/lib/production-signals.test.ts` (new),
+`artifacts/api-server/src/routes/benchmark.ts` (import handler + `serializeCall`),
+`artifacts/api-server/src/backfill-m7a-production-signals.ts` (new) + its entry in
+`scripts/apply-backfills.sh`, `lib/api-spec/openapi.yaml`.
 **Today:** the tool knows which model production ran and nothing about how it did.
-Vapi records per call: `performanceMetrics.transcriberLatencyAverage` (median 272 ms
-across the 99 saved artifacts), `endpointingLatencyAverage` (median 102 ms),
-`numAssistantInterrupted` (25 of 99 calls ≥ 1), plus tool calls (74 of 99) and their
-results.
-**Change:** four nullable columns on `benchmark_calls`:
+Every one of the 100 saved artifacts carries `performanceMetrics`, and what is in there
+is thinner than M-7 assumed -- counted on disk 2026-09-06, not remembered:
+
+| field | present | measured | median (measured) | max |
+| --- | --- | --- | --- | --- |
+| `transcriberLatencyAverage` | 100 of 100 | 77 (23 report `0`) | 378.3 ms | 6,651 ms |
+| `endpointingLatencyAverage` | 100 of 100 | 72 (28 report `0`) | 120.3 ms | 1,577 ms |
+| `numAssistantInterrupted` | 47 of 100 | 47 | 26 of the 47 are >= 1 | 9 |
+| tool calls (`toolCalls` entries in `messages`) | 100 of 100 | 100 | 75 of 100 have >= 1 | 10 |
+
+A `0` there is not a measurement. 21 of the 23 zero-latency calls carry an EMPTY
+`turnLatencies` array -- no turn was timed at all -- and a transcriber that answers in
+0 ms does not exist. `numAssistantInterrupted` is simply absent on 53 calls; absent is
+not zero (docs/step-register.md's own standing rule). Tool calls are different: the
+`messages` array is present on all 100, so "none" there IS a measurement, and 0 is the
+honest value.
+**Change:** four nullable columns on `benchmark_calls` --
 `prodTranscriberLatencyMs` (real), `prodEndpointingLatencyMs` (real),
-`prodAssistantInterruptions` (integer), `prodToolCalls` (integer). Filled at import from
-the artifact; the backfill fills them from the saved `<callId>.artifact.json` files for
-calls that have one. Exposed on `BenchmarkCall`. The Calls row shows "prod 272 ms" in
-the measurements group; the Results org card's production line becomes "Production today:
-Deepgram flux-general-en · 272 ms transcriber latency (median) · 25 of 99 calls
-interrupted" from the group's calls (median, not mean; absent → "not recorded").
-**Acceptance:** WHEN the backfill has run THEN `GET /benchmark/calls` SHALL carry
-`prodTranscriberLatencyMs` on every call with an artifact file and null on the rest, and
-WHEN the Land And Apartment card renders THEN it SHALL read a median in ms and an
-interruption count, never "0" for a call with no artifact.
-**Verify:** `pnpm run typecheck`; Results render test asserts the line with a fixture
-median and the "not recorded" fallback; `bash scripts/apply-backfills.sh --apply`; then
-`curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.prodTranscriberLatencyMs!=null)]|length'` → 99.
-**Must not:** compute a mean (one 6,651 ms call distorts it); show a zero for an absent
-value.
+`prodAssistantInterruptions` (integer), `prodToolCalls` (integer) -- written by ONE
+reader (`readProductionSignals` in `artifacts/api-server/src/lib/production-signals.ts`)
+that takes the artifact object and returns those four values or nulls. The import
+handler calls it with `call.artifact`; the backfill calls it with the parsed
+`<callId>.artifact.json`, whose shape `cacheCallSidecars` and
+`scripts/rescue-customer-audio.mjs` write field for field. Rules, in the reader and in
+its tests: a latency of `0` or a missing/non-finite number becomes null; a missing
+`numAssistantInterrupted` becomes null and a present `0` stays `0`; tool calls count
+`toolCalls` ENTRIES (119 across the corpus), not `tool_calls` messages (116) -- the
+count of `tool_call_result` messages is also 119, which is the cross-check -- and a
+missing `messages` array becomes null while an empty one becomes `0`.
+Exposed on `BenchmarkCall`. No UI in this step (that is M-7b).
+**Acceptance:** WHEN the backfill has run THEN `GET /benchmark/calls` SHALL carry a
+non-null `prodTranscriberLatencyMs` on exactly the calls whose saved artifact reports a
+non-zero transcriber latency, and null on every other call -- including calls whose
+artifact reports `0`.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/api-server test` (the reader's
+unit tests cover each rule above, one case per rule);
+`pnpm --filter @workspace/db run push`; `bash scripts/apply-backfills.sh` (dry run prints
+counts and writes nothing), then `--apply`; then
+`curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.prodTranscriberLatencyMs!=null)]|length'`
+equals the dry run's own measured-latency count, and
+`jq '[.[]|select(.prodTranscriberLatencyMs==0)]|length'` is 0.
+**Must not:** store a `0` as if it were a measurement; write `0` where Vapi sent no
+field; compute a mean anywhere (one 6,651 ms call distorts it); call Vapi or any
+provider -- the backfill reads the disk only and spends nothing.
+
+**Corrected 2026-09-06 while splitting this step.** The original M-7 was written from
+the PRD's numbers and three of them were wrong against the disk: the artifacts are
+**100, not 99** (M-6's import added one); the median transcriber latency is **274 ms
+counting the 23 unmeasured calls as 0 ms, and 378.3 ms across the 77 that were actually
+measured** -- the PRD's "272 ms" is the contaminated figure, and quoting it on a client
+page would understate real production latency by about a third; and
+`numAssistantInterrupted` is **present on only 47 of 100 calls**, so "25 of 99 calls
+interrupted" counted 53 calls that were never asked as if they had answered "no".
+Tool calls: 75 of 100 have at least one, not 74 of 99.
+
+---
+
+### M-7b — The production signals on screen
+
+**PR:** one.
+**Depends on:** M-7a (nothing to render until the columns are filled).
+**Files:** `artifacts/stt-benchmark/src/pages/Corpus.tsx`,
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` (the `ProductionBaselineNote` line),
+`artifacts/api-server/src/lib/verdict.ts` (the `production` object),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+**Today:** the Calls row shows nothing about how production performed, and the Results
+org card's production line names the vendor and model only.
+**Change:** the Calls row shows "prod 378 ms" in the measurements group, and nothing at
+all (not "0", not "--") when the column is null. The Results org card's production line
+becomes "Production today: Deepgram flux-general-en · 378 ms transcriber latency (median
+of N calls) · M of N calls interrupted", each clause dropped rather than zeroed when the
+group has no call carrying that column. `verdict.ts` adds the medians to the `production`
+object it already builds.
+**Acceptance:** WHEN the Land And Apartment card renders THEN it SHALL read a median in
+ms computed only from calls whose `prodTranscriberLatencyMs` is non-null, and WHEN no
+call in the group carries one THEN the clause SHALL be absent -- the rendered output
+SHALL NOT contain "0 ms".
+**Verify:** `pnpm run typecheck`; the Results render test asserts the line from a fixture
+median, and a second case with every signal null asserts neither "0 ms" nor "0 of" is
+rendered.
+**Must not:** compute a mean; render a zero, a dash or a "not recorded" placeholder
+where the number is absent -- drop the clause; execute a run.
 
 ---
 
