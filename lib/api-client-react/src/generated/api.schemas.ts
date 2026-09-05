@@ -253,6 +253,14 @@ export interface BenchmarkCall {
   audioCacheLastError?: string | null;
   /** @nullable */
   audioCacheLastAttemptAt?: string | null;
+  /** @nullable */
+  prodTranscriberLatencyMs?: number | null;
+  /** @nullable */
+  prodEndpointingLatencyMs?: number | null;
+  /** @nullable */
+  prodAssistantInterruptions?: number | null;
+  /** @nullable */
+  prodToolCalls?: number | null;
   createdAt: string;
 }
 

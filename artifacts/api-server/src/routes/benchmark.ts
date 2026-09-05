@@ -137,6 +137,7 @@ import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
 import { cacheCallSidecars, getOrCacheAudioBytes, audioCachePathFor, isAudioCached, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows } from "../lib/calls";
+import { readProductionSignals } from "../lib/production-signals";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
 import { cachedVendorModels } from "../lib/model-list-cache";
@@ -367,6 +368,12 @@ function serializeCall(call: BenchmarkCallRow, cache?: CallCacheState): ZodInput
     audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
     audioCacheLastError: call.audioCacheLastError ?? null,
     audioCacheLastAttemptAt: call.audioCacheLastAttemptAt,
+    // M-7a: production's own measurements. Null is "not measured" and must
+    // stay distinguishable from 0 all the way to the screen.
+    prodTranscriberLatencyMs: call.prodTranscriberLatencyMs,
+    prodEndpointingLatencyMs: call.prodEndpointingLatencyMs,
+    prodAssistantInterruptions: call.prodAssistantInterruptions,
+    prodToolCalls: call.prodToolCalls,
     createdAt: call.createdAt,
   };
 }
@@ -1140,6 +1147,12 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
         sourceTranscriberModel: transcriber?.model ?? null,
         sourceEndedReason: call.endedReason ?? null,
         sourceSuccessEvaluation: successEvaluationOf(call),
+        // M-7a: what production's own pipeline measured on this call, from
+        // the same object the sidecar writer saves to disk seconds later --
+        // so an imported call and a rescued one carry identical numbers.
+        // Every one of these is null when Vapi measured nothing; see
+        // lib/production-signals.ts for why null and not 0.
+        ...readProductionSignals(call.artifact),
       })
       .returning();
 

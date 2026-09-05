@@ -11,8 +11,12 @@
 #       3. backfill-m1-clear-draft-gold.ts (M-1: the 19 gold transcripts that
 #                                are byte-identical copies of their own draft
 #                                -> null; the 2 human-edited ones are untouched)
+#       4. backfill-m7a-production-signals.ts (M-7a: the four prod_* columns
+#                                from the call artifacts already on this
+#                                server's disk. Reads disk + database only --
+#                                no Vapi call, no provider call, no spend.)
 #
-# All three are safe to re-run: a second --apply finds nothing to do and
+# All four are safe to re-run: a second --apply finds nothing to do and
 # writes nothing at all, not even an audit row (t65's flux guard compares on
 # a tolerance since M-1a -- cost_per_minute is a float4). It reads
 # artifacts/api-server/.env for DATABASE_URL and the Vapi keys (T-52 calls
@@ -36,6 +40,7 @@ run() {
 run backfill-t65-t66.ts
 run backfill-t52-started-at.ts
 run backfill-m1-clear-draft-gold.ts
+run backfill-m7a-production-signals.ts
 if [[ -z "$MODE" ]]; then
   echo
   echo "Nothing written. Re-run with --apply to write."

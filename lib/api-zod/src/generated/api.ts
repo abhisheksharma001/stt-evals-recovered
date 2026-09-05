@@ -105,6 +105,10 @@ export const ListBenchmarkCallsResponseItem = zod.object({
   "audioCacheLastOutcome": zod.union([zod.literal('saved'),zod.literal('failed'),zod.literal('source_refused'),zod.literal(null)]).nullish(),
   "audioCacheLastError": zod.string().nullish(),
   "audioCacheLastAttemptAt": zod.coerce.date().nullish(),
+  "prodTranscriberLatencyMs": zod.number().nullish(),
+  "prodEndpointingLatencyMs": zod.number().nullish(),
+  "prodAssistantInterruptions": zod.number().int().nullish(),
+  "prodToolCalls": zod.number().int().nullish(),
   "createdAt": zod.coerce.date()
 })
 export const ListBenchmarkCallsResponse = zod.array(ListBenchmarkCallsResponseItem)
@@ -164,6 +168,10 @@ export const CreateBenchmarkCallResponse = zod.object({
   "audioCacheLastOutcome": zod.union([zod.literal('saved'),zod.literal('failed'),zod.literal('source_refused'),zod.literal(null)]).nullish(),
   "audioCacheLastError": zod.string().nullish(),
   "audioCacheLastAttemptAt": zod.coerce.date().nullish(),
+  "prodTranscriberLatencyMs": zod.number().nullish(),
+  "prodEndpointingLatencyMs": zod.number().nullish(),
+  "prodAssistantInterruptions": zod.number().int().nullish(),
+  "prodToolCalls": zod.number().int().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -337,6 +345,10 @@ export const GetBenchmarkCallResponse = zod.object({
   "audioCacheLastOutcome": zod.union([zod.literal('saved'),zod.literal('failed'),zod.literal('source_refused'),zod.literal(null)]).nullish(),
   "audioCacheLastError": zod.string().nullish(),
   "audioCacheLastAttemptAt": zod.coerce.date().nullish(),
+  "prodTranscriberLatencyMs": zod.number().nullish(),
+  "prodEndpointingLatencyMs": zod.number().nullish(),
+  "prodAssistantInterruptions": zod.number().int().nullish(),
+  "prodToolCalls": zod.number().int().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -397,6 +409,10 @@ export const UpdateBenchmarkCallResponse = zod.object({
   "audioCacheLastOutcome": zod.union([zod.literal('saved'),zod.literal('failed'),zod.literal('source_refused'),zod.literal(null)]).nullish(),
   "audioCacheLastError": zod.string().nullish(),
   "audioCacheLastAttemptAt": zod.coerce.date().nullish(),
+  "prodTranscriberLatencyMs": zod.number().nullish(),
+  "prodEndpointingLatencyMs": zod.number().nullish(),
+  "prodAssistantInterruptions": zod.number().int().nullish(),
+  "prodToolCalls": zod.number().int().nullish(),
   "createdAt": zod.coerce.date()
 })
 
@@ -693,6 +709,10 @@ export const AttestBenchmarkCallDeidResponse = zod.object({
   "audioCacheLastOutcome": zod.union([zod.literal('saved'),zod.literal('failed'),zod.literal('source_refused'),zod.literal(null)]).nullish(),
   "audioCacheLastError": zod.string().nullish(),
   "audioCacheLastAttemptAt": zod.coerce.date().nullish(),
+  "prodTranscriberLatencyMs": zod.number().nullish(),
+  "prodEndpointingLatencyMs": zod.number().nullish(),
+  "prodAssistantInterruptions": zod.number().int().nullish(),
+  "prodToolCalls": zod.number().int().nullish(),
   "createdAt": zod.coerce.date()
 })
 
