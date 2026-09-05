@@ -66,30 +66,72 @@ the database.
 
 ### S-0.2 — The "use pnpm" guard rejects pnpm
 
+**Status:** done 2026-09-06 (PR #95, `df00a56068ae`). Not deployed: the change is
+install-time tooling and is not part of the API bundle, so the live build stays
+`681483c03902`.
 **PR:** one.
 **Depends on:** nothing.
-**Files:** `package.json` (the root `preinstall` script).
-**Today:** the root `preinstall` fails unless `$npm_config_user_agent` starts with
-`pnpm/`. pnpm 11 launched through corepack -- which is how it runs on this laptop --
-does not set that variable for lifecycle scripts, so `pnpm install` fails its own
-"use pnpm" check while being pnpm. pnpm 11 then re-verifies dependencies before every
-`pnpm run`, so after that failure `pnpm run typecheck` fails too, with an install error
-instead of a type error. A fresh clone or `git worktree` on this machine can run
-nothing until someone knows the two workarounds
-(`--ignore-scripts`, then `npm_config_verify_deps_before_run=false`). CI never sees it:
-`pnpm/action-setup@v4` installs a real binary that does set the variable.
-**Change:** make the guard test something corepack also sets -- `$npm_execpath`
-containing `pnpm` -- or delete the guard. `pnpm-lock.yaml` plus `--frozen-lockfile`
-already stop an npm or yarn install from succeeding quietly, which is what the guard
-was for.
+**Files:** `package.json` (the root `preinstall` script), plus two docs that told the
+reader to work around this bug: `docs/runbooks/working-copy-location.md` and the entry
+in `docs/backlog/good-to-have.md`.
+
+**Three things this step said were wrong. Corrected here, where they were written:**
+
+1. **Corepack is not the cause.** The step said pnpm launched through corepack "does not
+   set that variable for lifecycle scripts". A plain single-package `pnpm install`
+   through the same shim prints
+   `UA=[pnpm/11.1.2 npm/? node/v22.22.2 darwin arm64]`. The variable is empty only for a
+   **workspace root's** own lifecycle scripts, which pnpm 11 runs in a separate phase.
+   Probed inside the real failing worktree: `. preinstall: UA=[]` while
+   `. preinstall: EXECPATH=[.../corepack/v1/pnpm/11.1.2/bin/pnpm.mjs]`.
+2. **The failed install is not an empty install.** pnpm 11 runs the workspace root's
+   lifecycle scripts *after* linking, so the failing install still left all 579 packages
+   linked. `node_modules` looked installed while `runDepsStatusCheck` silently re-ran the
+   failing install before every `pnpm run` -- which is why the symptom read as "every
+   command is broken" rather than "install is broken".
+3. **The Verify command does not run.** `git worktree add ../stt-evals-guardcheck main`
+   fails with `fatal: 'main' is already used by worktree at ...` -- `main` is checked out
+   in the working copy. Use `git worktree add --detach ../stt-evals-guardcheck main`.
+
+**Change (as built):** guard on the basename of `$npm_execpath`, which is set in both
+phases. One line:
+`case "${npm_execpath##*/}" in pnpm*) ;; *) echo "Use pnpm instead" >&2; exit 1 ;; esac`.
+The guard was kept, not deleted, though the step allowed either.
 **Acceptance:** WHEN `pnpm install --frozen-lockfile` is run in a freshly created
 worktree with no `node_modules` THEN it SHALL complete without `--ignore-scripts`, and
 `pnpm run typecheck` SHALL then run to completion in that worktree.
-**Verify:** `git worktree add ../stt-evals-guardcheck main`, then in it
-`pnpm install --frozen-lockfile` and `pnpm run typecheck`; both finish. Then
-`npm install` in the same worktree still fails.
+**Acceptance -- Met.** In a worktree created fresh from merged `df00a56068ae` with zero
+`node_modules`: install exit 0, `preinstall: Done`, `Done in 5s using pnpm v11.1.2`;
+then `pnpm run typecheck` exit 0 with 4 of 4 projects `Done`.
+**Verify:** `git worktree add --detach ../stt-evals-guardcheck main`, then in it
+`pnpm install --frozen-lockfile` and `pnpm run typecheck`; both finish. Guard truth
+table over real execpath values -- allow `pnpm.mjs` (corepack) and `pnpm.cjs`
+(`pnpm/action-setup`, proved for real by CI's own install); reject `npm-cli.js`,
+`npm-cli.js` under `~/Library/pnpm/...`, `yarn-4.5.0.cjs`, and an unset value.
+Proof by breaking, after the commit: old guard restored into the worktree with
+`node_modules` wiped -> install fails again with `Use pnpm instead`; fixed guard
+restored and wiped again -> install and typecheck both pass.
 **Must not:** touch the lockfile; change any dependency version; weaken the guard to
-the point that a plain `npm install` succeeds.
+the point that a plain `npm install` succeeds. **Held** -- lockfile and every dependency
+version untouched, and the reject arm is tighter than before, not looser.
+
+Learned:
+
+- The guard matches the **basename** of `$npm_execpath`, not `*pnpm*` anywhere in the
+  path, because npm installed under pnpm's own global directory
+  (`~/Library/pnpm/global/5/node_modules/npm/bin/npm-cli.js`) carries "pnpm" in its
+  execpath and would have been allowed. An unset value fails closed.
+- `npm install` never reaches the guard in this repo anyway: npm dies first on the pnpm
+  workspace with `Cannot read properties of null (reading 'isDescendantOf')`. The reject
+  arm is therefore proved by the truth table, not by an npm run -- worth saying, because
+  "npm install still fails" was true for a reason the step did not name.
+- A step's own reason can be wrong while its symptom and its proposed fix are both
+  right. The symptom here reproduced exactly as written; only the cause was mis-assigned.
+  Reproducing before believing cost one probe and changed three sentences of docs.
+- The first acceptance run was dishonest and had to be redone: the *failed* install had
+  already populated `node_modules`, so "fresh worktree with no `node_modules`" was not
+  the state being tested. Deleting them and re-running is the only version of that
+  sentence worth reporting.
 
 ---
 
