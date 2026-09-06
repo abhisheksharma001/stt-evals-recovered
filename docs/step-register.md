@@ -2623,10 +2623,20 @@ tooltip on the same page, and was reused verbatim.
 
 ### M-10e — Serialise and show the end-of-audio latency
 
+**Status:** `done` 2026-09-07 (PR #108, `e02b35e`), deployed `f7dbd704ddcb -> e02b35e5f4cd`.
+
+**This step's own dependency reasoning was wrong, corrected here rather than quietly
+elsewhere.** It said M-11 "would otherwise write a number nothing can display". M-11's
+numbers already had somewhere to **land** -- `benchmark_scores.latency_end_of_audio_ms`,
+shipped by M-10b. What was missing was somewhere to **look**. The sequencing conclusion
+(do this before M-11) is still right, for the corrected reason: M-11's first streaming
+numbers are visible the moment they exist instead of sitting unread in a column no page
+reads.
+
 **PR:** one.
-**Depends on:** M-10b (the column), M-10d (the Speed copy it sits beside). Best done
-**before M-11**, which produces the first Deepgram streaming rows and would otherwise
-write a number nothing can display.
+**Depends on:** M-10b (the column on `benchmark_scores`), M-10d (the Speed copy it sits
+beside). Best done **before M-11**, so the first Deepgram streaming numbers are visible
+the moment they are written rather than landing in a table nothing displays.
 
 **Files:** `lib/db/src/schema/benchmark-rankings.ts`,
 `artifacts/api-server/src/lib/run-executor.ts` (`aggregateRankingRows`),
@@ -2667,6 +2677,119 @@ needs one paid Cartesia call and is a **go-spend**, not part of this step.
 **Must not:** must not put the number into `hybridCompositeScore`, must not render 0 or a
 dash as if it were a measurement, must not re-run a bulk to populate the column, must not
 relabel it "end-of-speech".
+
+**Shipped as:** `benchmark_rankings.latency_end_of_audio_ms` (nullable `real` -- a mean,
+not the `integer` the scores column stores), averaged in `aggregateRankingRows` over only
+the cells that carry it, serialised through `lib/api-spec/openapi.yaml` and both
+generated clients into `GET /benchmark/rankings`, and rendered on `Rankings.tsx` as its
+own column **"After audio ends"** beside Speed, plus a CSV column. 6 breaks, 1 failing
+test each. typecheck 4/4, 4 guards, scoring 140, stt-providers 47, stt-benchmark **126**
+(was 124), api-server 115, integration **128** (was 126). Nothing spent, no provider
+called.
+
+**Live after deploy:** the field is present on all **145** ranking rows and **null on
+every one of them**, exactly as forecast -- `count(latency_end_of_audio_ms)` is still 0 of
+999 scores. Post-deploy bundle check: 5 M-10d false forms absent, 7 new strings present,
+"lower is better" total 10 (must be > 0). PASS.
+
+**Learned:**
+
+1. **A break test caught a bug in the test, not the code.** The legend guard passed with
+   the column removed from its lower-is-better list, because the legend names the column
+   **twice** -- once in the direction list, once explaining why it compares when Speed
+   does not -- and `toMatch(/wait after audio ends/)` was satisfied by the second mention.
+   Asserting a string is *present* is the wrong shape whenever the string has more than
+   one role on the page; the assertion must be scoped to the clause making the claim.
+   Second time this shape has bitten in three steps (M-10d's "expect 0 occurrences" was
+   the same mistake pointing the other way). Fixed in `d55ef9a` and re-broken to confirm.
+2. **`benchmark_providers.supportsStreaming` is a trap for anyone explaining the dash.**
+   It is `true` on **10 of 11 rows**. It describes the vendor's API, not how our adapter
+   runs it -- only `cartesia.ts` opens a WebSocket. Explaining an empty cell from that
+   flag gets it wrong for 5 of the 6 batch providers. There is no column that answers
+   "can this provider report end-of-audio"; the copy therefore explains the dash
+   generically and names no provider.
+3. **A null that is permanent by construction is a different object from a null that is
+   missing this run.** Every other dash in the Results table means "not measured on this
+   run, a later run may fill it". This one means "never, for this kind of provider". Same
+   glyph, different promise -- so the cell says which, not just the header.
+4. **Sorting is what makes a by-construction null dangerous.** Sorted by this column, six
+   dashes sit under one number and read as six providers losing a race they were never
+   in. The header explains it, but sorting detaches a cell from its header, so the
+   explanation had to go in the cell too.
+5. **Adding the field to OpenAPI's `required` list broke the render fixture at
+   typecheck** -- free proof the field is genuinely required end to end, the same free
+   proof M-10b got when a missing DB column failed 14 integration tests at once.
+6. **Break F (re-sorting rankings by this latency) failed exactly one test -- the one
+   written in this step.** The ranking order comparator in `aggregateRankingRows` is
+   otherwise unguarded: a change to it does not reliably fail anything. Logged.
+7. **The dashes-today decision was deliberate, not an oversight.** Shipping a column that
+   is 100% empty was weighed against waiting for M-11. Shipped because the alternative is
+   M-11 producing numbers no page reads, and because a permanently-visible "we do not
+   have this" is the project's own stated principle (absent is not zero), not a gap.
+
+**Evidence -- the "After audio ends" column**
+
+**Pattern to use:** mark a cell that cannot have a value with a neutral, low-contrast
+dash and put the reason on the label, never a zero and never a red ✕ -- ✕ reads as a
+deficiency, a dash reads as not-applicable, which is the true state for a batch adapter.
+← [Slite](https://mobbin.com/screens/bc7f1ea9-d17b-4d67-b263-baf7284fa7a7) (plain "-" plus
+an ⓘ on every row label),
+[Lyssna](https://mobbin.com/screens/00564053-4aaa-41bc-9bbd-8acd898b1bb1) (greyed glyph)
+**Patterns to avoid:** the red-✕ treatment used by
+[Relevance AI](https://mobbin.com/screens/e0501a17-5d16-464a-bc12-16e4f58a4b78),
+[NordVPN](https://mobbin.com/screens/9882de2a-0f73-4863-9d7b-d60ef2e73dd4) and
+[Discord](https://mobbin.com/screens/474948b0-8725-4632-aa5d-26f8828daeaa) -- correct when
+a plan withholds a feature, wrong here, because a batch API is not failing to report
+end-of-audio, it structurally has none.
+**What operators say:** naming what a number stands for is what lets a reader ask "are we
+missing data? was this a bad proxy?" instead of silently mistrusting the whole board --
+"How to measure AI developer productivity in 2025" (Nicole Forsgren, 2025-10-19)
+https://www.youtube.com/watch?v=SWcDfPVTizQ
+**Changes to the plan:** the explanation moved from the header alone into the cell as
+well (Slite puts it on the row label; a column-oriented sortable table detaches the cell
+from its header, so the label alone is not enough).
+**No evidence found for:** how a **sortable numeric leaderboard** should treat rows that
+cannot report a metric. All six comparison tables found were static feature grids, not
+sortable. The sort behaviour here (nulls sink, dash explains itself) is reasoned from the
+repo's own existing rule, not from evidence.
+
+---
+
+### M-10f — Show the end-of-audio number on the per-call comparison
+
+**PR:** one.
+**Depends on:** M-10e (the column, the copy and the dash treatment to match).
+**Files:** `lib/api-spec/openapi.yaml` **and the two generated clients it regenerates**
+(`lib/api-zod/src/generated/**`, `lib/api-client-react/src/generated/**`),
+`artifacts/api-server/src/routes/benchmark.ts` (the per-call provider-result
+serialisation near `latencyFinalMs: score.latencyFinalMs`, **not** the rankings block
+M-10e changed), `artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`,
+`artifacts/stt-benchmark/src/components/provider-comparison-section.test.tsx`.
+
+**Today:** M-10e put the averaged number on the Results ranking table only. The per-call
+comparison on Corpus (`provider-comparison-section.tsx`, whose `ComparisonBody` M-10d
+exported as a test seam) still shows only `latencyFinalMs` -- the number that is call
+length for Cartesia. A reader comparing one call's providers side by side sees the
+measurement with no direction and not the one with a direction.
+
+**Why this is its own step, not part of M-10e:** the per-call table reads a **different
+endpoint with its own response schema** (the provider-result shape, `openapi.yaml` around
+the second and third `latencyFinalMs` entries), so this is a second serialisation path,
+not a second render of an already-serialised field.
+
+**Change:** serialise `latencyEndOfAudioMs` on the per-call provider result, regenerate
+both clients, and add a column to `ComparisonBody` using **exactly** M-10e's dash
+treatment: a dash that explains in the cell that only a streamed provider can report it
+and that a dash is not a slow score.
+**Acceptance:** WHEN the per-call comparison renders a batch provider THEN its
+end-of-audio cell SHALL be a dash carrying its own explanation, AND WHEN it renders a
+streamed provider with a value THEN the cell SHALL show milliseconds distinct from the
+Speed column.
+**Verify:** `pnpm run typecheck`; `pnpm --filter stt-benchmark run test`; break it by
+replacing the cell's explaining title with the generic "Not measured in this run" and
+watch the component test fail.
+**Must not:** must not describe `latencyFinalMs` as lower-is-better (M-10d), must not
+render 0 for a batch provider, must not call it "end-of-speech", must not spend.
 
 ---
 

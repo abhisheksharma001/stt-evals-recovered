@@ -1,3 +1,69 @@
+## Found 2026-09-07 (shipping M-10e): a break test caught a bug in the test, not the code
+
+M-10e added a Results legend guard asserting the new column appears in the
+"Lower is better ... (↓)" list. Break-tested by removing the column from that
+list -- and **the test passed**. The legend names the column twice: once in the
+direction list, once in the sentence explaining why it compares when Speed does
+not. `expect(legend.textContent).toMatch(/wait after audio ends/i)` was
+satisfied by the second mention alone.
+
+Asserting that a string is *present* is the wrong shape whenever that string has
+more than one role in the same block of text -- the assertion has to be scoped to
+the clause that makes the claim (`/Lower is better[^↓]*\(↓\)/` here). This is
+the second time in three steps that a presence-count assertion has been wrong in
+this exact way; M-10d's "expect 0 occurrences" was the same mistake pointing the
+other direction.
+
+Fixed in `d55ef9a` and re-broken to confirm it now fails. The general lesson is
+worth applying to the other legend/tooltip guards, which have not been re-checked
+under this lens.
+
+## Found 2026-09-07 (shipping M-10e): `supportsStreaming` answers a different question than it looks like
+
+`benchmark_providers.supports_streaming` is `true` on **10 of the 11 rows** (every
+provider except `openai-gpt-4o-transcribe`). It records that the **vendor's API**
+offers a streaming mode, not that our adapter uses one -- only
+`lib/stt-providers/src/adapters/cartesia.ts` opens a WebSocket; every other
+adapter posts a file.
+
+This matters now that a column exists whose empty cell means "this provider is a
+batch adapter": the obvious way to explain that dash per-provider is to read
+`supportsStreaming`, and it would produce the wrong explanation for 5 of the 6
+batch providers. M-10e therefore explains the dash generically and names no
+provider.
+
+There is no column that answers "does our adapter stream this provider". Adding
+one is not urgent (there is exactly one streaming adapter today), but the flag
+that looks like it should not be trusted for it, and the field name invites
+exactly that mistake.
+
+## Found 2026-09-07 (shipping M-10e): the ranking order comparator is guarded by one test
+
+Break test F replaced `providerAggregates.sort((a, b) => (b.composite ?? -1) -
+(a.composite ?? -1))` in `aggregateRankingRows` with a sort on the new latency
+field. Across the whole integration suite that broke **one** test -- the one
+written in the same step.
+
+The composite decides every rank the product shows, and a change to how it
+orders is caught almost nowhere. Most ranking tests assert the contents of a row
+rather than which row came first, or use fixtures where the orders coincide.
+Worth a small set of tests that pin the order itself against deliberately
+conflicting signals (cleanest-but-dearest, cheapest-but-flaggiest, tied).
+
+## Found 2026-09-07 (shipping M-10e): a permanent null and a this-run null look identical
+
+Every "—" in the Results table means "not measured on this run; a later run may
+fill it in". The end-of-audio column's dash means something else: a batch adapter
+is handed a finished file, so there is no moment the audio ended, and the cell is
+empty **forever**. Same glyph, different promise, and sorting by the column puts
+six of them under one number where they read as six providers losing a race they
+never entered.
+
+M-10e handles it by making that cell's title say so, but the table now has two
+kinds of dash distinguished only by hover text. If a third arrives, the pattern
+needs a real treatment (a distinct glyph, or a "not applicable" style) rather
+than a third bespoke tooltip.
+
 ## Found 2026-09-07 (shipping M-10d): "expect 0 occurrences" is the wrong shape for a copy fix
 
 M-10d's Verify line said to grep the built bundle for "Lower is better" and **expect 0**.
