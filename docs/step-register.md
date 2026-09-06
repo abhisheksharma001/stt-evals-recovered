@@ -1116,6 +1116,97 @@ database was not touched, no provider was called, nothing was spent.
 
 ### M-6e — The audio cache directory itself is still world-listable
 
+**Status:** done 2026-09-06 (PR #97, `4c729a4`). Not deployed: a `mkdir`
+mode only matters on a machine where the directory does not exist yet, and the
+sweep is a shell script outside the API bundle, so the live build stays
+`681483c03902`. The sweep has been run against the running server's own cache
+directory and the audio route was re-checked afterwards.
+
+**Nothing this step claimed turned out to be wrong.** Measured before touching
+anything: 456 files all `-rw-------`, directory `drwxr-xr-x`, both exactly as
+the step said. The probe that mattered was the one about `mkdir`: a fresh
+`mkdir(dir, { recursive: true, mode: 0o700 })` produces `drwx------` under this
+machine's umask 022, and the same call against a directory that already exists
+leaves it `drwxr-xr-x` — mode at creation only, the same rule M-6d learned about
+`writeFile`. That is what makes the script's half of this step necessary rather
+than tidy.
+
+**Change (as built):** two things, one rule.
+`ensureAudioCacheDir(dir = CACHE_DIR)` in
+`artifacts/api-server/src/lib/audio-cache.ts` is now the only place the
+directory comes into being, and it creates it 0700. There were FIVE copies of
+`fs.mkdir(CACHE_DIR, { recursive: true })` — two in the app
+(`getOrCacheAudioBytes`, `cacheCallSidecars`) and three in tests
+(`audio-cache.test.ts`, `calls-list.int.test.ts`, `customer-channel.int.test.ts`)
+— and on a fresh machine a test run creates that directory before the app ever
+does. Fixing only the app's two would have left the mode decided by whoever ran
+first. `scripts/chmod-audio-cache.sh` now reports and fixes the directory as
+well as the files, counted separately, under the same `--apply` it already had.
+
+**Acceptance — Met.** `stat -f '%Sp' artifacts/api-server/audio-cache`:
+`drwxr-xr-x` → `drwx------`, and the API still answers 200.
+
+**Verify — as run:**
+
+| check | before | after |
+| --- | --- | --- |
+| directory mode | `drwxr-xr-x` | `drwx------` |
+| files under it | 456, all `-rw-------` | 456, all `-rw-------` |
+| `GET .../e2553079-…/audio` | `200` 300,204 bytes | `200` 300,204 bytes |
+| `GET .../ca350e3f-…/audio` | `200` 1,516,204 bytes | `200` 1,516,204 bytes |
+| `GET .../f443c8e0-…/audio` | `200` 2,509,484 bytes | `200` 2,509,484 bytes |
+| `Range: bytes=0-1023` | `206`, 1024 bytes | `206`, 1024 bytes |
+| `GET /benchmark/calls?limit=5` | `200` | `200` |
+| server can write into it | yes | yes (probed with a real file, then removed) |
+| second `--apply` | — | `0 to change -- nothing to do` |
+
+**Proof by breaking — three ways, all after the commit:**
+
+1. `mode: 0o700` removed from the helper → EXACTLY one test failed,
+   `expected 493 to be 448` (0755 against 0700); the other 14 passed. The
+   assertion is specific, not a smoke test.
+2. The helper made to self-heal with a `chmod` → the OTHER new test failed, the
+   one asserting an existing directory is left as found. That test is what says
+   out loud why the script has to exist; without it, someone would "simplify"
+   the script away.
+3. Sandbox of DUMMY files, never real caller audio: `chmod 700 "$DIR"` deleted
+   but the assertion kept → the run printed its optimistic
+   `the directory changed to 0700` line and then exited **1** with
+   `!! the directory is still drwxr-xr-x after the sweep`, never reaching
+   `done:`. The dry-run default was re-checked in the same sandbox: a plain
+   no-argument run left a 0755 directory and a 0644 file exactly as found.
+
+**Must not — held.** No file's mode, name or contents changed (456 files,
+`-rw-------`, before and after). No directory but that one was chmod'd. The
+server still writes into its own cache.
+
+**Learned:**
+
+1. **A permission fix that only names files leaves the container at the
+   process's umask.** M-6b and M-6d were both correct and both incomplete for
+   the same reason: `-perm`, `chmod`, `writeFile mode` all take file paths, and
+   nothing in that vocabulary makes you look one level up. The audio was
+   unreadable and the index of 456 call ids was not.
+2. **`mkdir`'s `mode` behaves exactly like `writeFile`'s: creation only.** Which
+   means the same two-jobs split M-6d learned applies again — the write path and
+   what is already on disk are separate fixes, and neither implies the other.
+3. **Five copies of one `mkdir` meant the app did not actually own the
+   directory's mode.** The three copies in tests are not incidental: on a fresh
+   checkout the test suite runs long before the server writes its first cache
+   file, so the test's `mkdir` is the one that decides. Deduplicating them was
+   not tidiness, it was the difference between the fix working and the fix
+   being true only on this laptop.
+4. **A break test that touches a default argument pointing at live data is
+   aimed at the wrong thing.** Break #2 added a `chmod` inside
+   `ensureAudioCacheDir()`, whose default is the real `CACHE_DIR`, and the test
+   file's own `write()` helper calls it with no argument — so the break ran
+   against the live cache directory and set it to 0700 early. Nothing was lost
+   and the end state was the intended one, but the script had not done it. The
+   directory was put back to 0755 and the acceptance was re-run properly
+   through the committed script. M-6d's lesson was "break in a sandbox"; the
+   sharper version is "a sandbox is not a directory, it is every path the code
+   under test can reach, including its defaults."
+
 **PR:** one.
 **Depends on:** M-6d (done -- every file inside is 0600 now; this is the container).
 **Files:** `artifacts/api-server/src/lib/audio-cache.ts` (the `mkdir` that creates it),

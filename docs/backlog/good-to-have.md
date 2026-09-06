@@ -1,6 +1,46 @@
+## Found 2026-09-06 (shipping M-6e): the test suite writes fixture files into the LIVE audio cache directory
+
+**Not queued yet — logged, not fixed.** Three test files compute their cache
+directory the same way the server does, from `process.cwd()`, which under vitest
+is the api-server package root — so it is not a copy of the cache directory,
+it IS the cache directory holding 456 real caller recordings:
+
+- `artifacts/api-server/src/lib/audio-cache.test.ts`
+- `artifacts/api-server/src/routes/__integration__/calls-list.int.test.ts`
+- `artifacts/api-server/src/routes/__integration__/customer-channel.int.test.ts`
+
+What they write is dummy (`"mono-bytes"`, `"customer-bytes"`, `"RIFF"`) under
+uuids no corpus call uses, and each deletes its own files in `afterAll`, so
+nothing real has ever been exposed and nothing real is ever overwritten. Two
+things are still true and neither is nice:
+
+1. **They write with no `mode`**, so each fixture file is born 0644 — measured
+   directly: a plain `printf > file` in that directory produces `-rw-r--r--`.
+   Since M-6e the directory is 0700, so a 0644 file inside it is no longer
+   reachable by another local user; before M-6e it was, for the length of a
+   test run. This is why M-6d's sweep kept finding 456 files at 0600 despite
+   many test runs: the fixtures are deleted before anyone counts.
+2. **`afterAll` only runs on a clean exit.** A killed or crashed run leaves
+   `00000000-0000-4000-8000-…` files sitting in the cache directory, and
+   `listCachedCallIds()` matches anything of the shape `<uuid>.audio` — so the
+   orphans would be counted as cached calls. They join to no call row, so
+   nothing renders wrong today; the count is simply not the truth.
+
+**How to reproduce:** `cd artifacts/api-server && npx vitest run
+src/lib/audio-cache.test.ts` and `ls artifacts/api-server/audio-cache | grep
+'^00000000'` while it is mid-run.
+
+**The general shape:** a module-level constant derived from `process.cwd()` has
+no test seam at all — vitest runs from the same cwd as the server, so "the test
+directory" and "the production directory" are the same string. `ensureAudioCacheDir(dir)`
+(M-6e) took the first parameter of this kind; the fix here is the same move
+applied to the paths, or a `CACHE_DIR` override read once from the environment.
+
+---
+
 ## Found 2026-09-06 (shipping M-6d): the audio cache directory is world-listable
 
-**Queued as M-6e.** M-6d brought all 456 files under
+**Fixed by M-6e** (2026-09-06, PR #97): the directory is `drwx------`. Was: M-6d brought all 456 files under
 `artifacts/api-server/audio-cache/` to 0600 -- measured after the sweep, the mode
 histogram is `456 -rw-------` with nothing else in it. The directory holding them is
 still `drwxr-xr-x`.
