@@ -101,6 +101,16 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   const production = g.production
     ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — winner has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} disagreements than production` : ""}.`
     : "In production today: unknown (no call in this group recorded its live provider).";
+  // M-8b: production's OWN transcript against the candidates' consensus, on
+  // the same per-100-words scale as the table below. Absent -- never a zero
+  // and never a dash -- when there is no comparable number: a bulk measured
+  // on the mono mix heard the assistant too, and production's draft is the
+  // caller alone. See productionDisagreementFor in verdict.ts.
+  const pd = g.productionDisagreement;
+  const per100 = (rate: number) => (rate * 100).toFixed(1);
+  const productionMeasured = pd
+    ? `Production, measured: the transcript production actually produced disagreed with the candidates' consensus on ${per100(pd.rate)} of every 100 compared words${pd.leaderProviderId && pd.leaderRate !== null ? `, against ${per100(pd.leaderRate)} for ${esc(nameOf(pd.leaderProviderId))}, the closest candidate` : ""} — over ${n(pd.calls)} of ${n(pd.totalCalls)} call${pd.totalCalls === 1 ? "" : "s"} in this group. Production is scored against the candidates, never ranked with them: it takes no part in forming the consensus it is measured on, so it appears in no row below and cannot win a bulk.`
+    : null;
   const caveats: string[] = [];
   if (v.provisional) caveats.push(`Early read (under 20 calls): trust the direction, not the size.`);
   if (v.confidenceComparable.total > 0 && v.confidenceComparable.reporting < v.confidenceComparable.total)
@@ -119,6 +129,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   <p class="sentence">${esc(v.sentence)}</p>
   <p class="meta">${esc(evidence.join(" · "))}</p>
   <p class="meta">${production}</p>
+  ${productionMeasured ? `<p class="meta">${productionMeasured}</p>` : ""}
   <p class="meta">Cost: ${esc(costDeltaLine(v, nameOf, price))}</p>
   ${caveats.map((c) => `<p class="caveat">${esc(c)}</p>`).join("")}
   <table>

@@ -27,14 +27,18 @@ const base: HeadlineVerdict = {
 const nameOf = (id: string | null) => ({ a: "Alpha", b: "Bravo" })[id ?? ""] ?? "?";
 const price = { a: 0.004, b: 0.008 };
 
-function render(verdict: HeadlineVerdict, extra: Partial<Parameters<typeof renderVerdictArtefact>[0]> = {}) {
+function render(
+  verdict: HeadlineVerdict,
+  extra: Partial<Parameters<typeof renderVerdictArtefact>[0]> = {},
+  productionDisagreement: BulkVerdicts["groups"][number]["productionDisagreement"] = null,
+) {
   const verdicts: BulkVerdicts = {
     bulkId: "bulk-1",
     providers: [
       { id: "a", name: "Alpha" },
       { id: "b", name: "Bravo" },
     ],
-    groups: [{ clientLabel: "Rush <Parts>", assistantIds: ["x"], callCount: 9, vertical: "rush", production: { vendor: "Bravo", model: null, coverage: 9, total: 9 }, productionDisagreement: null, verdict }],
+    groups: [{ clientLabel: "Rush <Parts>", assistantIds: ["x"], callCount: 9, vertical: "rush", production: { vendor: "Bravo", model: null, coverage: 9, total: 9 }, productionDisagreement, verdict }],
   };
   return renderVerdictArtefact({
     bulk: { id: "bulk-1", name: 'Aug "27" bulk', status: "complete", createdAt: new Date("2026-08-27T10:00:00Z"), completedAt: new Date("2026-08-27T11:00:00Z") },
@@ -77,6 +81,30 @@ describe("renderVerdictArtefact", () => {
     expect(html).toContain("Alpha $0.0040/min is 50% cheaper per minute than production Bravo $0.0080/min.");
     expect(html).toContain("winner has 25% fewer disagreements than production");
     expect(html).not.toContain("Early read");
+  });
+});
+
+// M-8b: production's own transcript on the ranking's scale -- or nothing.
+describe("renderVerdictArtefact production disagreement", () => {
+  it("states production's own disagreement beside the closest candidate's, on one scale", () => {
+    const html = render(base, {}, { rate: 0.041, leaderProviderId: "a", leaderRate: 0.018, calls: 19, totalCalls: 56 });
+    expect(html).toContain("4.1 of every 100 compared words");
+    expect(html).toContain("against 1.8 for Alpha, the closest candidate");
+    expect(html).toContain("over 19 of 56 calls in this group");
+    // Must not: production is never a row, a rank or a candidate.
+    expect(html).toContain("never ranked with them");
+    expect(html).not.toContain("__production__");
+  });
+
+  it("says nothing at all when there is no comparable number, never a zero", () => {
+    // The default fixture is null, which is what both bulks on disk return:
+    // they ran on the mono mix, where production's caller-only draft and the
+    // candidates' both-speaker transcripts are not on one scale.
+    const html = render(base);
+    expect(html).not.toContain("Production, measured");
+    expect(html).not.toContain("of every 100 compared words");
+    // The line that WAS always there is untouched.
+    expect(html).toContain("In production today: Bravo on 9 of 9 calls");
   });
 });
 

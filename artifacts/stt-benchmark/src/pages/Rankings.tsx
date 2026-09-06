@@ -35,7 +35,7 @@ const ClientTrendSection = React.lazy(() =>
 )
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
-import { BulkVerdictBanner, GroupVerdictHeadline, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
+import { BulkVerdictBanner, GroupVerdictHeadline, ProductionDisagreementLine, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { WordsToWatch } from "@/components/words-to-watch"
 import { AssistantSignals } from "@/components/assistant-signals"
 import { apiBase } from "@/lib/api-base"
@@ -815,6 +815,20 @@ export default function Rankings() {
         <ChannelLine channel={bulkChannel(bulkDetail.selectionCriteria.requireCustomerAudio)} />
       )}
 
+      {/* M-8b: why no org below carries a "Production, measured" line. Said
+          once for the page, not once per org, because the reason is the
+          bulk's channel and every org on the page shares it. The channel
+          sentence itself is reused rather than restated, so an untracked
+          bulk is never described as mono. */}
+      {viewMode === "bulk" && bulkDetail
+        && bulkChannel(bulkDetail.selectionCriteria.requireCustomerAudio).kind !== "customer" && (
+        <p className="text-xs text-muted-foreground" data-testid="production-disagreement-unavailable">
+          Production's own transcript is not compared on this bulk.{" "}
+          {bulkChannel(bulkDetail.selectionCriteria.requireCustomerAudio).long} Production's draft is the caller
+          alone, so the two are not on one scale -- no figure is shown rather than a wrong one.
+        </p>
+      )}
+
       {/* Cost + coverage as tiles. STT and agent spend are different
           budgets, never combined into one figure. */}
       {viewMode === "bulk" && bulkDetail && (
@@ -874,6 +888,11 @@ export default function Rankings() {
                   verdict={org.verdict?.verdict}
                   scope={org.verdict ? { clientLabel: org.verdict.clientLabel, assistantCount: org.verdict.assistantIds.length, callCount: org.verdict.callCount } : undefined}
                 />
+                {/* M-8b: production's own transcript against the same
+                    consensus, on the same scale, at the same org grain --
+                    renders nothing at all when there is no comparable
+                    number. */}
+                <ProductionDisagreementLine data={verdicts} group={org.verdict} />
               </div>
             )}
             {/* T-24: the org as a whole -- every candidate's list price at
