@@ -1,3 +1,26 @@
+## Found 2026-09-06 (shipping M-6d): the audio cache directory is world-listable
+
+**Queued as M-6e.** M-6d brought all 456 files under
+`artifacts/api-server/audio-cache/` to 0600 -- measured after the sweep, the mode
+histogram is `456 -rw-------` with nothing else in it. The directory holding them is
+still `drwxr-xr-x`.
+
+So the contents are safe and the index is not. No other local user can read a byte of
+caller audio, but any of them can `ls` that directory and come away with 456 call ids
+and the byte size of each recording. A call id is the join key to a real caller's
+record, and a size is a rough call length, so this is a smaller leak than the audio but
+it is not zero.
+
+Both M-6b and M-6d reasoned entirely about files. Neither looked at the container they
+sit in, which is a general shape worth remembering: a permission fix that only ever
+names files leaves the directory at whatever the process's umask produced, and 0755 is
+what that produces by default.
+
+Reproduce: `stat -f '%Sp' artifacts/api-server/audio-cache` → `drwxr-xr-x`, then
+`ls artifacts/api-server/audio-cache | head` as any user on the machine.
+
+---
+
 ## Found 2026-09-06 (shipping M-7b): a silent card and a loud card look the same
 
 **Closed 2026-09-06 by M-7c (PR #94, deployed `681483c03902`)** -- for the first half.

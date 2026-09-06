@@ -1045,6 +1045,102 @@ audio route → 200).
 **Must not:** delete or move a file; change any file's contents; chmod anything outside
 that one directory; run without a dry run first.
 
+**Status:** done 2026-09-06 (PR #96, `7907cdf`). Not deployed: the change is a shell
+script, not part of the API bundle, so the live build stays `681483c03902`. The sweep
+itself has already been run against the running server's own cache directory, and the
+audio route was re-checked afterwards.
+
+**Nothing this step claimed turned out to be wrong.** Counted on disk before touching
+anything, 2026-09-06: 456 files -- 100 `<id>.artifact.json`, 100 `<id>.customer.audio`
+and 100 `<id>.assistant.audio` at 0600, and exactly 156 mono `<id>.audio` at 0644. The
+premise held too: the newest of the 156 is `2026-09-05 04:24:01` and M-6b merged
+`2026-09-06 02:55:11`, so every one of them predates M-6b and no write path is still
+producing 0644.
+
+**Change (as built):** one new file, `scripts/chmod-audio-cache.sh`. Nothing else -- no
+TypeScript, no route, no schema, no database read or write. It counts, it is a dry run
+unless given `--apply`, it rejects any other argument, and it recounts afterwards and
+exits non-zero if a single file is still not 0600. `-type f` so a symlink is skipped
+rather than followed out of the directory; `-print0 | xargs -0` so an odd filename is
+not mangled.
+
+**Acceptance -- Met.** `find artifacts/api-server/audio-cache -type f ! -perm 600 | wc -l`
+read **156** before `--apply` and **0** after. `ls -l` on a known mono file shows
+`-rw-------`.
+
+**Verify -- what was actually checked**
+
+| check | result |
+| --- | --- |
+| not-0600 count, before → after | 156 → **0** |
+| mode histogram after | 456 files, all `-rw-------` |
+| sha256 of all 456 files, before vs after | identical |
+| inode + size of all 456, before vs after | identical -- nothing recreated, moved or renamed |
+| three of the 156 through the audio route | `200 300204` / `200 1516204` / `200 2509484`, byte-identical before and after |
+| `Range: bytes=0-1023` | `206`, 1024 bytes -- the `<audio>` scrubber still works |
+| second `--apply` | `456 already 0600 / 0 to change` |
+
+**Proof by breaking, after the commit, three ways.** (1) In a throwaway sandbox of dummy
+files -- never real caller audio -- the sweep line was changed to `chmod 644`: the script
+ran, exited **1** with `!! 3 file(s) are still not 0600 after the sweep`, and never
+printed its `done:` line, so the final recount is a real assertion. (2) With the
+`--apply` early exit deleted from that sandbox copy, a plain no-argument run silently
+changed 3 files -- against the real directory, with the guard in place, the same plain
+run left 156 at 156. (3) One real mono file was put back to 0644: the committed script's
+dry run said `1 would change`, `--apply` fixed it, the count returned to 0, and that
+file's sha256 was unchanged.
+
+**Must not -- Held.** No file deleted, moved or renamed (inode + size list identical);
+no file's contents changed (sha256 list identical); nothing chmod'd outside that one
+directory; the dry run ran first and was verified to be dry before `--apply`; the
+database was not touched, no provider was called, nothing was spent.
+
+**What was learned**
+
+1. `writeFile(..., { mode })` sets the mode **at creation only**. M-6b's test proves a
+   newly written file is 0600 and always will -- it can never catch a file that already
+   existed, so a write-path fix and a sweep of what is already on disk are two different
+   jobs, and M-6b only ever did the first.
+2. Once every file is 0600 the sweep never needs to run again: an overwrite keeps the
+   existing mode, and a fresh file is born 0600. That is why this is a one-shot script
+   and not a scheduled job.
+3. The break proof was done on dummy files in a sandbox, not on the cache. A destructive
+   break test against 456 files of real caller audio is not a proof, it is a gamble --
+   and the sandbox reproduces the layout exactly because the script derives its target
+   from its own location (`$(dirname "$0")/..`), so a copy in a mirrored tree needs no
+   override to point somewhere safe.
+4. The one thing the step did not think about is the container: every file inside is now
+   0600, but the directory is still `drwxr-xr-x`. See M-6e.
+
+---
+
+### M-6e — The audio cache directory itself is still world-listable
+
+**PR:** one.
+**Depends on:** M-6d (done -- every file inside is 0600 now; this is the container).
+**Files:** `artifacts/api-server/src/lib/audio-cache.ts` (the `mkdir` that creates it),
+`scripts/chmod-audio-cache.sh` (the sweep, so a re-run also fixes the directory).
+**Today:** measured 2026-09-06, after M-6d: all 456 files under
+`artifacts/api-server/audio-cache/` are `-rw-------`, and the directory holding them is
+`drwxr-xr-x`. Nobody but this server's user can read a byte of caller audio, but any
+local user can still `ls` the directory and walk away with 456 call ids and their file
+sizes. A call id is the join key to a real caller's record, so the listing is not
+nothing. M-6b and M-6d both reasoned about files and neither looked at the container.
+**Change:** create the directory `0700` instead of letting it default to 0755, and have
+the sweep script bring an existing directory down to 0700 as well -- reported and dry-run
+under the same `--apply` flag it already has, and counted separately from the files so
+the output still says plainly what it is about to do.
+**Acceptance:** WHEN the sweep has been run with `--apply` THEN
+`stat -f '%Sp' artifacts/api-server/audio-cache` SHALL read `drwx------`, and the API
+SHALL still answer `200` on `GET /benchmark/calls/<a cached id>/audio`.
+**Verify:** `stat -f '%Sp' artifacts/api-server/audio-cache` before (`drwxr-xr-x`) and
+after (`drwx------`); `curl -s -o /dev/null -w '%{http_code}' localhost:8177/api/benchmark/calls/e2553079-0fd5-4abc-a205-2e14ff15ccaa/audio`
+→ 200; the api-server unit tests still pass, including
+`artifacts/api-server/src/lib/audio-cache.test.ts`.
+**Must not:** change any file's mode, name or contents (M-6d already settled the files);
+chmod any directory other than that one -- in particular not its parents; leave the
+server unable to write into its own cache.
+
 ---
 
 ### M-7a — Production signals stored per call
