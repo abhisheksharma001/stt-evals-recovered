@@ -1,3 +1,47 @@
+## Found 2026-09-06 (shipping M-10a): a guard scoped to an element cannot see the page
+
+M-10a took latency out of the ranking composite and corrected the two table-header
+tooltips that named it. It missed a third site, and the loudest one: every group card on
+Results carries **visible text** reading
+
+> Ranked by **disagreements, price, speed**
+
+plus a title, "Rank = disagreements, then price and speed." For one deploy the page
+contradicted itself out loud.
+
+Everything in the loop was green while it was wrong: typecheck 4/4, four guards, 403 unit
+tests, 123 integration tests, both CI checks. The render guard asserted on
+`getAllByRole("columnheader")` and this line is in the card header, so it could not see
+it. **The only thing that caught it was the post-deploy grep of the built bundle** —
+`grep -ro 'price and speed' artifacts/stt-benchmark/dist/public` came back `1`, not `0`.
+
+Two rules out of it:
+
+1. A copy guard should sweep, not point. The replacement asserts over **every** `[title]`
+   in the document and **every** element whose text starts with `Ranked by`, so it catches
+   the site nobody thought to name. It still allows a tooltip to mention speed in order to
+   disclaim it — it bans the ranking-basis phrasings, not the word.
+2. The post-deploy bundle grep is load-bearing, not ceremony. It has now caught something
+   the entire test suite could not.
+
+This is also the seventh time a step's Files list has undercounted its own blast radius
+(M-8a, M-9, M-9b, S-9, and now M-10a twice over) — and the first time in a step written
+in the same session as the grill meant to prevent it. The pattern is not "inherited steps
+are sloppy". It is that a Files list is written from what you searched for, and you cannot
+search for the phrasing you did not imagine.
+
+## Found 2026-09-06 (verifying M-10a): Corpus shows the same incomparable Speed number
+
+`artifacts/stt-benchmark/src/pages/Corpus.tsx` has its own per-call Speed column, titled
+"Time to the final transcript. Lower is better." It is the same `latencyFinalMs` M-10a
+just stopped ranking on: file turnaround for the six batch adapters, and the length of
+the call for Cartesia, which our adapter streams at real time. "Lower is better" is
+therefore misleading on a Cartesia row in exactly the way Results was.
+
+Not fixed as a drive-by. Assigned to **M-10b**, the step that makes the number mean
+something, because a wording fix that lands before the measurement would have to be
+written twice.
+
 ## Found 2026-09-06 (grilling M-10): rank 1 claims it had the fewest flags when every provider tied
 
 `run-executor.ts:1409` writes rank 1's stored recommendation as:

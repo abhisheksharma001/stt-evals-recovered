@@ -2088,6 +2088,8 @@ the same shape — the test is not asserting a shape only a fixture can make.
 
 ### M-10a — Latency stops deciding rank, because it does not mean the same thing twice
 
+**Status:** `done` 2026-09-06 (PR #103, `f2665de`; follow-up PR #104, `f816da4`), deployed `2067ed5f5644 -> f816da453032`.
+
 **PR:** one.
 **Depends on:** nothing. (M-5 is done; nothing in this step reads `audioSource`.)
 **Files:**
@@ -2099,8 +2101,17 @@ the same shape — the test is not asserting a shape only a fixture can make.
 - `artifacts/api-server/src/lib/run-executor.ts` — two places, both in this one file:
   the `hybridCompositeScore({ ... })` call site (~line 1320) drops the two latency
   fields, and the T-6 comment at ~line 128 stops citing latency as a ranking input.
-- `artifacts/stt-benchmark/src/pages/Rankings.tsx` — `SORT_TITLES.rank` (~line 84) and
-  `SORT_TITLES.latencyFinalMs` (~line 89). Two strings. Nothing else on the page.
+- `artifacts/stt-benchmark/src/pages/Rankings.tsx` — `SORT_TITLES.rank` (~line 84),
+  `SORT_TITLES.latencyFinalMs` (~line 89), **and the group-card "Ranked by" line at
+  ~line 925 — both its visible text and its `title`.**
+  _Corrected 2026-09-06, after shipping. This bullet originally read "Two strings.
+  Nothing else on the page." It was wrong: the card header says
+  `Ranked by disagreements, price, speed` in visible text on every group, which is the
+  most-read statement of the ranking basis on the page. PR #103 shipped without it and
+  the page contradicted itself for one deploy. Found by the post-deploy bundle grep,
+  fixed in PR #104. Same undercount this project has now logged seven times — and the
+  first time in a step written in the same session as the grill that was supposed to
+  catch it._
 - `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx` — a guard on both.
 - `docs/PRD-v6-measure.md` line 40 and `docs/PRD-v3-technical.md` line 257 — both state
   the old formula in prose and are falsified by this step.
@@ -2229,6 +2240,57 @@ mixing it in would hide which change moved which rank.
 
 ---
 
+**Done.**
+
+| break | result |
+|---|---|
+| restore the latency term and the 0.70 / 0.15 / 0.15 weights | 2 / 140 fail — `expected 0.7649571428571428 to be 0.6212931428571428`, plus the weight-keys assertion |
+| put "price and speed" back in `SORT_TITLES.rank` | 1 / 120 fail — `expected 'From disagreements (cross-provider di…' to match /not from speed/i` |
+| put `disagreements, price, speed` back in the visible card line (#104) | 1 / 121 fail — `expected 'Ranked by disagreements, price, speed' not to match /speed/i` |
+
+**Must not — held.** No schema change, no `openapi.yaml` change, no regenerated clients,
+no provider call, no `UPDATE` against `benchmark_rankings`. Verified after deploy: the
+table still holds 355 rows and the 33 tied groups are still led by `deepgram-nova-3`.
+Ranks change only when a bulk is next executed, which is what the step said would happen.
+
+**Live check** on `f816da453032`, against the built bundle: `price and speed` 0,
+`disagreements, price, speed` 0, `Not from speed` 1, `does not affect Rank` 1,
+`Speed is shown but not ranked on` 1. Every remaining mention of the word was read: the
+column label, the direction legend (`Lower is better ... for disagreements, flags, speed
+and price` — a direction, not a ranking claim, and still true), and Corpus's own Speed
+column, which is a different page and is noted under M-10b.
+
+**Learned.**
+
+1. **The grill's value was the evidence, not the file list.** The retired M-10 named the
+   right problem and would have shipped a fix that did not fix it. What settled the
+   design was not reading the code — it was querying it: 33 of 62 groups tied on flags,
+   so the term that was supposed to decide the rank cancelled, and latency decided it.
+   No amount of reading `hybrid.ts` produces that number.
+2. **A false parenthetical is more dangerous than a missing file.** "(what the Cartesia
+   adapter already measures from the last chunk)" is nine words, and a weaker model would
+   have built the whole step on it. The undercount defects logged so far cost extra files;
+   this one would have cost a wrong product.
+3. **The number that orders every ranking table had no test.** Its three input signals are
+   thoroughly covered; the function that turns them into a rank was not called once in 136
+   tests. Worth looking for the same shape elsewhere: well-tested inputs, untested combiner.
+4. **A guard scoped to an element cannot see the page.** #103's render guard checked the
+   two table-header tooltips and passed while the card header said the opposite in visible
+   text. #104's guard asserts over every `[title]` in the document and every element whose
+   text starts with `Ranked by` — it does not name what it is checking, so it catches the
+   site nobody thought of. That is the difference between a guard and a spot-check.
+5. **The post-deploy bundle grep is not ceremony.** It was the only thing in the whole loop
+   that caught the miss — typecheck, four guards, 403 unit tests, 123 integration tests and
+   two CI checks were all green on a page that contradicted itself.
+6. **Removing a key beats zeroing it.** `latency: 0` would have read as a tuning decision
+   somebody could reverse in one character. Deleting the key from `HYBRID_RANKING_WEIGHTS`
+   and both fields from `HybridCompositeInput` means the compiler stops any caller who
+   still thinks latency counts — which is exactly how the orphaned `maxLatencyFinalMs`
+   surfaced.
+7. **Say plainly that the fix does not fix the screen.** There is no recompute route, so
+   the 33 groups keep their old ranks until a bulk re-runs, and re-running costs money.
+   That belongs in the PR body, not in a footnote nobody reads.
+
 **Evidence — Speed column that is shown but not scored** (`visual-and-research`,
 2026-09-06):
 - _Pattern to use:_ show the number plainly beside the score and say in the column's own
@@ -2285,6 +2347,13 @@ completes THEN that column SHALL be null, never zero.
 **Verify:** unit test on the adapter's event reducer with a synthetic event list — no
 provider call. `pnpm run typecheck`. A live check needs one paid Cartesia call and is a
 **go-spend**, not part of the step.
+
+**Also on the page, found 2026-09-06 while verifying M-10a:**
+`artifacts/stt-benchmark/src/pages/Corpus.tsx` shows the same per-call number in its own
+Speed column, titled "Time to the final transcript. Lower is better." For a Cartesia row
+that number is the length of the call, so "lower is better" is misleading there in exactly
+the way M-10a fixed on Results. Not fixed as a drive-by; it belongs to this step, because
+this step is what makes the number mean something.
 
 **Must not:** must not overwrite `latencyFinalMs`, must not put the new number into
 `hybridCompositeScore` (that is a later step, with its own argument), must not call a
