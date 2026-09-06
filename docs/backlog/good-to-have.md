@@ -1,3 +1,33 @@
+## Found 2026-09-06 (grilling M-9b): the undercount is a class, not an accident — and a `Must not` can make a step's own acceptance unreachable
+
+Third time in three steps. M-8a named the wrong file. M-9 named two of five render
+sites. M-9b said "eight places"; a case-sensitive scan of every package found **22
+rendered strings**.
+
+What makes M-9b worse than M-9 is where the miss was. The most-rendered "wins" in the
+whole product is built in `lib/scoring/src/verdict.ts` (~line 348) as the verdict
+`sentence`, and printed in three places —
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx` twice and
+`artifacts/api-server/src/lib/verdict-artefact.ts` once — before reaching
+`artifacts/stt-benchmark/src/pages/Dashboard.tsx`, which renders it at 2xl as the
+Overview headline. The step's Files list did not name that file at all. Its **`Must
+not` did**, as "touch `decision: "winner"` in `lib/scoring/src/verdict.ts`".
+
+So a weaker model executing the step faithfully reads the only mention of that file as a
+prohibition, skips it, and ships a PR whose acceptance ("no rendered string contains
+'winner' or 'wins'") is false on the largest text on the Overview — while every guard
+passes, because guards check that named paths exist, never that unnamed ones were
+missed. **A `Must not` that names a file without naming a line is read as "leave the
+file alone."** Both M-9b's Files list and its `Must not` have been rewritten to say
+which line is code and which line is copy.
+
+The M-9 entry below says this one "probably can be a script". It can, and the scan that
+found all 22 is the script: walk `artifacts/*/src` and `lib/*/src` for `.ts`/`.tsx`,
+regex the rendered phrase case-insensitively, and compare the file set found against the
+file set the step names. It caught the scoring lib in one run. Worth wiring into
+`check:doc-paths` as a second mode — *the paths named exist* is only half the check;
+*the paths that match are named* is the half that keeps failing.
+
 ## Found 2026-09-06 (grilling M-9): a step's Files list can be right about every path it names and still be missing most of them
 
 M-8b's step named a real component at the wrong data grain. M-9's step named real

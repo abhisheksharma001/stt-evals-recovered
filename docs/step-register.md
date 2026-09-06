@@ -1825,32 +1825,115 @@ match is the preserved prop name `verdictWinnerId`, not copy.
 
 ### M-9b — the lowercase `winner` family, decided once
 
-**Status:** todo
+**Status:** todo — blocked on Abhishek. Three wording calls, listed under
+**Ask Abhishek first** at the bottom. Do not start without them.
 **PR:** one.
 **Depends on:** M-9.
-**Files:** `artifacts/api-server/src/lib/verdict-artefact.ts` (the row tag
-`<span class="tag">winner</span>`, the `N winner/winners` counts strip, the summary
-sentences, the `.chip.winner` CSS class, and `Ahead, not a winner:`),
-`artifacts/stt-benchmark/src/components/verdict-headline.tsx` (the `N winners` counts
-strip), `artifacts/stt-benchmark/src/pages/Rankings.tsx` (`Ahead, not a winner` and the
-two tooltips that say "did not name a winner"),
-`artifacts/stt-benchmark/src/pages/Landing.tsx` (the example sentence "Provider A
-wins:"), plus the two render tests and `verdict-artefact.test.ts`.
-**Today:** M-9 removed every capital "Winner" from rendered output, which is what
-PRD-v6 D1's own check greps for. Lowercase copy still says `winner` and `wins` in eight
-places, including a row tag in the exported artefact directly beneath a heading that now
-reads "Least disagreement".
-**Change:** one decision covering all of them — does the *verb* change too ("X wins 3 of
-4 orgs outright"), and what replaces a one-word row tag where "least disagreement" will
-not fit? Deliberately held out of M-9 because half-renaming a verb reads worse than not
-starting, and because a one-word tag needs a wording decision, not a mechanical rename.
-**Acceptance:** WHEN `verdict.html` or Results renders THEN no rendered string SHALL
-contain "winner" or "wins" in any case, except where it explicitly *denies* a winner.
-**Verify:** `grep -rniE "winner|wins" artifacts/stt-benchmark/src artifacts/api-server/src | grep -v test`
-→ identifiers and comments only; both render suites; the integration suite.
-**Must not:** touch `decision: "winner"` in `lib/scoring/src/verdict.ts`.
-**Ask Abhishek first:** the row-tag wording. "least disagreement" is 18 characters in a
-table cell built for 6.
+
+**Files:** *(corrected 2026-09-06, before any code was written. The list this
+step shipped with named four files and said "eight places". A case-sensitive
+scan of every package found **22 rendered strings**, and the most-rendered one
+of them lives in a file this step named only in its `Must not`. Third
+occurrence of the undercount class — see the bug log.)*
+
+- `lib/scoring/src/verdict.ts` — line ~348 builds the verdict sentence
+  `` `${name(leader.providerId)} wins: ...` ``. **This is the most-rendered
+  "wins" in the product.** It is returned as `verdict.sentence` and printed in
+  three places: `artifacts/stt-benchmark/src/components/verdict-headline.tsx`
+  (the per-org list and the per-group banner) and
+  `artifacts/api-server/src/lib/verdict-artefact.ts` (`<p class="sentence">`).
+  Its test is `lib/scoring/src/verdict.test.ts`
+  (`expect(v.sentence).toContain("A wins: ")`).
+- `artifacts/stt-benchmark/src/pages/Dashboard.tsx` — renders
+  `summary.leadName` + `summary.sentence` at 2xl on the Overview, i.e. the
+  largest lowercase "wins" a client sees. **No edit is needed in this file** —
+  it is listed because it is a render site, and the step is not done until it
+  has been looked at.
+- `artifacts/stt-benchmark/src/components/verdict-headline.tsx` — nine
+  strings: `summarizeBulkVerdicts` returns three of them (`wins N of M groups
+  outright`, `No clear winner:`, `No clear winner yet:`) and those are what
+  Dashboard prints; the banner itself renders `wins N of M orgs`, `have a
+  different winner`, `no winner yet`, `No winner in this bulk:`, `No winner in
+  this bulk yet:`, and the counts strip `N winner(s)`.
+- `artifacts/api-server/src/lib/verdict-artefact.ts` — nine strings: the row
+  tag `<span class="tag">winner</span>`, `no winner is named on this
+  evidence`, `${name} wins by N%`, `Ahead, not a winner:`, `No winner named.`,
+  `— winner has N% fewer disagreements than production` (in the production
+  line, **not** named by the original step), `${name} wins N of M orgs
+  outright.`, `No clear winner:`, `No clear winner yet:`, and the counts strip
+  `N winner(s)`.
+- `artifacts/stt-benchmark/src/pages/Rankings.tsx` — `Ahead, not a winner` and
+  the `viewMode === "bulk"` tooltip that says "did not name a winner".
+- `artifacts/stt-benchmark/src/pages/Landing.tsx` — the how-it-works body
+  ("...per 100 words wins, only if...") and the example sentence
+  ("Provider A wins: 1.4 disagreements...").
+- Tests that assert the current copy and must move with it:
+  `lib/scoring/src/verdict.test.ts`,
+  `artifacts/api-server/src/lib/verdict-artefact.test.ts` (asserts
+  `"Alpha wins by 25%"`, `'class="tag">winner'`, `"Ahead, not a winner: Alpha."`,
+  `"winner has 25% fewer disagreements than production"`),
+  `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`
+  (asserts `"Ahead, not a winner"` twice).
+
+**Today:** M-9 removed every capital "Winner" from rendered output, which is
+what PRD-v6 D1's own check greps for. The lowercase family survived it, so the
+exported artefact still carries a row tag reading `winner` directly beneath a
+heading that now reads "Least disagreement", and the Overview still opens with
+"X wins 3 of 4 groups outright" in the largest type on the page.
+
+**Change:** apply the three decisions below to all 22 strings in one PR.
+Held out of M-9 on purpose: half-renaming a verb reads worse than not
+starting, and a one-word tag needs a wording decision, not a mechanical
+rename.
+
+**Acceptance:** WHEN `verdict.html`, Results or Overview renders THEN no
+rendered string SHALL contain "winner" or "wins" in any case, except the
+denial wording chosen in decision 3.
+
+**Verify:**
+- `python3 - <<'PY'` scan (see the bug log entry for M-9) or
+  `grep -rni winner artifacts/stt-benchmark/src artifacts/api-server/src lib/scoring/src`
+  and the same for `wins` — every remaining hit is an identifier, a comment,
+  a CSS class, or the denial wording from decision 3.
+- `pnpm run typecheck`
+- `pnpm --filter @stt/scoring test` (136 → same count, one assertion changed)
+- `pnpm --filter stt-benchmark test` (119)
+- `pnpm --filter @stt/api-server test` (99)
+- `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm --filter @stt/api-server run test:integration` (122)
+  — **required, not optional**: the artefact is asserted end-to-end in
+  `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`,
+  which is how M-9 arrived with a red Verify.
+
+**Must not:**
+- Rename the enum `decision: "winner" | ...` in `lib/scoring/src/verdict.ts`
+  (line ~71) or the literal at line ~352, the field `winnerProviderId`, the
+  generated types in `lib/api-zod/` and `lib/api-client-react/`, the
+  `data-decision="winner"` attribute, or the `.chip.winner` CSS class. These
+  are code, not copy.
+- **But do edit `lib/scoring/src/verdict.ts` line ~348.** The original
+  `Must not` named this file without qualifying which line, which reads as
+  "leave the file alone" — and leaving it alone makes the acceptance
+  unreachable, because that line is the sentence three surfaces print.
+
+**Ask Abhishek first** — three calls, one PR:
+
+1. **The row tag.** `<span class="tag">winner</span>` in the artefact table,
+   a cell built for six characters, sitting under a heading that now reads
+   "Least disagreement". Recommendation: `fewest` — same width as `winner`,
+   reads against the disagreements-per-100-words column beside it, and cannot
+   be heard as "most accurate". Evidence (Mobbin, 2026-09-06): pricing tables
+   mark a row `Recommended`/`Best Value`; leaderboards (Kraken, OKX) give the
+   top row no tag at all and let the column header carry the meaning. Neither
+   convention uses a word that claims a win.
+2. **The verb.** "X wins 3 of 4 orgs outright" — does it change? It is the
+   Overview's 2xl headline. Recommendation: yes, to "has the least
+   disagreement in 3 of 4 orgs", because a client who is told the ranking is
+   not accuracy and then reads "wins" believes the verb, not the footnote.
+3. **The denials.** "No clear winner", "Ahead, not a winner", "no winner is
+   named", "No winner named." Recommendation: change them too, to keep one
+   vocabulary — a page whose positive result is "least disagreement" and whose
+   negative is "no winner" invites "so where is the winner?". Cheapest
+   consistent pair: "Nothing decided" / "Ahead, but not decided".
 
 ### M-10 — Latency means end-of-speech latency, or nothing
 
