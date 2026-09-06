@@ -1523,41 +1523,149 @@ of them inside `ProductionBaselineNote`; no provider was called.
 
 ---
 
-### M-8 — The production transcript joins the consensus
+### M-8a — Production's transcript is measured against the pack, not ranked in it
 
+**Status:** done 2026-09-06 (PR #98, `a2a57b5`). Not deployed with the merge — see the
+deploy note at the end of this block.
 **PR:** one.
-**Depends on:** M-2 (labels stripped), M-5 (customer cells).
-**Files:** `lib/scoring/src/hybrid.ts` (`computeCrossProviderDisagreement`,
-`computeHybridFlags`), `lib/scoring/src/hybrid.test.ts`, `lib/scoring/src/verdict.ts`
-(`vsProductionPct`, `productionProviderId`), `artifacts/api-server/src/lib/run-executor.ts`
-(`computeHybridFlagsForRun` — where candidates are assembled per call),
-`artifacts/api-server/src/lib/verdict.ts`, `artifacts/stt-benchmark/src/pages/Rankings.tsx`.
-**Today:** production (Flux) is streaming-only and never runs here; the verdict's
-"vs production" resolves to a provider row (`deepgram-flux-general-en`) that has no
-cells, so the line is empty. The draft's `User:` lines ARE production's customer-channel
-transcript for every call.
-**Change:** `computeHybridFlagsForRun` adds one more candidate per call —
-`{ providerId: "production", transcript: <the draft's User: lines joined> }` — to the
-consensus input only (it gets no flags row of its own written as a provider result, and
-never appears in rankings as a pickable row). `computeCrossProviderDisagreement` returns
-its disagreement rate like any other candidate; the executor stores it on the run as
-`productionDisagreement` per call (new jsonb on `benchmark_runs`, keyed by call id, or a
-small new table — pick the smaller change and say which in the PR). `verdict.ts` reports
-`vsProductionPct` from those numbers; Results' production line adds "disagreed with the
-pack N.N / 100 words — vs leader M.M".
-**Acceptance:** WHEN a bulk on Land And Apartment is (re-)executed THEN the verdict's
-`vsProductionPct` SHALL be a number computed from the draft's customer turns, and the
-Rankings table SHALL NOT contain a row named "production".
-**Verify:** `cd lib/scoring && pnpm run test` — a case with three candidates plus
-production where production is the outlier; `pnpm run typecheck`; the integration case
-for rankings asserts no `production` row. Re-executing a bulk spends money: **do not**;
-prove on the unit and integration level, and record the live number after the next
-scheduled bulk (M-11's first run) instead.
-**Must not:** write a `benchmark_results` row for "production"; let it be ranked or
-picked; execute a run.
+**Depends on:** M-2 (labels stripped), M-5 (customer cells — the CHANNEL, not the data:
+no bulk has run on it yet, see Corrections).
+**Files:** `lib/scoring/src/hybrid.ts`, `lib/scoring/src/hybrid.test.ts`,
+`lib/scoring/src/index.ts`, `lib/scoring/src/index.test.ts`,
+`artifacts/api-server/src/lib/verdict.ts`, `lib/api-spec/openapi.yaml` (+ generated
+clients), `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`, and
+the two group fixtures in `artifacts/api-server/src/lib/verdict-artefact.test.ts` and
+`artifacts/stt-benchmark/src/pages/__render__/`.
+
+**Corrections to M-8 as it was written (2026-09-06, before any code):**
+
+1. **"Vs production resolves to a provider row that has no cells" was wrong.**
+   `productionProviderId` is `null` — it never resolves. `bulkVerdicts` hands
+   `resolveProductionProviderId` only the providers that RAN
+   (`inArray(benchmarkProvidersTable.id, allProviderIds)`), and Flux never ran, so the
+   row is not in the list it searches. Live on 2026-09-06, both bulks:
+   `production = {vendor: deepgram, model: flux-general-en, coverage: 50/56}` while
+   `productionProviderId = null` and `vsProductionPct = null`. Two independent blockers
+   were stacked; the step named the second one only.
+2. **`computeHybridFlagsForRun` is not in `run-executor.ts`.** It lives in
+   `artifacts/api-server/src/lib/hybrid-flagging.ts`; run-executor only calls it. The
+   step's Files list would have sent a weaker model to the wrong file.
+3. **No bulk has ever run on the customer channel.** All 630 cells across the two bulks
+   carry `audioSource = null` = mono. M-5 built the capability and made
+   `requireCustomerAudio` default true for NEW bulks; nothing has used it yet. So this
+   step's number is null on every bulk that exists, by design, until the next bulk.
+4. **The stored-on-the-run design was dropped** (Abhishek, 2026-09-06). No new jsonb on
+   `benchmark_runs`, no executor change, no schema push, no re-execution — see Change.
+
+**Today:** production (Deepgram Flux, 50 of 56 Land And Apartment calls) is
+streaming-only, never runs here, and has no cells. The draft's `User:` lines ARE
+production's customer-channel transcript for every call (present on 124 of the 126 calls
+on disk; the only two line labels Vapi writes are `AI` and `User`).
+**Change:** `computeCrossProviderDisagreement` takes
+`options.nonVoting?: readonly string[]` — a candidate that is MEASURED against the
+consensus without helping to FORM it. That is load-bearing, not stylistic: the
+providers' `peerFlagCount` values are computed and stored at run time with production
+absent, so a voting production would shift the plurality those stored numbers were
+computed against and silently make the two incomparable. With `nonVoting` empty the
+function is what it was. `productionCustomerTurns(draft)` in `lib/scoring/src/index.ts`
+keeps only the `User:` turns, beside the M-2 label constant it shares. `bulkVerdicts`
+computes a per-group `productionDisagreement` at read time — the same place and the same
+pass the verdict is already computed in — and the group gains it on
+`GET /benchmark/bulks/{id}/verdicts` as a required, nullable object
+(`rate`, `leaderProviderId`, `leaderRate`, `calls`, `totalCalls`).
+**Acceptance — Met:** WHEN a bulk that declares `requireCustomerAudio` is read THEN each
+verdict group SHALL carry a `productionDisagreement` rate computed from the draft's
+customer turns against the candidates' consensus, the candidates' own rates SHALL be
+unchanged by it, and no `rates` row SHALL be named production. WHEN the bulk ran on the
+mono mix THEN `productionDisagreement` SHALL be `null` — present and null, never a
+number.
+
+**The gate, and why it is not optional.** Measured on the real data before writing any
+code, over the 126 calls of the two bulks:
+
+| | median words per call |
+| --- | --- |
+| production's `User:` turns | 37 |
+| a mono candidate (both speakers) | 126 |
+
+Scoring 37 caller words against a 126-word all-speaker consensus reads as roughly 70 %
+disagreement purely because the assistant's turns are absent. That number says nothing
+about production and would be shown to a client. Hence null on a mono bulk.
+
+**Verify:**
+```
+pnpm run typecheck                     # 4/4
+pnpm run check:cycles                  # 80 files
+pnpm run check:doc-paths
+pnpm run check:api-routes              # 58 operations
+pnpm run check:response-edge           # 6 files, 58 sites
+pnpm -r --if-present run test          # scoring 136, stt-providers 41, ui 116, api 95
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+                                       # 122 tests, 27 files
+```
+
+**Proved by breaking it** (all three against the committed code):
+
+| Break | What failed |
+| --- | --- |
+| non-voting filter removed (production votes) | 3 tests, incl. `expected +0 to be 0.16666666666666666` — a **voter's own rate moved** |
+| channel gate removed | exactly 1 integration test, the mono one; the customer case still passed |
+| extractor keeps the `AI:` turns | the unit test, and end-to-end through the route `rate` went `0.25 → 0.5` |
+
+**Must not — held:** no `benchmark_results` row for production; it is never in `rates`,
+never rankable, never pickable; no run executed; nothing spent; no provider called; no
+schema change; `vsProductionPct` untouched (it still means "production as a benchmarked
+provider row", and is still null).
+
+**Deploy:** the live build stays as it was at merge. The new field reads `null` on both
+bulks in the database, so deploying changes nothing a person can see; it goes out with
+M-8b, which is what renders it.
+
+**Learned:**
+1. **A step's "Today" is a claim, not a given.** M-8's named the wrong cause. Checking it
+   against the live API took one curl and changed what the fix had to be.
+2. **A capability shipped is not a capability used.** M-5 made customer-channel runs
+   possible; nothing had run one. "Depends on M-5" was satisfied in code and empty in
+   data, and only the data says whether a number can be trusted.
+3. **Adding a voter changes everyone's score.** The consensus is a plurality, so the
+   obvious design (throw production in with the rest) would have quietly invalidated
+   every stored `peerFlagCount`. Non-voting is smaller AND more correct, and it removed
+   the schema change and the re-run the step had asked for.
+4. **The break that mattered most was the one that moved a number nobody was looking at.**
+   Break 1's headline failure is not production's rate — it is provider `c`'s.
 
 ---
 
+### M-8b — The Results page says how far production sat from the pack
+
+**PR:** one.
+**Depends on:** M-8a.
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the production line, beside
+the existing "In production today" text), `artifacts/api-server/src/lib/verdict-artefact.ts`
+(the same line in `verdict.html`), `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+`artifacts/api-server/src/lib/verdict-artefact.test.ts`.
+**Today:** `productionDisagreement` is on the API (M-8a) and nothing renders it. The
+Results production line still stops at "In production today: Deepgram Flux General EN on
+50 of 56 calls."
+**Change:** when `productionDisagreement` is non-null, append one sentence naming both
+numbers on the same scale and the calls behind them — e.g. "production disagreed with
+the pack on 4.1 of every 100 compared words, against 1.8 for AssemblyAI Universal, over
+19 of 56 calls." When it is null, render nothing extra (never a zero, never "0%"), and
+where the bulk ran on the mono mix say why in the same muted register the M-7c coverage
+line uses. Same line, same wording, in `verdict.html`.
+**Acceptance:** WHEN a customer-channel bulk's Results card renders THEN the production
+line SHALL state production's disagreement and the leader's on one scale with the call
+count behind them, AND WHEN `productionDisagreement` is null THEN no disagreement figure
+SHALL appear anywhere on the card. The rendered output SHALL NOT contain the string
+`__production__`, and no `rates` row SHALL be named production.
+**Verify:** `cd artifacts/stt-benchmark && pnpm run test` (render test asserts both the
+present and the null case); `cd artifacts/api-server && pnpm run test` (artefact test the
+same); `pnpm run typecheck`. No bulk is executed — the null case is what both existing
+bulks show, and the non-null case is a fixture.
+**Must not:** invent a number when `productionDisagreement` is null; render production as
+a row, a rank or a pickable candidate; change `vsProductionPct`; execute a run.
+
+---
 ### M-9 — "Least disagreement", not "Winner", and the line that says what it is
 
 **PR:** one.

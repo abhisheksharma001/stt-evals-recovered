@@ -1,3 +1,27 @@
+## Found 2026-09-06 (grilling M-8): a step's Files list can name the wrong file and every guard still passes
+
+**Not queued — logged as a class of problem, not a defect to fix.** M-8's Files
+list sent the implementer to
+`artifacts/api-server/src/lib/run-executor.ts` for `computeHybridFlagsForRun`.
+That function lives in `artifacts/api-server/src/lib/hybrid-flagging.ts`;
+run-executor only calls it. `scripts/check-doc-paths.sh` passed, correctly — the
+backticked path exists. What is wrong is the CLAIM about what is inside it, and
+no guard checks claims.
+
+Same shape as M-8's "Today" sentence, which named the wrong reason
+`vsProductionPct` is null (it said Flux has no cells; in fact
+`resolveProductionProviderId` is only handed the providers that RAN, so Flux is
+never even searched). Both were caught by reading the code before writing any,
+which is what the standard's grill step is for — but a weaker model following
+the step alone would have opened the wrong file and believed the wrong cause.
+
+Reproduce: `git show 4ff1e18:docs/step-register.md`, read M-8's Files list, then
+`git grep -n "export async function computeHybridFlagsForRun"`.
+
+Worth considering, not proposed: a check that a backticked `path.ts` (`symbol`)
+pair in the register actually resolves. Cheap to write, and it would have caught
+this one. Not written — it is speculative until a second instance shows up.
+
 ## Found 2026-09-06 (shipping M-6e): the test suite writes fixture files into the LIVE audio cache directory
 
 **Not queued yet — logged, not fixed.** Three test files compute their cache
