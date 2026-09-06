@@ -3,6 +3,7 @@ export * from "./types";
 export * from "./registry";
 export * from "./poll";
 export * from "./adapters/deepgram";
+export * from "./adapters/deepgram-streaming";
 export * from "./adapters/assemblyai";
 export * from "./adapters/openai";
 export * from "./adapters/elevenlabs";
