@@ -6,7 +6,8 @@
 // always wins. List assertions are containment on this suite's own rows.
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
-import { pool } from "@workspace/db";
+import { benchmarkScoresTable, db, pool } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import app from "../../app";
 import { Fixtures } from "./fixtures";
 
@@ -119,6 +120,41 @@ describe("GET /api/benchmark/runs/:runId/results", () => {
     expect(res.status).toBe(200);
     expect(res.body[0].failureDiagnosis).toBe("operator wrote this one");
     expect(res.body[0].failureSuggestedFix).toBe("operator's fix");
+  });
+
+  // M-10b. The column is written by run-executor only when a real streaming
+  // cell runs, which costs provider money -- so the thing worth proving
+  // without spending is that the column exists in the database under the
+  // name the drizzle schema claims, and survives a round trip. A schema that
+  // has drifted from the running database fails silently here and expensively
+  // there.
+  it("stores an end-of-audio latency distinctly from latencyFinalMs, and null when unmeasured", async () => {
+    const run = await fx.run({ purpose: "batch" });
+    const call = await fx.call();
+    const streaming = await fx.provider();
+    const batch = await fx.provider();
+
+    const streamingResult = await fx.result(run.id, call.id, streaming.id, { status: "ok" });
+    await fx.score(streamingResult.id, { latencyFinalMs: 80_754, latencyEndOfAudioMs: 812 });
+    const batchResult = await fx.result(run.id, call.id, batch.id, { status: "ok" });
+    await fx.score(batchResult.id, { latencyFinalMs: 4_613 });
+
+    const [streamingRow] = await db
+      .select({ final: benchmarkScoresTable.latencyFinalMs, endOfAudio: benchmarkScoresTable.latencyEndOfAudioMs })
+      .from(benchmarkScoresTable)
+      .where(eq(benchmarkScoresTable.resultId, streamingResult.id));
+    // The two numbers must not be the same number wearing two names -- that
+    // conflation is what M-10a had to take out of the ranking composite.
+    expect(streamingRow.endOfAudio).toBe(812);
+    expect(streamingRow.final).toBe(80_754);
+
+    const [batchRow] = await db
+      .select({ endOfAudio: benchmarkScoresTable.latencyEndOfAudioMs })
+      .from(benchmarkScoresTable)
+      .where(eq(benchmarkScoresTable.resultId, batchResult.id));
+    // A batch adapter measures nothing here. Null, never 0 -- 0 would rank
+    // as the fastest possible provider.
+    expect(batchRow.endOfAudio).toBeNull();
   });
 
   it("an unknown run answers an empty list; a malformed id answers a sentence", async () => {
