@@ -1,3 +1,35 @@
+## Found 2026-09-07 (grilling M-11b): the Deepgram streaming adapter authenticates by a method Deepgram does not document
+
+`lib/stt-providers/src/adapters/deepgram-streaming.ts` (shipped in M-11a, PR #110) puts
+the raw API key in the socket URL as `token=<key>`, under a comment asserting that
+"Deepgram documents the query parameter for Listen v1/v2 for exactly that case." It does
+not. Read on 2026-09-07:
+
+- The v1 `/listen` reference lists every query parameter the endpoint accepts --
+  callback, callback_method, channels, detect_entities, diarize, diarize_model,
+  dictation, encoding, endpointing, extra, interim_results, keyterm, keywords, language,
+  mip_opt_out, model, multichannel, numerals, profanity_filter, punctuate, redact,
+  replace, sample_rate, search, smart_format, tag, utterance_end_ms, vad_events,
+  version. `token` is not among them; authentication is the `Authorization` header.
+- The Flux v2 reference documents an `Authorization` header only.
+- What Deepgram documents for a client that cannot set request headers is the
+  subprotocol pair `Sec-WebSocket-Protocol: token, <API_KEY>`, for `/listen` and
+  `/speak`. The only query-string credential that turns up anywhere is `access_token=`
+  carrying a short-lived JWT from `/auth/grant` -- not a raw API key, and only in a
+  community thread, not the reference.
+
+Two consequences. The handshake may simply 401 on the first live call (M-11d), and a
+live credential sits in a URL for no reason the vendor asked for -- which is the whole
+reason M-11a had to guard the `new WebSocket` throw path against writing that URL into
+`benchmark_provider_call_results.error_message`. Node 22's global `WebSocket` accepts a
+protocols array, so the documented method was available all along.
+
+**Reproduce:** the parameter list at developers.deepgram.com/reference/listen-live
+against the `URLSearchParams` block in `deepgram-streaming.ts`.
+
+**Fixed by:** M-11e. The claim is also corrected in the M-11a block of
+`docs/step-register.md`, where it was made, rather than only here.
+
 ## Found 2026-09-07 (shipping M-11a): the Cartesia adapter streams faster than real time, and wrongly at any rate but 16 kHz
 
 `lib/stt-providers/src/adapters/cartesia.ts` sends a hardcoded `CHUNK_BYTES = 6400`

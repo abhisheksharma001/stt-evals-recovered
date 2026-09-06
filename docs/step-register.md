@@ -2986,6 +2986,22 @@ a second adapter declaring `listModels` would have broken.
    writes `err.message` verbatim into a persisted, rendered field. Found by reading the
    executor, not by reading the adapter. `cartesia.ts` has the same shape and is still
    open (backlog).
+   **Corrected 2026-09-07 (M-11e).** "Forced" was wrong, and so is the claim in this
+   step's own Change text below that "Deepgram documents the query parameter for Listen
+   v1/v2 exactly for that case." Re-read that day: the v1 `/listen` reference lists every
+   query parameter the endpoint accepts -- callback, callback_method, channels,
+   detect_entities, diarize, diarize_model, dictation, encoding, endpointing, extra,
+   interim_results, keyterm, keywords, language, mip_opt_out, model, multichannel,
+   numerals, profanity_filter, punctuate, redact, replace, sample_rate, search,
+   smart_format, tag, utterance_end_ms, vad_events, version -- and `token` is not one of
+   them. The Flux v2 reference documents an `Authorization` header only. What Deepgram
+   does document for a client that cannot set headers is the subprotocol pair
+   `Sec-WebSocket-Protocol: token, <API_KEY>`, and Node 22's global `WebSocket` accepts a
+   protocols array (checked locally: the constructor takes it without throwing) -- so
+   nothing forced the key into the URL. The evidence note below even cites the
+   subprotocol page among the pages read, which makes this a reading error rather than a
+   gap in the sources. M-11e moves the key out of the URL. The throw-path guard stays:
+   the reasoning about `error_message` holds whatever the URL carries.
 7. **Register the hazard your own change creates.** Every guard in this step exists
    because of something this step introduced -- a second vendor-prefix match, a second
    possible model list, a second key-bearing URL. None of them would have been worth a
@@ -3042,10 +3058,60 @@ declare `listModels` on the new adapter; change `cartesia.ts`; change the batch
 
 ---
 
-### M-11b — Read timed words and confidence out of a Deepgram streaming response
+### M-11e — Authenticate the Deepgram socket the way Deepgram documents it
 
 **PR:** one.
 **Depends on:** M-11a.
+**Files:** `lib/stt-providers/src/adapters/deepgram-streaming.ts`,
+`lib/stt-providers/src/adapters/parsers.test.ts`.
+**Today:** `deepgram-streaming.ts` puts the raw API key in the socket URL as `token=<key>`
+and carries a comment asserting that "Deepgram documents the query parameter for Listen
+v1/v2 for exactly that case." That is false, verified 2026-09-07 against both references:
+the v1 `/listen` parameter list does not contain `token`, and the Flux v2 reference
+documents an `Authorization` header only. The documented method for a client that cannot
+set request headers is the subprotocol pair `Sec-WebSocket-Protocol: token, <API_KEY>`,
+and Node 22's global `WebSocket` accepts a protocols array. So the adapter authenticates
+by a method the vendor does not document, and pays for it by carrying a live credential
+in a URL.
+**Change:** export a pure `deepgramStreamSocketArgs(apiKey, params)` returning
+`{ url, protocols }`; drop `token` from the query string; pass `["token", apiKey]` as the
+second argument to `new WebSocket(...)`. Correct the two comments that assert the old
+method, including the guard's, which says the URL carries the key.
+**Acceptance:** WHEN the socket arguments are built for a key THEN the returned URL SHALL
+NOT contain that key in any parameter or anywhere in its text, AND `protocols` SHALL be
+exactly `["token", <key>]`.
+**Verify:** `pnpm run typecheck`; `pnpm run typecheck:libs`;
+`pnpm --filter @workspace/stt-providers test`.
+**Must not:** call the API -- the handshake is proved in M-11d, not here; touch
+`cartesia.ts`, whose `access_token` is Cartesia's own documented parameter and a separate
+backlog item; remove the `new WebSocket` guard, whose reasoning about `error_message`
+holds whatever the URL carries.
+
+---
+
+### M-11b — Read timed words and confidence out of a Deepgram streaming response
+
+**Status:** `blocked` -- on M-11d's captured message log, by this step's own Must-not.
+
+**Why (2026-09-07):** no real Deepgram streaming response exists anywhere in the repo.
+`docs/provider-data-samples.md` section 3 is the batch shape; section 5 is Cartesia's
+streaming shape, captured from a real call. Both files this step edits open with the same
+in-code rule -- "every shape here was read off a real captured response ..., not a doc
+page" -- so filling the streaming branch in from the vendor's reference would break the
+convention those files are built on, in the two functions that feed hybrid flagging,
+which is 85% of the ranking composite. **Waiting is safe, and that was checked rather
+than assumed:** with no extractor, `hybrid-flagging.ts` passes
+`confidenceAvailable: false` (its T-2 comment), so a streaming row reads as "confidence
+not reported" rather than as reported-and-clean -- exactly how Cartesia reads today.
+Nothing is silently wrong meanwhile; the row simply cannot yet participate in
+confidence flagging.
+
+**Corrected 2026-09-07:** this step's Depends on was wrong when the split was written.
+It said M-11a, but its own Must-not makes it depend on M-11d, the step that makes the
+call. The M-11 split therefore ordered M-11b before the step that unblocks it.
+
+**PR:** one.
+**Depends on:** M-11d (its captured message log), and M-11a.
 **Files:** `artifacts/api-server/src/lib/timed-words.ts`,
 `artifacts/api-server/src/lib/provider-confidence.ts`, and their tests.
 **Today:** both files branch on `vendorOfProviderId(...) === "deepgram"` and read
@@ -3073,15 +3139,26 @@ M-11d's message log rather than guessing.
 **Depends on:** M-11a.
 **Files:** new file lib/stt-providers/src/adapters/deepgram-flux.ts (plain: not written
 yet), `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/index.ts`,
-`lib/stt-providers/src/adapters/parsers.test.ts`, `docs/provider-data-samples.md`.
+`lib/stt-providers/src/adapters/parsers.test.ts`.
+
+**Corrected 2026-09-07:** as written at the split, this step asked for "one real,
+redacted Flux message" recorded in `docs/provider-data-samples.md` while its own Must-not
+forbids calling the API -- it cannot record what it may not fetch. That sample moves to
+M-11d, the step that makes the call. This step builds and unit-tests the adapter against
+reference-derived sequences, exactly as M-11a did.
 **Today:** `providerCatalog["deepgram-flux-general-en"]` points at the batch adapter,
 which has no endpoint that can serve Flux. The row exists in the database, disabled.
 **Change:** a **v2** adapter — `wss://api.deepgram.com/v2/listen?model=flux-general-en&
 encoding=linear16&sample_rate=…` — reducing `TurnInfo` messages: transcript from the
 `EndOfTurn` events, first partial from the first event carrying text, last-final from the
 last `EndOfTurn` that contributed text. Repoint the existing catalog entry at it rather
-than adding a second id. Record one real, redacted Flux message in
-`docs/provider-data-samples.md`.
+than adding a second id. Authenticate the way M-11e establishes -- the
+`Sec-WebSocket-Protocol: token, <API_KEY>` subprotocol pair -- because the Flux v2
+reference documents an `Authorization` header and no query-string credential at all.
+Two v2 facts to build to, read off that reference on 2026-09-07: Flux documents **no
+`diarize` parameter**, so the adapter reports a null diarization score rather than 0
+(absent is not zero); and the client closes with `CloseStream`, with `ForceEndTurn`
+available to end a turn early.
 **Acceptance:** WHEN a recorded Flux `TurnInfo` sequence is reduced THEN the adapter
 SHALL return the `EndOfTurn` transcripts joined in order, and `getProviderAdapter(
 "deepgram-flux-general-en")` SHALL return the Flux adapter.
@@ -3101,7 +3178,12 @@ been sent to Deepgram over a socket, so the handshake, the finalize sequence, th
 message shapes and the real latencies are all unverified.
 **Change:** stream ONE cached Land And Apartment call to `deepgram-nova-3-streaming` and
 one to `deepgram-flux-general-en` (≈ $0.02 total at $0.0048–$0.0065/min). Read the two
-result rows. Record both latencies and one redacted message log. Only if both are green,
+result rows. Record both latencies, and record two redacted message logs into
+`docs/provider-data-samples.md` as new streaming sections: the nova-3 `Results` log --
+**this is what unblocks M-11b**, which may not read a shape off a doc page -- and one
+Flux `TurnInfo` message, the sample M-11c is forbidden from fetching for itself. This is
+also the first step that proves the M-11e subprotocol handshake against the real
+service; until it runs, no Deepgram socket in this repo has ever been opened. Only if both are green,
 create/enable the rows at the **regular** prices ($0.0077/min for both — the promotional
 rates expire and would silently drift the cost column, which is 15% of the ranking
 composite).
