@@ -556,4 +556,31 @@ describe("Results", () => {
     expect(speedHead!.getAttribute("title")).toMatch(/not the same measurement/i)
     api.restore()
   })
+
+  // The header tooltips were not the only place the page named its own
+  // ranking basis, and the first pass at M-10a missed the other two: a
+  // visible "Ranked by disagreements, price, speed" line on every group card,
+  // and its own title. A guard scoped to the table header could not see them,
+  // so this one sweeps the whole page instead of naming elements.
+  it("no visible text and no tooltip anywhere names speed as a ranking basis", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+
+    await screen.findAllByText("Deepgram Nova-3")
+
+    // Visible copy: the group cards say what they are ranked by, out loud.
+    const rankedBy = screen.getAllByText(/^Ranked by/)
+    expect(rankedBy.length).toBeGreaterThan(0)
+    for (const el of rankedBy) expect(el.textContent).not.toMatch(/speed/i)
+
+    // Every title on the page, not just the ones this test knows to look for.
+    // A tooltip may mention speed to disclaim it; none may list it as an input.
+    const titles = Array.from(document.querySelectorAll("[title]")).map((el) => el.getAttribute("title") ?? "")
+    expect(titles.length).toBeGreaterThan(0)
+    for (const t of titles) {
+      expect(t).not.toMatch(/price and speed/i)
+      expect(t).not.toMatch(/disagreements, price, speed/i)
+    }
+    api.restore()
+  })
 })
