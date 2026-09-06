@@ -1638,34 +1638,92 @@ M-8b, which is what renders it.
 
 ### M-8b — The Results page says how far production sat from the pack
 
+**Status:** done 2026-09-06 (PR #99, `f294d2b`), deployed with M-8a.
 **PR:** one.
 **Depends on:** M-8a.
-**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the production line, beside
-the existing "In production today" text), `artifacts/api-server/src/lib/verdict-artefact.ts`
-(the same line in `verdict.html`), `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+**Files:** `artifacts/stt-benchmark/src/components/verdict-headline.tsx` (the line, at
+org level beside the verdict), `artifacts/stt-benchmark/src/pages/Rankings.tsx` (renders
+it, plus the page-level line saying why it is absent),
+`artifacts/api-server/src/lib/verdict-artefact.ts` (the same sentence in `verdict.html`),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
 `artifacts/api-server/src/lib/verdict-artefact.test.ts`.
-**Today:** `productionDisagreement` is on the API (M-8a) and nothing renders it. The
-Results production line still stops at "In production today: Deepgram Flux General EN on
-50 of 56 calls."
-**Change:** when `productionDisagreement` is non-null, append one sentence naming both
-numbers on the same scale and the calls behind them — e.g. "production disagreed with
-the pack on 4.1 of every 100 compared words, against 1.8 for AssemblyAI Universal, over
-19 of 56 calls." When it is null, render nothing extra (never a zero, never "0%"), and
-where the bulk ran on the mono mix say why in the same muted register the M-7c coverage
-line uses. Same line, same wording, in `verdict.html`.
-**Acceptance:** WHEN a customer-channel bulk's Results card renders THEN the production
-line SHALL state production's disagreement and the leader's on one scale with the call
-count behind them, AND WHEN `productionDisagreement` is null THEN no disagreement figure
-SHALL appear anywhere on the card. The rendered output SHALL NOT contain the string
-`__production__`, and no `rates` row SHALL be named production.
-**Verify:** `cd artifacts/stt-benchmark && pnpm run test` (render test asserts both the
-present and the null case); `cd artifacts/api-server && pnpm run test` (artefact test the
-same); `pnpm run typecheck`. No bulk is executed — the null case is what both existing
-bulks show, and the non-null case is a fixture.
-**Must not:** invent a number when `productionDisagreement` is null; render production as
-a row, a rank or a pickable candidate; change `vsProductionPct`; execute a run.
 
----
+#### Corrections to M-8b as it was written
+
+1. **It named the wrong component, and the mistake was one of GRAIN, not of path.**
+   The step said `ProductionBaselineNote`. That path exists, that component exists, and
+   `check-doc-paths.sh` passes — but it renders once per **assistant**, and
+   `productionDisagreement` is a property of the verdict **group**, which is an **org**.
+   Live proof before any code: `GET /benchmark/bulks/340400b2-.../verdicts` returns one
+   group, `Land And Apartment`, with **22 assistant ids**. The number would have printed
+   22 times on one page, each time reading as that assistant's own. `Rankings.tsx` had
+   already settled the identical question for the verdict itself and says so in a comment
+   at the org block: "it sits at org level once -- not repeated under every assistant"
+   (T-55/T-88). Shipped at org level.
+2. **Its "Today" quoted the wrong file.** `In production today: …` is
+   `verdict-artefact.ts`'s sentence. The Results page says
+   `Production today: <vendor> / <model> (43/54 of this group's calls)` and derives it per
+   assistant from `GET /benchmark/calls`, not from the verdict group. Two different lines
+   in two different files at two different grains.
+
+**Change (as shipped):** when `productionDisagreement` is non-null, one org-level line
+naming both numbers on the ranking table's own per-100-words scale and the calls behind
+them, with a second muted line saying production is measured against the candidates and
+never ranked with them. When it is null, **nothing renders** — no zero, no dash, no "0%".
+Why it is null on a bulk that did not run on the caller-only channel is said **once at
+page level**, in the register the M-7c coverage line uses, reusing `audio-channel.ts`'s
+own sentence so an untracked bulk is never described as mono. Same sentence in
+`verdict.html`.
+**Acceptance:** met. A customer-channel bulk's org block states production's disagreement
+and the closest candidate's on one scale with the call count; a null renders no figure
+anywhere; the output contains no `__production__` and no `rates` row is named production.
+**Verify (copy-pasteable):**
+```
+pnpm run typecheck                                              # 4/4
+cd artifacts/stt-benchmark && pnpm run test                     # 118 (was 116)
+cd artifacts/api-server   && pnpm run test                      # 97  (was 95)
+curl -s localhost:8177/api/benchmark/bulks/<id>/verdict.html | grep -c 'Production, measured'   # 0 on a mono bulk
+grep -rlF '__production__' artifacts/stt-benchmark/dist/public/assets                            # nothing
+```
+**Break-proofs (all post-commit, fixtures only — no database, no provider, no spend):**
+
+| Break | What failed |
+| --- | --- |
+| render the line inside the assistant card as well | `expected 3 to be 1` — the org line plus two per-assistant copies. Correction 1, as an assertion. |
+| null renders a `0.0` instead of nothing | the mono test: a `production-disagreement` node exists where none should |
+| the artefact prints a `0.0` instead of staying silent | `expected … not to contain 'Production, measured'` |
+
+Each break failed **exactly one** test.
+
+**Must not — held:** `vsProductionPct` untouched; production is in no `rates` row, no rank
+and no pickable candidate; no schema change; no run executed; nothing spent.
+
+**Deploy:** `bash scripts/deploy-api.sh` — `681483c03902 -> f294d2bcf2ab`, which carried
+M-8a out with it. Live checks: `productionDisagreement` present-and-null on all 4 groups
+of the 3 bulks; `verdict.html` unchanged apart from the absent line; the built UI bundle
+contains all five new strings and no `__production__`.
+
+**Learned:**
+
+- **A doc path check cannot catch a grain error.** M-8a's lesson was that a Files list can
+  name a file whose *contents* the claim is wrong about. This is the sharper version: the
+  path, the file and the component were all real, and the step was still wrong, because
+  the component renders at a different grain than the data. The only thing that caught it
+  was reading the live payload and counting `assistantIds`.
+- **The corpus's shape is the argument.** "22 assistants in one org group" turned an
+  arguable design preference into a fact. Grill with the running system, not with taste.
+- **The codebase had already answered.** T-55/T-88 put the verdict at org level for
+  exactly this reason and left a comment saying so. A step that contradicts a comment
+  already in the file it edits is a step to re-read, not to execute.
+- **The absence explanation belongs where the cause lives.** The reason is the bulk's
+  channel, which every org on the page shares, so it is said once at page level. Repeating
+  it per org would have been the same mistake as correction 1, one level up.
+
+**Left for later (not smuggled in):** a customer-channel bulk whose number is null for a
+*per-call* reason — no caller turn on the draft, or fewer than three candidates — renders
+nothing and explains nothing. The step scoped the explanation to the channel; the per-call
+case has no words yet.
+
 ### M-9 — "Least disagreement", not "Winner", and the line that says what it is
 
 **PR:** one.

@@ -1,3 +1,33 @@
+## Found 2026-09-06 (grilling M-8b): a step can name a real component at the wrong data grain, and nothing catches it
+
+**Not queued — logged as a class of problem, not a defect to fix.** The sharper
+version of the entry below. M-8b's Files list sent the implementer to
+`ProductionBaselineNote` in `artifacts/stt-benchmark/src/pages/Rankings.tsx`. The
+path exists, the component exists, and it really is the page's production line —
+so `scripts/check-doc-paths.sh` passes and so would any check that resolved the
+symbol. It was still the wrong place: that component renders once per
+**assistant**, and `productionDisagreement` is a property of the verdict
+**group**, which is an **org**.
+
+How it was caught: reading the live payload instead of the page.
+`GET /benchmark/bulks/340400b2-42a0-41bc-a5a8-154f5dff8072/verdicts` returns one
+group, `Land And Apartment`, carrying **22 assistant ids**. Following the step
+would have printed one org-level number 22 times on a single page, each copy
+reading as that assistant's own — and `Rankings.tsx` already carries a comment
+saying the verdict sits at org level "once -- not repeated under every
+assistant" (T-55/T-88), which the step contradicted.
+
+Reproduce: `curl -s localhost:8177/api/benchmark/bulks/<id>/verdicts | python3 -c
+"import sys,json;[print(g['clientLabel'], len(g['assistantIds'])) for g in
+json.load(sys.stdin)['groups']]"`.
+
+**The check that would catch it does not exist and probably cannot be a script:**
+a grain error is a mismatch between where data lives and where a component
+renders, which no path or symbol resolver can see. The cheap human version is
+the one that worked — before writing a line, ask what the payload's grain is and
+count it on real data. Written down here so the next step's grill starts with
+that question.
+
 ## Found 2026-09-06 (grilling M-8): a step's Files list can name the wrong file and every guard still passes
 
 **Not queued — logged as a class of problem, not a defect to fix.** M-8's Files
