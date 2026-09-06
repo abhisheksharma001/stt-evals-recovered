@@ -1,6 +1,7 @@
 import { assemblyAiAdapter } from "./adapters/assemblyai";
 import { cartesiaAdapter } from "./adapters/cartesia";
 import { deepgramAdapter } from "./adapters/deepgram";
+import { deepgramStreamingAdapter } from "./adapters/deepgram-streaming";
 import { elevenLabsAdapter } from "./adapters/elevenlabs";
 import { gladiaAdapter } from "./adapters/gladia";
 import { openAiAdapter } from "./adapters/openai";
@@ -19,6 +20,13 @@ export const providerRegistry: Record<string, ProviderAdapter> = {
   [gladiaAdapter.providerId]: gladiaAdapter,
   [speechmaticsAdapter.providerId]: speechmaticsAdapter,
   [cartesiaAdapter.providerId]: cartesiaAdapter,
+  // M-11a. Second adapter for the deepgram vendor, and the order matters.
+  // adapterByVendorPrefix() below returns the FIRST adapter whose vendor
+  // prefix matches an id, so every "deepgram-*" row that is not itself a
+  // registry key or a catalog entry -- deepgram-nova is a live one -- keeps
+  // resolving to the batch adapter only because that one is declared first.
+  // Pinned by a test rather than left to insertion order alone.
+  [deepgramStreamingAdapter.providerId]: deepgramStreamingAdapter,
 };
 
 /**
@@ -54,6 +62,15 @@ export const providerCatalog: Record<string, ProviderCatalogEntry> = {
   "deepgram-flux-general-en": {
     adapterId: deepgramAdapter.providerId,
     apiModel: "flux-general-en",
+  },
+  // M-11a. The id is not a slug of its model -- "nova-3" would derive
+  // "deepgram-nova-3", which is the batch row -- so it has to be spelled out
+  // here, the way elevenlabs-scribe-v2 is. Same model string as the batch
+  // row on purpose: the two rows differ only in how the audio reaches
+  // Deepgram, which is the whole comparison.
+  "deepgram-nova-3-streaming": {
+    adapterId: deepgramStreamingAdapter.providerId,
+    apiModel: "nova-3",
   },
   // T-104 (2026-08-30): ids whose api model string is not a clean slug of
   // itself, or that predate the vendor-prefix rule below. Everything else
