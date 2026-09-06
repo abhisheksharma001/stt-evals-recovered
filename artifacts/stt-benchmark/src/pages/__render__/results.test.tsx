@@ -524,6 +524,12 @@ describe("Results", () => {
 
     const legend = await screen.findByTestId("results-legend")
     expect(within(legend).getByText("Lower is better")).toBeTruthy()
+    // M-10d: the legend used to read "Lower is better for disagreements,
+    // flags, speed and price". M-10a rewrote the Speed tooltip to say the
+    // number means two different things and left this sentence claiming a
+    // direction for it, one paragraph above the same column.
+    expect(legend.textContent).not.toMatch(/flags, speed and price/i)
+    expect(legend.textContent).toMatch(/Speed has no direction/i)
     api.restore()
   })
 
@@ -581,6 +587,22 @@ describe("Results", () => {
       expect(t).not.toMatch(/price and speed/i)
       expect(t).not.toMatch(/disagreements, price, speed/i)
     }
+
+    // M-10d: a title sweep still could not see the arrow. Each sortable
+    // header renders its direction as a separate span whose aria-label reads
+    // "lower is better" -- so the Speed column disclaimed itself in its
+    // tooltip and recommended minimising itself in the same cell. Speed has
+    // no direction; its header must carry no direction label at all.
+    const speedHeader = screen.getAllByText("Speed").map((el) => el.closest("th")).find(Boolean)
+    expect(speedHeader).toBeTruthy()
+    const labels = Array.from(speedHeader!.querySelectorAll("[aria-label]")).map((el) => el.getAttribute("aria-label"))
+    expect(labels).not.toContain("lower is better")
+    expect(labels).not.toContain("higher is better")
+
+    // The other columns keep theirs -- this must not pass by stripping every
+    // arrow on the page.
+    const allDirections = Array.from(document.querySelectorAll('[aria-label="lower is better"]'))
+    expect(allDirections.length).toBeGreaterThan(0)
     api.restore()
   })
 })

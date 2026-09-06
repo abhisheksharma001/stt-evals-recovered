@@ -91,15 +91,23 @@ const SORT_TITLES: Record<SortKey, string> = {
   diarizationScore: "Share of calls where this provider told more than one speaker apart.",
 }
 
-/** ↓ = lower is better, ↑ = higher is better (T-81: every numeric column
- *  says its direction; the page-top legend says it once in words). */
-const DIRECTION: Record<SortKey, "↓" | "↑"> = {
+/** ↓ = lower is better, ↑ = higher is better, null = no direction to claim
+ *  (T-81: every numeric column says its direction; the page-top legend says
+ *  it once in words).
+ *
+ *  M-10d: latencyFinalMs is null, not "↓". M-10a rewrote its tooltip to say
+ *  the number means two different things -- file turnaround for a batch
+ *  adapter, call length for Cartesia -- but left the arrow, whose aria-label
+ *  reads "lower is better", and left the legend below naming speed. A
+ *  tooltip that disclaims a number while the arrow beside it recommends
+ *  minimising it is worse than either alone. */
+const DIRECTION: Record<SortKey, "↓" | "↑" | null> = {
   rank: "↓",
   avgFlagCount: "↓",
   avgFlagSeverityScore: "↓",
   peerFlagsPer100Words: "↓",
   cleanCallRate: "↑",
-  latencyFinalMs: "↓",
+  latencyFinalMs: null,
   costPerMinute: "↓",
   diarizationScore: "↑",
 }
@@ -466,7 +474,10 @@ function RankingTable({
                 onClick={() => toggleSort(key)}
                 title={SORT_TITLES[key]}
               >
-                {SORT_LABELS[key]} <span aria-label={DIRECTION[key] === "↓" ? "lower is better" : "higher is better"}>{DIRECTION[key]}</span>
+                {SORT_LABELS[key]}
+                {DIRECTION[key] !== null && (
+                  <span aria-label={DIRECTION[key] === "↓" ? "lower is better" : "higher is better"}> {DIRECTION[key]}</span>
+                )}
                 {renderSortIcon(key)}
               </TableHead>
             ))}
@@ -737,8 +748,10 @@ export default function Rankings() {
           Which provider should each org's assistants run on. One bulk at a time, or every bulk combined.
         </p>
         <p className="mt-2 text-xs text-muted-foreground" data-testid="results-legend">
-          <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags, speed and price
-          (↓). Higher is better for clean calls and speakers told apart (↑). Hover a column for exactly what it measures.
+          <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags and price (↓).
+          Higher is better for clean calls and speakers told apart (↑). Speed has no direction: for a batch API it is
+          how long the file took to come back, for Cartesia it is roughly the length of the call. Hover a column for
+          exactly what it measures.
         </p>
         {latencyCoverage && latencyCoverage.measured < latencyCoverage.total && (
           <p className="mt-2 text-xs text-muted-foreground" data-testid="production-coverage">
