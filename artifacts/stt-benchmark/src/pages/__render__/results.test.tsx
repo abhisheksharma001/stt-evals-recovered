@@ -418,6 +418,69 @@ describe("Results", () => {
     api.restore()
   })
 
+  // M-8b. The number is a property of the verdict GROUP, and a group is an
+  // org: on the real corpus one org group covers 22 assistants. So the
+  // fixture's group is made to cover BOTH assistant cards, and the test
+  // counts the line -- one for the org, not one per assistant. That is the
+  // correction to M-8b as written, which named the per-assistant
+  // ProductionBaselineNote.
+  const measuredVerdicts: BulkVerdicts = {
+    ...verdicts,
+    groups: [
+      {
+        ...verdicts.groups[0],
+        assistantIds: ["asst-rush", null],
+        productionDisagreement: {
+          rate: 0.041,
+          leaderProviderId: "gladia-solaria",
+          leaderRate: 0.018,
+          calls: 19,
+          totalCalls: 56,
+        },
+      },
+    ],
+  }
+
+  it("states production's own disagreement once for the org, not once per assistant", async () => {
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/bulks/bulk-1": detailFor(true),
+      "GET /api/benchmark/bulks/bulk-1/verdicts": measuredVerdicts,
+    })
+    renderPage(<Results />, { path: "/results" })
+
+    const lines = await screen.findAllByTestId("production-disagreement")
+    // Two assistant cards (one Export CSV button each) under one org
+    // section, and one production line above them both.
+    expect(screen.getAllByText("Export CSV").length).toBe(2)
+    expect(screen.getAllByTestId("org-section").length).toBe(1)
+    expect(lines.length).toBe(1)
+    expect(lines[0].textContent).toContain("4.1 of every 100 compared words")
+    expect(lines[0].textContent).toContain("1.8")
+    expect(lines[0].textContent).toContain("Gladia Solaria")
+    expect(lines[0].textContent).toContain("19 of 56 calls")
+    // Must not: production is never a row, a rank or a candidate.
+    expect(lines[0].textContent).toContain("never ranked with them")
+    expect(document.body.textContent).not.toContain("__production__")
+    // A customer bulk has a figure, so the page has no absence to explain.
+    expect(screen.queryByTestId("production-disagreement-unavailable")).toBeNull()
+    api.restore()
+  })
+
+  it("shows no production figure at all on a mono bulk, and says why once", async () => {
+    // baseRoutes' verdicts carry productionDisagreement: null, which is what
+    // both bulks on disk really return. Absent, never 0.0, never a dash.
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/bulks/bulk-1": detailFor(false) })
+    renderPage(<Results />, { path: "/results" })
+
+    const why = await screen.findByTestId("production-disagreement-unavailable")
+    expect(why.textContent).toContain("not compared on this bulk")
+    expect(why.textContent).toContain("mono mix")
+    expect(screen.queryByTestId("production-disagreement")).toBeNull()
+    expect(document.body.textContent).not.toContain("of every 100 compared words")
+    api.restore()
+  })
+
   it("the page explains its own arrows before any number is read", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Results />, { path: "/results" })

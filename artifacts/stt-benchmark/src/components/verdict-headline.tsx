@@ -5,7 +5,7 @@ import {
   type BulkVerdicts,
   type HeadlineVerdict,
 } from "@workspace/api-client-react"
-import { Trophy, Scale, Hourglass, CircleOff } from "lucide-react"
+import { Trophy, Scale, Hourglass, CircleOff, Radio } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 
 /**
@@ -220,6 +220,59 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * M-8b: how far the transcript production actually produced sat from the
+ * candidates' consensus, on the same 100-word scale the ranking table uses.
+ *
+ * It lives HERE, at org level beside the verdict, and not in Rankings'
+ * per-assistant ProductionBaselineNote, because `productionDisagreement` is
+ * a property of the verdict GROUP -- and a group is an org. On the corpus
+ * as it stands one org group covers 22 assistants, so the per-assistant
+ * card would print this one org-level number 22 times, each time reading
+ * as that assistant's own. T-55/T-88 already settled the same question for
+ * the verdict itself.
+ *
+ * Null renders NOTHING: no zero, no dash, no "0%". Null here means the
+ * candidates and production did not hear the same audio (a mono bulk) or
+ * no call had both a caller turn and three candidates -- neither of which
+ * is agreement. Why it is null on a mono bulk is said once at page level,
+ * where the channel is already named, rather than repeated per org.
+ */
+export function ProductionDisagreementLine({
+  data,
+  group,
+}: {
+  data: BulkVerdicts | undefined
+  group: BulkVerdicts["groups"][number] | undefined
+}) {
+  const d = group?.productionDisagreement
+  if (!data || !d) return null
+  const per100 = (rate: number) => (rate * 100).toFixed(1)
+  return (
+    <div className="flex items-start gap-3 bg-muted/10 px-4 py-3" data-testid="production-disagreement">
+      <Radio className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="flex flex-col gap-1 min-w-0">
+        <p className="text-sm text-foreground" style={{ textWrap: "balance" }}>
+          <span className="font-semibold">Production, measured:</span> the transcript production actually produced
+          disagreed with the candidates' consensus on{" "}
+          <span className="font-semibold">{per100(d.rate)}</span> of every 100 compared words
+          {d.leaderProviderId && d.leaderRate != null && (
+            <>
+              , against <span className="font-semibold">{per100(d.leaderRate)}</span> for{" "}
+              {nameOf(data, d.leaderProviderId)}, the closest candidate
+            </>
+          )}
+          {" "}-- over {d.calls} of {d.totalCalls} call{d.totalCalls === 1 ? "" : "s"} in this org.
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          Production is scored against the candidates, never ranked with them: it takes no part in forming the
+          consensus it is measured on, so it appears in no row above and cannot win a bulk.
+        </p>
+      </div>
+    </div>
   )
 }
 
