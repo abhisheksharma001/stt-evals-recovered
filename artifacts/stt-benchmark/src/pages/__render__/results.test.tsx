@@ -537,7 +537,15 @@ describe("Results", () => {
     // to the one that does not. The legend has to carry both or the reader
     // learns "latency has no direction here" and applies it to the wrong
     // column.
-    expect(legend.textContent).toMatch(/wait after audio ends/i)
+    //
+    // Scoped to the lower-is-better clause, not the paragraph: the legend
+    // names this column twice (once in the direction list, once explaining
+    // why it compares when Speed does not), so a bare
+    // `toMatch(/wait after audio ends/)` passed even with the column
+    // dropped from the direction list -- caught by break-testing this very
+    // assertion, 2026-09-07.
+    const lowerClause = legend.textContent?.match(/Lower is better[^↓]*\(↓\)/)?.[0] ?? ""
+    expect(lowerClause).toMatch(/wait after audio ends/i)
     api.restore()
   })
 
