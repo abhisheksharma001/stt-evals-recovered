@@ -930,6 +930,11 @@ async function runCell(
       finalAt && submittedAt ? finalAt.getTime() - submittedAt.getTime() : null;
     const latencyFirstPartialMs =
       firstPartialAt && submittedAt ? firstPartialAt.getTime() - submittedAt.getTime() : null;
+    // M-10b: taken as-is from the adapter, not derived here. Its two anchors
+    // (the last audio chunk out, the last final segment in) are only visible
+    // inside the streaming socket -- nothing stored on the result row can
+    // reconstruct them. Absent on all six batch adapters, so null here.
+    const latencyEndOfAudioMs = result.latencyEndOfAudioMs ?? null;
 
     // T-10 fix (2026-08-27, base-solidity review): with gold retired,
     // call.goldTranscript is empty for every call. score()'s word-alignment
@@ -979,6 +984,7 @@ async function runCell(
       alphanumericAccuracy,
       latencyFirstPartialMs,
       latencyFinalMs,
+      latencyEndOfAudioMs,
       costPerMinute: costForThisCell,
       // T-11 (base-solidity review): this column is mislabeled -- it has
       // always held the cost of THIS CELL (rate * this call's duration),
