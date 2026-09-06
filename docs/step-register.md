@@ -2315,7 +2315,14 @@ column, which is a different page and is noted under M-10b.
 
 ---
 
-### M-10b — Measure end-of-speech latency, then let it count again
+### M-10b — Measure end-of-audio latency, then let it count again
+
+**Status:** `done` 2026-09-07 (PR #105, `3d05093`), deployed `f816da453032 -> 3d05093493b6`.
+
+**Retitled while shipping.** It said "end-of-speech". It measures end-of-AUDIO: the
+anchor is the end of the recording, so trailing silence inflates it. Leaving the title
+alone would have shipped a column whose name overstates it — the exact defect M-10a
+existed to remove.
 
 **PR:** one.
 **Depends on:** M-10a.
@@ -2359,6 +2366,54 @@ this step is what makes the number mean something.
 `hybridCompositeScore` (that is a later step, with its own argument), must not call a
 provider without an explicit go-spend, must not write a zero where nothing was measured.
 
+**Must not — held.** `latencyFinalMs` untouched (999 rows still populated, unchanged).
+Nothing added to `hybridCompositeScore`; `benchmark_rankings` still 355 rows, unchanged.
+No provider called, nothing spent. Null, never 0, on every unmeasured path.
+
+**Split while shipping.** The step as written was adapter + type + schema + executor +
+openapi + two regenerated clients + two pages. That is not one PR, and the display half
+has nothing to display: the column is null on all 999 existing score rows, null forever
+on six of seven providers, and null on Cartesia until a bulk re-runs, which costs money.
+Shipped the measurement; the display became **M-10d**, which also carries the
+`Corpus.tsx` "Lower is better" fix this step had adopted.
+
+**What was learned:**
+
+1. **The step named the wrong anchor, and only the database could say so.** "Store the
+   derived `end-of-audio → final` figure" sounds right. `finalAt` is stamped when the
+   socket settles — *after* this adapter's own `IDLE_CLOSE_MS = 2000` wait. Across 207
+   live Cartesia rows the end-of-audio-to-`finalAt` gap is p25 2,580 ms / median
+   2,983 ms / p75 3,358 ms: clustered around our own timer, not around Cartesia. Built
+   literally, it would have reported ~3,000 ms for a vendor tail of roughly 600–1,400 ms.
+   No amount of reading `cartesia.ts` produces that distribution — the query does.
+2. **A number contaminated by a constant we chose is worse than no number.** It is
+   plausible, it is stable, and it is wrong. The end anchor that measures the vendor is
+   the last final segment that carried *text* — the instant the transcript stopped
+   growing.
+3. **Sixth step running that the grill found wrong before code.** The class keeps
+   changing: wrong file (M-8a), undercounted files (M-9, M-9b), wrong artefact (S-9),
+   false parenthetical (M-10), and now a plausible-but-contaminated anchor. The reading
+   that catches this one is not "is the claim true" but "is the number this claim
+   produces the number its name promises".
+4. **Put the arithmetic where a test can reach it.** Computing the delta inline in
+   `transcribe()` would have made it unreachable without a live socket. A named pure
+   `endOfAudioLatencyMs()` beside the existing reducer costs nothing and is provable.
+5. **Prove the schema, not just the code.** The column was added by `ALTER`, not
+   `drizzle-kit push`, so drift was a live risk that would surface only on a paid
+   Cartesia call. Dropping the column from the test database fails **14** integration
+   tests with `column "latency_end_of_audio_ms" ... does not exist`. Free proof of the
+   expensive failure.
+6. **Null has to survive contact with the pipeline.** Zero would rank as the fastest
+   provider possible. Both the helper and the integration test assert null, not 0, for a
+   batch adapter and for a truncated stream (11% of the 207 live rows show the truncated
+   shape).
+7. **The 207 existing rows cannot be backfilled.** `rawOutput` stores the messages
+   without their arrival timestamps, so the anchors are gone. Worth knowing before
+   anyone promises a retroactive chart.
+
+**`visual-and-research`:** skipped — backend only (adapter, schema, executor), no copy
+and no screen. It belongs to M-10d, which is where the number becomes visible.
+
 ---
 
 ### M-10c — Rank 1 says it won on flags when it tied on flags
@@ -2390,10 +2445,42 @@ stored rows.
 
 ---
 
+### M-10d — Show the end-of-audio latency, and stop calling the old one "lower is better"
+
+**PR:** one.
+**Depends on:** M-10b.
+**Files:** `lib/api-spec/openapi.yaml` **and the two generated clients it regenerates**
+(`lib/api-zod/src/generated/**`, `lib/api-client-react/src/generated/**`),
+`artifacts/api-server/src/routes/benchmark.ts`,
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`,
+`artifacts/stt-benchmark/src/pages/Corpus.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+**Today:** `benchmark_scores.latency_end_of_audio_ms` exists and is written by
+run-executor, but nothing reads it — it is not in the OpenAPI schema, not in either
+generated client, and not on any page. Separately, `Corpus.tsx` titles its Speed column
+"Time to the final transcript. Lower is better." over `latencyFinalMs`, which for a
+Cartesia row is the length of the call — misleading in exactly the way M-10a fixed on
+Results, and misleading **today**, independent of this step's new column.
+**Change:** serialise the column, regenerate both clients, show it in its own column
+distinct from Speed, and correct the `Corpus.tsx` tooltip.
+**Acceptance:** WHEN a page renders a Cartesia row THEN no visible text and no tooltip
+anywhere SHALL describe `latencyFinalMs` as lower-is-better, AND the end-of-audio column
+SHALL render a dash, never a number, where the value is null.
+**Verify:** `pnpm run typecheck`; the render suite; after deploy, grep the built bundle
+at `artifacts/stt-benchmark/dist/public` for "Lower is better" and expect 0 —
+`Rankings.tsx` shipped wrong once under a guard scoped to one element (M-10a, PR #103),
+so the guard here must sweep every `[title]` on the document.
+**Must not:** must not put the new number into `hybridCompositeScore`, must not render 0
+or "—" as if it were a measurement, must not re-run a bulk to populate the column.
+
+---
+
 ### M-11 — Deepgram streaming rows: nova-3 and Flux
 
 **PR:** one.
-**Depends on:** M-5 (customer audio), M-10 (`mode`).
+**Depends on:** M-5 (customer audio), M-10b (`latencyEndOfAudioMs`).
+**Corrected 2026-09-07 while shipping M-10b:** this said `M-10 (mode)`. M-10 no longer
+exists — it split into M-10a/b/c — and `mode` was part of the retired body.
 **Files:** new file lib/stt-providers/src/adapters/deepgram-streaming.ts (plain: not
 written yet), `lib/stt-providers/src/registry.ts` (`providerCatalog` entries
 `deepgram-nova-3-streaming`, `deepgram-flux-general-en-streaming`),
@@ -2407,13 +2494,23 @@ of 121 calls — has no batch endpoint and cannot be run.
 nova-3 and `wss://api.deepgram.com/v2/listen?model=flux-general-en…` for Flux (Flux
 requires v2). Audio is sent in 20 ms chunks paced at real time from the customer file;
 `firstPartialAt` = first non-empty transcript message; `finalAt` = the final transcript
-after the close/finalize message; `latencyFinalMs` is measured from the moment the last
-audio chunk was sent (end of speech), not from the first. Raw output = the full message
+after the close/finalize message.
+
+**Corrected 2026-09-07 while shipping M-10b.** This used to read: "`latencyFinalMs` is
+measured from the moment the last audio chunk was sent (end of speech), not from the
+first." That is wrong and would have undone M-10a. `latencyFinalMs` is
+`finalAt - submittedAt` on all seven adapters; redefining it for streaming rows only
+gives one column a third meaning inside one sorted table, which is precisely what M-10a
+had to take out of the ranking composite. The end-of-audio figure goes in
+`benchmark_scores.latency_end_of_audio_ms` (M-10b), and this adapter populates
+`ProviderTranscribeResult.latencyEndOfAudioMs` the way `cartesia.ts` already does —
+anchored on the last final segment that carried text, never on `finalAt`, which is
+stamped after the adapter's own idle-close wait. Raw output = the full message
 log. Price: nova-3 streaming $0.0043/min (list), Flux $0.0065/min (Deepgram pricing page,
 read 2026-09-04) — both rows created `mode: streaming`, disabled until the first live
 check passes.
 **Acceptance:** WHEN one cached customer file is streamed at real time to each row THEN
-the cell SHALL store a final transcript, a `latencyFinalMs` under 2,000 ms, a
+the cell SHALL store a final transcript, a `latencyEndOfAudioMs` under 2,000 ms, a
 `firstPartialAt`, and a raw message log — and the adapter SHALL never send faster than
 real time.
 **Verify:** `pnpm run typecheck`; `cd lib/stt-providers && pnpm run test` (parser cases

@@ -1,3 +1,57 @@
+## Found 2026-09-07 (shipping M-10b): a step named an anchor that measures our own timer
+
+M-10b said to store the derived `end-of-audio -> final` figure. `finalAt` is stamped
+when the Cartesia socket settles, which is *after* the adapter's own
+`IDLE_CLOSE_MS = 2000` wait. Measured across the 207 live Cartesia score rows, the gap
+between end-of-audio and `finalAt` is p25 2,580 ms / median 2,983 ms / p75 3,358 ms --
+clustered around our 2-second timer, not around anything Cartesia did. Built as written,
+the new column would have read ~3,000 ms for a vendor tail of roughly 600-1,400 ms.
+
+Reproduce:
+
+    select round(percentile_cont(0.5) within group (order by
+             s.latency_final_ms - c.duration_seconds*1000*0.95))
+    from benchmark_scores s
+    join benchmark_provider_call_results r on r.id = s.result_id
+    join benchmark_calls c on c.id = r.call_id
+    where r.provider_id = 'cartesia-ink-whisper' and s.latency_final_ms is not null;
+
+Fixed in M-10b by anchoring on the last final transcript segment that carried text.
+The general lesson, which is not specific to latency: reviewing a step for *whether its
+claims are true* is not enough. A claim can be true and still produce a number that does
+not mean what its name promises. Ask what the number would come out as, then check that
+against data, before writing it down.
+
+## Found 2026-09-07 (shipping M-10b): M-11 planned to give `latencyFinalMs` a third meaning
+
+M-11 (Deepgram streaming rows) said "`latencyFinalMs` is measured from the moment the
+last audio chunk was sent (end of speech), not from the first", and its acceptance
+required "a `latencyFinalMs` under 2,000 ms". That would have put two different
+definitions of one column inside one sorted table -- exactly the defect M-10a had to
+remove from the ranking composite, reintroduced two steps later by a step written before
+M-10a existed. Its `Depends on` also named `M-10 (mode)`, a step that no longer exists.
+
+Corrected in the register where the claim was made, not patched elsewhere. Worth noting
+as a pattern: **splitting or retiring a step does not update the steps that depend on
+it.** After M-10 became M-10a/b/c, nothing swept the register for references to M-10.
+A cheap guard would be a check that every `Depends on:` names a step id that exists.
+
+## Found 2026-09-07 (shipping M-10b): 11% of live Cartesia rows are truncated streams
+
+Of the 207 Cartesia score rows, 23 have a `latency_final_ms` shorter than the audio they
+were given -- the premature-server-close shape `cartesia.ts` already documents from
+2026-08-24. They are recorded as scored cells. The adapter fails loudly on a close before
+`finalize` is sent, so these are presumably closes *after* finalize with a short
+transcript, but that has not been confirmed. Worth a look: if a truncated transcript is
+being scored as recognition error, it penalises Cartesia for a network event.
+
+## Found 2026-09-07 (shipping M-10b): the 207 existing Cartesia rows can never be backfilled
+
+`rawOutput` stores `events.map((e) => e.message)` -- the messages without their
+`receivedAtMs`. Every timing anchor except `firstPartialAt` and `finalAt` is therefore
+gone for every Cartesia cell ever run. Nothing derived from message arrival times can be
+computed retroactively. Consider storing arrival timestamps alongside the messages.
+
 ## Found 2026-09-06 (shipping M-10a): a guard scoped to an element cannot see the page
 
 M-10a took latency out of the ranking composite and corrected the two table-header
