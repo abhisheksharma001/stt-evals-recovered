@@ -185,6 +185,9 @@ const verdicts: BulkVerdicts = {
       callCount: 12,
       vertical: "rush",
       production: { vendor: "deepgram", model: "nova-3", coverage: 12, total: 12 },
+      // M-8a: this fixture's bulk is mono, so production has no comparable
+      // number. Results renders nothing for it -- that line arrives in M-8b.
+      productionDisagreement: null,
       verdict: {
         decision: "winner",
         winnerProviderId: "deepgram-nova-3",

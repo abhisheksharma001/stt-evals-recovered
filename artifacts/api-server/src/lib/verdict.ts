@@ -18,7 +18,14 @@ import {
   benchmarkScoresTable,
   db,
 } from "@workspace/db";
-import { computeVerdict, normalizeTranscript, type HeadlineVerdict, type VerdictCell } from "@workspace/scoring";
+import {
+  computeCrossProviderDisagreement,
+  computeVerdict,
+  normalizeTranscript,
+  productionCustomerTurns,
+  type HeadlineVerdict,
+  type VerdictCell,
+} from "@workspace/scoring";
 import { extractProviderConfidenceWords } from "./hybrid-flagging";
 
 export type BulkGroupVerdict = {
@@ -31,7 +38,26 @@ export type BulkGroupVerdict = {
   /** Vapi's live transcriber for this group's calls, most common
    *  vendor/model pair, with how many of the group's calls it covers. */
   production: { vendor: string; model: string | null; coverage: number; total: number } | null;
+  /** M-8a: how far production's OWN transcript sat from the candidates'
+   *  consensus on this group's calls. Null on a bulk that ran on the mono
+   *  mix -- see productionDisagreementFor. */
+  productionDisagreement: ProductionDisagreement | null;
   verdict: HeadlineVerdict;
+};
+
+export type ProductionDisagreement = {
+  /** Pooled mismatch words / compared words across `calls`, 0..1. */
+  rate: number;
+  /** The same measure for the best-agreeing candidate, over exactly the same
+   *  calls, so the two numbers are on one scale. Null when no candidate had
+   *  a comparable word. */
+  leaderProviderId: string | null;
+  leaderRate: number | null;
+  /** Calls this could be computed on, out of the group's total. Never
+   *  presented as the whole group: a call with no caller turn in its draft,
+   *  or fewer than three candidates, has no answer here. */
+  calls: number;
+  totalCalls: number;
 };
 
 export type BulkVerdicts = {
@@ -52,6 +78,98 @@ export function resolveProductionProviderId(
   providers: { id: string; name: string; model: string }[],
 ): string | null {
   return providers.find((p) => norm(p.name) === norm(vendor) && (model ? norm(p.model) === norm(model) : false))?.id ?? null;
+}
+
+/** M-8a: an id no provider row can have, so a production candidate that ever
+ *  escaped into a ranking would be unmistakable rather than plausible. */
+const PRODUCTION_CANDIDATE_ID = "__production__";
+
+/** At least this many candidates must have transcribed a call before
+ *  production can be measured against them -- a plurality needs three
+ *  voters (lib/scoring/src/hybrid.ts). */
+const MIN_CONSENSUS_CANDIDATES = 3;
+
+/**
+ * M-8a: production's own transcript, held against the candidates' consensus.
+ *
+ * Production (Deepgram Flux for 50 of 56 Land And Apartment calls) is
+ * streaming-only and cannot be run here, so it never has cells of its own and
+ * `resolveProductionProviderId` returns null for it. What it does have is the
+ * Vapi draft on every call, whose "User:" turns ARE its transcript of the
+ * customer channel. Those turns go in as one more candidate -- NON-VOTING, so
+ * the consensus stays the one the providers' stored peerFlagCounts were
+ * computed against and the two numbers remain on one scale.
+ *
+ * Gated on the bulk's channel by the caller, and for a hard reason: on a mono
+ * bulk the candidates transcribed both speakers (~126 words a call) and this
+ * is the caller alone (~37), so the comparison would read as ~70%
+ * disagreement purely for the assistant's turns being absent. Null, not a
+ * number, until a bulk runs on the customer channel.
+ */
+function productionDisagreementFor(
+  groupCalls: { id: string; draftTranscript: string | null }[],
+  cellsByCall: Map<string, { providerId: string; transcript: string | null }[]>,
+): ProductionDisagreement | null {
+  let mismatchWords = 0;
+  let comparedWords = 0;
+  let calls = 0;
+  const candidateTotals = new Map<string, { mismatch: number; compared: number }>();
+
+  for (const call of groupCalls) {
+    if (!call.draftTranscript) continue;
+    const customerTurns = productionCustomerTurns(call.draftTranscript);
+    if (!customerTurns.trim()) continue; // no caller turn on file -- no answer, not a zero
+
+    // One cell per provider: a re-run leaves a second row for the same
+    // (call, provider) and a duplicate candidate would vote twice.
+    const byProvider = new Map<string, string>();
+    for (const cell of cellsByCall.get(call.id) ?? []) {
+      if (cell.transcript && !byProvider.has(cell.providerId)) byProvider.set(cell.providerId, cell.transcript);
+    }
+    if (byProvider.size < MIN_CONSENSUS_CANDIDATES) continue;
+
+    const rows = computeCrossProviderDisagreement(
+      [
+        ...[...byProvider].map(([providerId, transcript]) => ({ providerId, transcript })),
+        { providerId: PRODUCTION_CANDIDATE_ID, transcript: customerTurns },
+      ],
+      { nonVoting: [PRODUCTION_CANDIDATE_ID] },
+    );
+
+    const production = rows.find((r) => r.providerId === PRODUCTION_CANDIDATE_ID);
+    if (!production || production.comparedWords === 0) continue;
+    mismatchWords += production.mismatchWords;
+    comparedWords += production.comparedWords;
+    calls += 1;
+    for (const row of rows) {
+      if (row.providerId === PRODUCTION_CANDIDATE_ID) continue;
+      const totals = candidateTotals.get(row.providerId) ?? { mismatch: 0, compared: 0 };
+      totals.mismatch += row.mismatchWords;
+      totals.compared += row.comparedWords;
+      candidateTotals.set(row.providerId, totals);
+    }
+  }
+
+  if (calls === 0 || comparedWords === 0) return null;
+
+  let leaderProviderId: string | null = null;
+  let leaderRate: number | null = null;
+  for (const [providerId, totals] of [...candidateTotals].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (totals.compared === 0) continue;
+    const rate = totals.mismatch / totals.compared;
+    if (leaderRate === null || rate < leaderRate) {
+      leaderRate = rate;
+      leaderProviderId = providerId;
+    }
+  }
+
+  return {
+    rate: mismatchWords / comparedWords,
+    leaderProviderId,
+    leaderRate,
+    calls,
+    totalCalls: groupCalls.length,
+  };
 }
 
 export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
@@ -86,10 +204,13 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
             vertical: benchmarkCallsTable.vertical,
             sourceTranscriberProvider: benchmarkCallsTable.sourceTranscriberProvider,
             sourceTranscriberModel: benchmarkCallsTable.sourceTranscriberModel,
+            // M-8a: production's own transcript of the call. Its "User:"
+            // turns are the customer-channel half.
+            draftTranscript: benchmarkCallsTable.draftTranscript,
           })
           .from(benchmarkCallsTable)
           .where(inArray(benchmarkCallsTable.id, allCallIds))
-      : Promise.resolve([] as { id: string; sourceAssistantId: string | null; sourceAccountLabel: string | null; vertical: string; sourceTranscriberProvider: string | null; sourceTranscriberModel: string | null }[]),
+      : Promise.resolve([] as { id: string; sourceAssistantId: string | null; sourceAccountLabel: string | null; vertical: string; sourceTranscriberProvider: string | null; sourceTranscriberModel: string | null; draftTranscript: string | null }[]),
     allProviderIds.length
       ? db
           .select({ id: benchmarkProvidersTable.id, name: benchmarkProvidersTable.name, model: benchmarkProvidersTable.model })
@@ -121,6 +242,15 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
   // response per provider through the same extractor hybrid flagging uses
   // -- not from a hardcoded list -- so it stays true to what each API
   // actually returned. One row per provider keeps rawOutput reads cheap.
+  // M-8a: the same on-channel cells, keyed by call, so production can be
+  // held against each call's candidates without re-scanning the list.
+  const cellsByCall = new Map<string, { providerId: string; transcript: string | null }[]>();
+  for (const c of cellsOnChannel) {
+    const list = cellsByCall.get(c.callId) ?? [];
+    list.push({ providerId: c.providerId, transcript: c.transcript });
+    cellsByCall.set(c.callId, list);
+  }
+
   const sampleIdByProvider = new Map<string, string>();
   for (const c of cellsOnChannel) if (!sampleIdByProvider.has(c.providerId)) sampleIdByProvider.set(c.providerId, c.id);
   const samples = sampleIdByProvider.size
@@ -180,6 +310,12 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       callCount: groupCalls.length,
       vertical,
       production,
+      // M-8a: only on a customer-channel bulk. On a mono bulk the candidates
+      // heard both speakers and production's draft turns are the caller
+      // alone, so the comparison would read as ~70% disagreement for a reason
+      // that has nothing to do with production.
+      productionDisagreement:
+        bulkAudioSource === "customer" ? productionDisagreementFor(groupCalls, cellsByCall) : null,
       verdict: computeVerdict(verdictCells, { productionProviderId, confidenceReportingProviderIds, providerNames }),
     });
   }

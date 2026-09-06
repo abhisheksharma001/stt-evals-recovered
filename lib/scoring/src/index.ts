@@ -165,6 +165,32 @@ export function digitizeSpokenDigits(text: string): string {
 // "User: ..."). Stripped before lower-casing, and only at a line start, so a
 // spoken "the user said no" mid-line keeps its word.
 const speakerLabel = /^(?:AI|User):\s*/gm;
+const customerLabel = /^\s*User:\s*/;
+
+/**
+ * M-8a: the caller's half of a Vapi draft transcript.
+ *
+ * A draft is one line per turn, each headed "AI: " or "User: " -- the same
+ * two labels the regex above strips, and the only two that occur: 645 "AI"
+ * and 521 "User" line heads across the 126 calls of the two bulks on disk
+ * (2026-09-06), no third. The "User:" lines are what PRODUCTION's own
+ * transcriber heard the CALLER say, so they are the only part of a draft
+ * comparable to a candidate transcribed from the customer channel. Compared
+ * against a mono candidate they would look ~70% wrong purely for missing the
+ * assistant's turns, which is why the caller gates this on the channel.
+ *
+ * The empty string means the draft carried no "User:" line at all (2 of
+ * those 126 calls) -- an empty transcript, which is not the same as a
+ * transcript that agreed with everyone; what that means is the caller's to
+ * decide, so nothing is invented here.
+ */
+export function productionCustomerTurns(draft: string): string {
+  return draft
+    .split(/\r?\n/)
+    .filter((line) => customerLabel.test(line))
+    .map((line) => line.replace(customerLabel, ""))
+    .join("\n");
+}
 
 export function normalizeTranscript(value: string): string {
   const base = value

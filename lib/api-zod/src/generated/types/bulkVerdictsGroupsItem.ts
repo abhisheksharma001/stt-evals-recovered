@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BulkVerdictsGroupsItemProduction } from './bulkVerdictsGroupsItemProduction';
+import type { BulkVerdictsGroupsItemProductionDisagreement } from './bulkVerdictsGroupsItemProductionDisagreement';
 import type { HeadlineVerdict } from './headlineVerdict';
 
 export type BulkVerdictsGroupsItem = {
@@ -16,5 +17,7 @@ export type BulkVerdictsGroupsItem = {
   vertical: string;
   /** @nullable */
   production: BulkVerdictsGroupsItemProduction;
+  /** @nullable */
+  productionDisagreement: BulkVerdictsGroupsItemProductionDisagreement;
   verdict: HeadlineVerdict;
 };

@@ -51,6 +51,59 @@ describe("computeCrossProviderDisagreement", () => {
   });
 });
 
+// M-8a: production's transcript is measured against the pack without joining
+// it. The point of the option is comparability -- the providers' flag counts
+// are computed and STORED at run time, when production is not there, so if
+// scoring production later moved those numbers the stored ones would be
+// silently wrong. These cases pin that down on a case where a voting
+// production genuinely WOULD move them.
+describe("computeCrossProviderDisagreement with a non-voting candidate", () => {
+  // a and b agree; c is the outlier; production happens to match c. As a
+  // voter, production makes it 2-2 at "truck"/"duck" -- a tie, which is
+  // excluded for everyone, and c's only mismatch disappears.
+  const candidates = [
+    { providerId: "a", transcript: "the truck needs a new part" },
+    { providerId: "b", transcript: "the truck needs a new part" },
+    { providerId: "c", transcript: "the duck needs a new part" },
+    { providerId: "production", transcript: "the duck needs a new part" },
+  ];
+  const rateOf = (rows: ReturnType<typeof computeCrossProviderDisagreement>, id: string) =>
+    rows.find((r) => r.providerId === id)?.disagreementRate;
+
+  it("leaves the voters' rates exactly as they are without it", () => {
+    const withoutProduction = computeCrossProviderDisagreement(candidates.slice(0, 3));
+    const nonVoting = computeCrossProviderDisagreement(candidates, { nonVoting: ["production"] });
+    for (const id of ["a", "b", "c"]) {
+      expect(rateOf(nonVoting, id)).toBe(rateOf(withoutProduction, id));
+    }
+    expect(rateOf(nonVoting, "c")).toBeGreaterThan(0);
+    // The consensus stays a 3-provider one, not a 4-provider one.
+    expect(nonVoting.find((r) => r.providerId === "c")!.consensusProviderCount).toBe(3);
+  });
+
+  it("would have moved them if production voted -- which is why it must not", () => {
+    const voting = computeCrossProviderDisagreement(candidates);
+    expect(rateOf(voting, "c")).toBe(0); // the tie swallowed the outlier
+    expect(rateOf(voting, "c")).not.toBe(rateOf(computeCrossProviderDisagreement(candidates.slice(0, 3)), "c"));
+  });
+
+  it("still scores production itself against the consensus it did not form", () => {
+    const rows = computeCrossProviderDisagreement(candidates, { nonVoting: ["production"] });
+    const production = rows.find((r) => r.providerId === "production")!;
+    expect(production.disagreementRate).toBe(rateOf(rows, "c"));
+    expect(production.disagreementRate).toBeGreaterThan(0);
+  });
+
+  it("gives production no row at all when fewer than three providers voted", () => {
+    // Two voters cannot form a plurality. A 0 here would read as "production
+    // agreed with everyone"; no row is the only honest answer.
+    const rows = computeCrossProviderDisagreement(candidates.slice(0, 2).concat(candidates[3]!), {
+      nonVoting: ["production"],
+    });
+    expect(rows.map((r) => r.providerId)).toEqual(["a", "b"]);
+  });
+});
+
 describe("extractEntities", () => {
   it("extracts a phone number", () => {
     const entities = extractEntities("call me at 555-123-4567 tomorrow");

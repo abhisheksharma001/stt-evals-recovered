@@ -2560,7 +2560,7 @@ components:
           type: array
           items:
             type: object
-            required: [clientLabel, assistantIds, callCount, vertical, production, verdict]
+            required: [clientLabel, assistantIds, callCount, vertical, production, productionDisagreement, verdict]
             properties:
               # T-55: one verdict group per CLIENT (the call's Vapi account
               # label), not per assistant -- per-assistant groups were 1-2
@@ -2585,6 +2585,32 @@ components:
                   model: { type: ["string", "null"] }
                   coverage: { type: number }
                   total: { type: number }
+              # M-8a. Production (Deepgram Flux) is streaming-only and never
+              # runs here, so it has no cells and no rate row; what it does
+              # have is the Vapi draft, whose "User:" turns are its own
+              # transcript of the customer channel. Those turns are held
+              # against the candidates' consensus WITHOUT joining it, so this
+              # rate and the candidates' stored flag rates stay on one scale.
+              # Null on a bulk that ran on the mono mix: there the candidates
+              # heard both speakers and this is the caller alone, so the
+              # comparison would read as ~70% disagreement for a reason that
+              # has nothing to do with production. Production is never a row
+              # in `rates` and is never rankable or pickable.
+              productionDisagreement:
+                type: ["object", "null"]
+                required: [rate, leaderProviderId, leaderRate, calls, totalCalls]
+                properties:
+                  # Pooled mismatch words / compared words, 0..1.
+                  rate: { type: number }
+                  # Best-agreeing candidate over exactly the same calls.
+                  leaderProviderId: { type: ["string", "null"] }
+                  leaderRate: { type: ["number", "null"] }
+                  # Calls this could be computed on, out of the group total.
+                  # A call whose draft has no caller turn, or that fewer than
+                  # three candidates transcribed, has no answer and is not
+                  # counted as agreement.
+                  calls: { type: number }
+                  totalCalls: { type: number }
               verdict:
                 $ref: "#/components/schemas/HeadlineVerdict"
     HeadlineVerdict:

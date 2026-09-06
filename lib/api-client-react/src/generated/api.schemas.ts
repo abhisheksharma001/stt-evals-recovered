@@ -1501,6 +1501,19 @@ export type BulkVerdictsGroupsItemProduction = {
   total: number;
 } | null;
 
+/**
+ * @nullable
+ */
+export type BulkVerdictsGroupsItemProductionDisagreement = {
+  rate: number;
+  /** @nullable */
+  leaderProviderId: string | null;
+  /** @nullable */
+  leaderRate: number | null;
+  calls: number;
+  totalCalls: number;
+} | null;
+
 export type HeadlineVerdictDecision = typeof HeadlineVerdictDecision[keyof typeof HeadlineVerdictDecision];
 
 
@@ -1575,6 +1588,8 @@ export type BulkVerdictsGroupsItem = {
   vertical: string;
   /** @nullable */
   production: BulkVerdictsGroupsItemProduction;
+  /** @nullable */
+  productionDisagreement: BulkVerdictsGroupsItemProductionDisagreement;
   verdict: HeadlineVerdict;
 };
 

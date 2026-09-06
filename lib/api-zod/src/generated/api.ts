@@ -1780,6 +1780,13 @@ export const GetBulkVerdictsResponse = zod.object({
   "coverage": zod.number(),
   "total": zod.number()
 }).nullable(),
+  "productionDisagreement": zod.object({
+  "rate": zod.number(),
+  "leaderProviderId": zod.string().nullable(),
+  "leaderRate": zod.number().nullable(),
+  "calls": zod.number(),
+  "totalCalls": zod.number()
+}).nullable(),
   "verdict": zod.object({
   "decision": zod.enum(['winner', 'too_close', 'too_few_calls', 'insufficient']),
   "winnerProviderId": zod.string().nullable(),
