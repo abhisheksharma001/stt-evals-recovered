@@ -1,3 +1,60 @@
+## Found 2026-09-06 (grilling M-10): rank 1 claims it had the fewest flags when every provider tied
+
+`run-executor.ts:1409` writes rank 1's stored recommendation as:
+
+> Leading candidate for this assistant's calls -- fewest/least-severe hybrid flags among
+> ready providers.
+
+Read off the live DB the same day: of the **62** assistant groups in `benchmark_rankings`
+with a `bulk_id`, **33 have every provider tied** on flag badness (`avg_peer_flag_count +
+avg_peer_flag_severity_score` identical across all five). Nobody had the fewest. The
+sentence is false on 53 % of the groups on screen, and it is the sentence a reader is
+most likely to quote.
+
+In those 33 groups the flag term cancels out of the composite, so the ordering came from
+latency and cost. Rank 1 is `deepgram-nova-3` in all 33 -- not the cheapest ($0.0043
+against Cartesia's $0.0022), so it won on batch file-turnaround time.
+
+Reproduce:
+
+```sql
+with g as (
+  select bulk_id, assistant_id,
+         count(distinct (coalesce(avg_peer_flag_count,0)+coalesce(avg_peer_flag_severity_score,0))) db
+  from benchmark_rankings where bulk_id is not null group by bulk_id, assistant_id)
+select count(*) groups, count(*) filter (where db = 1) flags_all_tied from g;
+```
+
+Queued as **M-10c**, after M-10a (which changes how often the tie decides the order, so
+fixing the sentence first would need re-verifying anyway).
+
+## Found 2026-09-06 (grilling M-10): the number that orders every ranking table had no test
+
+`hybridCompositeScore` (`lib/scoring/src/hybrid.ts`) produces `composite`, and
+`run-executor.ts:1350` sorts every ranking group by it. `lib/scoring/src/hybrid.test.ts`
+has 136 passing tests and **not one of them calls it** -- the single mention of the word
+`composite` in that file is a comment about a different function.
+
+Its weights could have been changed to anything, in either direction, and the whole suite
+would have stayed green. The three signals that feed it are each well covered; the
+function that turns them into the rank a person reads is not. Covered from M-10a onward.
+Worth checking for the same shape elsewhere: a well-tested set of inputs feeding an
+untested combiner.
+
+## Found 2026-09-06 (grilling M-10): `supportsStreaming` reads like a mode and is not one
+
+`benchmark_providers.supports_streaming` is `true` on **10 of the 11 live rows** --
+everything except OpenAI. It records that the *vendor* offers a streaming API, not that
+*this tool* streams to it, and in this tool exactly one adapter streams (Cartesia, over a
+WebSocket; every other adapter posts a file). The fact is already written down in prose at
+`lib/stt-providers/src/types.ts:57` and nowhere in a field.
+
+Anything reaching for a "is this row streaming" flag will find `supportsStreaming`, get
+`true` for ten rows, and be wrong about nine of them. If that distinction is ever needed
+it belongs on `ProviderAdapter` (code, resolved through `getProviderAdapter()`), not on
+the row: a DB column is operator-editable and can disagree with what the adapter actually
+does, with nothing to catch it. M-10a was rewritten to avoid needing it at all.
+
 ## Found 2026-09-06 (shipping S-9): `| tee` swallows the exit status, so a failed suite reads as success
 
 ```

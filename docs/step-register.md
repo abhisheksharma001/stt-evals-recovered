@@ -2086,36 +2086,238 @@ the same shape — the test is not asserting a shape only a fixture can make.
    that needs a rendered React tree fed by a real API response — a different seam, and a
    different step if it is ever worth one.
 
-### M-10 — Latency means end-of-speech latency, or nothing
+### M-10a — Latency stops deciding rank, because it does not mean the same thing twice
 
 **PR:** one.
-**Depends on:** M-5 (`audioSource` exists; batch vs streaming is known per provider row
-via `supportsStreaming` on `benchmark_providers`, but that flag today means "the vendor
-can stream", not "this row streams" — this step fixes the meaning).
-**Files:** `lib/db/src/schema/benchmark-providers.ts` (new `mode: "batch" | "streaming"`,
-default `batch`; the Cartesia row is `streaming`), `lib/scoring/src/hybrid.ts`
-(`hybridCompositeScore`, `HYBRID_RANKING_WEIGHTS`), `lib/scoring/src/hybrid.test.ts`,
-`artifacts/api-server/src/lib/run-executor.ts` (`aggregateRankingRows` — pass the mode),
-`artifacts/stt-benchmark/src/pages/Rankings.tsx` ("Speed" column label and hover),
-`lib/api-spec/openapi.yaml`.
-**Today:** `latencyFinalMs` is file turnaround for batch rows (10 s for a 30 s call means
-nothing to a voice agent) and roughly the call's length for Cartesia (our adapter streams
-at real time). It is 15 % of the composite; it punishes the streaming adapter and rewards
-the fastest batch API.
-**Change:** for `mode = batch` rows the latency component is dropped (weight
-redistributed: flags 0.85, cost 0.15); for `mode = streaming` rows latency is
-end-of-audio → final (what the Cartesia adapter already measures from the last chunk),
-and the composite keeps flags 0.70 / latency 0.15 / cost 0.15. The "Speed" column reads
-"—" with hover "batch API: file turnaround, not comparable" for batch rows, and "end of
-speech → final, median" for streaming rows; production's own transcriber latency (M-7)
-is printed in the column header for the group.
-**Acceptance:** WHEN rankings are computed for a bulk with batch rows THEN changing any
-batch row's `latencyFinalMs` SHALL NOT change any rank, and WHEN a streaming row is
-present THEN its latency SHALL feed its composite.
-**Verify:** `cd lib/scoring && pnpm run test` — two cases (batch latency inert; streaming
-latency active). Prove by breaking: restore the old weights, the first case fails.
-`pnpm run typecheck`; Results render test for the column text.
-**Must not:** touch cost or flag weights for streaming rows; change stored score rows.
+**Depends on:** nothing. (M-5 is done; nothing in this step reads `audioSource`.)
+**Files:**
+- `lib/scoring/src/hybrid.ts` — `HYBRID_RANKING_WEIGHTS`, `HybridCompositeInput`,
+  `hybridCompositeScore` (bottom of the file, from the `--- Ranking composite ---` banner).
+- `lib/scoring/src/hybrid.test.ts` — the first tests `hybridCompositeScore` has ever had.
+  Grep it: today the word `composite` appears once, in a comment about a different
+  function. The composite that orders every ranking table in the product is untested.
+- `artifacts/api-server/src/lib/run-executor.ts` — two places, both in this one file:
+  the `hybridCompositeScore({ ... })` call site (~line 1320) drops the two latency
+  fields, and the T-6 comment at ~line 128 stops citing latency as a ranking input.
+- `artifacts/stt-benchmark/src/pages/Rankings.tsx` — `SORT_TITLES.rank` (~line 84) and
+  `SORT_TITLES.latencyFinalMs` (~line 89). Two strings. Nothing else on the page.
+- `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx` — a guard on both.
+- `docs/PRD-v6-measure.md` line 40 and `docs/PRD-v3-technical.md` line 257 — both state
+  the old formula in prose and are falsified by this step.
+
+_Corrected 2026-09-06, before any code was written. This step replaces **M-10 — "Latency
+means end-of-speech latency, or nothing"**, which was wrong in six ways. The title was
+right; the body was not, and the body is what a weaker model would have executed:_
+
+1. _It claimed the Cartesia adapter "already measures end-of-audio → final ... from the
+   last chunk". **It does not.** `lib/stt-providers/src/adapters/cartesia.ts:414` sets
+   `finalAt` when the whole promise settles, and `submittedAt` at line 195 is set before
+   the first byte is sent. Nothing anywhere timestamps the last audio chunk —
+   `finalizeSent` is a boolean, not a time. Measuring end-of-speech latency is real,
+   unstarted work; it is now **M-10b**._
+2. _Its own recipe did not achieve its own stated goal. Batch rows at flags 0.85 / cost
+   0.15 and streaming rows at flags 0.70 / latency 0.15 / cost 0.15, sorted against each
+   other in one table, still leaves Cartesia scoring at most 0.85 against a clean batch
+   row's 1.00 — because its latency number is still the whole real-time session. The step
+   said it existed to stop punishing the streaming adapter, and would have kept punishing
+   it while claiming otherwise._
+3. _It put `mode` in the database. Whether a row streams is decided by **our adapter** —
+   cartesia.ts opens a WebSocket, every other adapter posts a file — and that is already
+   written down at `lib/stt-providers/src/types.ts:57`. A `benchmark_providers` column is
+   operator-editable data that can disagree with the code: set `mode = 'streaming'` on
+   OpenAI and the number becomes a lie with nothing to catch it. If a mode field is ever
+   needed it belongs on `ProviderAdapter`, resolved through `getProviderAdapter()`._
+4. _Files undercount, the sixth step running. A `lib/api-spec/openapi.yaml` change
+   regenerates `lib/api-zod/src/generated/**` and `lib/api-client-react/src/generated/**`,
+   both committed; a new `benchmark_providers` column needs a drizzle push, a default for
+   the 11 live rows, and the Providers.tsx write path. None were listed._
+5. _Its last clause — "production's own transcriber latency (M-7) is printed in the column
+   header" — is already shipped. M-7b renders it per group (`Rankings.tsx:266-269`,
+   `data-testid="prod-latency"`) and M-7c already says how many groups lack it._
+6. _It had no evidence. The numbers under **Today** below were not in it, and they are the
+   whole argument._
+
+**Today:** rank is `providerAggregates.sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1))`
+at `run-executor.ts:1350`, and `composite` is `hybridCompositeScore` — flags 0.70,
+latency 0.15, cost 0.15. `latencyFinalMs` is `finalAt - submittedAt` (`run-executor.ts:927`),
+which is:
+
+- for the six batch adapters, how long a vendor took to hand back a file;
+- for Cartesia, the length of the call, because our adapter streams it at real time.
+
+Read off `benchmark_rankings` on 2026-09-06 — mean `latency_final_ms` per provider:
+openai 4 613 · deepgram-nova-3 5 487 · gladia 10 665 · assemblyai 12 326 ·
+**cartesia 80 754** (max 335 316). One provider's number is 16× the others' because it is
+a different quantity, not because it is slow.
+
+And it decides real ranks. Of the **62** assistant groups in `benchmark_rankings` with a
+`bulk_id`, **33 have every provider tied on flag badness** — `avg_peer_flag_count +
+avg_peer_flag_severity_score` identical across all five. In a tied group the flag term
+cancels, so ordering comes from latency and cost alone. In **all 33**, rank 1 is
+`deepgram-nova-3`, which is not the cheapest ($0.0043 against Cartesia's $0.0022). It wins
+on file turnaround. In 53 % of the groups on screen, the leading candidate is chosen by a
+number that means nothing to a voice agent.
+
+**Change:** latency leaves the ranking composite. Not for batch rows — for every row,
+which is what the retired step's own title asked for ("or nothing").
+
+1. `HYBRID_RANKING_WEIGHTS` becomes `{ flags: 0.85, cost: 0.15 }`. The `latency` key is
+   removed, not set to zero: a zero weight is a weight someone will restore without
+   re-deriving why it was zero.
+2. `HybridCompositeInput` drops `latencyFinalMs` and `maxLatencyFinalMs`, and
+   `hybridCompositeScore` drops `latencyComponent`. Leaving an ignored input in the type
+   is a trap — a caller passes a real number and reasonably believes it counted.
+3. `run-executor.ts` ~1320: delete the two fields from the call site. Nothing else in
+   `aggregateRankingRows` changes — `latencyFinalMs` is still averaged and still written
+   to `benchmark_rankings`, because the column is still shown.
+4. `run-executor.ts` ~128: the T-6 comment ends "and since latency feeds the ranking
+   composite, a self-inflicted storm doesn't just slow the bulk down, it corrupts the
+   ranking it's producing." The semaphore singleton is still right; that reason is not.
+   Rewrite it to the reason that survives — a 429 storm fails cells, and a failed cell is
+   evidence lost from the comparison.
+5. `Rankings.tsx` `SORT_TITLES.rank` today reads "From disagreements (cross-provider
+   disagreement + wrong entities only), price and speed." Drop the speed clause. It
+   becomes false the moment this merges.
+6. `Rankings.tsx` `SORT_TITLES.latencyFinalMs` today reads "Time from sending the audio to
+   the final transcript." True, and useless, because it is turnaround for a batch API and
+   call length for a streaming one. Replace it with something that says both what the
+   number is and that it does not affect Rank. Suggested, not mandated — keep it plain and
+   keep both facts: `"Time from sending the audio to the final transcript. Batch APIs
+   return a file, Cartesia streams at real time, so these are not the same measurement --
+   shown for reference, not used for Rank."`
+7. `docs/PRD-v6-measure.md` line 40 reads "70 % peer-consensus flags · 15 % batch
+   turnaround time · 15 % list price". Two of the three terms need correcting: latency is
+   gone, and the third has been the **paid** rate, not list price, since T-116. Say
+   85 % / 15 % and say `paid`.
+8. `docs/PRD-v3-technical.md` line 257 — "Since latency is 15% of the composite, a
+   self-inflicted 429 storm ... corrupts the ranking it's producing." Same correction as
+   the code comment, in the place the claim was made.
+
+**Acceptance:** WHEN two providers differ only in `latencyFinalMs` THEN
+`hybridCompositeScore` SHALL return the same number for both, and WHEN the Results page
+renders THEN no tooltip SHALL say speed feeds Rank.
+
+**Verify:**
+- `pnpm run typecheck` from the repo root — 4 projects, clean. The dropped fields on
+  `HybridCompositeInput` are what makes this a real check: a missed call site fails here.
+- `set -o pipefail; pnpm --filter @workspace/scoring run test` — baseline is **8 files,
+  136 tests**; this step adds tests, so expect 8 files and >136. Read the count lines out
+  of the output. **Do not** trust an exit code behind a `| tee` (it reports tee's status,
+  not the suite's — see the backlog), and **do not** write `--filter @stt/scoring`: a
+  filter that matches no project exits 0 with everything skipped. The package name is
+  `@workspace/scoring`.
+- `set -o pipefail; pnpm --filter stt-benchmark run test` — baseline **15 files, 119
+  tests**; expect 15 files and >119.
+- Prove by breaking, **after committing**:
+  1. Put `latency: 0.15` back in the weights and the latency term back in the formula.
+     The new "latency is inert" test must fail. Restore with `git checkout -- <file>`.
+  2. Put the words "and speed" back in `SORT_TITLES.rank`. The new render guard must
+     fail. Restore.
+- There is no live check for this one, and that is not an oversight. `benchmark_rankings`
+  rows are written only by `computeRankingsForBulk`/`computeRankingsForRun`, which run
+  only when a bulk or run executes. There is no recompute route. **The 33 groups already
+  on screen keep their old ranks until a bulk is re-executed, which costs provider money.**
+  Say that in the PR body rather than implying the page changed.
+
+**Must not:** no schema change, no `openapi.yaml` change, no regenerating
+`lib/api-zod/**` or `lib/api-client-react/**`, no provider call, no re-running a bulk, no
+`UPDATE` against `benchmark_rankings`. Do not touch the flag thresholds
+(`DISAGREEMENT_FLAG_THRESHOLD`, `DISAGREEMENT_HIGH_THRESHOLD`) or `flagBadnessOf`. Do not
+remove the Speed column or stop writing `latency_final_ms` — the number stays visible,
+it just stops voting. Do not fix the recommendation sentence here; that is M-10c, and
+mixing it in would hide which change moved which rank.
+
+---
+
+**Evidence — Speed column that is shown but not scored** (`visual-and-research`,
+2026-09-06):
+- _Pattern to use:_ show the number plainly beside the score and say in the column's own
+  tooltip that it does not feed the score — ranked tables put the score column next to
+  plain value columns and use a dash where a value is missing rather than a stand-in
+  number ← [Profound screen](https://mobbin.com/screens/65d2d37b-bcec-4a75-85d2-3cb0933b4c57),
+  [OKX screen](https://mobbin.com/screens/616a128d-2240-490e-9204-749e7902aef3).
+- _Patterns to avoid:_ two different weightings inside one sorted table — the retired
+  M-10's batch-0.85 / streaming-0.70 recipe. Every ranked table found scores every row by
+  the same formula ← [Profound screen](https://mobbin.com/screens/65d2d37b-bcec-4a75-85d2-3cb0933b4c57).
+- _What operators say:_ Jessica Lachs (VP Analytics & Data Science, DoorDash): a metric
+  "people can talk about across the company ... is going to be a much better metric in
+  terms of driving real outcomes than your made up composite score that nobody
+  understands." — "Building a world-class data org", Lenny's Newsletter podcast,
+  2024-07-14, https://www.youtube.com/watch?v=D4PDb_C8Dww
+- _Changes to the plan:_ drop latency for every row rather than adding a second,
+  mode-dependent weighting; keep Speed visible with an honest tooltip instead of hiding
+  the column.
+- _No evidence found for:_ a dedicated "shown but not scored" badge or affordance on a
+  ranking table. No screen found marks a column that way, so this step says it in the
+  tooltip rather than inventing a badge.
+
+---
+
+### M-10b — Measure end-of-speech latency, then let it count again
+
+**PR:** one.
+**Depends on:** M-10a.
+**Files:** `lib/stt-providers/src/types.ts` (`ProviderTranscribeResult`),
+`lib/stt-providers/src/adapters/cartesia.ts` (the `ws.send("finalize")` branch, ~line 331),
+`lib/db/src/schema/benchmark-scores.ts`, `artifacts/api-server/src/lib/run-executor.ts`,
+`lib/api-spec/openapi.yaml` **and the two generated clients it regenerates**
+(`lib/api-zod/src/generated/**`, `lib/api-client-react/src/generated/**`), plus
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`.
+
+**Today:** M-10a took latency out of the ranking because the tool cannot measure the only
+latency a voice agent cares about — the gap between the caller stopping and the final
+transcript arriving. Cartesia is the one adapter that streams, and it does not record when
+the last chunk went out: `cartesia.ts` sets `finalizeSent = true` and never stamps a time.
+`latencyFinalMs` is therefore the whole session, dominated by real-time playback.
+
+**Change:** stamp the moment the last audio chunk is sent; carry it out of the adapter as
+a new nullable field on `ProviderTranscribeResult` (batch adapters leave it null, exactly
+as they already leave `firstPartialAt` null); store the derived
+`end-of-audio → final` figure in its own column on `benchmark_scores`, never overwriting
+`latencyFinalMs`; show it in its own column. Only once a real number exists for at least
+one provider is it worth arguing about whether it re-enters the composite — and that
+argument is a separate step, not this one.
+
+**Acceptance:** WHEN a Cartesia cell completes THEN the score row SHALL carry an
+end-of-speech latency smaller than the call's duration, and WHEN a batch adapter's cell
+completes THEN that column SHALL be null, never zero.
+
+**Verify:** unit test on the adapter's event reducer with a synthetic event list — no
+provider call. `pnpm run typecheck`. A live check needs one paid Cartesia call and is a
+**go-spend**, not part of the step.
+
+**Must not:** must not overwrite `latencyFinalMs`, must not put the new number into
+`hybridCompositeScore` (that is a later step, with its own argument), must not call a
+provider without an explicit go-spend, must not write a zero where nothing was measured.
+
+---
+
+### M-10c — Rank 1 says it won on flags when it tied on flags
+
+**PR:** one.
+**Depends on:** M-10a (which changes how often the tie happens, so fixing this first would
+have to be re-verified after).
+**Files:** `artifacts/api-server/src/lib/run-executor.ts` (~line 1409, the `recommendation`
+template), and whichever integration or unit test asserts on that string.
+
+**Today:** rank 1's stored recommendation reads "Leading candidate for this assistant's
+calls — fewest/least-severe hybrid flags among ready providers." In **33 of 62** groups
+every provider is tied on flag badness, so nobody had the fewest and the sentence is
+false. It is stored in `benchmark_rankings.recommendation` and rendered as-is. Found
+2026-09-06 while grilling M-10; logged in `docs/backlog/good-to-have.md`.
+
+**Change:** the sentence must describe what actually decided the rank. When the flag term
+is tied across every provider in the group, say so and name what broke the tie (price);
+when it is not tied, the existing sentence is correct and stays.
+
+**Acceptance:** WHEN every provider in a group has equal flag badness THEN rank 1's
+recommendation SHALL NOT claim fewest or least-severe flags.
+
+**Verify:** unit test on the tied case and the untied case. Prove by breaking: force the
+tied branch to emit the old sentence and watch the tied test fail.
+
+**Must not:** must not change the ordering, must not touch the composite, must not rewrite
+stored rows.
 
 ---
 
