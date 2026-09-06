@@ -257,7 +257,7 @@ describe("Results", () => {
     // marker is matched by its own title, because the word also appears in
     // the verdict chip and in the legend that explains it.
     expect(screen.getAllByTitle(/Named by this group's verdict/).length).toBe(1)
-    expect(screen.getAllByText("Ahead, not a winner").length).toBe(1)
+    expect(screen.getAllByText("Ahead, but not decided").length).toBe(1)
     // The provider production runs on is marked, from settings.
     expect(screen.getAllByText("In production").length).toBeGreaterThan(0)
     api.restore()
@@ -290,6 +290,12 @@ describe("Results", () => {
     // (2 of 176 calls carry a human gold, both in runs).
     expect(rel[0].textContent).not.toContain("customer audio")
     expect(rel[0].textContent).not.toContain("checked by a person")
+
+    // M-9b: the lowercase family too. `data-decision="winner"` is an
+    // attribute, so it never reaches textContent -- the enum stays, the copy
+    // goes. "Ahead, not a winner" became "Ahead, but not decided".
+    expect(document.body.textContent).not.toMatch(/winner/i)
+    expect(document.body.textContent).not.toMatch(/\bwins\b/i)
     api.restore()
   })
 
@@ -309,7 +315,7 @@ describe("Results", () => {
     fireEvent.click(screen.getByText("All-time combined"))
 
     // Both rank-1 rows now read "ahead": with no verdict, nothing is decided.
-    expect((await screen.findAllByText("Ahead, not a winner")).length).toBe(2)
+    expect((await screen.findAllByText("Ahead, but not decided")).length).toBe(2)
     // The all-time view has no noise floor of its own, so it shows no
     // verdict rather than a wrong one -- no row is named a winner here.
     expect(screen.queryAllByTitle(/Named by this group's verdict/)).toEqual([])

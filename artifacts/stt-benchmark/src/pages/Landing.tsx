@@ -31,7 +31,7 @@ const STEPS: { title: string; body: string }[] = [
   },
   {
     title: "Get a verdict with its margin of error",
-    body: "The provider with the fewest disagreements per 100 words wins, only if the gap is bigger than the margin of error. Otherwise the page says so.",
+    body: "The provider with the fewest disagreements per 100 words is named, only if the gap is bigger than the margin of error. Otherwise the page says so.",
   },
 ]
 
@@ -102,7 +102,7 @@ export default function Landing() {
               <span className="text-[11px] font-mono text-muted-foreground">72 calls scored &middot; 64 calls both ran</span>
             </div>
             <p className="mt-3 text-lg leading-snug" style={{ textWrap: "balance" }}>
-              <span className="font-semibold">Provider A</span> wins: 1.4 disagreements per 100 words, 38% fewer than
+              <span className="font-semibold">Provider A</span> has the least disagreement: 1.4 disagreements per 100 words, 38% fewer than
               Provider B, 12% fewer than Provider C (in production today). 72 calls.
             </p>
             {/* M-9: this example is captioned "what a client sees", so it

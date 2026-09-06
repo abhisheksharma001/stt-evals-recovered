@@ -63,7 +63,7 @@ export function costDeltaLine(
   nameOf: (id: string | null) => string,
   price: Record<string, number>,
 ): string {
-  if (v.decision !== "winner" || !v.winnerProviderId) return "No cost delta: no winner is named on this evidence.";
+  if (v.decision !== "winner" || !v.winnerProviderId) return "No cost delta: nothing is decided on this evidence.";
   const winner = v.winnerProviderId;
   const wp = price[winner];
   if (wp === undefined) return `No cost delta: no list price on file for ${nameOf(winner)}.`;
@@ -86,10 +86,10 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   const label = g.clientLabel ?? "Calls with no org label on file";
   const headline =
     v.decision === "winner" && v.winnerProviderId
-      ? `${esc(nameOf(v.winnerProviderId))} wins${v.marginPct != null ? ` by ${v.marginPct.toFixed(0)}% fewer disagreements per 100 words than ${esc(nameOf(v.runnerUpProviderId))}` : ""}.`
+      ? `${esc(nameOf(v.winnerProviderId))} has the least disagreement${v.marginPct != null ? `: ${v.marginPct.toFixed(0)}% fewer disagreements per 100 words than ${esc(nameOf(v.runnerUpProviderId))}` : ""}.`
       : v.leaderProviderId
-        ? `Ahead, not a winner: ${esc(nameOf(v.leaderProviderId))}.`
-        : "No winner named.";
+        ? `Ahead, but not decided: ${esc(nameOf(v.leaderProviderId))}.`
+        : "Nothing decided.";
   const evidence: string[] = [`${n(v.evidenceCalls)} call${v.evidenceCalls === 1 ? "" : "s"} scored`, `${n(g.callCount)} call${g.callCount === 1 ? "" : "s"} in group`];
   if (v.noiseFloor) {
     // T-81: the 95% CI interval stays in the JSON API; the share page says
@@ -100,7 +100,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   }
   if (v.callsToSettle != null) evidence.push(`about ${n(v.callsToSettle)} calls both ran would decide it`);
   const production = g.production
-    ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — winner has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} disagreements than production` : ""}.`
+    ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — the named provider has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} disagreements than production` : ""}.`
     : "In production today: unknown (no call in this group recorded its live provider).";
   // M-8b: production's OWN transcript against the candidates' consensus, on
   // the same per-100-words scale as the table below. Absent -- never a zero
@@ -120,7 +120,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
     .sort((a, b) => a.flagsPer100Words - b.flagsPer100Words)
     .map(
       (r) =>
-        `<tr><td>${esc(nameOf(r.providerId))}${r.providerId === v.winnerProviderId && v.decision === "winner" ? ' <span class="tag">winner</span>' : ""}${r.providerId === v.productionProviderId ? ' <span class="tag muted">production</span>' : ""}</td><td class="num">${r.flagsPer100Words.toFixed(2)}</td><td class="num">${n(r.calls)}</td><td class="num">${n(r.totalFlags)}</td><td class="num">${n(r.totalWords)}</td><td class="num">${price[r.providerId] !== undefined ? fmtRate(price[r.providerId]) : "not on file"}</td></tr>`,
+        `<tr><td>${esc(nameOf(r.providerId))}${r.providerId === v.winnerProviderId && v.decision === "winner" ? ' <span class="tag">fewest</span>' : ""}${r.providerId === v.productionProviderId ? ' <span class="tag muted">production</span>' : ""}</td><td class="num">${r.flagsPer100Words.toFixed(2)}</td><td class="num">${n(r.calls)}</td><td class="num">${n(r.totalFlags)}</td><td class="num">${n(r.totalWords)}</td><td class="num">${price[r.providerId] !== undefined ? fmtRate(price[r.providerId]) : "not on file"}</td></tr>`,
     )
     .join("");
   return `
@@ -155,10 +155,10 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
     const tally = new Map<string, number>();
     for (const g of winners) tally.set(g.verdict.winnerProviderId ?? "?", (tally.get(g.verdict.winnerProviderId ?? "?") ?? 0) + 1);
     const [topId, topN] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
-    summary = `${esc(nameOf(topId))} wins ${topN} of ${groups.length} org${groups.length === 1 ? "" : "s"} outright.${groups.length - winners.length > 0 ? ` The other ${groups.length - winners.length} ${groups.length - winners.length === 1 ? "has" : "have"} no clear winner on this evidence.` : ""}`;
+    summary = `${esc(nameOf(topId))} has the least disagreement in ${topN} of ${groups.length} org${groups.length === 1 ? "" : "s"}.${groups.length - winners.length > 0 ? ` The other ${groups.length - winners.length} ${groups.length - winners.length === 1 ? "has" : "have"} nothing decided on this evidence.` : ""}`;
   } else if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls)
-    summary = "No clear winner: the top providers are inside the noise in every group with enough calls to judge.";
-  else summary = `No clear winner yet: ${counts.too_few_calls} of ${groups.length} org${groups.length === 1 ? "" : "s"} have fewer than 5 calls shared by the top two providers.`;
+    summary = "Nothing decided: the top providers are inside the noise in every group with enough calls to judge.";
+  else summary = `Nothing decided yet: ${counts.too_few_calls} of ${groups.length} org${groups.length === 1 ? "" : "s"} have fewer than 5 calls shared by the top two providers.`;
 
   const status = bulk.status === "complete" ? "complete" : `${bulk.status} — figures may change if the bulk is retried`;
 
@@ -205,7 +205,7 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
   Bulk launched ${fmtDate(bulk.createdAt)}${bulk.completedAt ? `, completed ${fmtDate(bulk.completedAt)}` : ""} · status: ${esc(status)}
 </div>
 <p class="summary">${summary}</p>
-<p class="counts">${groups.length} org${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} call${totalEvidence === 1 ? "" : "s"} scored · ${counts.winner} winner${counts.winner === 1 ? "" : "s"} · ${counts.too_close} too close · ${counts.too_few_calls} not enough calls${counts.insufficient ? ` · ${counts.insufficient} only one provider` : ""}</p>
+<p class="counts">${groups.length} org${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} call${totalEvidence === 1 ? "" : "s"} scored · ${counts.winner} decided · ${counts.too_close} too close · ${counts.too_few_calls} not enough calls${counts.insufficient ? ` · ${counts.insufficient} only one provider` : ""}</p>
 ${groups.map((g) => groupSection(g, nameOf, price)).join("\n")}
 <div class="legend">
   <p><strong>Least disagreement</strong> = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie. Under 20 calls is an early read.<br><span class="muted">Mechanism: disagreements are cross-provider word disagreements plus entity mismatches (a provider's own low-confidence spans excluded); the margin of error is a 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored.</span></p>

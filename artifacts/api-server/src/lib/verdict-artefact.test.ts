@@ -68,18 +68,18 @@ describe("renderVerdictArtefact", () => {
   it("names the leader as leader, not winner, when the decision is too_close", () => {
     const html = render(base);
     expect(html).toContain("Too close to call");
-    expect(html).toContain("Ahead, not a winner: Alpha.");
-    expect(html).not.toContain("Alpha wins");
-    expect(html).not.toContain('class="tag">winner');
+    expect(html).toContain("Ahead, but not decided: Alpha.");
+    expect(html).not.toContain("Alpha has the least disagreement");
+    expect(html).not.toContain('class="tag">fewest');
     expect(html).toContain("Early read (under 20 calls)");
     expect(html).toContain("Only 1 of 2 providers report per-word confidence");
   });
 
   it("renders the winner, margin and cost delta vs production when a winner is named", () => {
     const html = render({ ...base, decision: "winner", winnerProviderId: "a", marginPct: 25, vsProductionPct: 25, provisional: false, evidenceCalls: 30 });
-    expect(html).toContain("Alpha wins by 25% fewer disagreements per 100 words than Bravo.");
+    expect(html).toContain("Alpha has the least disagreement: 25% fewer disagreements per 100 words than Bravo.");
     expect(html).toContain("Alpha $0.0040/min is 50% cheaper per minute than production Bravo $0.0080/min.");
-    expect(html).toContain("winner has 25% fewer disagreements than production");
+    expect(html).toContain("the named provider has 25% fewer disagreements than production");
     expect(html).not.toContain("Early read");
   });
 });
@@ -110,6 +110,45 @@ describe("renderVerdictArtefact says 'Least disagreement', not 'Winner'", () => 
   });
 });
 
+// M-9b: M-9 took the capital "Winner". The lowercase family survived it in 22
+// rendered strings, including the row tag `winner` sitting under a heading
+// that reads "Least disagreement", and the summary line "X wins N of M orgs
+// outright". This is the guard that keeps the whole family out, not one
+// phrase at a time: strip the parts of the document that legitimately carry
+// the enum -- the <style> block and every class attribute, both driven by
+// `decision` and both code, not copy -- and assert the visible text has no
+// form of the word left, on every decision the verdict can reach.
+describe("renderVerdictArtefact renders no form of 'winner' or 'wins'", () => {
+  const visibleText = (html: string) =>
+    html.replace(/<style>[\s\S]*?<\/style>/g, "").replace(/class="[^"]*"/g, "");
+
+  it("holds on every decision", () => {
+    const cases: HeadlineVerdict[] = [
+      { ...base, decision: "winner", winnerProviderId: "a", marginPct: 25, vsProductionPct: 25, provisional: false, evidenceCalls: 30 },
+      { ...base, decision: "winner", winnerProviderId: "a", marginPct: null, provisional: true, evidenceCalls: 6 },
+      { ...base, decision: "too_close", leaderProviderId: "a" },
+      { ...base, decision: "too_few_calls" },
+      { ...base, decision: "insufficient", leaderProviderId: null },
+    ];
+    for (const v of cases) {
+      const text = visibleText(render(v));
+      expect(text).not.toMatch(/winner/i);
+      expect(text).not.toMatch(/\bwins\b/i);
+    }
+  });
+
+  it("names the row 'fewest' and settles a verdict with 'has the least disagreement'", () => {
+    const html = render({ ...base, decision: "winner", winnerProviderId: "a", marginPct: 25, provisional: false, evidenceCalls: 30 });
+    expect(html).toContain('<span class="tag">fewest</span>');
+    expect(html).toContain("has the least disagreement");
+  });
+
+  it("says 'Nothing decided', not 'No winner', when the verdict refuses", () => {
+    expect(render({ ...base, decision: "too_close", leaderProviderId: "a" })).toContain("Ahead, but not decided: Alpha.");
+    expect(render({ ...base, decision: "insufficient", leaderProviderId: null })).toContain("Nothing decided.");
+  });
+});
+
 // M-8b: production's own transcript on the ranking's scale -- or nothing.
 describe("renderVerdictArtefact production disagreement", () => {
   it("states production's own disagreement beside the closest candidate's, on one scale", () => {
@@ -136,7 +175,7 @@ describe("renderVerdictArtefact production disagreement", () => {
 
 describe("costDeltaLine", () => {
   it("explains every missing delta instead of printing a number", () => {
-    expect(costDeltaLine(base, nameOf, price)).toContain("no winner is named");
+    expect(costDeltaLine(base, nameOf, price)).toContain("nothing is decided");
     const won = { ...base, decision: "winner" as const, winnerProviderId: "a" };
     expect(costDeltaLine({ ...won, productionProviderId: null }, nameOf, price)).toContain("provider in production today for these calls is unknown");
     expect(costDeltaLine(won, nameOf, { a: 0.004 })).toContain("no list price on file for production (Bravo)");
