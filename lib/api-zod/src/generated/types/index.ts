@@ -67,6 +67,7 @@ export * from './bulkTemplateLaunchInput';
 export * from './bulkVerdicts';
 export * from './bulkVerdictsGroupsItem';
 export * from './bulkVerdictsGroupsItemProduction';
+export * from './bulkVerdictsGroupsItemProductionDisagreement';
 export * from './bulkVerdictsProvidersItem';
 export * from './cacheAudioOutcome';
 export * from './cacheAudioOutcomeOutcome';

@@ -66,6 +66,7 @@ const verdicts: BulkVerdicts = {
       callCount: 12,
       vertical: "rush",
       production: { vendor: "deepgram", model: "nova-3", coverage: 12, total: 12 },
+      productionDisagreement: null, // M-8a: mono bulk, no comparable number
       verdict: {
         decision: "winner",
         winnerProviderId: "deepgram-nova-3",

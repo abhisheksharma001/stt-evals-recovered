@@ -65,16 +65,32 @@ export type CrossProviderDisagreement = {
 //
 // With exactly 2 candidates a plurality is meaningless (every mismatch is a
 // 1-1 tie), so that case keeps the original direct pairwise comparison.
+//
+// M-8a: `nonVoting` names candidates that are MEASURED against the consensus
+// without helping to form it. Production's own transcript is the only one --
+// it has to be scored on the same yardstick as the providers' stored
+// peerFlagCount, and letting it vote would move the consensus those stored
+// numbers were computed against, quietly making them incomparable. It also
+// says what "vs production" means: production judged by the pack, not
+// production judged by a pack it is part of. With `nonVoting` empty this
+// function is byte-for-byte what it was.
 export function computeCrossProviderDisagreement(
   candidates: { providerId: string; transcript: string }[],
+  options: { nonVoting?: readonly string[] } = {},
 ): CrossProviderDisagreement[] {
-  const tokenized = candidates.map((c) => ({
+  const nonVoting = new Set(options.nonVoting ?? []);
+  const all = candidates.map((c) => ({
     providerId: c.providerId,
     // T-101: compare the canonical form -- "1-bedroom" / "one bedroom",
     // "gonna" / "going to", a stray "um" are not disagreements.
     words: canonicalTranscript(c.transcript).split(" ").filter(Boolean),
   }));
+  const tokenized = nonVoting.size === 0 ? all : all.filter((t) => !nonVoting.has(t.providerId));
 
+  // A plurality needs three voters. Under that there is no consensus for a
+  // non-voting candidate to be held against, so it gets NO ROW -- never a
+  // zero, which a caller would read as perfect agreement. The voters still
+  // get the answers they always got.
   if (tokenized.length < 2) {
     return tokenized.map((t) => ({
       providerId: t.providerId,
@@ -98,6 +114,8 @@ export function computeCrossProviderDisagreement(
     }));
   }
 
+  // The anchor is picked from the voters only: a non-voting candidate must
+  // never become the frame everyone else is aligned to.
   const byLength = [...tokenized].sort((a, b) => a.words.length - b.words.length);
   const anchor = byLength[Math.floor(byLength.length / 2)]!;
 
@@ -108,7 +126,7 @@ export function computeCrossProviderDisagreement(
   const positionValues = new Map<string, Array<string | null>>();
   const insertionCounts = new Map<string, number>();
 
-  for (const t of tokenized) {
+  for (const t of all) {
     const ops = diffWords(anchor.words, t.words);
     const values: Array<string | null> = [];
     let insertions = 0;
@@ -144,7 +162,7 @@ export function computeCrossProviderDisagreement(
     consensus.push(tie || best === null ? null : best); // null = excluded position
   }
 
-  return tokenized.map((t) => {
+  return all.map((t) => {
     const values = positionValues.get(t.providerId)!;
     let mismatchWords = insertionCounts.get(t.providerId)!;
     let comparedWords = insertionCounts.get(t.providerId)!;

@@ -103,6 +103,84 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     expect(orphanGroup.verdict.sentence).toMatch(/nothing to compare/);
   });
 
+  // M-8a: production (Flux) is streaming-only, never has cells of its own,
+  // and resolveProductionProviderId is only handed the providers that RAN --
+  // so `vsProductionPct` is null on every real bulk and always has been. What
+  // production does have on every call is the Vapi draft. Its "User:" turns
+  // are its transcript of the customer channel, and they go in as a
+  // non-voting candidate: measured against the pack, never joining it.
+  it("measures production's own draft against the candidates on a customer-channel bulk", async () => {
+    const providers = [
+      await fx.provider({ name: `fx-p1-${fx.suffix}`, model: "x" }),
+      await fx.provider({ name: `fx-p2-${fx.suffix}`, model: "x" }),
+      await fx.provider({ name: `fx-p3-${fx.suffix}`, model: "x" }),
+    ];
+    const org = `fx-cust-org-${fx.suffix}`;
+    // The three candidates agree exactly; production's caller turn differs on
+    // its last word, so 1 of its 4 compared words is a mismatch.
+    const calls = [
+      await fx.call({ sourceAccountLabel: org, draftTranscript: "AI: hello there\nUser: alpha beta gamma epsilon" }),
+      await fx.call({ sourceAccountLabel: org, draftTranscript: "AI: hello there\nUser: alpha beta gamma epsilon" }),
+    ];
+    const bulk = await fx.bulk({
+      providerIds: providers.map((p) => p.id),
+      selectionCriteria: { resolvedCallIds: [], requireCustomerAudio: true },
+    });
+    const run = await fx.run({ bulkId: bulk.id, callIds: calls.map((c) => c.id), providerIds: providers.map((p) => p.id), callCount: 2 });
+    for (const call of calls) {
+      for (const provider of providers) {
+        const cell = await fx.result(run.id, call.id, provider.id, {
+          hypothesisTranscript: "alpha beta gamma delta",
+          audioSource: "customer",
+        });
+        await fx.score(cell.id, { peerFlagCount: 0 });
+      }
+    }
+
+    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    expect(res.status).toBe(200);
+    const group = res.body.groups.find((g: { clientLabel: string | null }) => g.clientLabel === org);
+
+    // 1 mismatched word of 4 compared, pooled over both calls.
+    expect(group.productionDisagreement).toMatchObject({ rate: 0.25, leaderRate: 0, calls: 2, totalCalls: 2 });
+    // The candidates agreed with each other exactly, and production being
+    // scored did not move that -- the whole reason it does not vote.
+    expect(group.productionDisagreement.leaderProviderId).toBe([...providers.map((p) => p.id)].sort()[0]);
+
+    // Production is measured, never ranked. Nothing in the table is it.
+    const rateIds = group.verdict.rates.map((r: { providerId: string }) => r.providerId);
+    expect(rateIds.sort()).toEqual([...providers.map((p) => p.id)].sort());
+    expect(JSON.stringify(res.body)).not.toContain("__production__");
+  });
+
+  it("gives no production number at all on a mono bulk, rather than a flattering one", async () => {
+    // The same seed on the mono mix. There the candidates transcribed BOTH
+    // speakers and production's draft turns are the caller alone, so any
+    // comparison would read as disagreement for the assistant's turns being
+    // absent -- a number that says nothing about production. Null is the
+    // honest answer, and null is not zero.
+    const providers = [
+      await fx.provider({ name: `fx-m1-${fx.suffix}`, model: "x" }),
+      await fx.provider({ name: `fx-m2-${fx.suffix}`, model: "x" }),
+      await fx.provider({ name: `fx-m3-${fx.suffix}`, model: "x" }),
+    ];
+    const org = `fx-mono-org-${fx.suffix}`;
+    const call = await fx.call({ sourceAccountLabel: org, draftTranscript: "AI: hello there\nUser: alpha beta gamma epsilon" });
+    const bulk = await fx.bulk({ providerIds: providers.map((p) => p.id) });
+    const run = await fx.run({ bulkId: bulk.id, callIds: [call.id], providerIds: providers.map((p) => p.id), callCount: 1 });
+    for (const provider of providers) {
+      const cell = await fx.result(run.id, call.id, provider.id, { hypothesisTranscript: "alpha beta gamma delta" });
+      await fx.score(cell.id, { peerFlagCount: 0 });
+    }
+
+    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    expect(res.status).toBe(200);
+    const group = res.body.groups.find((g: { clientLabel: string | null }) => g.clientLabel === org);
+    // Present and null -- the field is required by the contract, so a reader
+    // can tell "no answer" from "the key is missing because it is old".
+    expect(group).toHaveProperty("productionDisagreement", null);
+  });
+
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
     const unknown = await request(app).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts");
     expect(unknown.status).toBe(404);

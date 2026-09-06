@@ -5,6 +5,7 @@ import {
   editCounts,
   normalizeEntity,
   normalizeTranscript,
+  productionCustomerTurns,
   score,
   scoreEntities,
 } from "./index";
@@ -39,6 +40,23 @@ describe("normalizeTranscript", () => {
     const formatted = normalizeTranscript("call 555-123-1212");
     expect(spelled).toBe(formatted);
     expect(spelled).toBe("call 5 5 5 1 2 3 1 2 1 2");
+  });
+
+  // M-8a: the same two labels, read the other way round -- M-2 throws the
+  // labels away, this one uses them to keep only the caller's turns, which
+  // is what production's transcriber heard on the customer channel.
+  it("5d. keeps only the User: turns of a draft, labels removed", () => {
+    const draft = "AI: thanks for calling\nUser: hi I need unit 4471\nAI: one moment\nUser: sure";
+    expect(productionCustomerTurns(draft)).toBe("hi I need unit 4471\nsure");
+    // The assistant's words are the majority of a draft and none of them are
+    // the caller's -- comparing them to a customer-channel candidate is what
+    // this exists to prevent.
+    expect(productionCustomerTurns(draft)).not.toContain("thanks for calling");
+    // A draft with no caller turn yields an empty transcript, not a
+    // silently-clean one. 2 of the 126 calls on disk are like this.
+    expect(productionCustomerTurns("AI: hello\nAI: anyone there")).toBe("");
+    // "User" only counts as a label at the head of a line, same rule as M-2.
+    expect(productionCustomerTurns("User: the user said no")).toBe("the user said no");
   });
 
   // M-2: Vapi writes its transcripts as speaker-labelled lines. The labels

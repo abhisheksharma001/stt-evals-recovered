@@ -34,7 +34,7 @@ function render(verdict: HeadlineVerdict, extra: Partial<Parameters<typeof rende
       { id: "a", name: "Alpha" },
       { id: "b", name: "Bravo" },
     ],
-    groups: [{ clientLabel: "Rush <Parts>", assistantIds: ["x"], callCount: 9, vertical: "rush", production: { vendor: "Bravo", model: null, coverage: 9, total: 9 }, verdict }],
+    groups: [{ clientLabel: "Rush <Parts>", assistantIds: ["x"], callCount: 9, vertical: "rush", production: { vendor: "Bravo", model: null, coverage: 9, total: 9 }, productionDisagreement: null, verdict }],
   };
   return renderVerdictArtefact({
     bulk: { id: "bulk-1", name: 'Aug "27" bulk', status: "complete", createdAt: new Date("2026-08-27T10:00:00Z"), completedAt: new Date("2026-08-27T11:00:00Z") },
