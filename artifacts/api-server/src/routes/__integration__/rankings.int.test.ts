@@ -10,9 +10,10 @@
 // here, since that fallback is what keeps Rankings up when Vapi is down.
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
-import { eq } from "drizzle-orm";
-import { benchmarkRunsTable, db, pool } from "@workspace/db";
+import { asc, eq } from "drizzle-orm";
+import { benchmarkRankingsTable, benchmarkRunsTable, db, pool } from "@workspace/db";
 import app from "../../app";
+import { computeRankingsForRun } from "../../lib/run-executor";
 import { expectStatus } from "./expect-status";
 import { Fixtures } from "./fixtures";
 
@@ -84,5 +85,91 @@ describe("GET /api/benchmark/rankings", () => {
     const res = await request(app).get("/api/benchmark/rankings").query({ bulkId: "not-a-uuid" });
     expectStatus(res, 400);
     expect(res.body.error).toMatch(/bulkId/);
+  });
+});
+
+
+// M-10c: the aggregation that WRITES a ranking row had no integration
+// coverage -- rankings.int.test.ts above inserts its rows directly, so
+// nothing here ever proved run-executor's stored `recommendation` sentence.
+// That is how it stayed false on 61 of the live corpus's 62 assistant
+// groups for as long as it did. computeRankingsForRun only reads rows and
+// writes rankings; it calls no provider and spends nothing.
+describe("computeRankingsForRun -- the stored recommendation sentence", () => {
+  it("does not claim rank 1 had the fewest flags when the group tied on flags", async () => {
+    const asst = `fx-asst-tie-${fx.suffix}`;
+    const run = await fx.run({ purpose: "batch" });
+    const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const cheap = await fx.provider();
+    const dear = await fx.provider();
+
+    // Same flag badness on both sides, different price: the only thing left
+    // in the composite after M-10a is cost, so price is what decided this.
+    for (const [provider, microcents] of [
+      [cheap, 220_000],
+      [dear, 430_000],
+    ] as const) {
+      const result = await fx.result(run.id, call.id, provider.id, {
+        hypothesisTranscript: "the tenant asked about the lease",
+      });
+      await fx.score(result.id, {
+        peerFlagCount: 0,
+        peerFlagSeverity: "none",
+        costMicrocents: microcents,
+      });
+    }
+
+    await computeRankingsForRun(run.id, [call.id], [cheap.id, dear.id]);
+    const rows = await db
+      .select()
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.runId, run.id))
+      .orderBy(asc(benchmarkRankingsTable.rank));
+    // Untracked by Fixtures (benchmark_rankings has no FK to runs), so drop
+    // them before asserting -- a failed expect must not leave rows behind.
+    await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
+
+    expect(rows.map((r) => r.providerId)).toEqual([cheap.id, dear.id]);
+    expect(rows[0].recommendation).not.toContain("fewest");
+    expect(rows[0].recommendation).toContain("tied on hybrid flags with 1 other provider");
+    expect(rows[0].recommendation).toContain("Price decided this order, not accuracy");
+    // The runner-up carried the same false claim, and carried it on the
+    // cheapest, equally-clean provider in 33 live groups.
+    expect(rows[1].recommendation).not.toContain("more or more-severe");
+    expect(rows[1].recommendation).toContain("Tied with rank 1 on hybrid flags");
+  });
+
+  it("keeps the fewest-flags sentence when rank 1 really is the cleanest", async () => {
+    const asst = `fx-asst-clean-${fx.suffix}`;
+    const run = await fx.run({ purpose: "batch" });
+    const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const clean = await fx.provider();
+    const flaggy = await fx.provider();
+
+    for (const [provider, flags] of [
+      [clean, 0],
+      [flaggy, 3],
+    ] as const) {
+      const result = await fx.result(run.id, call.id, provider.id, {
+        hypothesisTranscript: "the tenant asked about the lease",
+      });
+      await fx.score(result.id, {
+        peerFlagCount: flags,
+        peerFlagSeverity: flags === 0 ? "none" : "high",
+        costMicrocents: 400_000,
+      });
+    }
+
+    await computeRankingsForRun(run.id, [call.id], [clean.id, flaggy.id]);
+    const rows = await db
+      .select()
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.runId, run.id))
+      .orderBy(asc(benchmarkRankingsTable.rank));
+    await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
+
+    expect(rows[0].providerId).toBe(clean.id);
+    expect(rows[0].recommendation).toContain("fewest/least-severe hybrid flags");
+    expect(rows[1].recommendation).toContain("Behind rank 1 on hybrid flags");
   });
 });
