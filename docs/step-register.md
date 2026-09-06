@@ -1940,9 +1940,29 @@ copy; all still present, and the guards strip exactly them before asserting.
 **Status:** todo
 **PR:** one.
 **Depends on:** M-9b.
-**Files:** `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`
-(or a new `verdict-artefact.int.test.ts` beside it), reusing the seeding
-helpers already in `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`.
+**Files:**
+
+- `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts` — the new
+  test goes inside the existing `describe("GET /api/benchmark/bulks/:bulkId/verdict.html")`
+  block, beside the self-contained-document test, and uses that file's existing
+  `Fixtures` instance and `afterAll` cleanup.
+- `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts` —
+  **comment only, line ~194.** Its M-9b NOTE reads "No test anywhere renders a real
+  scoring-built winner sentence into HTML; that gap is S-9, not this step." This step
+  makes that sentence false, so it is corrected where it was made rather than quietly
+  elsewhere (mystandard §5.4).
+
+_Corrected 2026-09-06, before any code._ The first draft of this step named
+`riskiest-endpoints.int.test.ts` "or a new `verdict-artefact.int.test.ts` beside it",
+reusing "the seeding helpers already in `verdicts.int.test.ts`". Three things were
+wrong with that: `seedBulk()` in `verdicts.int.test.ts` is a **local, non-exported**
+function, so no other file can reuse it (the only cross-file helper is the `Fixtures`
+class in `artifacts/api-server/src/routes/__integration__/fixtures.ts`); a new file
+would make this step's own **Verify** count wrong (a new file is 28, not 27); and a
+new file would stand up a second `Fixtures` instance and a second `pool.end()` to
+hold one test. The right home is the file that already owns this route's describe
+block.
+
 **Today:** every test that asserts verdict copy uses a literal fixture. The
 unit suites build a `HeadlineVerdict` object by hand and pass it to the
 renderer; the one integration test that fetches `verdict.html` seeds a bulk
@@ -1954,20 +1974,58 @@ hand on 2026-09-06 against bulk `f5324fd4-0184-4aa3-ac1f-80c9302ca05c`, which
 does settle — so the gap is coverage, not correctness. Every phrase M-9 and M-9b changed
 in `lib/scoring/src/verdict.ts` is therefore guarded by one unit assertion on
 the string, and by nothing that proves the string reaches a client.
-**Change:** seed one bulk with two providers and at least 5 calls both ran,
-with a flag gap wide enough to clear the noise floor, then fetch
-`/api/benchmark/bulks/{id}/verdict.html` and assert the settled wording is
-present in the response body: the `fewest` row tag, "has the least
-disagreement", and no form of "winner"/"wins" in the visible text.
+
+**Change:** add one test that seeds a bulk which settles, then asserts the settled
+wording came out of the route.
+
+Seed: one org label, two providers, **6 calls both providers scored** (the floor is
+`MIN_SHARED_CALLS_FOR_VERDICT = 5` in `lib/scoring/src/verdict.ts`). Give every cell
+the same transcript so the two providers' word counts match, and give the runner-up
+strictly more `peerFlagCount` than the leader on **every** call — the noise floor is a
+*paired* bootstrap that resamples calls, so a gap present on every call keeps the 95%
+interval clear of zero in every resample and `decision` is `winner` deterministically,
+with no seed-dependence. Leave `sourceTranscriberProvider` unset on the calls so
+`productionProviderId` is null and the settled sentence carries no production clause;
+production resolution is already covered by the first test in this file.
+
+Then, in that one test:
+
+1. `GET /api/benchmark/bulks/{id}/verdicts` and assert the group's
+   `verdict.decision === "winner"` with a non-null `winnerProviderId`.
+   **This assertion is what stops the rest of the test being vacuous.** If the seed
+   ever drifts under the floor, the page renders "Nothing decided", and every
+   no-winner assertion below would pass for the wrong reason — exactly the near-miss
+   M-9b found in `riskiest-endpoints.int.test.ts`.
+2. `GET /api/benchmark/bulks/{id}/verdict.html` and assert the rendered wording:
+   the row tag `<span class="tag">fewest</span>` is present in the raw HTML; the
+   visible text contains "has the least disagreement" and the counts strip "1 decided";
+   and the visible text matches neither `/winner/i` nor `/\bwins\b/i`. Visible text
+   means the `<style>` block and every `class="..."` stripped first — the same seam the
+   M-9b guards use, because both carry the `winner` **enum**, which is code, not copy.
+
 **Acceptance:** WHEN the integration suite runs THEN at least one test SHALL
-fetch a `verdict.html` whose verdict decision is `winner` and assert its
-rendered wording.
+fetch a `verdict.html` whose verdict decision is `winner` and assert that its
+rendered wording carries the `fewest` row tag and "has the least disagreement"
+and no form of "winner" or "wins".
+
 **Verify:** `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm --filter @workspace/api-server run test:integration`
-→ 27 files, 123 tests. Then break it: change the row tag in
-`artifacts/api-server/src/lib/verdict-artefact.ts` back to `winner` and watch
-this new test fail, not only the unit one.
+→ **27 files, 123 tests**, all passing. The package filter is
+`@workspace/api-server`; `@stt/api-server` matches nothing **and exits 0**, so read
+the count, never the exit code. Then break it twice, restoring with
+`git checkout -- <file>` after each:
+
+1. change the row tag in `artifacts/api-server/src/lib/verdict-artefact.ts` from
+   `fewest` back to `winner` → the **new** test fails, not only the unit one.
+2. cut the seeded call count from 6 to 4 → `decision` becomes `too_few_calls` and
+   step 1's precondition assertion fails, proving the precondition is load-bearing
+   and the wording assertions are not passing on an undecided page.
+
 **Must not:** call a provider, spend money, or write to the dev database
 (`stt_evals`) — the integration suite runs against `stt_evals_test` only.
+**Must not** ship a change to `artifacts/api-server/src/lib/verdict-artefact.ts` or
+`lib/scoring/src/verdict.ts`: this step is coverage only. The break proofs above do
+edit those two files and restore them, so the committed diff touches test files
+alone — this prohibition is on what gets committed, not on opening the files.
 
 ### M-10 — Latency means end-of-speech latency, or nothing
 
