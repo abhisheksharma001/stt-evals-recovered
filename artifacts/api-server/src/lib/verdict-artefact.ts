@@ -15,9 +15,10 @@ import type { BulkVerdicts } from "./verdict";
  * date, never a silent rewrite.
  *
  * Rules carried over from T-20/T-21, non-negotiable:
- *  - "Winner" text only ever comes from a `decision === "winner"` verdict.
- *    The leader of a too_close / too_few_calls group is named as the
- *    leader, never as the winner.
+ *  - "Least disagreement" text (M-9; it read "Winner" until 2026-09-06)
+ *    only ever comes from a `decision === "winner"` verdict. The leader of
+ *    a too_close / too_few_calls group is named as the leader, never as the
+ *    winner.
  *  - Null never renders as zero or as blank: every unavailable figure says
  *    why it is unavailable.
  *  - The cost delta is list price vs list price ($/min, operator-entered),
@@ -44,7 +45,7 @@ export function esc(s: string): string {
 }
 
 const DECISION_LABEL: Record<HeadlineVerdict["decision"], string> = {
-  winner: "Winner",
+  winner: "Least disagreement",
   too_close: "Too close to call",
   too_few_calls: "Not enough calls",
   insufficient: "Only one provider",
@@ -207,7 +208,8 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
 <p class="counts">${groups.length} org${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} call${totalEvidence === 1 ? "" : "s"} scored · ${counts.winner} winner${counts.winner === 1 ? "" : "s"} · ${counts.too_close} too close · ${counts.too_few_calls} not enough calls${counts.insufficient ? ` · ${counts.insufficient} only one provider` : ""}</p>
 ${groups.map((g) => groupSection(g, nameOf, price)).join("\n")}
 <div class="legend">
-  <p><strong>Winner</strong> = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie. Under 20 calls is an early read.<br><span class="muted">Mechanism: disagreements are cross-provider word disagreements plus entity mismatches (a provider's own low-confidence spans excluded); the margin of error is a 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored.</span></p>
+  <p><strong>Least disagreement</strong> = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie. Under 20 calls is an early read.<br><span class="muted">Mechanism: disagreements are cross-provider word disagreements plus entity mismatches (a provider's own low-confidence spans excluded); the margin of error is a 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored.</span></p>
+  <p><strong>Relative:</strong> how often each provider disagreed with the others on the same audio. Not a measured accuracy &mdash; nothing here is scored against a human-checked transcript.</p>
   <p><strong>Cost figures</strong> are operator-entered list prices per minute at the time this page was produced. Verify against the provider's current pricing page and any contract before making a financial decision.</p>
   <p><strong>This is a dated snapshot.</strong> It was computed from the scores stored for this bulk at the time above. Re-generating it later on a different build or after retries may give different figures; compare the stamp.</p>
 </div>

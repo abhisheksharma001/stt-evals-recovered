@@ -84,6 +84,32 @@ describe("renderVerdictArtefact", () => {
   });
 });
 
+// M-9 (PRD-v6 D1): the artefact is the file a client keeps. It may not hand
+// them the word "Winner", and it must carry the qualifier that says what the
+// number is NOT -- on every artefact, settled or not, without interaction.
+describe("renderVerdictArtefact says 'Least disagreement', not 'Winner'", () => {
+  it("labels a settled verdict 'Least disagreement' and prints 'Winner' nowhere", () => {
+    const html = render({ ...base, decision: "winner", winnerProviderId: "a", marginPct: 25, provisional: false, evidenceCalls: 30 });
+    expect(html).toContain("Least disagreement");
+    expect(html).not.toContain("Winner");
+  });
+
+  it("carries the relative line whether or not a verdict settled", () => {
+    for (const v of [base, { ...base, decision: "winner" as const, winnerProviderId: "a" }]) {
+      const html = render(v);
+      expect(html).toContain("Relative:");
+      expect(html).toContain("Not a measured accuracy");
+      expect(html).toContain("nothing here is scored against a human-checked transcript");
+      // Corrections to M-9 as written: the step said "the same customer
+      // audio" and "no transcript here was checked by a person". Neither is
+      // true -- every bulk on file runs the mono mix, and 2 of 176 calls do
+      // carry a human-written gold (the ranking just never reads one).
+      expect(html).not.toContain("same customer audio");
+      expect(html).not.toContain("checked by a person");
+    }
+  });
+});
+
 // M-8b: production's own transcript on the ranking's scale -- or nothing.
 describe("renderVerdictArtefact production disagreement", () => {
   it("states production's own disagreement beside the closest candidate's, on one scale", () => {

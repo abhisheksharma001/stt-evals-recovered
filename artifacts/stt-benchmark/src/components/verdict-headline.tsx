@@ -31,7 +31,7 @@ const DECISION_META: Record<
   { label: string; Icon: React.ComponentType<{ className?: string }>; chip: string; border: string }
 > = {
   winner: {
-    label: "Winner",
+    label: "Least disagreement",
     Icon: Trophy,
     chip: "bg-success/15 text-success border-success/30",
     border: "border-l-success",
@@ -216,7 +216,26 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
           className="text-xs text-muted-foreground"
           title="Mechanism: disagreements = cross-provider word disagreements + entity mismatches, a provider's own low-confidence spans excluded. Margin of error = 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored."
         >
-          Winner = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie.
+          Least disagreement = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything
+          else is undecided, not a tie.
+        </p>
+        {/* M-9 (PRD-v6 D1): the permanent qualifier that stops "least
+            disagreement" being read as "most accurate". It describes the
+            METHOD, not this bulk, so it renders ONCE for the page beside the
+            legend -- never per org and never per assistant (M-8b's lesson).
+
+            Two words are deliberate. "the same audio", not "the same customer
+            audio": every bulk on file has `requireCustomerAudio` unset, so the
+            providers all ran the mono mix. And the second sentence is a claim
+            about the SCORING, not the corpus -- 2 of 176 calls do carry a
+            human-written gold and both sit in runs; the ranking simply never
+            reads one (gold-free hybrid flagging, 2026-08-27). A claim about
+            the corpus would rot the next time somebody golds a call.
+
+            PRD-v6 D4 appends the measured agreement figure to this line. */}
+        <p className="text-xs text-muted-foreground" data-testid="relative-not-accuracy">
+          Relative: how often each provider disagreed with the others on the same audio. Not a measured accuracy --
+          nothing here is scored against a human-checked transcript.
         </p>
       </CardContent>
     </Card>
