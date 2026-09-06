@@ -1,3 +1,43 @@
+## Found 2026-09-06 (shipping S-9): `| tee` swallows the exit status, so a failed suite reads as success
+
+```
+pnpm --filter @workspace/api-server run test:integration 2>&1 | tee "$LOG" >/dev/null; echo "exit=$?"
+→ exit=0
+```
+
+The suite had failed: `1 failed | 122 passed (123)`. `$?` after a pipeline is the exit
+status of its **last** command, and the last command is `tee`, which succeeded at
+writing the file. The failure was found only by reading the log, which is why the
+standing rule exists — but the printed `exit=0` was actively misleading while doing it.
+
+This is the twin of the M-9b finding one entry above. There, a wrong `--filter` ran
+nothing and returned 0; here, a real run failed and returned 0. Two different ways for
+the same command shape to report success it did not earn.
+
+Fix in every future Verify block and every ad-hoc run: `set -o pipefail` before the
+pipeline, **and** grep the counts out of the log rather than trusting any exit code.
+The count is falsifiable; the exit code has now lied twice in two steps.
+
+## Found 2026-09-06 (shipping S-9): the integration flake has a third class — a hard timeout
+
+First run of the S-9 suite: `run-create.int.test.ts > POST /api/benchmark/runs >
+"refuses a run with no calls or no providers"` failed with
+`Test timed out in 30000ms` after **30010ms**. The immediate re-run passed the same
+test in **103ms**, whole suite 123/123, and a second full run was green too.
+
+This is a new failure class for the flake tracked in F-49. The two known classes were a
+status assertion getting a different status, and `Error: socket hang up` — both are the
+response coming back wrong or not at all. This one is the request never completing
+inside 30s on a route that answers in ~100ms when it works, on a test that posts an
+empty body and expects a 400. Three classes now, one cause still unknown.
+
+Evidence kept: the tee'd log of the failing run, with the passing re-run beside it.
+
+Not fixed here, and deliberately not silenced: no retry, no raised `testTimeout`, no
+`.skip`. Belongs to **S-8** (O-27), which is the step that owns the flake. What S-9 adds
+to that step is that the fix must explain a 30-second hang, not only a wrong status —
+any theory that only accounts for leftover rows or assertion timing is now incomplete.
+
 ## Found 2026-09-06 (shipping M-9b): a wrong pnpm filter exits 0, and the suite silently never runs
 
 `TEST_DATABASE_URL=... pnpm --filter @stt/api-server run test:integration` printed

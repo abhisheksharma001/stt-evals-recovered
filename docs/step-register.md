@@ -1937,7 +1937,7 @@ copy; all still present, and the guards strip exactly them before asserting.
 
 ### S-9 — a settled verdict, rendered end-to-end, at least once
 
-**Status:** todo
+**Status:** done 2026-09-06 (PR #102, `2067ed5`), deployed `b4941a07703d -> 2067ed5f5644`
 **PR:** one.
 **Depends on:** M-9b.
 **Files:**
@@ -2026,6 +2026,65 @@ the count, never the exit code. Then break it twice, restoring with
 `lib/scoring/src/verdict.ts`: this step is coverage only. The break proofs above do
 edit those two files and restore them, so the committed diff touches test files
 alone — this prohibition is on what gets committed, not on opening the files.
+
+
+**Done 2026-09-06.** One test, in
+`artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`, plus a
+comment correction in `riskiest-endpoints.int.test.ts`. Integration 27 files /
+**123 tests**, was 122. Everything else unchanged: typecheck 4/4, all four guards,
+scoring 136, stt-providers 41, stt-benchmark 119, api-server 102. No provider call,
+no money, no schema change, `stt_evals_test` only.
+
+**Break proofs**, both after the commit, both restored with `git checkout -- <file>`:
+
+| Break | Result |
+|---|---|
+| row tag `fewest` → `winner` in `verdict-artefact.ts` | 1 of 123 failed — the new test |
+| seeded calls 6 → 4 | 1 of 123 failed, `expected { decision: 'too_few_calls' } to match { decision: 'winner' }` |
+
+**Must not — held.** The committed diff is two test files. `verdict-artefact.ts` and
+`lib/scoring/src/verdict.ts` were edited only for the breaks and restored; `git status`
+was clean before the push.
+
+**Live check.** `GET /benchmark/bulks/f5324fd4-.../verdict.html` on the deployed build:
+`<span class="tag">fewest</span>` present, "has the least disagreement" ×3, "1 decided"
+present, **0** visible `winner`, **0** visible `wins`. The fixture and production render
+the same shape — the test is not asserting a shape only a fixture can make.
+
+**Learned:**
+
+1. **Fourth step in a row that was wrong before code.** After M-8a (wrong file), M-9
+   (two of five places) and M-9b (eight of twenty-two), S-9's Files list was wrong three
+   ways at once: it told a weaker model to reuse `seedBulk()` from another file, and
+   that function is **local and non-exported**; a new file would have contradicted the
+   step's own Verify count (28 files, not 27); and it omitted the one place this step
+   falsifies an earlier claim. The undercount class from F-100 is not only about
+   counting occurrences — it is about naming the *right* artefact at all.
+2. **The exit code lied again, in a new way.** `pnpm ... | tee "$LOG" >/dev/null; echo $?`
+   printed `exit=0` on a run that failed 1 of 123, because `$?` after a pipeline is
+   `tee`'s status. One step after F-103 (a wrong `--filter` exits 0). Two steps, two
+   different ways for the same command shape to report unearned success. `set -o pipefail`,
+   and read the counts out of the log — the count is falsifiable, the exit code is not.
+3. **The precondition assertion buys less than it looked like, and saying so is the
+   point.** On an undecided page the *positive* assertions (`fewest` tag, "has the least
+   disagreement", "1 decided") already fail — only the two `not.toMatch(/winner/i)`
+   negatives would have passed vacuously. What `decision === "winner"` really buys is a
+   failure message that names the cause instead of a missing-substring. Kept for that
+   reason, not for the one the step originally gave.
+4. **A paired bootstrap settles deterministically only when the gap is on every call.**
+   Making the runner-up worse *on average* is not enough: a resample can draw only the
+   calls where it is not. Worse on every call means every resample keeps the interval
+   clear of zero, so the fixture settles by construction rather than by the seed
+   `20260829` happening to be kind.
+5. **The flake has a third class.** `run-create.int.test.ts` timed out at 30010ms on a
+   route that answers in ~103ms, on the first run; the re-run was 123/123. F-49's two
+   known classes were a wrong status and a socket hang-up. Logged against **S-8** with
+   the note that any fix must now explain a 30-second hang, not only a wrong status.
+   Not silenced: no retry, no raised timeout, no `.skip`.
+6. **Still not covered, on purpose:** the UI side. `Rankings.tsx` and
+   `verdict-headline.tsx` assert their settled copy against literal fixtures, and closing
+   that needs a rendered React tree fed by a real API response — a different seam, and a
+   different step if it is ever worth one.
 
 ### M-10 — Latency means end-of-speech latency, or nothing
 
@@ -2513,23 +2572,52 @@ described but not grilled, so they stay here with the questions that block them.
 | v6 E1 | Backup destination | Local folder only, or also a cloud bucket / iCloud Drive? Local-only dies with the laptop. |
 | v6 E3 | Customer-word floor | 30 words as the default, or lower for the transfer-heavy Land And Apartment assistants (median 2 customer turns per call)? M-16 ships with 30 and the question stays open. |
 
-### S-8 — the provider-correlation integration test is order-dependent
+### S-8 — the integration suite flakes, and it is not one file
 
 **Status:** todo
 **PR:** one.
 **Depends on:** nothing.
-**Files:** `artifacts/api-server/src/routes/__integration__/provider-correlation.int.test.ts`.
-**Today:** on 2026-09-06, during M-9, the full integration suite failed once with
-`AssertionError: expected 404 to be 200` at `provider-correlation.int.test.ts:68`
-("with no third provider there is no baseline, so excess is null, not a number"). The
-very next run on the identical tree passed 122/122. The 404 means the bulk the test
-seeded was gone by the time the request ran — another file's cleanup, or a shared
-`TEST_DATABASE_URL` across parallel workers.
-**Change:** find why the seeded bulk disappears and make the test own its rows (or pin
-the file's isolation), so the result does not depend on which other files run beside it.
-**Acceptance:** WHEN the integration suite runs 10 times in a row THEN
-`provider-correlation.int.test.ts` SHALL pass every time.
-**Verify:** `for i in $(seq 10); do TEST_DATABASE_URL=... pnpm run test:integration || break; done`
+**Files:** not yet located — that is the step. The evidence lives in
+`artifacts/api-server/src/routes/__integration__/provider-correlation.int.test.ts`,
+`artifacts/api-server/src/routes/__integration__/bulk-preview-cancel.int.test.ts` and
+`artifacts/api-server/src/routes/__integration__/run-create.int.test.ts`; the likely
+seam is the shared setup in
+`artifacts/api-server/src/routes/__integration__/setup.ts` and
+`artifacts/api-server/src/routes/__integration__/fixtures.ts`. Do not assume the fix is
+in whichever file failed most recently.
+**Today:** _corrected 2026-09-06 while shipping S-9 — this step used to be titled "the
+provider-correlation integration test is order-dependent" and named that one file. The
+evidence has contradicted that scope in two ways since._
+
+Three failure classes are on record, in three different files, all one-in-N and none
+reproducible on an immediate re-run of the identical tree:
+
+1. **Wrong status.** 2026-09-06 during M-9: `AssertionError: expected 404 to be 200` at
+   `provider-correlation.int.test.ts:68`. The next run passed 122/122. A 404 means the
+   bulk the test seeded was gone by the time the request ran.
+2. **No answer at all.** `Error: socket hang up` in `bulk-preview-cancel.int.test.ts`
+   (F-49). No assertion message can help this one.
+3. **A hard timeout.** 2026-09-06 during S-9: `run-create.int.test.ts > "refuses a run
+   with no calls or no providers"` took **30010ms** and timed out, on a route that
+   answered the same request in **103ms** on the very next run, which was 123/123. The
+   test posts an empty body and expects a 400.
+
+Class 3 is the one that rules theories out: a wrong status or a vanished row can be
+explained by another file's cleanup, but a 30-second hang on a validation-only route
+cannot. Any proposed cause must account for all three.
+
+**Change:** find the shared cause and remove it. Instrument first — the suite runs
+`fileParallelism: false` against one `TEST_DATABASE_URL`, so start with what is actually
+shared: the `pool` each file ends in its own `afterAll`, the fixture cleanup order, and
+whether a file's `pool.end()` can land while another file's request is in flight. Make
+the finding explicit in the step before changing behaviour.
+**Acceptance:** WHEN the integration suite runs 10 times in a row THEN all 10 runs SHALL
+report the full test count passing, with no failure in any file.
+**Verify:** `for i in $(seq 10); do set -o pipefail; TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm --filter @workspace/api-server run test:integration 2>&1 | tee "/tmp/int-$i.log" >/dev/null || echo "FAILED run $i"; done; grep -h "Tests " /tmp/int-*.log`
+→ ten lines, each `Tests  123 passed (123)`. The filter is `@workspace/api-server`;
+`@stt/api-server` matches nothing and exits 0 (F-103), and `| tee` returns tee's status,
+not the suite's, without `set -o pipefail` — so read the ten count lines, never an exit
+code.
 **Must not:** paper over it with a retry, a longer timeout, or `.skip`. A flaky test that
 is silenced is worse than one that fails.
 
