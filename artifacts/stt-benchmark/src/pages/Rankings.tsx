@@ -922,8 +922,8 @@ export default function Rankings() {
                               <Badge variant="outline" className="font-mono font-normal">{ranks.length} providers</Badge>
                             </CardTitle>
                             <div className="flex items-center gap-4">
-                              <span className="text-xs font-mono text-muted-foreground" title="Rank = disagreements, then price and speed. Sorting a column changes the view, not the rank.">
-                                Ranked by <span className="text-foreground font-semibold">disagreements, price, speed</span>
+                              <span className="text-xs font-mono text-muted-foreground" title="Rank = disagreements, then price. Speed is shown but not ranked on -- it is file turnaround for a batch API and call length for a streaming one, so the numbers are not comparable. Sorting a column changes the view, not the rank.">
+                                Ranked by <span className="text-foreground font-semibold">disagreements, price</span>
                               </span>
                               <Button
                                 variant="outline"
