@@ -254,8 +254,11 @@ fires every shard at once in a plain `for` loop with `void executeBenchmarkRun(.
 shard runs**. Ceiling becomes 20 × 16 = **320 cells in flight**, and 20 × 4 =
 **80 concurrent requests to a single vendor** — against a gate whose own comment
 says it exists to stop "a 429 storm [that] helps nobody's latency ranking".
-Since latency is 15% of the composite, a self-inflicted 429 storm doesn't just
-slow the bulk down, **it corrupts the ranking it's producing**.
+A self-inflicted 429 storm fails cells, and **a failed cell is evidence dropped
+out of the comparison the bulk was run to make**. (This paragraph originally gave
+the reason as "latency is 15% of the composite, so a storm corrupts the ranking";
+M-10a removed latency from the composite, so that reason no longer holds. The
+fix it argued for does.)
 
 **Required behaviour:**
 1. **Make the per-provider semaphore a module-level singleton** in

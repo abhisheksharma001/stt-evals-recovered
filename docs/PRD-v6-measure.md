@@ -37,7 +37,7 @@ audio cache on disk, or the code, and the command is in the session that produce
 | Audio sent to providers | the mono mix, both speakers |
 | Production STT hears | the customer channel only (Vapi transcribes inbound audio; the assistant's words are LLM text) |
 | Provider APIs used | batch / prerecorded for every vendor except Cartesia; production runs streaming; **Flux, production on 86 of 121 calls, is streaming-only and cannot be run by this tool at all** |
-| Headline verdict formula | 70 % peer-consensus flags · 15 % batch turnaround time · 15 % list price — no reference anywhere |
+| Headline verdict formula | 85 % peer-consensus flags · 15 % paid $/min — no reference anywhere. Was 70 / 15 / 15 with batch turnaround time as the middle term until M-10a dropped it: `latencyFinalMs` is file turnaround for the six batch adapters and call length for Cartesia, so it was not one quantity. The cost term has been the **paid** rate, not list price, since T-116. |
 | Keyword boosts sent to candidates | none — `keywordBoosts` exists on the adapter input type and the run executor never sets it; the Rush assistant runs 120 Deepgram keyterms in production |
 | Deepgram adapter boost parameter | `keywords` (the Nova-2 parameter); Nova-3 and Flux use `keyterm` per Deepgram's docs |
 | API bind address | `*:8177` — every interface, no auth |

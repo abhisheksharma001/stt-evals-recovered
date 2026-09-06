@@ -526,4 +526,34 @@ describe("Results", () => {
     expect(within(legend).getByText("Lower is better")).toBeTruthy()
     api.restore()
   })
+
+  // M-10a: latency left the ranking composite because `latencyFinalMs` is
+  // file turnaround for a batch adapter and call length for a streaming one.
+  // The column stays -- the number is still worth seeing -- so the only thing
+  // stopping the page from claiming a rank it no longer computes is this
+  // guard on the two header tooltips.
+  it("does not claim speed feeds Rank, and says why the Speed column cannot", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+
+    await screen.findAllByText("Deepgram Nova-3")
+
+    // The header, by its label, not by a substring of its own tooltip.
+    const rankHead = screen.getAllByRole("columnheader").find((h) => h.textContent?.startsWith("Rank"))
+    expect(rankHead).toBeTruthy()
+    // Not a blanket ban on the word: the tooltip names speed in order to
+    // disclaim it, which is the point. What must never come back is the old
+    // "price and speed", so the guard pins the disclaimer itself.
+    expect(rankHead!.getAttribute("title")).toMatch(/not from speed/i)
+    expect(rankHead!.getAttribute("title")).not.toMatch(/price and speed/i)
+
+    const speedHead = screen.getAllByRole("columnheader").find((h) => h.textContent?.startsWith("Speed"))
+    expect(speedHead).toBeTruthy()
+    // Both halves matter: that it is not the same measurement, and that it
+    // therefore does not vote. A tooltip saying only the first would leave a
+    // reader assuming the number still counts.
+    expect(speedHead!.getAttribute("title")).toContain("does not affect Rank")
+    expect(speedHead!.getAttribute("title")).toMatch(/not the same measurement/i)
+    api.restore()
+  })
 })
