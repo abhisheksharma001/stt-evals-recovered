@@ -1,3 +1,20 @@
+## Found 2026-09-06 (shipping M-9b): a wrong pnpm filter exits 0, and the suite silently never runs
+
+`TEST_DATABASE_URL=... pnpm --filter @stt/api-server run test:integration` printed
+`No projects matched the filters in "/Users/abhisheksharma/gh-projects/stt-evals-recovered"`
+and returned **exit 0**. The package is `@workspace/api-server`; `@stt/api-server` is a
+name this project never used. Nothing ran, and every automated read of that command --
+`&& next-step`, a CI step, an agent checking `$?` -- would have called it a pass.
+
+Caught only because the standing rule is to `tee` the run into a file and read the file.
+That rule was written for a different reason (a short `tail` hiding a failure); this is
+the second thing it catches, and the stronger one: a `tail` of an empty run shows the
+"No projects matched" line, but an exit-code check shows success.
+
+Worth a guard: a wrapper that fails when a filtered pnpm run reports zero matched
+projects. Until then, every step's Verify block should carry the **expected test count**
+next to the command -- "27 files, 122 tests" is falsifiable, "it passed" is not.
+
 ## Found 2026-09-06 (grilling M-9b): the undercount is a class, not an accident — and a `Must not` can make a step's own acceptance unreachable
 
 Third time in three steps. M-8a named the wrong file. M-9 named two of five render

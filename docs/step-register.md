@@ -1825,115 +1825,115 @@ match is the preserved prop name `verdictWinnerId`, not copy.
 
 ### M-9b — the lowercase `winner` family, decided once
 
-**Status:** todo — blocked on Abhishek. Three wording calls, listed under
-**Ask Abhishek first** at the bottom. Do not start without them.
-**PR:** one.
-**Depends on:** M-9.
+**Status:** done 2026-09-06 (PR #101, `b4941a0`), deployed `b9a96efd5e0f -> b4941a07703d`.
+Step corrected first in `41836d1`.
 
-**Files:** *(corrected 2026-09-06, before any code was written. The list this
-step shipped with named four files and said "eight places". A case-sensitive
-scan of every package found **22 rendered strings**, and the most-rendered one
-of them lives in a file this step named only in its `Must not`. Third
-occurrence of the undercount class — see the bug log.)*
+**Decided by Abhishek, 2026-09-06** — all three recommendations taken:
 
-- `lib/scoring/src/verdict.ts` — line ~348 builds the verdict sentence
-  `` `${name(leader.providerId)} wins: ...` ``. **This is the most-rendered
-  "wins" in the product.** It is returned as `verdict.sentence` and printed in
-  three places: `artifacts/stt-benchmark/src/components/verdict-headline.tsx`
-  (the per-org list and the per-group banner) and
-  `artifacts/api-server/src/lib/verdict-artefact.ts` (`<p class="sentence">`).
-  Its test is `lib/scoring/src/verdict.test.ts`
-  (`expect(v.sentence).toContain("A wins: ")`).
-- `artifacts/stt-benchmark/src/pages/Dashboard.tsx` — renders
-  `summary.leadName` + `summary.sentence` at 2xl on the Overview, i.e. the
-  largest lowercase "wins" a client sees. **No edit is needed in this file** —
-  it is listed because it is a render site, and the step is not done until it
-  has been looked at.
-- `artifacts/stt-benchmark/src/components/verdict-headline.tsx` — nine
-  strings: `summarizeBulkVerdicts` returns three of them (`wins N of M groups
-  outright`, `No clear winner:`, `No clear winner yet:`) and those are what
-  Dashboard prints; the banner itself renders `wins N of M orgs`, `have a
-  different winner`, `no winner yet`, `No winner in this bulk:`, `No winner in
-  this bulk yet:`, and the counts strip `N winner(s)`.
-- `artifacts/api-server/src/lib/verdict-artefact.ts` — nine strings: the row
-  tag `<span class="tag">winner</span>`, `no winner is named on this
-  evidence`, `${name} wins by N%`, `Ahead, not a winner:`, `No winner named.`,
-  `— winner has N% fewer disagreements than production` (in the production
-  line, **not** named by the original step), `${name} wins N of M orgs
-  outright.`, `No clear winner:`, `No clear winner yet:`, and the counts strip
-  `N winner(s)`.
-- `artifacts/stt-benchmark/src/pages/Rankings.tsx` — `Ahead, not a winner` and
-  the `viewMode === "bulk"` tooltip that says "did not name a winner".
-- `artifacts/stt-benchmark/src/pages/Landing.tsx` — the how-it-works body
-  ("...per 100 words wins, only if...") and the example sentence
-  ("Provider A wins: 1.4 disagreements...").
-- Tests that assert the current copy and must move with it:
-  `lib/scoring/src/verdict.test.ts`,
-  `artifacts/api-server/src/lib/verdict-artefact.test.ts` (asserts
-  `"Alpha wins by 25%"`, `'class="tag">winner'`, `"Ahead, not a winner: Alpha."`,
-  `"winner has 25% fewer disagreements than production"`),
-  `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`
-  (asserts `"Ahead, not a winner"` twice).
+1. Row tag `winner` → **`fewest`**. Six characters, same cell, and it names the
+   disagreements-per-100-words column beside it.
+2. The verb changes: `X wins N of M orgs outright` → **`X has the least
+   disagreement in N of M orgs`**. "outright" dropped — the chip and legend
+   already carry what it meant.
+3. The denials change too, so one vocabulary holds: `No clear winner` →
+   **`Nothing decided`**, `Ahead, not a winner` → **`Ahead, but not decided`**,
+   `No winner named.` → **`Nothing decided.`**, `no winner is named on this
+   evidence` → **`nothing is decided on this evidence`**.
 
-**Today:** M-9 removed every capital "Winner" from rendered output, which is
-what PRD-v6 D1's own check greps for. The lowercase family survived it, so the
-exported artefact still carries a row tag reading `winner` directly beneath a
-heading that now reads "Least disagreement", and the Overview still opens with
-"X wins 3 of 4 groups outright" in the largest type on the page.
+**Corrections to M-9b as it was written** (all made before any code, in `41836d1`):
 
-**Change:** apply the three decisions below to all 22 strings in one PR.
-Held out of M-9 on purpose: half-renaming a verb reads worse than not
-starting, and a one-word tag needs a wording decision, not a mechanical
-rename.
+- **It named 4 files and "eight places". There were 22 rendered strings across
+  6 files.** Third occurrence of the undercount class (M-8a named the wrong
+  file, M-9 named two of five sites).
+- **The biggest miss was reachable only through the `Must not`.** The verdict
+  sentence is built in `lib/scoring/src/verdict.ts` (~348) and printed by
+  `artifacts/stt-benchmark/src/components/verdict-headline.tsx` twice,
+  `artifacts/api-server/src/lib/verdict-artefact.ts` once, and by
+  `artifacts/stt-benchmark/src/pages/Dashboard.tsx` at 2xl on the Overview.
+  The step mentioned that file **only** as `Must not: touch decision:
+  "winner"`, with no line named. Read faithfully that says "leave the file
+  alone", and leaving it alone makes the step's own acceptance false on the
+  largest text in the product while every guard still passes.
+- **`artifacts/api-server/src/lib/verdict-artefact.ts` line ~103** (`— winner
+  has N% fewer disagreements than production`, now `— the named provider
+  has …`) was in none of the step's descriptions of that file.
 
-**Acceptance:** WHEN `verdict.html`, Results or Overview renders THEN no
-rendered string SHALL contain "winner" or "wins" in any case, except the
-denial wording chosen in decision 3.
+**Change, as shipped:** 22 strings across
+`lib/scoring/src/verdict.ts`,
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx`,
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`,
+`artifacts/stt-benchmark/src/pages/Landing.tsx`,
+`artifacts/api-server/src/lib/verdict-artefact.ts`, plus the four suites that
+assert them. `artifacts/stt-benchmark/src/pages/Dashboard.tsx` needed no edit —
+it prints the scoring sentence, which changed upstream.
 
-**Verify:**
-- `python3 - <<'PY'` scan (see the bug log entry for M-9) or
-  `grep -rni winner artifacts/stt-benchmark/src artifacts/api-server/src lib/scoring/src`
-  and the same for `wins` — every remaining hit is an identifier, a comment,
-  a CSS class, or the denial wording from decision 3.
-- `pnpm run typecheck`
-- `pnpm --filter @stt/scoring test` (136 → same count, one assertion changed)
-- `pnpm --filter stt-benchmark test` (119)
-- `pnpm --filter @stt/api-server test` (99)
-- `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm --filter @stt/api-server run test:integration` (122)
-  — **required, not optional**: the artefact is asserted end-to-end in
-  `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`,
-  which is how M-9 arrived with a red Verify.
+**Verify (copy-pasteable):**
+```
+pnpm run typecheck
+pnpm --filter @workspace/scoring test          # 136
+pnpm --filter stt-benchmark test               # 119
+pnpm --filter @workspace/api-server test       # 102
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test \
+  pnpm --filter @workspace/api-server run test:integration   # 27 files, 122 tests
+```
+Note the filter is `@workspace/api-server`. `--filter @stt/api-server` matches
+no project **and still exits 0** — it prints "No projects matched the filters"
+and passes. Read the log, never the exit code.
 
-**Must not:**
-- Rename the enum `decision: "winner" | ...` in `lib/scoring/src/verdict.ts`
-  (line ~71) or the literal at line ~352, the field `winnerProviderId`, the
-  generated types in `lib/api-zod/` and `lib/api-client-react/`, the
-  `data-decision="winner"` attribute, or the `.chip.winner` CSS class. These
-  are code, not copy.
-- **But do edit `lib/scoring/src/verdict.ts` line ~348.** The original
-  `Must not` named this file without qualifying which line, which reads as
-  "leave the file alone" — and leaving it alone makes the acceptance
-  unreachable, because that line is the sentence three surfaces print.
+**Proved by breaking it** (post-commit, fixtures only — no DB write, no
+provider call, no money):
 
-**Ask Abhishek first** — three calls, one PR:
+| Break | Failed |
+|---|---|
+| row tag `fewest` → `winner` | 2 / 102 api-server |
+| scoring sentence → `wins:` | 1 / 136 scoring |
+| Rankings marker → `Ahead, not a winner` | 3 / 119 stt-benchmark |
+| counts strip `decided` → `winner` | 1 / 119 stt-benchmark |
+| `winner` reinserted in the artefact legend | 1 / 122 integration |
 
-1. **The row tag.** `<span class="tag">winner</span>` in the artefact table,
-   a cell built for six characters, sitting under a heading that now reads
-   "Least disagreement". Recommendation: `fewest` — same width as `winner`,
-   reads against the disagreements-per-100-words column beside it, and cannot
-   be heard as "most accurate". Evidence (Mobbin, 2026-09-06): pricing tables
-   mark a row `Recommended`/`Best Value`; leaderboards (Kraken, OKX) give the
-   top row no tag at all and let the column header carry the meaning. Neither
-   convention uses a word that claims a win.
-2. **The verb.** "X wins 3 of 4 orgs outright" — does it change? It is the
-   Overview's 2xl headline. Recommendation: yes, to "has the least
-   disagreement in 3 of 4 orgs", because a client who is told the ranking is
-   not accuracy and then reads "wins" believes the verb, not the footnote.
-3. **The denials.** "No clear winner", "Ahead, not a winner", "no winner is
-   named", "No winner named." Recommendation: change them too, to keep one
-   vocabulary — a page whose positive result is "least disagreement" and whose
-   negative is "no winner" invites "so where is the winner?". Cheapest
-   consistent pair: "Nothing decided" / "Ahead, but not decided".
+**Must not — held:** `decision: "winner"` and its literal, `winnerProviderId`,
+the generated types in `lib/api-zod/` and `lib/api-client-react/`, the
+`data-decision="winner"` attribute, the `.chip.winner` CSS class. All code, not
+copy; all still present, and the guards strip exactly them before asserting.
+
+**Verified live** (`b4941a07703d`):
+- Bulk `f5324fd4-0184-4aa3-ac1f-80c9302ca05c` (decision `winner`) renders
+  "AssemblyAI has the least disagreement in 1 of 1 org.", the headline
+  "…has the least disagreement: 2% fewer disagreements per 100 words than
+  Gladia.", the counts strip "1 decided", and the row tag `fewest`.
+- Bulk `340400b2-42a0-41bc-a5a8-154f5dff8072` (decision `too_close`) renders
+  "Nothing decided: …" and "Ahead, but not decided: AssemblyAI."
+- Both artefacts: **0** visible "winner", **0** visible "wins" (with the
+  `<style>` block and `class` attributes stripped, since both carry the enum).
+- Deployed UI bundle, all 17 chunks: the new copy present, and all 16
+  `winner`/`wins` matches are the enum literal or an identifier
+  (`winnerProviderId`, `verdictWinnerId`, `counts.winner`).
+
+**Learned:**
+
+1. **A `Must not` that names a file without naming a line reads as a
+   prohibition on the file.** It is the one field a careful executor treats as
+   absolute, so a path that appears *only* there is a path that will not be
+   opened. Any step forbidding part of a file must say which part, and say
+   plainly that the rest is in scope.
+2. **The undercount is now a class with three instances, and it is
+   scriptable.** Walk `artifacts/*/src` and `lib/*/src`, regex the phrase, and
+   compare the file set found against the file set the step names. It found
+   the scoring lib in one run. Worth a second mode on `check:doc-paths`:
+   *the paths named exist* is only half of it; *the paths that match are
+   named* is the half that keeps failing.
+3. **A wrong pnpm filter exits 0.** `--filter @stt/api-server` printed "No
+   projects matched the filters" and returned success — the integration suite
+   never ran, and only reading the log caught it. The standing rule to `tee`
+   and read the file, not the exit status, is what saved this step.
+4. **Every test asserting verdict copy uses a literal fixture.** Both unit
+   suites hand-build a `HeadlineVerdict`; the one integration test that fetches
+   `verdict.html` seeds a bulk with no scored calls. So the guards prove the
+   renderers, and the scoring string is proved only by its own unit assertion.
+   Queued as **S-9** rather than fixed here.
+5. **Two of the three live bulks do settle on a winner**, so the `fewest` tag
+   and "has the least disagreement" render on real data — verified by hand
+   above. It was the *tests*, not the data, that never exercised the path.
 
 ### S-9 — a settled verdict, rendered end-to-end, at least once
 
@@ -1949,7 +1949,9 @@ renderer; the one integration test that fetches `verdict.html` seeds a bulk
 with **no scored calls**, so the page it asserts on contains only the summary
 and the legend. Found while writing M-9b's break tests: the composed path
 `score() -> computeVerdict() -> renderVerdictArtefact() -> HTTP` has never
-been exercised for `decision === "winner"`. Every phrase M-9 and M-9b changed
+been exercised **by a test** for `decision === "winner"`. It was verified by
+hand on 2026-09-06 against bulk `f5324fd4-0184-4aa3-ac1f-80c9302ca05c`, which
+does settle — so the gap is coverage, not correctness. Every phrase M-9 and M-9b changed
 in `lib/scoring/src/verdict.ts` is therefore guarded by one unit assertion on
 the string, and by nothing that proves the string reaches a client.
 **Change:** seed one bulk with two providers and at least 5 calls both ran,
