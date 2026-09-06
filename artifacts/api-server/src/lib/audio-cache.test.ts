@@ -3,9 +3,10 @@
 // so both are asserted here against real files rather than a mock -- the
 // preference IS a filesystem question.
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { cacheCallSidecars, customerAudioPathFor, getOrCacheAudioBytes, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
+import { cacheCallSidecars, customerAudioPathFor, ensureAudioCacheDir, getOrCacheAudioBytes, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds, readCellAudioSource } from "./audio-cache";
 import type { VapiCall } from "./vapi";
 
 // M-6b. getOrCacheAudioBytes is the only writer of the mono `<id>.audio`
@@ -29,7 +30,7 @@ const BOTH = "00000000-0000-4000-8000-00000000be01";
 const MONO_ONLY = "00000000-0000-4000-8000-00000000be02";
 
 async function write(name: string, body: string): Promise<void> {
-  await fs.mkdir(CACHE_DIR, { recursive: true });
+  await ensureAudioCacheDir();
   const file = path.join(CACHE_DIR, name);
   await fs.writeFile(file, body);
   written.push(file);
@@ -37,6 +38,47 @@ async function write(name: string, body: string): Promise<void> {
 
 afterAll(async () => {
   await Promise.all(written.map((f) => fs.rm(f, { force: true })));
+});
+
+// M-6e: the directory, not the files in it. Real directories on a real
+// filesystem for the same reason the rest of this file uses real files -- a
+// mode is a filesystem fact, and a mock would only prove mkdir was called.
+// A temp directory, because CACHE_DIR already exists on this machine and the
+// thing under test is what happens at CREATION.
+describe("ensureAudioCacheDir", () => {
+  const made: string[] = [];
+
+  async function tempParent(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "audio-cache-mode-"));
+    made.push(dir);
+    return dir;
+  }
+
+  afterAll(async () => {
+    await Promise.all(made.map((d) => fs.rm(d, { recursive: true, force: true })));
+  });
+
+  it("creates the cache directory listable only by this server (0700)", async () => {
+    const dir = path.join(await tempParent(), "audio-cache");
+
+    await ensureAudioCacheDir(dir);
+
+    const stat = await fs.stat(dir);
+    expect(stat.mode & 0o777).toBe(0o700);
+  });
+
+  it("leaves a directory that already exists exactly as it found it", async () => {
+    // Not a wish -- this is why scripts/chmod-audio-cache.sh has to exist.
+    // mkdir's mode applies at creation, so the 0755 directory this server has
+    // been writing into since long before M-6e is not fixed by deploying it.
+    const dir = path.join(await tempParent(), "audio-cache");
+    await fs.mkdir(dir, { mode: 0o755 });
+
+    await ensureAudioCacheDir(dir);
+
+    const stat = await fs.stat(dir);
+    expect(stat.mode & 0o777).toBe(0o755);
+  });
 });
 
 describe("readCellAudioSource", () => {

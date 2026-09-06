@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
+import { ensureAudioCacheDir } from "../../lib/audio-cache";
 import app from "../../app";
 import { Fixtures } from "./fixtures";
 
@@ -64,7 +65,7 @@ beforeAll(async () => {
   // after its channels expired), the trucking one has neither. Without the
   // middle case the two flags could be read off the same set and no test
   // would notice.
-  await fs.mkdir(CACHE_DIR, { recursive: true });
+  await ensureAudioCacheDir();
   const seedCacheFiles = async (callId: string, suffixes: string[]) => {
     for (const suffix of suffixes) {
       const file = path.join(CACHE_DIR, `${callId}.${suffix}`);

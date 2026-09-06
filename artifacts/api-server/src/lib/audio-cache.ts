@@ -26,6 +26,27 @@ import { logger } from "./logger";
 // invented here.
 const CACHE_DIR = path.join(process.cwd(), "audio-cache");
 
+/**
+ * M-6e: the one place this directory comes into being.
+ *
+ * 0700, not the 0755 that mkdir's default 0777-minus-umask produces. Every
+ * file inside is 0600 (M-6b, M-6d), but a world-listable directory still
+ * hands any local user every cached call id and its file size, and a call id
+ * is the join key to a real caller's record. The contents were locked and the
+ * index was not.
+ *
+ * Like writeFile's `mode`, mkdir's applies at CREATION only: a directory that
+ * already exists is left exactly as it is here, whatever mode it was born
+ * with. `scripts/chmod-audio-cache.sh` is what brings one of those down.
+ *
+ * `dir` is a parameter only so the created mode can be asserted against a
+ * real directory on a real filesystem; every caller in the app uses the
+ * default, and there is no second cache directory.
+ */
+export async function ensureAudioCacheDir(dir: string = CACHE_DIR): Promise<void> {
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+}
+
 function cachePathFor(callId: string): string {
   // Call ids are already-validated UUIDs from the DB, never user-controlled
   // free text, so a direct join is safe -- no path-traversal surface here.
@@ -132,7 +153,7 @@ export async function getOrCacheAudioBytes(
   const bytes = await fetchAudioBytes(url);
 
   try {
-    await fs.mkdir(CACHE_DIR, { recursive: true });
+    await ensureAudioCacheDir();
     // M-6b: same 0600 as the three sidecars written beside this file. The mono
     // mix carries the caller's voice exactly as `<id>.customer.audio` does, so
     // three locked files beside one open one protect nothing. The 0644 this
@@ -193,7 +214,7 @@ export async function cacheCallSidecars(callId: string, call: VapiCall): Promise
   const artifact = call.artifact ?? {};
 
   try {
-    await fs.mkdir(CACHE_DIR, { recursive: true });
+    await ensureAudioCacheDir();
   } catch (err) {
     result.errors.push(`the audio cache directory could not be created (${errorText(err)})`);
     return result;

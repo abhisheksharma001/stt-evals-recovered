@@ -13,6 +13,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
+import { ensureAudioCacheDir } from "../../lib/audio-cache";
 import app from "../../app";
 import { Fixtures } from "./fixtures";
 
@@ -27,7 +28,7 @@ const written: string[] = [];
 /** A byte or two under a call id the fixture owns. The content is never
  *  read -- selection only asks whether the file exists. */
 async function writeCustomerAudio(callId: string): Promise<void> {
-  await fs.mkdir(CACHE_DIR, { recursive: true });
+  await ensureAudioCacheDir();
   const file = path.join(CACHE_DIR, `${callId}.customer.audio`);
   await fs.writeFile(file, Buffer.from("RIFF"));
   written.push(file);
