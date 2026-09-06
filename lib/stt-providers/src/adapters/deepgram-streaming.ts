@@ -284,7 +284,23 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
         resolve();
       };
 
-      const ws = new WebSocket(url);
+      // The URL carries the API key in its `token` parameter, and a thrown
+      // error's message is written verbatim into
+      // benchmark_provider_call_results.error_message and rendered on screen
+      // (run-executor.ts, the `if (!result)` branch). So nothing this
+      // constructor might say about the URL is ever repeated: the message is
+      // a constant. Resolves directly rather than through finish(), which
+      // reads timers that do not exist yet at this point.
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        settled = true;
+        connectError = "Deepgram streaming WebSocket could not be opened.";
+        connectFailureClass = "unknown";
+        resolve();
+        return;
+      }
 
       const connectTimer = setTimeout(() => {
         connectError = connectError ?? "Deepgram streaming WebSocket connect timed out.";
