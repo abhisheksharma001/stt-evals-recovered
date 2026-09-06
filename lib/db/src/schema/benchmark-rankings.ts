@@ -42,6 +42,24 @@ export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   alphanumericAccuracy: real("alphanumeric_accuracy"),
   latencyFirstPartialMs: real("latency_first_partial_ms"),
   latencyFinalMs: real("latency_final_ms"),
+  // M-10e: the average of benchmark_scores.latency_end_of_audio_ms across
+  // this provider's cells in the group -- time from the last audio byte
+  // being sent to the final transcript arriving. Unlike latencyFinalMs
+  // above (file turnaround for a batch adapter, roughly call length for a
+  // streaming one -- two different measurements, see M-10a/M-10d), this IS
+  // one measurement and lower IS better.
+  //
+  // `real`, not `integer` like the scores column it averages: this is a
+  // mean, and rounding it at write time would throw away precision the
+  // display can want.
+  //
+  // Null for a batch adapter permanently and by construction -- a batch API
+  // is handed a finished file, so there is no "audio ended" moment to
+  // measure from. Only an adapter that streams (today: cartesia.ts alone --
+  // the `supportsStreaming` column on benchmark_providers is TRUE for 10 of
+  // 11 rows and describes the VENDOR's API, not how our adapter runs it, so
+  // it must not be used to explain this null) can fill it in.
+  latencyEndOfAudioMs: real("latency_end_of_audio_ms"),
   costPerMinute: real("cost_per_minute"),
   diarizationScore: real("diarization_score"),
   // 2026-08-27, per Abhishek: gold-transcript-free hybrid flagging replaces

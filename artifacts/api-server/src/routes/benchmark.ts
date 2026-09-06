@@ -2100,6 +2100,12 @@ router.get("/benchmark/rankings", async (req, res): Promise<void> => {
           alphanumericAccuracy: ranking.alphanumericAccuracy,
           latencyFirstPartialMs: ranking.latencyFirstPartialMs,
           latencyFinalMs: ranking.latencyFinalMs,
+          // M-10e. A ranking row written before this column existed has
+          // null here, the same as a batch adapter does -- both mean "no
+          // number", which is exactly what the column renders. There is no
+          // backfill: rawOutput never kept the per-chunk send timestamps
+          // the measurement is derived from (O-35).
+          latencyEndOfAudioMs: ranking.latencyEndOfAudioMs,
           costPerMinute: ranking.costPerMinute,
           diarizationScore: ranking.diarizationScore,
           // 2026-08-27: gold-free hybrid flagging -- computeRankingsForRun

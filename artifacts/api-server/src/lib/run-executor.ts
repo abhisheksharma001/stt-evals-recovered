@@ -1292,6 +1292,14 @@ function aggregateRankingRows(
       const alphanumericAccuracy = avg(rows.map((r) => r.score.alphanumericAccuracy));
       const latencyFirstPartialMs = avg(rows.map((r) => r.score.latencyFirstPartialMs));
       const latencyFinalMs = avg(rows.map((r) => r.score.latencyFinalMs));
+      // M-10e: averaged over only the cells that HAVE it (avg() already
+      // filters nulls), so a streaming provider whose run half-failed is
+      // not diluted toward zero by the cells that never measured. Stays
+      // null when no cell in the group reported it -- which is every batch
+      // adapter, permanently: they are handed a finished file and have no
+      // "audio ended" moment. Deliberately NOT fed to hybridCompositeScore
+      // below; it ranks nothing.
+      const latencyEndOfAudioMs = avg(rows.map((r) => r.score.latencyEndOfAudioMs));
       const costPerMinute = dollarsPerMinuteByProvider.get(providerId) ?? null;
       const diarizationScore = avg(rows.map((r) => r.score.diarizationScore));
       // avgFlagCount/avgFlagSeverityScore stay the FULL picture (confidence
@@ -1341,6 +1349,7 @@ function aggregateRankingRows(
         alphanumericAccuracy,
         latencyFirstPartialMs,
         latencyFinalMs,
+        latencyEndOfAudioMs,
         costPerMinute,
         diarizationScore,
         avgFlagCount,
@@ -1412,6 +1421,7 @@ function aggregateRankingRows(
         alphanumericAccuracy: agg.alphanumericAccuracy,
         latencyFirstPartialMs: agg.latencyFirstPartialMs,
         latencyFinalMs: agg.latencyFinalMs,
+        latencyEndOfAudioMs: agg.latencyEndOfAudioMs,
         costPerMinute: agg.costPerMinute,
         diarizationScore: agg.diarizationScore,
         avgFlagCount: agg.avgFlagCount,

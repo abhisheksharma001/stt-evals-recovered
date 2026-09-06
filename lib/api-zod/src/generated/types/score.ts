@@ -23,6 +23,11 @@ export interface Score {
   latencyFirstPartialMs: number | null;
   /** @nullable */
   latencyFinalMs: number | null;
+  /**
+     * Mean ms from the last audio byte being sent to the final transcript arriving, over this provider's scored cells in the group. Null for every batch adapter by construction -- not a slow score. Does not feed Rank.
+     * @nullable
+     */
+  latencyEndOfAudioMs: number | null;
   /** @nullable */
   costPerMinute: number | null;
   /** @nullable */

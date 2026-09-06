@@ -173,3 +173,92 @@ describe("computeRankingsForRun -- the stored recommendation sentence", () => {
     expect(rows[1].recommendation).toContain("Behind rank 1 on hybrid flags");
   });
 });
+
+// M-10e. The end-of-audio average is the first ranking metric that is null
+// for six of seven providers BY CONSTRUCTION rather than by accident: a
+// batch adapter is handed a finished file, so there is no moment the audio
+// ended to measure from. That makes two mistakes cheap to write and
+// expensive to spot -- averaging the nulls in as zeros (which would make a
+// half-measured streaming provider look twice as fast as it is), and
+// letting the number leak into the composite (which would rank six
+// providers below one for a race they were never in). Both are guarded
+// here, against stored rows, not against the helper in isolation.
+//
+// Reads rows and writes rankings; calls no provider and spends nothing.
+describe("computeRankingsForRun -- the stored end-of-audio latency", () => {
+  it("averages only the cells that measured it, and leaves a batch provider null", async () => {
+    const asst = `fx-asst-eoa-${fx.suffix}`;
+    const run = await fx.run({ purpose: "batch" });
+    const callA = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const callB = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const streamer = await fx.provider();
+    const batcher = await fx.provider();
+
+    // The streaming provider measured one of its two calls. The honest
+    // average is 800, not 400 -- the unmeasured cell is absent, not zero.
+    for (const [call, endOfAudio] of [
+      [callA, 800],
+      [callB, null],
+    ] as const) {
+      const r = await fx.result(run.id, call.id, streamer.id, { hypothesisTranscript: "the tenant asked about the lease" });
+      await fx.score(r.id, { peerFlagCount: 1, peerFlagSeverity: "low", costMicrocents: 300_000, latencyEndOfAudioMs: endOfAudio });
+    }
+    for (const call of [callA, callB]) {
+      const r = await fx.result(run.id, call.id, batcher.id, { hypothesisTranscript: "the tenant asked about the lease" });
+      await fx.score(r.id, { peerFlagCount: 1, peerFlagSeverity: "low", costMicrocents: 300_000 });
+    }
+
+    await computeRankingsForRun(run.id, [callA.id, callB.id], [streamer.id, batcher.id]);
+    const rows = await db
+      .select()
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.runId, run.id))
+      .orderBy(asc(benchmarkRankingsTable.rank));
+    await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
+
+    const streamerRow = rows.find((r) => r.providerId === streamer.id);
+    const batcherRow = rows.find((r) => r.providerId === batcher.id);
+    expect(streamerRow!.latencyEndOfAudioMs).toBe(800);
+    // Null, never 0. A batch provider showing 0 ms would read as instant.
+    expect(batcherRow!.latencyEndOfAudioMs).toBeNull();
+  });
+
+  it("does not let the end-of-audio number change the order", async () => {
+    const asst = `fx-asst-eoa-rank-${fx.suffix}`;
+    const run = await fx.run({ purpose: "batch" });
+    const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const quick = await fx.provider();
+    const slowButClean = await fx.provider();
+
+    // Identical price, so flags are the only thing left in the composite
+    // (M-10a). `quick` is 25x better on end-of-audio and 3 peer flags worse;
+    // if the number ranked anything at all, it would rank first.
+    for (const [provider, flags, endOfAudio] of [
+      [quick, 3, 200],
+      [slowButClean, 0, 5_000],
+    ] as const) {
+      const r = await fx.result(run.id, call.id, provider.id, { hypothesisTranscript: "the tenant asked about the lease" });
+      await fx.score(r.id, {
+        peerFlagCount: flags,
+        peerFlagSeverity: flags === 0 ? "none" : "high",
+        costMicrocents: 400_000,
+        latencyEndOfAudioMs: endOfAudio,
+      });
+    }
+
+    await computeRankingsForRun(run.id, [call.id], [quick.id, slowButClean.id]);
+    const rows = await db
+      .select()
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.runId, run.id))
+      .orderBy(asc(benchmarkRankingsTable.rank));
+    await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
+
+    expect(rows[0].providerId).toBe(slowButClean.id);
+    expect(rows[0].latencyEndOfAudioMs).toBe(5_000);
+    expect(rows[1].latencyEndOfAudioMs).toBe(200);
+    // And it stays out of the sentence: the recommendation explains the
+    // order from flags and price, never from this number.
+    expect(rows[0].recommendation).not.toMatch(/audio|latenc|speed/i);
+  });
+});
