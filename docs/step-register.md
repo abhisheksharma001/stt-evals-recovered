@@ -2941,6 +2941,67 @@ in the ranking whose flag score was computed from less evidence than every row b
 
 ### M-11a — Deepgram nova-3 streaming adapter (no live call)
 
+**Status:** `done` 2026-09-07 (PR #110, `aca8280`), deployed
+`5d1a6ada1de0 -> aca8280fa40f`. 4 files, +733/-1. `lib/stt-providers` 47 -> 65 tests.
+
+**Shipped as:** `lib/stt-providers/src/adapters/deepgram-streaming.ts` (new, 470 lines),
+plus the registry entry, the package re-export and 18 tests. No provider was called, no
+`benchmark_providers` row was created (confirmed live after the deploy: the four
+`deepgram%` rows are unchanged), nothing was spent.
+
+**Live after deploy:** `/api/healthz` reports `aca8280fa40f`, and
+`GET /api/benchmark/providers/models` returns **exactly one** `deepgram` vendor card
+(`adapterId: deepgram-nova-3`, 19 models) -- the live counterpart of the guard test that
+a second adapter declaring `listModels` would have broken.
+
+**Learned:**
+
+1. **Two adapters for one vendor is a registry problem, not a file problem.** The whole
+   risk of this step lived in `adapterByVendorPrefix()`, which returns the *first*
+   adapter whose vendor prefix matches an id. `deepgram-nova` is a live enabled row that
+   is in no catalog and resolves by prefix alone, so it hangs entirely on declaration
+   order in an object literal. Order preserved, and pinned by a test.
+2. **The right way to say "not this one" is to declare less, not more.**
+   `/benchmark/providers/models` filters to adapters with `listModels` and groups them by
+   vendor; a second Deepgram adapter declaring one would have put two Deepgram cards on
+   Setup. Omitting `listModels` fixes it, and the ids come from `providerCatalog`
+   instead, as `elevenlabs-scribe-v2` already does.
+3. **A constant that encodes an assumption about the input is a bug waiting for a
+   different input.** `cartesia.ts`'s 6400-bytes-every-190ms is 200 ms of audio only at
+   16 kHz 16-bit mono. Deriving the chunk from the WAV header makes "never faster than
+   real time" a property of the code instead of a property of the corpus. The test
+   asserts 200 ms at five sample rates, not a byte count.
+4. **Copying an adapter means copying its close sequence, which is vendor-specific.**
+   `cartesia.ts` sends `close` and calls `ws.close()` in the same tick. Deepgram answers
+   `CloseStream` by flushing what is left and *then* closing, so the same code would
+   have silently dropped the last segment of every call -- and a slightly short
+   transcript scores as recognition error, not as a bug.
+5. **Sameness with the batch row is a feature, not laziness.** `smart_format`, `diarize`
+   and the coarse diarization rule are copied from `deepgram.ts` on purpose: the two
+   nova-3 rows exist to answer "does streaming cost us accuracy", and any difference in
+   settings turns that into a different question.
+6. **The key-in-URL is forced, so the throw path has to be closed.** Neither streaming
+   adapter can set an `Authorization` header, so both put the key in the URL. A throw
+   out of `new WebSocket(url)` lands in `run-executor.ts`'s `if (!result)` branch, which
+   writes `err.message` verbatim into a persisted, rendered field. Found by reading the
+   executor, not by reading the adapter. `cartesia.ts` has the same shape and is still
+   open (backlog).
+7. **Register the hazard your own change creates.** Every guard in this step exists
+   because of something this step introduced -- a second vendor-prefix match, a second
+   possible model list, a second key-bearing URL. None of them would have been worth a
+   test before this commit.
+8. **The break harness was fixed, and this time it was checked.** Each of the nine
+   mutations was confirmed landed on disk with `git diff --numstat` before its result was
+   read, after two consecutive steps where a mutation silently failed to apply and the
+   resulting all-green run read exactly like a guard holding. 9 of 9 caught.
+
+**Evidence note:** `visual-and-research` deliberately not run -- a provider adapter, a
+registry entry and unit tests, with no screen, no copy and no label involved. Verified
+instead against the vendor's own live documentation on 2026-09-07
+(developers.deepgram.com/reference/speech-to-text/listen-streaming, .../listen-flux,
+.../docs/using-the-sec-websocket-protocol, and deepgram.com/pricing), which is what
+caught corrections 1 and 2 in the M-11 block above.
+
 **PR:** one.
 **Depends on:** M-10b (`latencyEndOfAudioMs`).
 **Files:** new file lib/stt-providers/src/adapters/deepgram-streaming.ts (plain: not

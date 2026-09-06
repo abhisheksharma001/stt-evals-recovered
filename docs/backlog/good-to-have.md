@@ -1,3 +1,95 @@
+## Found 2026-09-07 (shipping M-11a): the Cartesia adapter streams faster than real time, and wrongly at any rate but 16 kHz
+
+`lib/stt-providers/src/adapters/cartesia.ts` sends a hardcoded `CHUNK_BYTES = 6400`
+every `SEND_INTERVAL_MS = 190`. 6400 bytes is 200 ms of 16 kHz 16-bit mono audio, so
+even on the format it was written for the stream runs ~5% ahead of real time. On any
+other format it is simply wrong: 8 kHz audio streams at 2x real time, 44.1 kHz at about
+0.36x. A streamed provider's `latencyFinalMs` is roughly call length (M-10d), so a file
+streamed at 2x reports roughly half the call length under a column labelled Speed.
+
+M-11a's `deepgramStreamChunkBytes()` derives the size from the WAV header instead
+(`sampleRate x bytesPerSample x 200 ms`, sent on a 200 ms interval) and is tested to
+carry 200 ms at 8/16/24/44.1/48 kHz. Cartesia was deliberately not touched -- M-11a's
+Must-not forbids it.
+
+**Reproduce:** read the two constants at the top of `cartesia.ts` against
+`parseWavPcm()`'s reported `sampleRate` for a non-16 kHz recording.
+
+**Worth having:** the same derivation in `cartesia.ts`, and a check that no adapter
+sends audio faster than the audio's own duration.
+
+## Found 2026-09-07 (shipping M-11a): a thrown WebSocket error can put an API key in the database
+
+Neither streaming adapter can send an `Authorization` header -- the global Node
+`WebSocket` cannot set request headers -- so both carry the key in the URL:
+`cartesia.ts` as `access_token`, M-11a's adapter as `token`. A throw out of
+`new WebSocket(url)` propagates out of `transcribe()` into `run-executor.ts`'s
+`if (!result)` branch, which writes `err.message` **verbatim** into
+`benchmark_provider_call_results.error_message` -- a field that is persisted and
+rendered. Any constructor message quoting the URL would put the key in the database and
+on screen.
+
+Likelihood is low: `URLSearchParams` builds a well-formed URL and undici delivers
+connect failures through the `error` event rather than a throw. The rule it would break
+is not: a key is never logged and never persisted.
+
+M-11a wraps its own constructor and reports a constant. **`cartesia.ts` is still
+unguarded.**
+
+**Reproduce:** read `cartesia.ts`'s `const ws = new WebSocket(url)` against
+`artifacts/api-server/src/lib/run-executor.ts`'s `if (!result)` branch.
+
+**Worth having:** the same wrap in `cartesia.ts`, and a rule that no adapter's thrown
+message is ever persisted unfiltered.
+
+## Found 2026-09-07 (shipping M-11a): shared helpers live in one vendor's file and speak in its name
+
+`parseWavPcm()` and `endOfAudioLatencyMs()` are exported from
+`lib/stt-providers/src/adapters/cartesia.ts` and are entirely vendor-neutral -- one
+reads a RIFF header, the other is the single definition of the M-10b measurement. M-11a
+imports both rather than re-deriving them, which is right (two definitions of one
+measurement is the M-10a failure). But `parseWavPcm()`'s errors are written in
+Cartesia's name, so a Deepgram cell handed a stereo file fails with
+"Cartesia adapter only supports mono WAV input, got 2 channel(s)" -- a message that
+names an adapter that was never involved, stored in `error_message` and shown to a
+reader.
+
+**Worth having:** move both into a shared module (lib/stt-providers/src/audio.ts or
+similar -- plain: does not exist yet) and make the messages name the format problem, not a vendor.
+
+## Found 2026-09-07 (shipping M-11a): `providersConfigured` lists things that cannot be run
+
+`GET /api/healthz` now reports `deepgram-nova-3-streaming` in `providersConfigured`,
+because that field lists registry adapters whose API key env var is set. There is no
+`benchmark_providers` row for it, so no run can select it and nothing on any screen
+offers it. The field reads like "providers you can run" and means "adapters with a key".
+
+Names only, so nothing sensitive is exposed -- but a health endpoint that overstates
+what is available is a claim the system makes about itself that is not quite true, which
+is the class of thing M-10c had to fix on the rankings page.
+
+**Reproduce:** `curl -s localhost:8177/api/healthz` against
+`select id from benchmark_providers where id like 'deepgram%'`.
+
+## Found 2026-09-07 (shipping M-11a): both Deepgram adapters send `keywords`, which nova-3 does not use
+
+`deepgram.ts` and M-11a's `deepgram-streaming.ts` both forward `input.keywordBoosts` as
+repeated `keywords` parameters. Deepgram's keyword boosting for nova-3 is `keyterm`;
+`keywords` belongs to nova-2 and earlier. So every keyword boost the tool has ever sent
+to a nova-3 row has had no effect, silently -- and the benchmark's "keyword boosting"
+column on `benchmark_providers` says `true` for it.
+
+M-11a mirrored the batch adapter deliberately, so that the two nova-3 rows differ only
+in how the audio arrives. Fixing one without the other would make the comparison a
+comparison of settings.
+
+**Reproduce:** the `params.append("keywords", term)` loop in both adapters, against
+Deepgram's nova-3 parameter reference.
+
+**Worth having:** this is the concrete half of the register's F2 (the Deepgram
+keyterm-cap test, blocked on Abhishek). F2 asks how many keyterms nova-3 accepts; this
+says the parameter is not being sent at all.
+
 ## Found 2026-09-07 (shipping M-10f): a step's Files list pointed at the wrong file, and nothing could catch it
 
 M-10f's register entry said to change `artifacts/api-server/src/routes/benchmark.ts`
