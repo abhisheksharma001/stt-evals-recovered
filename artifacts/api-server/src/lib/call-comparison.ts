@@ -223,6 +223,11 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
         flagSeverity: null,
         hybridFlags: null,
         latencyFinalMs: null,
+        // M-10f. A provider the run expected but never produced a cell for
+        // has no measurement of any kind, so this is null for the same
+        // reason every other number on this row is -- nothing ran. It is
+        // not the "batch adapter, no end-of-audio moment" null below.
+        latencyEndOfAudioMs: null,
         costMicrocents: null,
         audioSource: null,
         failureClass: null,
@@ -256,6 +261,14 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
       flagSeverity: score?.flagSeverity ?? null,
       hybridFlags: hybridFlagsOf(score?.detail ?? null),
       latencyFinalMs: score?.latencyFinalMs ?? null,
+      // M-10f. Straight from the score row, never derived and never
+      // defaulted to 0: null means the number does not exist, which for
+      // six of our seven adapters is permanent -- a batch API is handed a
+      // finished file and has no moment the audio ended. Only an adapter
+      // that streams (today cartesia.ts alone; benchmark_providers.
+      // supports_streaming is TRUE on 10 of 11 rows and describes the
+      // VENDOR's API, not how we run it) can fill this in.
+      latencyEndOfAudioMs: score?.latencyEndOfAudioMs ?? null,
       costMicrocents: score?.costMicrocents ?? null,
       // M-5a: the channel the executor actually read for this cell,
       // verbatim from the result row. Never inferred from what is on disk

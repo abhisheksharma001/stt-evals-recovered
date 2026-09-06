@@ -513,6 +513,7 @@ export const GetCallComparisonResponse = zod.object({
   "entityMismatches": zod.number()
 }).nullable(),
   "latencyFinalMs": zod.number().nullable(),
+  "latencyEndOfAudioMs": zod.number().nullable().describe('Ms from the last audio byte being sent to the final transcript arriving, for THIS cell. Null for every batch adapter by construction, and on cells scored before M-10b -- not a slow score. Distinct from latencyFinalMs above, which is file turnaround for a batch adapter and roughly call length for a streamed one.'),
   "costMicrocents": zod.number().nullable().describe('Micro-cents (1 cent = 10,000). null = not recorded, never zero.'),
   "audioSource": zod.union([zod.enum(['customer', 'mono']),zod.null()]),
   "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]),
@@ -612,6 +613,7 @@ export const GetBulkCallComparisonResponse = zod.object({
   "entityMismatches": zod.number()
 }).nullable(),
   "latencyFinalMs": zod.number().nullable(),
+  "latencyEndOfAudioMs": zod.number().nullable().describe('Ms from the last audio byte being sent to the final transcript arriving, for THIS cell. Null for every batch adapter by construction, and on cells scored before M-10b -- not a slow score. Distinct from latencyFinalMs above, which is file turnaround for a batch adapter and roughly call length for a streamed one.'),
   "costMicrocents": zod.number().nullable().describe('Micro-cents (1 cent = 10,000). null = not recorded, never zero.'),
   "audioSource": zod.union([zod.enum(['customer', 'mono']),zod.null()]),
   "failureClass": zod.union([zod.enum(['retention_expired', 'audio_url_forbidden', 'provider_timeout', 'provider_5xx', 'rate_limited', 'audio_decode', 'provider_auth', 'unknown']),zod.null()]),

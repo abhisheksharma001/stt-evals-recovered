@@ -220,7 +220,7 @@ export function ComparisonBody({ data }: { data: CallComparison }) {
           <TranscriptSideBySide data={data} referenceLabel={referenceLabel} />
         ) : (
           <div className="overflow-hidden rounded-md border border-border">
-            <div className="grid grid-cols-[1.2fr_5rem_5rem_5rem_5rem_5rem] items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="grid grid-cols-[1.2fr_5rem_5rem_5rem_5rem_6rem_5rem] items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <span>Provider</span>
               <span className="text-right" title={`Words that differ from ${referenceLabel} / words in the reference. Can exceed the reference length when a transcript is much longer than it.`}>Differ / ref</span>
               <span className="text-right" title="Disagreements with the other providers + entity mismatches only (confidence excluded, comparable across all providers). Lower is better.">Disagreements ↓</span>
@@ -234,6 +234,13 @@ export function ComparisonBody({ data }: { data: CallComparison }) {
                   claim -- the same defect M-10a removed from Results, still
                   live here because M-10a's guard only swept that page. */}
               <span className="text-right" title="Time from sending the audio to the final transcript. A batch API returns a finished file; Cartesia streams at real time, so its number is roughly the length of the call. Two different measurements: shown for reference, not comparable, and not lower-is-better.">Speed</span>
+              {/* M-10f. Same label and same words as the Results column
+                  M-10e added, so a reader crossing between the two pages
+                  sees one measurement rather than two. Sits next to Speed
+                  deliberately: Speed carries no arrow because it is two
+                  measurements wearing one label, this carries one because
+                  it is a single measurement and lower really is better. */}
+              <span className="text-right" title="Time from the last audio byte being sent to the final transcript arriving -- the wait a voice agent would sit through before it could reply. One measurement, so lower is better; Speed beside it is two and has no direction. Only a provider we stream to can report it: a batch API is handed a finished file, so it has no end-of-audio moment and shows a dash, which means cannot be measured, not slow. Trailing silence counts, so this is end of audio, not end of speech.">After audio ends ↓</span>
               <span className="text-right" title="Recorded cost of this transcript. Lower is better.">Cost ↓</span>
             </div>
             {data.productionRow && (
@@ -315,7 +322,7 @@ function ProviderRow({
     <div className="border-b border-border last:border-b-0">
       <button
         onClick={canExpand ? onToggle : undefined}
-        className={`grid w-full grid-cols-[1.2fr_5rem_5rem_5rem_5rem_5rem] items-center gap-2 px-3 py-2 text-left ${canExpand ? "hover:bg-muted/30" : "cursor-default"}`}
+        className={`grid w-full grid-cols-[1.2fr_5rem_5rem_5rem_5rem_6rem_5rem] items-center gap-2 px-3 py-2 text-left ${canExpand ? "hover:bg-muted/30" : "cursor-default"}`}
         aria-expanded={canExpand ? expanded : undefined}
       >
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -354,6 +361,22 @@ function ProviderRow({
         </span>
         <span className="text-right font-mono text-xs text-muted-foreground">
           {ok ? (row.latencyFinalMs == null ? "—" : `${(row.latencyFinalMs / 1000).toFixed(1)}s`) : ""}
+        </span>
+        {/* M-10f. This dash does not mean what the dashes either side of
+            it mean. Speed's dash and Cost's say the number was not
+            recorded on this run and a later run could fill it in; this
+            one is permanent for a batch adapter -- there is no moment the
+            audio ended for it to measure from. Spelled out in the cell
+            and not only in the header because it is the one column here
+            whose blank is structural, and a reader running an eye down a
+            column of dashes must not read them as providers losing a race
+            they never entered. */}
+        <span className="text-right font-mono text-xs text-muted-foreground">
+          {ok
+            ? row.latencyEndOfAudioMs == null
+              ? <span title="Not measured. Only a provider we stream to can report this; a batch API is handed a finished file, so there is no end-of-audio moment. Not a slow score.">—</span>
+              : `${Math.round(row.latencyEndOfAudioMs)}ms`
+            : ""}
         </span>
         <span className="text-right font-mono text-xs text-muted-foreground">{ok ? formatMicrocents(row.costMicrocents) : ""}</span>
       </button>
@@ -409,7 +432,7 @@ function ProductionRow({
     <div className="border-b border-border bg-secondary/40">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="grid w-full grid-cols-[1.2fr_5rem_5rem_5rem_5rem_5rem] items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
+        className="grid w-full grid-cols-[1.2fr_5rem_5rem_5rem_5rem_6rem_5rem] items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
         aria-expanded={expanded}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -422,6 +445,7 @@ function ProductionRow({
           </Badge>
         </span>
         <span className="text-right font-mono text-xs">{diff ? `${diff.wordsDiffer}/${diff.referenceWords}` : "—"}</span>
+        <span className="text-right font-mono text-xs text-muted-foreground">—</span>
         <span className="text-right font-mono text-xs text-muted-foreground">—</span>
         <span className="text-right font-mono text-xs text-muted-foreground">—</span>
         <span className="text-right font-mono text-xs text-muted-foreground">—</span>
