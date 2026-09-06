@@ -192,8 +192,9 @@ describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
     // and the chip carries class="chip winner" -- both the enum, not copy --
     // so both are stripped first, the same seam the unit guard uses.
     // NOTE: this bulk seeds no scored calls, so what is proved here is the
-    // summary and legend path. No test anywhere renders a real scoring-built
-    // winner sentence into HTML; that gap is S-9, not this step.
+    // summary and legend path. The settled path -- a real scoring-built
+    // verdict rendered into HTML -- is covered since S-9, by "renders a
+    // settled verdict end-to-end" in verdicts.int.test.ts.
     const visible = html.text.replace(/<style>[\s\S]*?<\/style>/g, "").replace(/class="[^"]*"/g, "");
     expect(visible).not.toMatch(/winner/i);
     expect(visible).not.toMatch(/\bwins\b/i);
