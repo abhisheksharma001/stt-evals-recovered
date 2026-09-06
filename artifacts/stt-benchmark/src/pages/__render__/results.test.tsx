@@ -7,7 +7,8 @@
 // page does with a correct response:
 //   - scope: "One bulk" must ask for that bulk and the all-time view must
 //     not pretend to a verdict it has no noise floor for;
-//   - the word "Winner": it belongs to the verdict, never to rank 1;
+//   - the verdict's phrase ("Least disagreement" since M-9, "Winner"
+//     before it): it belongs to the verdict, never to rank 1;
 //   - price: the $/min column is what the bulk PAID, so a changed list
 //     price has to announce itself instead of silently disagreeing.
 // Fixtures are typed as the generated response types -- typecheck is the
@@ -259,6 +260,36 @@ describe("Results", () => {
     expect(screen.getAllByText("Ahead, not a winner").length).toBe(1)
     // The provider production runs on is marked, from settings.
     expect(screen.getAllByText("In production").length).toBeGreaterThan(0)
+    api.restore()
+  })
+
+  // M-9 (PRD-v6 D1): a client reading "Winner" hears "most accurate". The
+  // page must offer the metric's name instead, and must carry the qualifier
+  // that says what the number is not -- visible without a click, and ONCE,
+  // because it describes the scoring method and not any one org (M-8b).
+  it("says 'Least disagreement', never 'Winner', and carries the relative line once", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+
+    await screen.findAllByText("Deepgram Nova-3")
+    expect(document.body.textContent).not.toContain("Winner")
+
+    // The verdict chip itself, found by the decision it renders for.
+    const chip = document.querySelector('[data-decision="winner"]')
+    expect(chip?.textContent).toBe("Least disagreement")
+    // ...and the row marker the verdict named.
+    expect(screen.getAllByTitle(/Named by this group's verdict/)[0].textContent).toContain("Least disagreement")
+
+    const rel = screen.getAllByTestId("relative-not-accuracy")
+    expect(rel.length).toBe(1)
+    expect(rel[0].textContent).toContain("Not a measured accuracy")
+    expect(rel[0].textContent).toContain("nothing here is scored against a human-checked transcript")
+    // Corrections to M-9 as written -- see the register. The step's own
+    // sentence said "the same customer audio" (no bulk on file is
+    // customer-channel) and "no transcript here was checked by a person"
+    // (2 of 176 calls carry a human gold, both in runs).
+    expect(rel[0].textContent).not.toContain("customer audio")
+    expect(rel[0].textContent).not.toContain("checked by a person")
     api.restore()
   })
 

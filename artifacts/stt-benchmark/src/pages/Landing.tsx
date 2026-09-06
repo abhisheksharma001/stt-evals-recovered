@@ -97,7 +97,7 @@ export default function Landing() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Verdict</span>
               <span className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
-                <CheckCircle2 className="h-3 w-3" /> Winner
+                <CheckCircle2 className="h-3 w-3" /> Least disagreement
               </span>
               <span className="text-[11px] font-mono text-muted-foreground">72 calls scored &middot; 64 calls both ran</span>
             </div>
@@ -105,9 +105,17 @@ export default function Landing() {
               <span className="font-semibold">Provider A</span> wins: 1.4 disagreements per 100 words, 38% fewer than
               Provider B, 12% fewer than Provider C (in production today). 72 calls.
             </p>
+            {/* M-9: this example is captioned "what a client sees", so it
+                carries the real page's words -- the phrase AND the permanent
+                relative line. An example that drops the qualifier teaches the
+                client the claim the qualifier exists to deny. */}
             <p className="mt-3 text-xs text-muted-foreground">
-              Winner = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else
-              is undecided, not a tie.
+              Least disagreement = fewest disagreements per 100 words, by more than the margin of error. Lower is better.
+              Anything else is undecided, not a tie.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Relative: how often each provider disagreed with the others on the same audio. Not a measured accuracy --
+              nothing here is scored against a human-checked transcript.
             </p>
           </div>
           <figcaption className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">

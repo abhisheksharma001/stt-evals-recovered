@@ -182,7 +182,12 @@ describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
     expectStatus(html, 200);
     expect(html.headers["content-type"]).toMatch(/text\/html/);
     expect(html.text).toContain(`STT verdict: ${bulk.name}`);
-    expect(html.text).toContain("Winner");
+    // M-9: the legend names the metric, not a title. The relative line is
+    // part of the artefact's contract, so it is asserted end-to-end here
+    // and not only in the unit render.
+    expect(html.text).toContain("Least disagreement");
+    expect(html.text).not.toContain("Winner");
+    expect(html.text).toContain("nothing here is scored against a human-checked transcript");
   });
 });
 

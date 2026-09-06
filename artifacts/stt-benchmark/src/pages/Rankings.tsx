@@ -490,13 +490,13 @@ function RankingTable({
                   </Badge>
                 )}
               </div>
-              {/* T-57: "Recommended" is the verdict's word. The badge
-                  appears only on the provider the T-20 noise-floor
-                  verdict named; rank 1 without a verdict win is
-                  "leading", not decided. */}
+              {/* T-57, reworded by M-9: "Least disagreement" is the
+                  verdict's phrase. The badge appears only on the provider
+                  the T-20 noise-floor verdict named; rank 1 without a
+                  verdict win is "leading", not decided. */}
               {verdictWinnerId === r.providerId ? (
                 <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named by this group's verdict: the gap to the runner-up is bigger than the margin of error.">
-                  <CheckCircle2 className="w-3 h-3 mr-1" /> Winner
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Least disagreement
                 </div>
               ) : r.rank === 1 ? (
                 <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above did not name a winner: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
@@ -911,7 +911,7 @@ export default function Rankings() {
                     const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
                     const groupLabel = ranks[0]?.assistantLabel ?? "Unassigned (no assistant ID captured at import)"
                     const activeRow = activeProviderId ? ranks.find((r) => r.providerId === activeProviderId) : undefined
-                    // T-57: the verdict owns the word "Winner" -- the composite rank only ever says "ahead".
+                    // T-57: the verdict owns the phrase "Least disagreement" (M-9) -- the composite rank only ever says "ahead".
                     const verdictWinnerId = viewMode === "bulk" && org.verdict?.verdict.decision === "winner" ? org.verdict.verdict.winnerProviderId : null
                     return (
                       <Card className="overflow-hidden shadow-sm">
