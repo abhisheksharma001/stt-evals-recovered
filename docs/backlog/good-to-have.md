@@ -1,3 +1,63 @@
+## Found 2026-09-06 (grilling M-9): a step's Files list can be right about every path it names and still be missing most of them
+
+M-8b's step named a real component at the wrong data grain. M-9's step named real
+components at the right grain — but only **two of five**. It named the chip in
+`Rankings.tsx` and the label in `verdict-artefact.ts`, and missed
+`verdict-headline.tsx`'s `DECISION_META.winner.label` (the verdict chip itself, the
+biggest "Winner" on the page), that file's legend paragraph, and both of `Landing.tsx`'s
+(a static example captioned "what a client sees").
+
+Every path it named exists, so `check:doc-paths` passes. Every symbol it named exists,
+so a symbol resolver would pass. The acceptance sentence — "the word Winner SHALL NOT
+appear anywhere in the rendered output" — would have been **false on the page the step
+is about**, and nothing in the step would have said so.
+
+Reproduce, before writing any code:
+
+```
+grep -rn "Winner" artifacts/stt-benchmark/src artifacts/api-server/src lib | grep -v test
+```
+
+Five render sites, one integration assertion, four comments. Twenty seconds.
+
+**And the Verify was red on arrival.**
+`artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts:185`
+asserted `expect(html.text).toContain("Winner")` on the artefact HTML. M-9's Verify
+listed the two unit suites and a grep — never the integration suite. A weaker model
+executing the step faithfully would have opened a red PR with no instruction pointing at
+the cause.
+
+**The rule that comes out of it, for every future step that changes rendered copy:**
+grep the literal string across every package *before* trusting the Files list, and put
+the integration suite in Verify, because the artefact is asserted end-to-end there. This
+one probably *can* be a script: a step whose Change quotes a string in double quotes
+could have that string grepped, and the count compared to the number of files in its
+Files list. Unlike M-8b's grain error, this one is countable.
+
+---
+
+## Found 2026-09-06 (running M-9's Verify): an integration test that passes or fails depending on what runs beside it
+
+The full integration suite failed once with:
+
+```
+FAIL src/routes/__integration__/provider-correlation.int.test.ts
+  > with no third provider there is no baseline, so excess is null, not a number
+AssertionError: expected 404 to be 200
+  at provider-correlation.int.test.ts:68
+```
+
+The next run, on the identical tree with no changes, passed **122/122**. The 404 means
+the bulk the test seeded was already gone when the request ran — another file's cleanup,
+or parallel workers sharing one `TEST_DATABASE_URL`.
+
+It is unrelated to M-9 (which changes only copy), and it is dangerous for exactly that
+reason: a flake in the suite that gates every PR teaches everyone to re-run instead of
+read. Queued as S-8, with an explicit "must not" against silencing it with a retry, a
+timeout bump or `.skip`.
+
+---
+
 ## Found 2026-09-06 (grilling M-8b): a step can name a real component at the wrong data grain, and nothing catches it
 
 **Not queued — logged as a class of problem, not a defect to fix.** The sharper

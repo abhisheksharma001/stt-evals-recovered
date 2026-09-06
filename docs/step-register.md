@@ -1726,31 +1726,131 @@ case has no words yet.
 
 ### M-9 — "Least disagreement", not "Winner", and the line that says what it is
 
+**Status:** done 2026-09-06 (PR #100, `b9a96ef`), deployed `f294d2bcf2ab -> b9a96efd5e0f`.
 **PR:** one.
 **Depends on:** nothing.
-**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the chip reading "Winner"
-and the T-57 comment), `artifacts/api-server/src/lib/verdict-artefact.ts` (the
-`winner: "Winner"` label and the explanatory paragraph),
+**Files (as shipped — five render sites, not the two this step first named):**
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx` (`DECISION_META.winner.label`,
+the legend paragraph, and the new relative line),
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` (the per-row marker and two comments),
+`artifacts/stt-benchmark/src/pages/Landing.tsx` (the example chip and legend),
+`artifacts/api-server/src/lib/verdict-artefact.ts` (`DECISION_META`, the legend, the new
+relative line, the header comment),
 `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
-`artifacts/api-server/src/lib/verdict-artefact.test.ts`.
-**Today:** rank 1 with a settled verdict is chipped "Winner". A client reading it hears
-"most accurate". Nothing on the page says the number is relative.
-**Change:** chip and artefact label read **"Least disagreement"**. Under the verdict, one
-permanent muted line: *"Relative: how often each provider disagreed with the others on
-the same customer audio. Not a measured accuracy — no transcript here was checked by a
-person."* The artefact paragraph that begins "**Winner** = fewest disagreements…" is
-rewritten to start with "**Least disagreement** = …" and to end with the same sentence.
-(M-18 appends the agreement figure to this line later.)
+`artifacts/api-server/src/lib/verdict-artefact.test.ts`,
+`artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`.
+
+**Corrections to M-9 as it was written** (all three found by grilling, before code):
+
+1. **The Files list named 2 of 5 render sites.** It named `Rankings.tsx`'s chip and
+   `verdict-artefact.ts`'s label. It missed `verdict-headline.tsx`'s
+   `DECISION_META.winner.label` — *the verdict chip itself*, the most prominent "Winner"
+   on the page — plus that file's legend paragraph, and both of `Landing.tsx`'s (a static
+   example captioned "what a client sees"). Following the step exactly would have left
+   the acceptance sentence false on the page it is about.
+2. **The proposed copy said "on the same customer audio". No bulk on file is
+   customer-channel.** All three live bulks return `requireCustomerAudio` unset, and
+   `verdict.ts:186` reads unset as `"mono"` — every provider ran the mono mix. Shipped as
+   **"on the same audio"**.
+3. **The proposed copy said "no transcript here was checked by a person". That is already
+   false.** `select count(*), count(gold_transcript) from benchmark_calls` → **2 of 176**
+   carry a human-written gold; both differ from their draft (so both count under D4's own
+   rule) and both sit in runs. Shipped as **"nothing here is scored against a
+   human-checked transcript"** — a claim about the *scoring*, true by construction
+   (gold-free hybrid flagging since 2026-08-27; `wer`/`entityAccuracy` no longer read),
+   and one that cannot rot the next time somebody golds a call.
+
+**Change (as shipped):** chip, row marker and artefact label read **"Least
+disagreement"**. Both legends begin "Least disagreement = fewest disagreements per 100
+words…". One permanent muted line renders **once per surface**, beside the legend:
+*"Relative: how often each provider disagreed with the others on the same audio. Not a
+measured accuracy — nothing here is scored against a human-checked transcript."* It sits
+at page/document grain, never per org and never per assistant, because it describes the
+method (M-8b's lesson applied before coding, not after).
+
 **Acceptance:** WHEN Results or `verdict.html` renders a settled verdict THEN the word
 "Winner" SHALL NOT appear anywhere in the rendered output, and the relative line SHALL
-be visible without interaction.
-**Verify:** `cd artifacts/stt-benchmark && pnpm run test` (results test asserts the chip
-text and the line); `cd artifacts/api-server && pnpm run test` (artefact test asserts no
-"Winner" in the HTML and the line present); `grep -rn "Winner" artifacts/stt-benchmark/src artifacts/api-server/src | grep -v test` → comments only.
-**Must not:** change `decision` values in `lib/scoring/src/verdict.ts` (`"winner"` stays
-as an enum value — it is code, not copy).
+be visible without interaction. — met.
 
----
+**Verify (copy-pasteable):**
+```
+pnpm run typecheck                                    # 4/4
+cd artifacts/stt-benchmark && pnpm run test           # 119 (+1)
+cd artifacts/api-server   && pnpm run test           # 99 (+2)
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration   # 122
+grep -rn "Winner" artifacts/stt-benchmark/src artifacts/api-server/src lib | grep -v test
+#   -> verdictWinnerId identifiers + one comment only
+curl -s http://localhost:8177/api/benchmark/bulks/340400b2-42a0-41bc-a5a8-154f5dff8072/verdict.html | grep -c Winner   # 0
+```
+
+**Proved by breaking it** (post-commit, fixtures only — no DB writes, no provider, no spend):
+
+| Break | Result |
+| --- | --- |
+| UI chip label back to `"Winner"` | 1 failed / 119 |
+| UI relative line deleted | 1 failed / 119 |
+| artefact label back to `"Winner"` | 1 failed / 99 |
+| artefact relative line deleted | 1 failed / 99 **and** 1 failed / 122 integration |
+
+**Must not — held:** `decision: "winner"` in `lib/scoring/src/verdict.ts` untouched; it
+is code, not copy.
+
+**Verified live after deploy:** `verdict.html` on bulk `340400b2` → `Winner` **0**,
+`Least disagreement` 1, relative line 1, `same customer audio` 0. Deployed UI bundle
+(17 chunks): the phrase in 3 chunks, the relative line in 2, and the single `Winner`
+match is the preserved prop name `verdictWinnerId`, not copy.
+
+**Learned:**
+
+- **A step can be wrong by *undercount* as well as by grain.** M-8b's step named a real
+  component at the wrong grain; M-9's named real components but only 2 of 5. Both pass
+  `check-doc-paths.sh` and both would pass a symbol resolver. The thing that catches an
+  undercount is a case-sensitive grep for the literal string across *every* package
+  before believing the Files list — 20 seconds, and it was the whole difference here.
+- **A step's Verify can be red on arrival.**
+  `riskiest-endpoints.int.test.ts:185` asserted `toContain("Winner")` on the artefact
+  HTML. M-9's Verify listed the two unit suites and a grep, never the integration suite,
+  so a weaker model executing this step faithfully would have opened a red PR and had no
+  instruction telling it where to look. **A step that changes rendered copy must run the
+  integration suite in Verify**, because the artefact is asserted end-to-end there.
+- **Prefer a claim about the method over a claim about the corpus.** Correction 3 is the
+  general rule: "no transcript was checked by a person" is data that drifts; "nothing is
+  scored against a human-checked transcript" is code that can be read. The first needs a
+  guard nobody wrote; the second is true as long as the scoring is.
+- **A marketing example is a render site.** `Landing.tsx` is captioned "what a client
+  sees". Renaming the product's words everywhere except the page that teaches them is
+  the same bug as not renaming at all.
+
+**Left for later (not smuggled in):** the whole lowercase `winner` family — see M-9b.
+
+### M-9b — the lowercase `winner` family, decided once
+
+**Status:** todo
+**PR:** one.
+**Depends on:** M-9.
+**Files:** `artifacts/api-server/src/lib/verdict-artefact.ts` (the row tag
+`<span class="tag">winner</span>`, the `N winner/winners` counts strip, the summary
+sentences, the `.chip.winner` CSS class, and `Ahead, not a winner:`),
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx` (the `N winners` counts
+strip), `artifacts/stt-benchmark/src/pages/Rankings.tsx` (`Ahead, not a winner` and the
+two tooltips that say "did not name a winner"),
+`artifacts/stt-benchmark/src/pages/Landing.tsx` (the example sentence "Provider A
+wins:"), plus the two render tests and `verdict-artefact.test.ts`.
+**Today:** M-9 removed every capital "Winner" from rendered output, which is what
+PRD-v6 D1's own check greps for. Lowercase copy still says `winner` and `wins` in eight
+places, including a row tag in the exported artefact directly beneath a heading that now
+reads "Least disagreement".
+**Change:** one decision covering all of them — does the *verb* change too ("X wins 3 of
+4 orgs outright"), and what replaces a one-word row tag where "least disagreement" will
+not fit? Deliberately held out of M-9 because half-renaming a verb reads worse than not
+starting, and because a one-word tag needs a wording decision, not a mechanical rename.
+**Acceptance:** WHEN `verdict.html` or Results renders THEN no rendered string SHALL
+contain "winner" or "wins" in any case, except where it explicitly *denies* a winner.
+**Verify:** `grep -rniE "winner|wins" artifacts/stt-benchmark/src artifacts/api-server/src | grep -v test`
+→ identifiers and comments only; both render suites; the integration suite.
+**Must not:** touch `decision: "winner"` in `lib/scoring/src/verdict.ts`.
+**Ask Abhishek first:** the row-tag wording. "least disagreement" is 18 characters in a
+table cell built for 6.
 
 ### M-10 — Latency means end-of-speech latency, or nothing
 
@@ -2237,3 +2337,24 @@ described but not grilled, so they stay here with the questions that block them.
 | v6 F2 | Deepgram keyterm cap test on the Rush assistant (120 terms sent; Deepgram caps at 100 / 500 tokens) | Three paid Deepgram calls — pre-approved as cents, or a "go spend" each time? |
 | v6 E1 | Backup destination | Local folder only, or also a cloud bucket / iCloud Drive? Local-only dies with the laptop. |
 | v6 E3 | Customer-word floor | 30 words as the default, or lower for the transfer-heavy Land And Apartment assistants (median 2 customer turns per call)? M-16 ships with 30 and the question stays open. |
+
+### S-8 — the provider-correlation integration test is order-dependent
+
+**Status:** todo
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/routes/__integration__/provider-correlation.int.test.ts`.
+**Today:** on 2026-09-06, during M-9, the full integration suite failed once with
+`AssertionError: expected 404 to be 200` at `provider-correlation.int.test.ts:68`
+("with no third provider there is no baseline, so excess is null, not a number"). The
+very next run on the identical tree passed 122/122. The 404 means the bulk the test
+seeded was gone by the time the request ran — another file's cleanup, or a shared
+`TEST_DATABASE_URL` across parallel workers.
+**Change:** find why the seeded bulk disappears and make the test own its rows (or pin
+the file's isolation), so the result does not depend on which other files run beside it.
+**Acceptance:** WHEN the integration suite runs 10 times in a row THEN
+`provider-correlation.int.test.ts` SHALL pass every time.
+**Verify:** `for i in $(seq 10); do TEST_DATABASE_URL=... pnpm run test:integration || break; done`
+**Must not:** paper over it with a retry, a longer timeout, or `.skip`. A flaky test that
+is silenced is worse than one that fails.
+

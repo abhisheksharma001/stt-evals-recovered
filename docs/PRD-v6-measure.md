@@ -260,16 +260,25 @@ changes.
 
 ## Part D — Say what the verdict is, and anchor it without a human
 
-**D1 — "least disagreement", not "winner".** `lib/scoring/src/verdict.ts` keeps its
-decision logic; the words change. `artifacts/stt-benchmark/src/pages/Rankings.tsx`
-(the chip that reads "Winner") and `artifacts/api-server/src/lib/verdict-artefact.ts`
-(the `winner: "Winner"` label and the explanatory paragraph) say **"Least
+**D1 — "least disagreement", not "winner".** *(Shipped 2026-09-06 as M-9, PR #100.
+Two sentences below were corrected against live data before shipping; the original
+wording is quoted in the register's M-9 block.)* `lib/scoring/src/verdict.ts` keeps its
+decision logic; the words change. **Five** render sites, not the two this paragraph
+first named: `artifacts/stt-benchmark/src/components/verdict-headline.tsx` (the verdict
+chip's `DECISION_META.winner.label` **and** the legend paragraph),
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` (the per-row marker),
+`artifacts/stt-benchmark/src/pages/Landing.tsx` (the example chip and legend, captioned
+"what a client sees") and `artifacts/api-server/src/lib/verdict-artefact.ts` (the
+`winner: "Winner"` label and the explanatory paragraph) all say **"Least
 disagreement"**, and one permanent line under the verdict reads: *"Relative: how often
-each provider disagreed with the others on the same customer audio. Not a measured
-accuracy — no transcript here was checked by a person."* When D4's count is above zero
+each provider disagreed with the others on the same audio. Not a measured accuracy —
+nothing here is scored against a human-checked transcript."* It renders once per
+surface: it describes the scoring method, not any one org. When D4's count is above zero
 the line adds: *"On N calls a person did check, this ranking agreed with the
 transcript-checked ranking X % of the time."* **Check:** grep the UI package and the
-artefact for the word "Winner" — only test names and comments remain.
+artefact for the word "Winner" — only test names, comments and the `verdictWinnerId`
+identifier remain. `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`
+asserts the artefact end-to-end and must be updated with this copy, not after it.
 
 **D2 — entity references from confirmed tool calls.** 74 of the 99 rescued calls made
 tool calls; the entity-bearing ones (`fly-APPFOLIO_FIND_TENANT`, `CREATE_SHOWING`,
