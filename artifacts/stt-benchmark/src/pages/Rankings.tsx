@@ -81,12 +81,12 @@ const SORT_LABELS: Record<SortKey, string> = {
 }
 
 const SORT_TITLES: Record<SortKey, string> = {
-  rank: "From disagreements (cross-provider disagreement + wrong entities only), price and speed. Not from Flags per call, which includes a provider's own low-confidence words.",
+  rank: "From disagreements (cross-provider disagreement + wrong entities only) and price. Not from speed, and not from Flags per call, which includes a provider's own low-confidence words.",
   avgFlagCount: "Average flags per call, including a provider's own low-confidence words. Only providers that report confidence add those, so compare with care; the small 'peer' number below is what Rank uses.",
   avgFlagSeverityScore: "How serious the flags were, 0 = none .. 3 = high, averaged over this provider's transcripts in this group.",
   peerFlagsPer100Words: "Disagreements with the other providers plus wrong entities, per 100 words transcribed. Confidence excluded, so it is comparable across all providers and call lengths.",
   cleanCallRate: "Share of this provider's scored calls with zero disagreements.",
-  latencyFinalMs: "Time from sending the audio to the final transcript.",
+  latencyFinalMs: "Time from sending the audio to the final transcript. Batch APIs return a finished file; Cartesia streams at real time, so its number is roughly the length of the call. Not the same measurement, so it is shown for reference and does not affect Rank.",
   costPerMinute: "What this bulk actually paid per audio minute, from each transcript's recorded cost -- not today's list price. When the Setup list price differs by more than 2%, the cell says so.",
   diarizationScore: "Share of calls where this provider told more than one speaker apart.",
 }

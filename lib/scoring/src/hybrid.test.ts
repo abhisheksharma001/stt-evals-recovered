@@ -5,6 +5,9 @@ import {
   extractEntities,
   flagLowConfidenceSpans,
   combineHybridFlags,
+  hybridCompositeScore,
+  HYBRID_RANKING_WEIGHTS,
+  type HybridCompositeInput,
 } from "./hybrid";
 
 describe("computeCrossProviderDisagreement", () => {
@@ -287,5 +290,70 @@ describe("combineHybridFlags", () => {
     });
     expect(result.confidenceAvailable).toBe(false);
     expect(result.flagCount).toBe(0);
+  });
+});
+
+// M-10a. Before this block hybridCompositeScore had no test at all, and it is
+// the number `aggregateRankingRows` sorts every ranking group by -- the weights
+// could have been changed to anything, in either direction, with the whole
+// suite still green.
+describe("hybridCompositeScore", () => {
+  const base = {
+    flagBadness: 1,
+    costPerMinute: 0.004,
+    maxFlagBadness: 4,
+    maxCostPerMinute: 0.01,
+  };
+
+  it("ignores latency entirely, however it is passed", () => {
+    // The live corpus reads cartesia at 80.8 s mean against openai's 4.6 s,
+    // because for a streaming adapter the number is the length of the call
+    // and for a batch one it is file turnaround. Two providers identical on
+    // everything that is comparable must score identically, whatever these
+    // incomparable numbers say -- including the extra properties themselves,
+    // which the function must not read even when a caller still sends them.
+    // The cast is the point: latencyFinalMs is no longer part of the input
+    // type, so a caller can only get one in past the compiler. Even then the
+    // score must not move. Restore the latency term and these two diverge.
+    const withLatency = (latencyFinalMs: number): HybridCompositeInput =>
+      ({ ...base, latencyFinalMs, maxLatencyFinalMs: 350_000 }) as HybridCompositeInput;
+    const fast = hybridCompositeScore(withLatency(100));
+    const slow = hybridCompositeScore(withLatency(335_316));
+    expect(fast).not.toBeNull();
+    expect(fast).toBe(slow);
+  });
+
+  it("weights only flags and cost, and they sum to one", () => {
+    const total = Object.values(HYBRID_RANKING_WEIGHTS).reduce((a, b) => a + b, 0);
+    expect(total).toBeCloseTo(1, 10);
+    expect(Object.keys(HYBRID_RANKING_WEIGHTS).sort()).toEqual(["cost", "flags"]);
+    // Perfect on both components scores exactly 1: no third term is hiding.
+    expect(
+      hybridCompositeScore({ flagBadness: 0, costPerMinute: 0, maxFlagBadness: 4, maxCostPerMinute: 0.01 }),
+    ).toBeCloseTo(1, 10);
+  });
+
+  it("lets flags outrank cost, so the cheapest provider does not win on price alone", () => {
+    // The gap this guards: with flags at 0.85, a full flag-badness deficit
+    // (0.85) can never be bought back by being free (0.15).
+    const cheapAndBad = hybridCompositeScore({
+      flagBadness: 4,
+      costPerMinute: 0,
+      maxFlagBadness: 4,
+      maxCostPerMinute: 0.01,
+    })!;
+    const dearAndClean = hybridCompositeScore({
+      flagBadness: 0,
+      costPerMinute: 0.01,
+      maxFlagBadness: 4,
+      maxCostPerMinute: 0.01,
+    })!;
+    expect(dearAndClean).toBeGreaterThan(cheapAndBad);
+  });
+
+  it("returns null when nothing scored, rather than a confident zero", () => {
+    expect(
+      hybridCompositeScore({ flagBadness: null, costPerMinute: 0.004, maxFlagBadness: 4, maxCostPerMinute: 0.01 }),
+    ).toBeNull();
   });
 });

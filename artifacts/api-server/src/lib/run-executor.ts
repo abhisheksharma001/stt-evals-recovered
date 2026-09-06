@@ -124,9 +124,11 @@ class Semaphore {
 // bulk got its own independent set of per-provider semaphores. A 1,000-call
 // bulk sharded into 20 runs (default shardSize 50) meant 20x the configured
 // PROVIDER_CONCURRENCY hitting each vendor simultaneously -- a self-
-// inflicted 429 storm against the exact gate meant to prevent one, and
-// since latency feeds the ranking composite, a self-inflicted storm doesn't
-// just slow the bulk down, it corrupts the ranking it's producing.
+// inflicted 429 storm against the exact gate meant to prevent one. M-10a
+// retired the reason originally given here (latency was 15 % of the ranking
+// composite, so a storm corrupted the ranking); the reason that survives is
+// simpler and larger -- a rate-limited cell fails, and a failed cell is
+// evidence dropped out of the comparison the bulk was run to make.
 // Module-level singleton: every run in this process shares the same
 // per-provider slot pool, no matter how many shards are in flight.
 const providerSlots = new Map<string, Semaphore>();
@@ -1231,10 +1233,6 @@ function aggregateRankingRows(
       byProvider.set(row.result.providerId, list);
     }
 
-    const maxLatencyFinalMs = Math.max(
-      0,
-      ...rowsForGroup.map((r) => r.score.latencyFinalMs ?? 0),
-    );
     // T-61: score.costPerMinute on a CELL is that cell's whole cost (rate x
     // this call's duration -- mislabeled since T-11), so averaging it gave a
     // "per minute" that moved with call length (AssemblyAI 0.0036-0.0348
@@ -1317,12 +1315,14 @@ function aggregateRankingRows(
         ? flaggedCells.filter((r) => r.score.peerFlagCount === 0).length / flaggedCells.length
         : null;
 
+      // M-10a: latency is still averaged and still written to the ranking
+      // row below -- the Speed column shows it -- but it no longer feeds
+      // the composite, because it is file turnaround for a batch adapter
+      // and call length for a streaming one. See HYBRID_RANKING_WEIGHTS.
       const composite = hybridCompositeScore({
         flagBadness,
-        latencyFinalMs,
         costPerMinute,
         maxFlagBadness,
-        maxLatencyFinalMs,
         maxCostPerMinute,
       });
 
