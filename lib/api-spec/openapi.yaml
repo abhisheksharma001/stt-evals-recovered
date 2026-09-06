@@ -1808,13 +1808,22 @@ components:
       # it was zero" (found 2026-08-24: alphanumericAccuracy showing 0 on
       # every ranking row because no entity in the corpus is both letters
       # and digits after normalization, so it was never actually scored).
-      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore, avgPeerFlagCount, avgPeerFlagSeverityScore, peerFlagsPer100Words, cleanCallRate]
+      required: [wer, entityAccuracy, alphanumericAccuracy, latencyFirstPartialMs, latencyFinalMs, latencyEndOfAudioMs, costPerMinute, diarizationScore, avgFlagCount, avgFlagSeverityScore, avgPeerFlagCount, avgPeerFlagSeverityScore, peerFlagsPer100Words, cleanCallRate]
       properties:
         wer: { type: ["number", "null"], description: "2026-08-27 -- permanently null going forward (no gold transcript to diff against). Kept for historical runs scored before this change." }
         entityAccuracy: { type: ["number", "null"], description: "Same as wer -- permanently null going forward, kept for historical runs." }
         alphanumericAccuracy: { type: ["number", "null"] }
         latencyFirstPartialMs: { type: ["number", "null"] }
         latencyFinalMs: { type: ["number", "null"] }
+        # M-10e. Distinct from latencyFinalMs above, which is file
+        # turnaround for a batch adapter and roughly call length for a
+        # streaming one -- two different measurements, so it carries no
+        # direction (M-10a/M-10d). THIS one is a single measurement across
+        # every provider that can report it, and lower is better.
+        # Permanently null for a batch adapter: it is handed a finished
+        # file, so there is no "audio ended" moment to measure from. Null
+        # means "cannot be measured for this provider", never "0 ms".
+        latencyEndOfAudioMs: { type: ["number", "null"], description: "Mean ms from the last audio byte being sent to the final transcript arriving, over this provider's scored cells in the group. Null for every batch adapter by construction -- not a slow score. Does not feed Rank." }
         costPerMinute: { type: ["number", "null"] }
         diarizationScore: { type: ["number", "null"] }
         # 2026-08-27, found live (Abhishek: "for this call why its different

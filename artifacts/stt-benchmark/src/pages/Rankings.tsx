@@ -50,7 +50,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // 2026-08-27: wer/entityAccuracy retired (no gold transcript to score
 // against) -- avgFlagCount/avgFlagSeverityScore (gold-free hybrid flagging)
 // replace them as the primary ranking signal.
-type SortKey = "rank" | "avgFlagCount" | "avgFlagSeverityScore" | "peerFlagsPer100Words" | "cleanCallRate" | "latencyFinalMs" | "costPerMinute" | "diarizationScore"
+type SortKey = "rank" | "avgFlagCount" | "avgFlagSeverityScore" | "peerFlagsPer100Words" | "cleanCallRate" | "latencyFinalMs" | "latencyEndOfAudioMs" | "costPerMinute" | "diarizationScore"
 
 // Lower-is-better metrics sort ascending by default; accuracy metrics
 // descending. Nulls always sink to the bottom regardless of direction --
@@ -64,6 +64,8 @@ const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
   peerFlagsPer100Words: true,
   cleanCallRate: false,
   latencyFinalMs: true,
+  // M-10e: sits beside Speed on purpose -- it is the number Speed is not.
+  latencyEndOfAudioMs: true,
   costPerMinute: true,
   diarizationScore: false,
 }
@@ -76,6 +78,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   peerFlagsPer100Words: "Disagreements / 100 words",
   cleanCallRate: "Clean calls",
   latencyFinalMs: "Speed",
+  latencyEndOfAudioMs: "After audio ends",
   costPerMinute: "Paid / min",
   diarizationScore: "Speakers told apart",
 }
@@ -87,6 +90,7 @@ const SORT_TITLES: Record<SortKey, string> = {
   peerFlagsPer100Words: "Disagreements with the other providers plus wrong entities, per 100 words transcribed. Confidence excluded, so it is comparable across all providers and call lengths.",
   cleanCallRate: "Share of this provider's scored calls with zero disagreements.",
   latencyFinalMs: "Time from sending the audio to the final transcript. Batch APIs return a finished file; Cartesia streams at real time, so its number is roughly the length of the call. Not the same measurement, so it is shown for reference and does not affect Rank.",
+  latencyEndOfAudioMs: "Time from the last audio byte being sent to the final transcript arriving -- the wait a voice agent would sit through before it could reply. Only a provider we stream to can report this; a batch API is handed a finished file, so it has no end-of-audio moment and shows a dash. A dash means cannot be measured, not slow. Trailing silence counts, so this is end of audio, not end of speech. Does not affect Rank.",
   costPerMinute: "What this bulk actually paid per audio minute, from each transcript's recorded cost -- not today's list price. When the Setup list price differs by more than 2%, the cell says so.",
   diarizationScore: "Share of calls where this provider told more than one speaker apart.",
 }
@@ -108,6 +112,12 @@ const DIRECTION: Record<SortKey, "↓" | "↑" | null> = {
   peerFlagsPer100Words: "↓",
   cleanCallRate: "↑",
   latencyFinalMs: null,
+  // M-10e: "↓" and not null, unlike latencyFinalMs directly above. Speed
+  // has no direction because it is two different measurements sharing one
+  // column (M-10a/M-10d); this is ONE measurement -- ms from the audio
+  // ending to the final transcript -- so lower really is better for every
+  // provider that can report it at all.
+  latencyEndOfAudioMs: "↓",
   costPerMinute: "↓",
   diarizationScore: "↑",
 }
@@ -170,7 +180,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
     "avg_flag_count", "avg_flag_severity_score",
     "avg_peer_flag_count", "avg_peer_flag_severity_score",
     "peer_flags_per_100_words", "clean_call_rate",
-    "latency_first_partial_ms", "latency_final_ms",
+    "latency_first_partial_ms", "latency_final_ms", "latency_end_of_audio_ms",
     "cost_per_minute", "diarization_score", "run_id", "recommendation",
   ]
   const lines = rows.map((r) =>
@@ -179,7 +189,7 @@ function buildCsv(groupLabel: string, rows: RankingRow[]): string {
       r.score.avgFlagCount, r.score.avgFlagSeverityScore,
       r.score.avgPeerFlagCount, r.score.avgPeerFlagSeverityScore,
       r.score.peerFlagsPer100Words, r.score.cleanCallRate,
-      r.score.latencyFirstPartialMs, r.score.latencyFinalMs,
+      r.score.latencyFirstPartialMs, r.score.latencyFinalMs, r.score.latencyEndOfAudioMs,
       r.score.costPerMinute, r.score.diarizationScore, r.runId, r.recommendation,
     ].map(escape).join(","),
   )
@@ -570,6 +580,19 @@ function RankingTable({
             <TableCell className="text-right font-mono text-muted-foreground">
               {r.score.latencyFinalMs != null ? `${Math.round(r.score.latencyFinalMs)}ms` : <span title="Not measured in this run">—</span>}
             </TableCell>
+            {/* M-10e. The dash here says something different from every
+                other dash in this table: the other columns' "—" means the
+                metric was not measured on this run, and a later run could
+                fill it in. This one is permanent for a batch adapter --
+                there is no end-of-audio moment to measure. Said in the
+                cell, not just the header, because a reader sorting by this
+                column sees six dashes under one number and must not read
+                that as six providers losing a race. */}
+            <TableCell className="text-right font-mono text-muted-foreground">
+              {r.score.latencyEndOfAudioMs != null
+                ? `${Math.round(r.score.latencyEndOfAudioMs)}ms`
+                : <span title="Not measured. Only a provider we stream to can report this; a batch API is handed a finished file, so there is no end-of-audio moment. Not a slow score.">—</span>}
+            </TableCell>
             <TableCell className="text-right font-mono text-muted-foreground">
               {r.score.costPerMinute != null ? formatPerMinute(r.score.costPerMinute).replace("/min", "") : <span title="Not measured in this run">—</span>}
               <PaidVsListNote paid={r.score.costPerMinute} list={listPrices.get(r.providerId)} />
@@ -748,10 +771,11 @@ export default function Rankings() {
           Which provider should each org's assistants run on. One bulk at a time, or every bulk combined.
         </p>
         <p className="mt-2 text-xs text-muted-foreground" data-testid="results-legend">
-          <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags and price (↓).
-          Higher is better for clean calls and speakers told apart (↑). Speed has no direction: for a batch API it is
-          how long the file took to come back, for Cartesia it is roughly the length of the call. Hover a column for
-          exactly what it measures.
+          <span className="font-medium text-foreground">Lower is better</span> for disagreements, flags, price and the
+          wait after audio ends (↓). Higher is better for clean calls and speakers told apart (↑). Speed has no
+          direction: for a batch API it is how long the file took to come back, for Cartesia it is roughly the length
+          of the call. The wait after audio ends is the one that does compare, and only a provider we stream to can
+          report it at all. Hover a column for exactly what it measures.
         </p>
         {latencyCoverage && latencyCoverage.measured < latencyCoverage.total && (
           <p className="mt-2 text-xs text-muted-foreground" data-testid="production-coverage">

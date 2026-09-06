@@ -36,6 +36,7 @@ const emptyScore = {
   alphanumericAccuracy: null,
   latencyFirstPartialMs: null,
   latencyFinalMs: null,
+  latencyEndOfAudioMs: null,
   costPerMinute: null,
   diarizationScore: null,
   avgFlagCount: null,
@@ -69,7 +70,9 @@ const rankings: VerticalRanking[] = [
     providerId: "gladia-solaria",
     providerName: "Gladia Solaria",
     rank: 2,
-    score: { ...emptyScore, avgFlagCount: 2.4, avgPeerFlagCount: 2.0, costPerMinute: 0.0061, latencyFinalMs: 15300 },
+    // M-10e: the only row carrying an end-of-audio number, and it is rank
+    // 2 on purpose -- the number must not read as having won anything.
+    score: { ...emptyScore, avgFlagCount: 2.4, avgPeerFlagCount: 2.0, costPerMinute: 0.0061, latencyFinalMs: 15300, latencyEndOfAudioMs: 812 },
   }),
   // A manually-added call has no Vapi assistant. It gets its own bucket that
   // says why, instead of being folded into a real org or dropped.
@@ -530,6 +533,79 @@ describe("Results", () => {
     // direction for it, one paragraph above the same column.
     expect(legend.textContent).not.toMatch(/flags, speed and price/i)
     expect(legend.textContent).toMatch(/Speed has no direction/i)
+    // M-10e added a latency column that DOES have a direction, right next
+    // to the one that does not. The legend has to carry both or the reader
+    // learns "latency has no direction here" and applies it to the wrong
+    // column.
+    //
+    // Scoped to the lower-is-better clause, not the paragraph: the legend
+    // names this column twice (once in the direction list, once explaining
+    // why it compares when Speed does not), so a bare
+    // `toMatch(/wait after audio ends/)` passed even with the column
+    // dropped from the direction list -- caught by break-testing this very
+    // assertion, 2026-09-07.
+    const lowerClause = legend.textContent?.match(/Lower is better[^↓]*\(↓\)/)?.[0] ?? ""
+    expect(lowerClause).toMatch(/wait after audio ends/i)
+    api.restore()
+  })
+
+  // M-10e. The failure this guards is not a missing column -- it is a
+  // column that renders and lies. Six of seven providers can never report
+  // this number, so the dash is permanent, and a dash that says nothing
+  // sits under a "↓ lower is better" header claiming those six lost.
+  it("shows the end-of-audio number, and explains the dash instead of implying slow", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+
+    await screen.findAllByText("Deepgram Nova-3")
+
+    const head = screen.getAllByRole("columnheader").find((h) => h.textContent?.startsWith("After audio ends"))
+    expect(head).toBeTruthy()
+    // The header must carry the reason a cell can be empty forever, not
+    // just what the number means.
+    expect(head!.getAttribute("title")).toMatch(/batch API is handed a finished file/i)
+    expect(head!.getAttribute("title")).toMatch(/not slow/i)
+    expect(head!.getAttribute("title")).toContain("Does not affect Rank")
+    // Must-not from the step: trailing silence is included, so calling this
+    // end-of-speech would overstate what was measured.
+    expect(head!.getAttribute("title")).toMatch(/not end of speech/i)
+
+    // The one fixture row that measured it renders the number...
+    expect(screen.getAllByText("812ms").length).toBeGreaterThan(0)
+    // ...and it is NOT rank 1, so having the number is visibly not winning.
+    const measuredRow = screen.getAllByText("812ms")[0].closest("tr")
+    expect(measuredRow!.textContent).toContain("Gladia Solaria")
+
+    // ...and the rows that cannot measure it say why, in the cell. Scoped
+    // to cells on purpose: the column header explains the dash too, and a
+    // page-wide sweep would pass on the header alone while every cell in
+    // the table stayed a bare, unexplained dash.
+    const dashTitles = Array.from(document.querySelectorAll("td [title]"))
+      .map((el) => el.getAttribute("title") ?? "")
+      .filter((t) => /no end-of-audio moment/i.test(t))
+    expect(dashTitles.length).toBeGreaterThan(0)
+    for (const t of dashTitles) expect(t).toMatch(/not a slow score/i)
+    api.restore()
+  })
+
+  // The two latency columns must stay opposite: one carries a direction,
+  // one deliberately does not. Guarding either alone lets a future edit
+  // "fix" the pair by making them agree -- which is the M-10d bug again.
+  it("gives the end-of-audio column a direction while Speed still has none", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+
+    await screen.findAllByText("Deepgram Nova-3")
+
+    const labelsOf = (startsWith: string) => {
+      const th = screen.getAllByRole("columnheader").find((h) => h.textContent?.startsWith(startsWith))
+      expect(th).toBeTruthy()
+      return Array.from(th!.querySelectorAll("[aria-label]")).map((el) => el.getAttribute("aria-label"))
+    }
+
+    expect(labelsOf("After audio ends")).toContain("lower is better")
+    expect(labelsOf("Speed")).not.toContain("lower is better")
+    expect(labelsOf("Speed")).not.toContain("higher is better")
     api.restore()
   })
 

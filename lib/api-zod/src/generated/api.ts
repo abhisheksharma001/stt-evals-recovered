@@ -1210,6 +1210,7 @@ export const ListBenchmarkRankingsResponseItem = zod.object({
   "alphanumericAccuracy": zod.number().nullable(),
   "latencyFirstPartialMs": zod.number().nullable(),
   "latencyFinalMs": zod.number().nullable(),
+  "latencyEndOfAudioMs": zod.number().nullable().describe('Mean ms from the last audio byte being sent to the final transcript arriving, over this provider\'s scored cells in the group. Null for every batch adapter by construction -- not a slow score. Does not feed Rank.'),
   "costPerMinute": zod.number().nullable(),
   "diarizationScore": zod.number().nullable(),
   "avgFlagCount": zod.number().nullable().describe('Gold-free hybrid flag count (disagreement + confidence + entity), averaged across this provider\'s cells. Includes self-reported low-confidence spans, so only directly comparable among the providers that report confidence at all -- NOT what Rank is computed from (see avgPeerFlagCount).'),
