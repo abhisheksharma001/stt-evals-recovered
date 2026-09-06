@@ -1,3 +1,37 @@
+## Found 2026-09-07 (shipping M-10d): "expect 0 occurrences" is the wrong shape for a copy fix
+
+M-10d's Verify line said to grep the built bundle for "Lower is better" and **expect 0**.
+Ten occurrences in the shipped bundle are correct: disagreements, unsure words, flags and
+cost really are lower-is-better. Only the ones attached to `latencyFinalMs` were false.
+
+An acceptance written as a count of a phrase pressures the executor into deleting true
+statements to go green, and it is not a hypothetical: stripping every "Lower is better."
+from the component **satisfies the step as written**, and was run as a break test -- it
+fails only because a separate test guards the true copy.
+
+The check that replaced it asserts three things instead of one: the false forms are
+absent, the new honest wording is present, and the total count of the phrase is **greater
+than zero**. Any future copy step that names a phrase should assert what the phrase is
+attached to, never how many times it appears.
+
+## Found 2026-09-07 (shipping M-10d): a page-wide sweep cannot see a page with no render test
+
+`artifacts/stt-benchmark/src/pages/__render__/` holds render tests for Bulks, Calls,
+Overview, Results and Setup. There is **no Corpus render test**, and there was none for
+the component it renders -- so M-10a's page-wide `[title]` sweep, built precisely to stop
+this class of miss, could never have reached the copy M-10d fixed.
+
+Two gaps, both worth generalising:
+
+1. The sweep read `[title]` only. The surviving claim was in an `aria-label` on the sort
+   arrow and in visible legend text.
+2. Two of the app's pages (Corpus, and the `/review` Listen page) have no render test at
+   all, so no page-level guard covers them.
+
+Worth a step: a render test per page, or a build-output check that scans the whole bundle
+for a direction claim attached to a metric name, which would cover pages nobody has
+written a test for yet.
+
 ## Found 2026-09-07 (shipping M-10c): a provider with no price ranks as if it were free
 
 `hybridCompositeScore` (`lib/scoring/src/hybrid.ts:490`) scores a null `costPerMinute` as
@@ -149,6 +183,16 @@ therefore misleading on a Cartesia row in exactly the way Results was.
 Not fixed as a drive-by. Assigned to **M-10b**, the step that makes the number mean
 something, because a wording fix that lands before the measurement would have to be
 written twice.
+
+> **Corrected 2026-09-07 while shipping M-10d.** `Corpus.tsx` does **not** have its own
+> Speed column -- it has no `Speed` and no `latencyFinal` reference at all. The column and
+> its tooltip are in `artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`,
+> which Corpus is the only page to import. `Corpus.tsx` line 373 *does* contain the phrase
+> "Lower is better", on **disagreements**, where it is true -- so this entry sent a reader
+> to a file whose only match was a correct one. Two further false claims were live and
+> unrecorded: `Rankings.tsx`'s `DIRECTION.latencyFinalMs = "↓"` (aria-label "lower is
+> better", in the same cell as M-10a's disclaiming tooltip) and the page legend "Lower is
+> better for disagreements, flags, **speed** and price". All three fixed in M-10d.
 
 ## Found 2026-09-06 (grilling M-10): rank 1 claims it had the fewest flags when every provider tied
 

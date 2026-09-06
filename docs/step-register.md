@@ -2529,7 +2529,37 @@ quotes):**
 
 ---
 
-### M-10d — Show the end-of-audio latency, and stop calling the old one "lower is better"
+### M-10d — Stop calling the Speed number "lower is better"
+
+**Status:** `done` 2026-09-07 (PR #107, `f7dbd70`), deployed `25f7c9f7f41c -> f7dbd704ddcb`.
+
+**Retitled and halved while shipping.** It was written as one step covering both the copy
+fix and the display of `latencyEndOfAudioMs`. The display half moved to **M-10e** (see
+below): it needs a column on `benchmark_rankings` that does not exist and that the step
+never named, and it has nothing to show -- **0 of 999 score rows carry a value**, and 6
+of the 7 providers can never carry one.
+
+**The step named the wrong file, and the wrong file was a trap.** It said the offending
+tooltip is in `artifacts/stt-benchmark/src/pages/Corpus.tsx`. It is not: it is in
+`artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`, which Corpus is
+the only page to import. `Corpus.tsx` does contain the phrase "Lower is better" -- at line
+373, on **disagreements**, where it is **true**. Following the step literally edits the
+correct copy and leaves the wrong copy untouched.
+
+**Its acceptance was unachievable.** The Verify line said to grep the built bundle for
+"Lower is better" and **expect 0**. Ten occurrences are correct statements about
+disagreements, unsure words, flags and cost. Meeting the step as written meant deleting
+true sentences. The check actually run after deploy asserts the *five* false forms are
+gone, the *new* honest copy is present, and the total count is **greater than zero** --
+verified: 5 x 0, 3 x present, 10 total.
+
+**Three false claims, not one.** The step named the Speed tooltip. Also live:
+- `Rankings.tsx` `DIRECTION.latencyFinalMs = "↓"`, rendered as a span whose `aria-label`
+  reads "lower is better" -- in the same cell as M-10a's tooltip disclaiming the number.
+- `Rankings.tsx` page legend: "Lower is better for disagreements, flags, **speed** and
+  price".
+- `provider-comparison-section.tsx` section header: "Lower is better on every number in
+  this table", as visible text **and** as its own tooltip, with Speed in that table.
 
 **PR:** one.
 **Depends on:** M-10b.
@@ -2556,6 +2586,87 @@ at `artifacts/stt-benchmark/dist/public` for "Lower is better" and expect 0 —
 so the guard here must sweep every `[title]` on the document.
 **Must not:** must not put the new number into `hybridCompositeScore`, must not render 0
 or "—" as if it were a measurement, must not re-run a bulk to populate the column.
+
+**Shipped as:** `Rankings.tsx` (DIRECTION now `"↓" | "↑" | null`, Speed null, header
+renders no arrow; legend rewritten), `provider-comparison-section.tsx` (header + Speed
+column), `ComparisonBody` exported, new jsdom test
+`components/provider-comparison-section.test.tsx`, and the Results page-wide sweep widened.
+stt-benchmark 121 -> 124.
+
+**What was learned:**
+
+1. **A guard is only as wide as the attribute it reads.** M-10a built a page-wide sweep
+   over `[title]`. The claim that survived lived in an `aria-label` and in visible legend
+   text, one and three elements away. The sweep now covers both -- and asserts the *other*
+   columns keep their arrows, so it cannot pass by stripping every direction on the page.
+2. **A page-wide sweep cannot reach a page with no render test.** Corpus has none; the
+   component it renders had none either. That, not subtlety, is why this survived. The fix
+   was a component-level test, not a wider grep.
+3. **"Expect 0 occurrences" is almost always the wrong acceptance for a copy fix.** The
+   same words are true somewhere else on the same page. An acceptance written as a count
+   pressures the executor into deleting correct statements to go green -- proved by
+   breaking: stripping every "Lower is better." from the component satisfies the step as
+   written and fails the test that guards true copy.
+4. **A disclaimer next to a recommendation is worse than either alone.** M-10a's tooltip
+   said the number means two different things; the arrow in the same cell said minimise
+   it. A reader trusts the arrow -- it is shorter, and it is the thing the column is
+   sorted by.
+5. **The register's own file paths need re-deriving, not reading.** Third time a step
+   named a file the string was not in (M-8a, M-9, now this). The new part is that the
+   named file contained a *correct* instance of the exact phrase to remove.
+
+**visual-and-research:** not run. This is removing a false direction claim, not choosing
+new copy -- the honest wording already existed in M-10a's approved `latencyFinalMs`
+tooltip on the same page, and was reused verbatim.
+
+---
+
+### M-10e — Serialise and show the end-of-audio latency
+
+**PR:** one.
+**Depends on:** M-10b (the column), M-10d (the Speed copy it sits beside). Best done
+**before M-11**, which produces the first Deepgram streaming rows and would otherwise
+write a number nothing can display.
+
+**Files:** `lib/db/src/schema/benchmark-rankings.ts`,
+`artifacts/api-server/src/lib/run-executor.ts` (`aggregateRankingRows`),
+`lib/api-spec/openapi.yaml` **and the two generated clients it regenerates**
+(`lib/api-zod/src/generated/**`, `lib/api-client-react/src/generated/**`),
+`artifacts/api-server/src/routes/benchmark.ts`,
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`,
+`artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+
+**Today:** `benchmark_scores.latency_end_of_audio_ms` exists (M-10b) and run-executor
+writes it, but **nothing reads it**. It is not in the OpenAPI schema, not in either
+generated client, and on no page. `benchmark_rankings` carries `latency_first_partial_ms`
+and `latency_final_ms` and has **no end-of-audio column at all** -- M-10b added the column
+to `benchmark_scores` only, so the aggregate has nothing to serialise. M-10d's step text
+missed this; it listed neither the rankings schema nor run-executor.
+
+**Data state, and why this step is not urgent:** `select count(latency_end_of_audio_ms)
+from benchmark_scores` = **0 of 999**. Six of the seven providers are batch adapters and
+will always be null. Cartesia rows can only be filled by a paid re-run, and the 207
+existing ones can never be backfilled (`rawOutput` drops `receivedAtMs`, O-35). Shipping
+this today renders a column of dashes.
+
+**Change:** add the nullable column to `benchmark_rankings`, average it in
+`aggregateRankingRows` the way `latencyFinalMs` is averaged, serialise it, regenerate both
+clients, and show it in its own column distinct from Speed -- with a dash, never a zero,
+where it is null, and a tooltip that says end-of-**audio**, not end-of-speech (trailing
+silence is included).
+
+**Acceptance:** WHEN a ranking row has no end-of-audio latency THEN the column SHALL
+render a dash and no number, AND WHEN a Cartesia row has one THEN it SHALL render distinct
+from the Speed column and SHALL NOT feed Rank.
+
+**Verify:** `pnpm run typecheck`; the render suite; the post-deploy bundle check written
+for M-10d, extended to assert the new column's honest tooltip is present. A live number
+needs one paid Cartesia call and is a **go-spend**, not part of this step.
+
+**Must not:** must not put the number into `hybridCompositeScore`, must not render 0 or a
+dash as if it were a measurement, must not re-run a bulk to populate the column, must not
+relabel it "end-of-speech".
 
 ---
 
