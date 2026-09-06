@@ -38,6 +38,7 @@ import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
 import { getOrCacheAudioBytes, readCellAudioSource, type CellAudio, type CellAudioSource } from "./audio-cache";
 import { computeHybridFlagsForRun } from "./hybrid-flagging";
+import { rank1Recommendation, runnerUpRecommendation } from "./ranking-recommendation";
 import { runAutoAgentVerificationForRun } from "./agent-verify";
 import { drainWithConcurrency, envInt } from "./concurrency";
 
@@ -1348,6 +1349,11 @@ function aggregateRankingRows(
         avgPeerFlagSeverityScore,
         peerFlagsPer100Words,
         cleanCallRate,
+        // M-10c: the exact number the composite ranked on. Not
+        // reconstructible from avgPeerFlagCount + avgPeerFlagSeverityScore
+        // -- those two average independently over their own non-null cells,
+        // so a cell with one side null makes the sum differ from this.
+        flagBadness,
         composite,
         sampleSize: rows.length,
       };
@@ -1369,6 +1375,21 @@ function aggregateRankingRows(
       sampleSize < 12
         ? `Confidence: low -- only ${sampleSize} scored call(s) for this provider in this group (decision bar is >=12, PRD AC-FULL-1). Do not treat as decision-grade.`
         : `Based on ${sampleSize} scored call(s) for this provider in this group.`;
+
+    // M-10c: the sentence has to look at the whole group, not just this
+    // row, because "fewest" and "cheapest" are claims about the others.
+    // 2026-08-27, per Abhishek ("remove the property management term ...
+    // it's in the decision logic"): the raw vertical enum (e.g.
+    // "property_management") used to be embedded in this sentence -- an
+    // internal code name leaking into what's meant to read as a clean,
+    // market-standard recommendation, and redundant with the assistant name
+    // already shown above it. Dropped entirely rather than reformatted;
+    // vertical stays available in the CSV export for anyone who needs it.
+    const groupPhrase = assistantId ? "this assistant's calls" : "calls with no assistant on file";
+    const recommendationInputs = providerAggregates.map((a) => ({
+      flagBadness: a.flagBadness,
+      costPerMinute: a.costPerMinute,
+    }));
 
     rankingRows.push(
       ...providerAggregates.map((agg, index) => ({
@@ -1408,16 +1429,8 @@ function aggregateRankingRows(
           agg.composite === null
             ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
             : index === 0
-              // 2026-08-27, per Abhishek ("remove the property management
-              // term ... it's in the decision logic"): the raw vertical enum
-              // (e.g. "property_management") used to be embedded in this
-              // sentence -- an internal code name leaking into what's meant
-              // to read as a clean, market-standard recommendation, and
-              // redundant with the assistant name already shown above it.
-              // Dropped entirely rather than reformatted; vertical stays
-              // available in the CSV export for anyone who needs it.
-              ? `Leading candidate for ${assistantId ? "this assistant's calls" : "calls with no assistant on file"} -- fewest/least-severe hybrid flags among ready providers. ${confidenceNoteFor(agg.sampleSize)}`
-              : `Behind rank 1 on hybrid flag composite (more or more-severe cross-provider/confidence/entity flags). ${confidenceNoteFor(agg.sampleSize)}`,
+              ? `${rank1Recommendation(recommendationInputs, groupPhrase)} ${confidenceNoteFor(agg.sampleSize)}`
+              : `${runnerUpRecommendation(recommendationInputs[index]!, recommendationInputs[0]!)} ${confidenceNoteFor(agg.sampleSize)}`,
       })),
     );
   }
