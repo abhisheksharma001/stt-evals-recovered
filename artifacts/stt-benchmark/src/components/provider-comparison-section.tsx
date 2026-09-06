@@ -53,7 +53,11 @@ export function ProviderComparisonSection({ callId, bulkId }: { callId: string; 
   return <ComparisonBody data={q.data} />
 }
 
-function ComparisonBody({ data }: { data: CallComparison }) {
+// M-10d: exported so the column copy can be swept by a test. Corpus is the
+// only page that renders this component and it has no render test, which is
+// how "Time to the final transcript. Lower is better." survived M-10a's
+// page-wide sweep of Results.
+export function ComparisonBody({ data }: { data: CallComparison }) {
   // T-135: playbackRate resets whenever the element remounts (key= changes
   // per call), so it is re-applied onLoadedMetadata as well as on click.
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
@@ -187,7 +191,7 @@ function ComparisonBody({ data }: { data: CallComparison }) {
       {/* Rows */}
       <section className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground" title="Lower is better on every number in this table">Provider outputs · lower is better</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground" title="Lower is better on disagreements, unsure words and cost. Not on Speed -- see that column.">Provider outputs</h4>
           <span className="text-[10px] font-mono text-muted-foreground">
             {data.rows.length} provider{data.rows.length === 1 ? "" : "s"}
             {missing > 0 && <>, <span className="text-warning">{missing} without output</span></>}
@@ -221,7 +225,15 @@ function ComparisonBody({ data }: { data: CallComparison }) {
               <span className="text-right" title={`Words that differ from ${referenceLabel} / words in the reference. Can exceed the reference length when a transcript is much longer than it.`}>Differ / ref</span>
               <span className="text-right" title="Disagreements with the other providers + entity mismatches only (confidence excluded, comparable across all providers). Lower is better.">Disagreements ↓</span>
               <span className="text-right" title="Low-confidence spans this provider reported itself (only providers that report confidence). Lower is better.">Unsure words ↓</span>
-              <span className="text-right" title="Time to the final transcript. Lower is better.">Speed ↓</span>
+              {/* M-10d: was "Time to the final transcript. Lower is better." and
+                  "Speed ↓". It is `latencyFinalMs`, which is file turnaround
+                  for the six batch adapters and roughly the length of the
+                  call for Cartesia, whose adapter streams at real time
+                  (CHUNK_BYTES 6400 every SEND_INTERVAL_MS 190). Two
+                  measurements under one label, so there is no direction to
+                  claim -- the same defect M-10a removed from Results, still
+                  live here because M-10a's guard only swept that page. */}
+              <span className="text-right" title="Time from sending the audio to the final transcript. A batch API returns a finished file; Cartesia streams at real time, so its number is roughly the length of the call. Two different measurements: shown for reference, not comparable, and not lower-is-better.">Speed</span>
               <span className="text-right" title="Recorded cost of this transcript. Lower is better.">Cost ↓</span>
             </div>
             {data.productionRow && (
