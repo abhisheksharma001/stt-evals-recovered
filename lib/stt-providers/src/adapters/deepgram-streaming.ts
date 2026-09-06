@@ -175,6 +175,24 @@ export function deepgramStreamDiarizationScore(events: DeepgramStreamEvent[]): n
 
 // ---- Live adapter ----
 
+/** M-11e. The socket's URL and its subprotocols, kept pure so that "the
+ * credential never appears in the URL" is testable without opening a socket.
+ * Deepgram documents two ways to authenticate a Listen socket: the
+ * `Authorization` header, which the global Node `WebSocket` cannot set, and
+ * the subprotocol pair `Sec-WebSocket-Protocol: token, <API_KEY>` for exactly
+ * that case. The query string carries no credential -- v1 /listen's
+ * documented parameter list contains no `token`, which is what M-11a got
+ * wrong when it put the key there. */
+export function deepgramStreamSocketArgs(
+  apiKey: string,
+  params: URLSearchParams,
+): { url: string; protocols: [string, string] } {
+  return {
+    url: `wss://api.deepgram.com/v1/listen?${params.toString()}`,
+    protocols: ["token", apiKey],
+  };
+}
+
 export const deepgramStreamingAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
   // Same vendor as the batch adapter, deliberately: it is the same account
@@ -224,10 +242,8 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
     const pcm = input.audioBytes.subarray(wav.dataOffset, wav.dataOffset + wav.dataLength);
     const responseTimeoutMs = scaledPollTimeoutMs(input.audioDurationSeconds);
 
-    // token (query param), not the Authorization header: the global Node
-    // WebSocket client cannot set request headers, and Deepgram documents
-    // the query parameter for Listen v1/v2 for exactly that case. Same
-    // reason cartesia.ts uses access_token.
+    // No credential in here: it rides in the subprotocol instead, see
+    // deepgramStreamSocketArgs above.
     const params = new URLSearchParams({
       model: input.model ?? DEFAULT_API_MODEL,
       encoding,
@@ -243,12 +259,11 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
       // server sends only finished segments, and RUN-02's time-to-first-
       // partial would be the time to the first FINAL, silently.
       interim_results: "true",
-      token: apiKey,
     });
     if (input.keywordBoosts?.length) {
       for (const term of input.keywordBoosts) params.append("keywords", term);
     }
-    const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+    const { url, protocols } = deepgramStreamSocketArgs(apiKey, params);
 
     const events: DeepgramStreamEvent[] = [];
     // M-10b: when the last audio chunk left this process. Declared out here,
@@ -284,16 +299,18 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
         resolve();
       };
 
-      // The URL carries the API key in its `token` parameter, and a thrown
-      // error's message is written verbatim into
+      // A thrown error's message is written verbatim into
       // benchmark_provider_call_results.error_message and rendered on screen
-      // (run-executor.ts, the `if (!result)` branch). So nothing this
-      // constructor might say about the URL is ever repeated: the message is
-      // a constant. Resolves directly rather than through finish(), which
-      // reads timers that do not exist yet at this point.
+      // (run-executor.ts, the `if (!result)` branch). Since M-11e the URL no
+      // longer carries the key -- it rides in the subprotocol -- but the
+      // reasoning holds whatever the arguments contain, and this constructor
+      // can throw on the subprotocol argument too: nothing it might say is
+      // ever repeated, the message is a constant. Resolves directly rather
+      // than through finish(), which reads timers that do not exist yet at
+      // this point.
       let ws: WebSocket;
       try {
-        ws = new WebSocket(url);
+        ws = new WebSocket(url, protocols);
       } catch {
         settled = true;
         connectError = "Deepgram streaming WebSocket could not be opened.";

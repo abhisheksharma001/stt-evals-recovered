@@ -11,6 +11,7 @@ import {
   deepgramEncodingForBitDepth,
   deepgramStreamChunkBytes,
   deepgramStreamDiarizationScore,
+  deepgramStreamSocketArgs,
   deepgramStreamingAdapter,
   reduceDeepgramStreamTranscript,
   type DeepgramStreamEvent,
@@ -531,5 +532,35 @@ describe("registry resolution with two Deepgram adapters", () => {
     );
     expect(listers).toHaveLength(1);
     expect(listers[0]).toBe(deepgramAdapter);
+  });
+});
+
+describe("deepgramStreamSocketArgs (M-11e)", () => {
+  const params = () =>
+    new URLSearchParams({ model: "nova-3", encoding: "linear16", sample_rate: "16000" });
+
+  it("carries the credential in the subprotocol, never in the URL", () => {
+    const key = "dg-live-secret-value";
+    const { url, protocols } = deepgramStreamSocketArgs(key, params());
+    expect(url).not.toContain(key);
+    expect(url).not.toContain("token=");
+    expect(protocols).toEqual(["token", key]);
+  });
+
+  it("does not smuggle a key with URL-special characters in encoded", () => {
+    const key = "a/b+c=d e";
+    const { url } = deepgramStreamSocketArgs(key, params());
+    const asAParam = new URLSearchParams({ v: key }).toString().slice(2);
+    expect(url).not.toContain(key);
+    expect(url).not.toContain(asAParam);
+    expect(url).not.toContain(encodeURIComponent(key));
+  });
+
+  it("still addresses v1 listen and keeps every query parameter", () => {
+    const { url } = deepgramStreamSocketArgs("secret", params());
+    expect(url.startsWith("wss://api.deepgram.com/v1/listen?")).toBe(true);
+    expect(url).toContain("model=nova-3");
+    expect(url).toContain("encoding=linear16");
+    expect(url).toContain("sample_rate=16000");
   });
 });
