@@ -7,7 +7,9 @@ it should be able to open this file, read one step, and do it — without asking
 meant. If a step needs something only a past session knows, the step is wrong.
 
 **Status legend:** `todo` · `blocked` (waiting on Abhishek, says why) · `done` (says what
-was learned, not just a tick).
+was learned, not just a tick) · `split` (the step was wrong or was really several steps;
+the header stays so nothing citing its id dangles, and the corrections are written into
+it rather than quietly elsewhere).
 
 **Ship a step:** branch → do exactly that step → typecheck + tests → prove by breaking →
 self-review → PR → CI → squash-merge → fast-forward → deploy → verify live → mark done.
@@ -2884,50 +2886,173 @@ gap knowingly, not because the match was close.
 
 ### M-11 — Deepgram streaming rows: nova-3 and Flux
 
-**PR:** one.
-**Depends on:** M-5 (customer audio), M-10b (`latencyEndOfAudioMs`).
-**Corrected 2026-09-07 while shipping M-10b:** this said `M-10 (mode)`. M-10 no longer
-exists — it split into M-10a/b/c — and `mode` was part of the retired body.
-**Files:** new file lib/stt-providers/src/adapters/deepgram-streaming.ts (plain: not
-written yet), `lib/stt-providers/src/registry.ts` (`providerCatalog` entries
-`deepgram-nova-3-streaming`, `deepgram-flux-general-en-streaming`),
-`lib/stt-providers/src/adapters/parsers.test.ts` (reduce a recorded message sequence to
-a final transcript + first-partial time, as the Cartesia tests do),
-`docs/provider-data-samples.md` (one real Flux message sample, redacted).
-**Today:** every Deepgram row calls `POST /v1/listen` (batch). Flux — production for 86
-of 121 calls — has no batch endpoint and cannot be run.
-**Change:** a WebSocket adapter modelled on `lib/stt-providers/src/adapters/cartesia.ts`:
-`wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000…` for
-nova-3 and `wss://api.deepgram.com/v2/listen?model=flux-general-en…` for Flux (Flux
-requires v2). Audio is sent in 20 ms chunks paced at real time from the customer file;
-`firstPartialAt` = first non-empty transcript message; `finalAt` = the final transcript
-after the close/finalize message.
+**Status:** `split` 2026-09-07 into M-11a…M-11d below. Kept as a header so nothing that
+cites "M-11" dangles. The grill before building found four claims in this step wrong and
+one piece of work that was really four. Corrections are written here, in the place the
+claims were made, per the standing rule.
 
-**Corrected 2026-09-07 while shipping M-10b.** This used to read: "`latencyFinalMs` is
-measured from the moment the last audio chunk was sent (end of speech), not from the
-first." That is wrong and would have undone M-10a. `latencyFinalMs` is
-`finalAt - submittedAt` on all seven adapters; redefining it for streaming rows only
-gives one column a third meaning inside one sorted table, which is precisely what M-10a
-had to take out of the ranking composite. The end-of-audio figure goes in
-`benchmark_scores.latency_end_of_audio_ms` (M-10b), and this adapter populates
-`ProviderTranscribeResult.latencyEndOfAudioMs` the way `cartesia.ts` already does —
-anchored on the last final segment that carried text, never on `finalAt`, which is
-stamped after the adapter's own idle-close wait. Raw output = the full message
-log. Price: nova-3 streaming $0.0043/min (list), Flux $0.0065/min (Deepgram pricing page,
-read 2026-09-04) — both rows created `mode: streaming`, disabled until the first live
-check passes.
-**Acceptance:** WHEN one cached customer file is streamed at real time to each row THEN
-the cell SHALL store a final transcript, a `latencyEndOfAudioMs` under 2,000 ms, a
-`firstPartialAt`, and a raw message log — and the adapter SHALL never send faster than
-real time.
-**Verify:** `pnpm run typecheck`; `cd lib/stt-providers && pnpm run test` (parser cases
-on a recorded sample). Live, with the go already given ("spend $3–5", 2026-09-04): an
-ad-hoc run of ONE Land And Apartment call on both rows (≈ $0.02), then read the result
-rows. Record the two latencies in the PR body.
-**Must not:** run more than one call before the single-call check is green; enable the
-rows for bulks before Abhishek sees the first numbers; send audio faster than real time.
+**Correction 1 — this was two adapters, not one.** The step said "a WebSocket adapter"
+serving both nova-3 and Flux. Verified against the real API 2026-09-07: they speak two
+different protocols with nothing shared to parse.
+- nova-3: `wss://api.deepgram.com/v1/listen`, messages `{"type":"Results","is_final":…,
+  "channel":{"alternatives":[{"transcript":…}]}}`, client flushes with
+  `{"type":"Finalize"}` then `{"type":"CloseStream"}`.
+- Flux: `wss://api.deepgram.com/v2/listen`, messages
+  `{"type":"TurnInfo","event":"EndOfTurn","transcript":…,"words":[…]}` — no `is_final`,
+  no `channel`, events `Update` / `StartOfTurn` / `EagerEndOfTurn` / `TurnResumed` /
+  `EndOfTurn`. Client closes with `{"type":"CloseStream"}`.
+  (https://developers.deepgram.com/reference/speech-to-text/listen-flux and
+  .../listen-streaming, both read 2026-09-07.)
+
+**Correction 2 — the nova-3 streaming price was wrong.** This step said $0.0043/min.
+That is Deepgram's *batch* nova-3 price, which is what the existing `deepgram-nova-3`
+row already carries. Streaming nova-3 is **$0.0048/min promotional, $0.0077/min
+regular** (deepgram.com/pricing, read 2026-09-07). Flux English streaming is $0.0065/min
+promotional, $0.0077/min regular — this step quoted the promotional figure while the
+`deepgram-flux-general-en` row already in the database carries 0.0077, the regular one.
+This matters beyond tidiness: cost is 15% of the ranking composite since M-10a, and a
+row priced at the batch rate would have been ranked cheaper than it is.
+
+**Correction 3 — `mode: streaming` does not exist.** This step said both rows are
+"created `mode: streaming`". There is no such field. `ProviderCatalogEntry` is
+`{ adapterId, apiModel }` and nothing more; `benchmark_providers` has `id`, `name`,
+`model`, `status`, `supports_streaming`, `supports_diarization`, `cost_per_minute`,
+`keyword_boosting`, `config_note`, `manually_disabled` and the timestamps. The one
+field that sounds like it — `supports_streaming` — is already `true` on 10 of the 11
+rows because it records the *vendor's* API capability, not how our adapter runs (M-10f).
+A row is marked not-for-use with `manually_disabled`, which is what M-11a actually does.
+
+**Correction 4 — the Flux row already exists.** `deepgram-flux-general-en` is a live
+`benchmark_providers` row (`manually_disabled = t`, cost 0.0077) *and* a `providerCatalog`
+entry pointing at the batch `deepgramAdapter` — an adapter that cannot serve it, since
+Flux has no batch endpoint. So this is a broken mapping to repair, not a clean new id to
+add; creating `deepgram-flux-general-en-streaming` beside it would leave two Flux rows,
+one of them permanently unrunnable. M-11c repairs it.
+
+**Found while grilling, and the reason the rows ship disabled:** `timed-words.ts` and
+`provider-confidence.ts` both branch on `vendorOfProviderId(...) === "deepgram"` and then
+read the *batch* response shape (`results.channels[0].alternatives[0].words`). A
+streaming row stores `{ events: [...] }`, so both return null — safely, but silently. No
+per-word confidence means no confidence contribution to hybrid flagging, and flags are
+85% of the ranking composite. Enabling a streaming row before M-11b lands would put a row
+in the ranking whose flag score was computed from less evidence than every row beside it.
 
 ---
+
+### M-11a — Deepgram nova-3 streaming adapter (no live call)
+
+**PR:** one.
+**Depends on:** M-10b (`latencyEndOfAudioMs`).
+**Files:** new file lib/stt-providers/src/adapters/deepgram-streaming.ts (plain: not
+written yet), `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/index.ts`,
+`lib/stt-providers/src/adapters/parsers.test.ts`.
+**Today:** every Deepgram row calls `POST /v1/listen` (batch). `cartesia.ts` is the only
+adapter in the package that opens a socket, so the end-of-audio column M-10e/M-10f built
+has exactly one provider that can ever fill it.
+**Change:** a Deepgram **v1** streaming adapter modelled on `cartesia.ts`.
+`wss://api.deepgram.com/v1/listen?model=<catalog apiModel>&encoding=linear16&
+sample_rate=<from the WAV header>&channels=1&interim_results=true&punctuate=true&token=<key>`.
+Auth goes in the `token` query parameter, not the `Authorization` header: the global Node
+`WebSocket` cannot set request headers (the same reason `cartesia.ts` uses `access_token`),
+and Deepgram documents the query parameter for Listen v1/v2 exactly for that case.
+Chunk size is **computed from the WAV header** — `sampleRate × bytesPerSample × 200 ms` —
+and sent on a 200 ms interval, so the stream runs at real time at any sample rate.
+(`cartesia.ts` hardcodes 6400 bytes every 190 ms, which is real time only for 16 kHz
+16-bit audio and 5% faster than real time even then; logged, not changed here.)
+Reuses `parseWavPcm` and `endOfAudioLatencyMs` from `cartesia.ts` rather than
+re-deriving them — one definition of the measurement is the whole point of M-10b.
+Registers `providerCatalog["deepgram-nova-3-streaming"]`. The adapter declares
+`vendor: "deepgram"` (same account, so the same concurrency bucket and the same
+confidence/timed-word treatment) but **must not** declare `listModels`: the
+`/benchmark/providers/models` route groups adapters by vendor, so a second adapter with
+`listModels` and vendor `"deepgram"` would render two Deepgram cards on Setup.
+**Acceptance:** WHEN a recorded Deepgram v1 message sequence is reduced THEN the adapter
+SHALL return the concatenated `is_final` transcripts, a first-partial offset taken from
+the first message carrying text, and a last-final offset taken from the last message that
+contributed text — AND `getProviderAdapter("deepgram-nova-3-streaming")` SHALL return the
+streaming adapter while `getProviderAdapter("deepgram-nova-3")`,
+`getProviderAdapter("deepgram-nova")` and `getProviderAdapter("deepgram-flux-general-en")`
+SHALL all still return the batch adapter.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/stt-providers run test`.
+**Must not:** call the Deepgram API — this step spends nothing and opens no socket;
+create the `benchmark_providers` row enabled, or at all (M-11d does that, after M-11b);
+declare `listModels` on the new adapter; change `cartesia.ts`; change the batch
+`deepgram.ts`.
+
+---
+
+### M-11b — Read timed words and confidence out of a Deepgram streaming response
+
+**PR:** one.
+**Depends on:** M-11a.
+**Files:** `artifacts/api-server/src/lib/timed-words.ts`,
+`artifacts/api-server/src/lib/provider-confidence.ts`, and their tests.
+**Today:** both files branch on `vendorOfProviderId(...) === "deepgram"` and read
+`results.channels[0].alternatives[0].words`. A streaming row stores `{ events: [...] }`,
+so both return null — no timed words, no per-word confidence.
+**Change:** inside the existing `deepgram` branch of each, fall through to the streaming
+shape when the batch shape is absent: walk `events`, keep `type === "Results"` with
+`is_final === true`, read `channel.alternatives[0].words[]` (`word`, `start`, `end`,
+`confidence`; seconds, same units as the batch shape). Keep returning null — never an
+empty array — when neither shape is present.
+**Acceptance:** WHEN a stored streaming raw output is passed to
+`extractProviderTimedWords` and `extractProviderConfidenceWords` THEN each SHALL return
+the words from the `is_final` messages, AND a batch response SHALL still return exactly
+what it returns today.
+**Verify:** `pnpm run typecheck`; the api-server unit tests.
+**Must not:** change the batch code path; invent a shape not present in a captured
+response — if no real streaming response has been captured yet, this step waits for
+M-11d's message log rather than guessing.
+
+---
+
+### M-11c — Deepgram Flux adapter, and repair the broken Flux mapping
+
+**PR:** one.
+**Depends on:** M-11a.
+**Files:** new file lib/stt-providers/src/adapters/deepgram-flux.ts (plain: not written
+yet), `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/index.ts`,
+`lib/stt-providers/src/adapters/parsers.test.ts`, `docs/provider-data-samples.md`.
+**Today:** `providerCatalog["deepgram-flux-general-en"]` points at the batch adapter,
+which has no endpoint that can serve Flux. The row exists in the database, disabled.
+**Change:** a **v2** adapter — `wss://api.deepgram.com/v2/listen?model=flux-general-en&
+encoding=linear16&sample_rate=…` — reducing `TurnInfo` messages: transcript from the
+`EndOfTurn` events, first partial from the first event carrying text, last-final from the
+last `EndOfTurn` that contributed text. Repoint the existing catalog entry at it rather
+than adding a second id. Record one real, redacted Flux message in
+`docs/provider-data-samples.md`.
+**Acceptance:** WHEN a recorded Flux `TurnInfo` sequence is reduced THEN the adapter
+SHALL return the `EndOfTurn` transcripts joined in order, and `getProviderAdapter(
+"deepgram-flux-general-en")` SHALL return the Flux adapter.
+**Must not:** call the API; treat `EagerEndOfTurn` as final (`TurnResumed` retracts it);
+add a second Flux provider id.
+
+---
+
+### M-11d — First live streaming call, then enable the rows
+
+**PR:** one. **This is the step that spends money.**
+**Depends on:** M-11a, M-11b, M-11c.
+**Files:** `artifacts/api-server/src/routes/benchmark.ts` (`defaultProviders`),
+`docs/provider-data-samples.md`, `docs/step-register.md`.
+**Today:** the adapters exist and are unit-tested against recorded messages. Nothing has
+been sent to Deepgram over a socket, so the handshake, the finalize sequence, the real
+message shapes and the real latencies are all unverified.
+**Change:** stream ONE cached Land And Apartment call to `deepgram-nova-3-streaming` and
+one to `deepgram-flux-general-en` (≈ $0.02 total at $0.0048–$0.0065/min). Read the two
+result rows. Record both latencies and one redacted message log. Only if both are green,
+create/enable the rows at the **regular** prices ($0.0077/min for both — the promotional
+rates expire and would silently drift the cost column, which is 15% of the ranking
+composite).
+**Acceptance:** WHEN one cached call is streamed to each row THEN each cell SHALL store a
+final transcript, a `latencyEndOfAudioMs` under 2,000 ms, a `firstPartialAt` and a raw
+message log, AND the adapter SHALL never have sent audio faster than real time.
+**Verify:** the two result rows read back out of `benchmark_provider_call_results`;
+latencies quoted in the PR body.
+**Must not:** run a second call before the first is green; enable the rows for bulks
+before Abhishek has seen the numbers; run without an explicit go-spend for this step.
+**Blocked on Abhishek:** the go-spend. The 2026-09-04 "spend $3–5" go predates this
+split and is not being treated as covering it.
 
 ### M-12 — AssemblyAI Universal-Streaming row
 
