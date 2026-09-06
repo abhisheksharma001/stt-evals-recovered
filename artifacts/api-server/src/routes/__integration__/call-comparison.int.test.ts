@@ -16,14 +16,20 @@ let runId: string;
 let okProviderId: string;
 let failedProviderId: string;
 let missingProviderId: string;
+// M-10f: a provider whose cell scored fine but has no end-of-audio number,
+// which is what a batch adapter looks like -- the common case, and the one
+// that must serialise null rather than 0.
+let batchProviderId: string;
 
 beforeAll(async () => {
   const ok = await fx.provider({ name: `fx-ok-${fx.suffix}` });
   const failed = await fx.provider({ name: `fx-failed-${fx.suffix}` });
   const missing = await fx.provider({ name: `fx-missing-${fx.suffix}` });
+  const batch = await fx.provider({ name: `fx-batch-${fx.suffix}` });
   okProviderId = ok.id;
   failedProviderId = failed.id;
   missingProviderId = missing.id;
+  batchProviderId = batch.id;
 
   // Draft is the transcript Vapi itself used live -- the reference when no
   // gold exists, and never more than that (standing rule).
@@ -32,7 +38,7 @@ beforeAll(async () => {
 
   // The run promised all three providers; only two ever wrote a row.
   const run = await fx.run({
-    providerIds: [okProviderId, failedProviderId, missingProviderId],
+    providerIds: [okProviderId, failedProviderId, missingProviderId, batchProviderId],
     callIds: [callId],
     callCount: 1,
   });
@@ -44,7 +50,23 @@ beforeAll(async () => {
     // recorded it. The comparison must carry it through unchanged.
     audioSource: "customer",
   });
-  await fx.score(okResult.id, { peerFlagCount: 1, peerFlagSeverity: "low", flagCount: 1, flagSeverity: "low" });
+  // M-10f: the streamed cell measures both -- file turnaround AND the wait
+  // after the audio stops. They are different numbers, so the fixture makes
+  // them obviously different.
+  await fx.score(okResult.id, {
+    peerFlagCount: 1,
+    peerFlagSeverity: "low",
+    flagCount: 1,
+    flagSeverity: "low",
+    latencyFinalMs: 80_754,
+    latencyEndOfAudioMs: 812,
+  });
+  // M-10f: the batch cell measures only turnaround. Scored, ok, and still
+  // no end-of-audio number -- there was no moment the audio ended.
+  const batchResult = await fx.result(runId, callId, batchProviderId, {
+    hypothesisTranscript: "the quick brown fox jumps",
+  });
+  await fx.score(batchResult.id, { latencyFinalMs: 3_400 });
   await fx.result(runId, callId, failedProviderId, {
     status: "failed",
     failureClass: "provider_timeout",
@@ -67,7 +89,7 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
     expect(res.body.reference).toEqual({ kind: "draft", text: "the quick brown fox jumps" });
 
     const byProvider = new Map<string, any>(res.body.rows.map((r: any) => [r.providerId, r]));
-    expect(byProvider.size).toBe(3);
+    expect(byProvider.size).toBe(4);
 
     const okRow = byProvider.get(okProviderId);
     expect(okRow.status).toBe("ok");
@@ -109,6 +131,32 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
     // at all. Both stay null -- "mono" here would be a guess dressed as data.
     expect(byProvider.get(failedProviderId).audioSource).toBeNull();
     expect(byProvider.get(missingProviderId).audioSource).toBeNull();
+  });
+
+  // M-10f. The second serialisation path for latencyEndOfAudioMs: the
+  // rankings block carries the group average, this carries the single cell.
+  // Both had to be wired separately, so both have to be proved separately.
+  it("carries each cell's end-of-audio wait, and leaves it null where there was no end of audio", async () => {
+    const res = await request(app).get(`/api/benchmark/calls/${callId}/comparison`);
+    expect(res.status).toBe(200);
+    const byProvider = new Map<string, any>(res.body.rows.map((r: any) => [r.providerId, r]));
+
+    // Streamed: both numbers present and NOT the same number. If these ever
+    // matched, one measurement would be being served under two names.
+    expect(byProvider.get(okProviderId).latencyEndOfAudioMs).toBe(812);
+    expect(byProvider.get(okProviderId).latencyFinalMs).toBe(80_754);
+
+    // Batch: scored, ok, turnaround recorded -- and still no end-of-audio
+    // number. Null, never 0: 0 ms would claim an instant reply.
+    const batchRow = byProvider.get(batchProviderId);
+    expect(batchRow.status).toBe("ok");
+    expect(batchRow.latencyFinalMs).toBe(3_400);
+    expect(batchRow.latencyEndOfAudioMs).toBeNull();
+
+    // No score row at all, and no result row at all: both null for a third
+    // reason again -- nothing ran, not "a batch API had no end of audio".
+    expect(byProvider.get(failedProviderId).latencyEndOfAudioMs).toBeNull();
+    expect(byProvider.get(missingProviderId).latencyEndOfAudioMs).toBeNull();
   });
 
   it("404s on an unknown call and refuses a malformed id with a sentence", async () => {

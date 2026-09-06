@@ -27,10 +27,27 @@ const row = {
   // 80,754 ms is the live Cartesia average: not slowness, the length of the
   // call, because the adapter streams at real time.
   latencyFinalMs: 80_754,
+  // M-10f. The one adapter that opens a WebSocket, so the one that has an
+  // end-of-audio moment to measure from at all.
+  latencyEndOfAudioMs: 812,
   costMicrocents: 22_000,
   audioSource: "mono",
   failureClass: null,
   retryable: null,
+} as unknown as ComparisonRow
+
+/** M-10f. A batch adapter sitting beside the streaming one: same table, same
+ *  run, and permanently no end-of-audio number -- it is handed a finished
+ *  file, so there is no moment the audio ended. Both halves of the acceptance
+ *  sentence have to be on screen together or the dash cannot be told apart
+ *  from a missing measurement. */
+const batchRow = {
+  ...row,
+  providerId: "deepgram-nova-3",
+  providerName: "Deepgram Nova-3",
+  resultId: "r2",
+  latencyFinalMs: 3_400,
+  latencyEndOfAudioMs: null,
 } as unknown as ComparisonRow
 
 const data = {
@@ -45,7 +62,7 @@ const data = {
   context: null,
   ordering: "alphabetical",
   judge: null,
-  rows: [row],
+  rows: [row, batchRow],
 } as unknown as CallComparison
 
 /** Every title on the rendered component, plus its visible text. */
@@ -81,6 +98,46 @@ describe("ComparisonBody copy", () => {
     // And no title may make the blanket promise the section header used to.
     for (const t of titles) expect(t).not.toMatch(/lower is better on every number/i)
     expect(text).not.toMatch(/Provider outputs · lower is better/i)
+  })
+
+  it("shows the end-of-audio number, and explains its dash instead of implying slow", () => {
+    const { titles, text } = renderedCopy()
+
+    // The streamed provider's real number, in ms, distinct from the Speed
+    // cell beside it (80.8s) so the two are not one measurement twice.
+    expect(text).toContain("812ms")
+    expect(text).toContain("80.8s")
+
+    // The header must say why a dash is possible at all, and must not let
+    // the dash be read as a slow score or as end-of-SPEECH.
+    const header = titles.find((t) => t.includes("last audio byte"))
+    expect(header).toBeTruthy()
+    expect(header).toMatch(/batch API is handed a finished file/i)
+    expect(header).toMatch(/not slow/i)
+    expect(header).toMatch(/not end of speech/i)
+
+    // And the cell carries its own explanation, because this is the only
+    // column here whose blank is structural. Scoped to titled elements
+    // whose whole text is the dash: a sweep over every [title] would be
+    // satisfied by the header alone, which says "not slow" and not "not a
+    // slow score" -- the exact false pass M-10e hit.
+    const dashTitles = Array.from(document.querySelectorAll("[title]"))
+      .filter((el) => el.textContent?.trim() === "—")
+      .map((el) => el.getAttribute("title") ?? "")
+    expect(dashTitles.length).toBeGreaterThanOrEqual(1)
+    for (const t of dashTitles) {
+      expect(t).toMatch(/no end-of-audio moment/i)
+      expect(t).toMatch(/not a slow score/i)
+    }
+  })
+
+  it("gives the end-of-audio column a direction while Speed still has none", () => {
+    const { text } = renderedCopy()
+    // M-10d took the arrow off Speed because it is two measurements under
+    // one label. This column is one measurement, so it keeps its arrow.
+    // Asserted as a pair: nobody may "tidy" them into agreeing.
+    expect(text).toContain("After audio ends ↓")
+    expect(text).not.toContain("Speed ↓")
   })
 
   it("keeps lower-is-better where it is still true", () => {

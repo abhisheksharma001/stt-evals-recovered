@@ -37,6 +37,11 @@ export interface ComparisonRow {
   /** @nullable */
   latencyFinalMs: number | null;
   /**
+     * Ms from the last audio byte being sent to the final transcript arriving, for THIS cell. Null for every batch adapter by construction, and on cells scored before M-10b -- not a slow score. Distinct from latencyFinalMs above, which is file turnaround for a batch adapter and roughly call length for a streamed one.
+     * @nullable
+     */
+  latencyEndOfAudioMs: number | null;
+  /**
      * Micro-cents (1 cent = 10,000). null = not recorded, never zero.
      * @nullable
      */
