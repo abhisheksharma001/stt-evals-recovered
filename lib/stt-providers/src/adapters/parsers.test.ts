@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseAssemblyAiResponse } from "./assemblyai";
 import {
   cartesiaEncodingForBitDepth,
+  endOfAudioLatencyMs,
   parseWavPcm,
   reduceCartesiaTranscript,
 } from "./cartesia";
@@ -236,5 +237,57 @@ describe("reduceCartesiaTranscript", () => {
     const result = reduceCartesiaTranscript([], 1000);
     expect(result.transcript).toBeNull();
     expect(result.firstPartialMs).toBeNull();
+    expect(result.lastFinalMs).toBeNull();
+  });
+
+  // M-10b. lastFinalMs anchors end-of-audio latency, so it has to track the
+  // last segment that CONTRIBUTED TEXT -- not the last message of any kind.
+  it("times the last final segment, ignoring later partials and non-final chatter", () => {
+    const result = reduceCartesiaTranscript(
+      [
+        { message: { type: "transcript", is_final: true, text: "load number" }, receivedAtMs: 1800 },
+        { message: { type: "transcript", is_final: true, text: "four four one two" }, receivedAtMs: 2400 },
+        { message: { type: "transcript", is_final: false, text: "and" }, receivedAtMs: 2900 },
+        { message: { type: "flush_done" }, receivedAtMs: 3500 },
+      ],
+      1000,
+    );
+    expect(result.lastFinalMs).toBe(1400);
+  });
+
+  it("does not count an is_final segment that carried no text", () => {
+    const result = reduceCartesiaTranscript(
+      [
+        { message: { type: "transcript", is_final: true, text: "load number" }, receivedAtMs: 1800 },
+        { message: { type: "transcript", is_final: true, text: "" }, receivedAtMs: 2600 },
+      ],
+      1000,
+    );
+    expect(result.transcript).toBe("load number");
+    expect(result.lastFinalMs).toBe(800);
+  });
+});
+
+describe("endOfAudioLatencyMs", () => {
+  it("measures from the last audio chunk out to the last final segment in", () => {
+    expect(endOfAudioLatencyMs(9_400, 8_600)).toBe(800);
+  });
+
+  it("is null, not zero, when either anchor was never observed", () => {
+    expect(endOfAudioLatencyMs(null, 8_600)).toBeNull();
+    expect(endOfAudioLatencyMs(9_400, null)).toBeNull();
+    expect(endOfAudioLatencyMs(null, null)).toBeNull();
+  });
+
+  // The truncated-stream shape: the vendor's last text predates the last
+  // chunk we sent, so no transcription happened after the audio ended.
+  // 11% of the 207 live Cartesia rows measured this way. Zero would read as
+  // "instant", which is the opposite of what that row means.
+  it("is null, not negative and not zero, when the last final predates the last chunk", () => {
+    expect(endOfAudioLatencyMs(5_000, 8_600)).toBeNull();
+  });
+
+  it("keeps a genuine zero-length gap distinguishable from an unmeasured one", () => {
+    expect(endOfAudioLatencyMs(8_600, 8_600)).toBe(0);
   });
 });

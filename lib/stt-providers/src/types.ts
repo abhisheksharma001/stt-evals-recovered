@@ -59,6 +59,28 @@ export type ProviderTranscribeResult = {
    */
   firstPartialAt?: string | null;
   /**
+   * M-10b: milliseconds from the last audio chunk leaving this process to
+   * the last final transcript segment arriving. Only a streaming adapter
+   * can produce it -- the two anchors exist solely inside the socket, and
+   * nothing the executor stores can reconstruct them, which is why this is
+   * a derived number here rather than a pair of timestamps the executor
+   * subtracts (the shape `firstPartialAt` above uses).
+   *
+   * It is NOT `finalAt - <end of audio>`. `finalAt` is stamped when the
+   * socket settles, which is after this adapter's own IDLE_CLOSE_MS wait,
+   * so it carries a constant of our own making: measured across 207 live
+   * Cartesia rows the end-of-audio-to-`finalAt` gap sits at p25 2,580 ms /
+   * median 2,983 ms / p75 3,358 ms, clustered around the 2,000 ms timer
+   * rather than around anything Cartesia did. Anchoring on the last final
+   * transcript message instead measures the vendor.
+   *
+   * It is also NOT end-of-speech latency: the anchor is the end of the
+   * recording, so trailing silence inflates it. Naming it for what it
+   * measures is the point -- `latencyFinalMs` already cost us a ranking by
+   * meaning two things at once (M-10a).
+   */
+  latencyEndOfAudioMs?: number | null;
+  /**
    * T-06: why this failed, set by the adapter that saw the actual response.
    * Required in spirit whenever `status === "failed"` -- an adapter that
    * omits it is recorded as `unknown` by the executor rather than having a

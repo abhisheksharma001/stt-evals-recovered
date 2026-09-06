@@ -19,6 +19,20 @@ export const benchmarkScoresTable = pgTable("benchmark_scores", {
   alphanumericAccuracy: real("alphanumeric_accuracy"),
   latencyFirstPartialMs: integer("latency_first_partial_ms"),
   latencyFinalMs: integer("latency_final_ms"),
+  // M-10b (2026-09-07): the gap between the audio running out and the last
+  // final transcript segment arriving. Streaming adapters only -- Cartesia
+  // is the sole one today, so this is null on the other six by design, and
+  // null (never 0) on a streaming cell where the anchors were not observed.
+  //
+  // Kept beside latencyFinalMs rather than folded into it on purpose.
+  // latencyFinalMs is `finalAt - submittedAt`: file turnaround for a batch
+  // adapter, the length of the call for a streaming one. M-10a took it out
+  // of the ranking composite for exactly that ambiguity; giving it a third
+  // meaning would repeat the mistake. This column means one thing.
+  //
+  // Not end-of-SPEECH latency: the anchor is the end of the recording, so
+  // trailing silence counts against it. See lib/stt-providers/src/types.ts.
+  latencyEndOfAudioMs: integer("latency_end_of_audio_ms"),
   // T-11 fix (2026-08-27, base-solidity review): costPerMinute above is
   // mislabeled -- it has always held the cost of THIS ONE CELL (provider
   // rate * this call's duration), not a per-minute rate, and that leaked

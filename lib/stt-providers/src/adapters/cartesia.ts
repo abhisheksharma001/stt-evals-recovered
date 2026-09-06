@@ -155,9 +155,20 @@ export type CartesiaReceivedEvent = { message: CartesiaMessage; receivedAtMs: nu
 export function reduceCartesiaTranscript(
   events: CartesiaReceivedEvent[],
   startedAtMs: number,
-): { transcript: string | null; firstPartialMs: number | null; errorMessage: string | null } {
+): {
+  transcript: string | null;
+  firstPartialMs: number | null;
+  lastFinalMs: number | null;
+  errorMessage: string | null;
+} {
   const finals: string[] = [];
   let firstPartialMs: number | null = null;
+  // M-10b: when the last segment that actually contributed text arrived.
+  // Deliberately the same condition as the `finals.push` below, so this is
+  // the instant the transcript we return stopped growing -- not the instant
+  // the socket closed, which is IDLE_CLOSE_MS later and tells us only about
+  // our own timer.
+  let lastFinalMs: number | null = null;
   let errorMessage: string | null = null;
 
   for (const { message, receivedAtMs } of events) {
@@ -171,11 +182,38 @@ export function reduceCartesiaTranscript(
     if (firstPartialMs === null && (t.text?.length ?? 0) > 0) {
       firstPartialMs = receivedAtMs - startedAtMs;
     }
-    if (t.is_final && t.text) finals.push(t.text);
+    if (t.is_final && t.text) {
+      finals.push(t.text);
+      lastFinalMs = receivedAtMs - startedAtMs;
+    }
   }
 
-  if (errorMessage) return { transcript: null, firstPartialMs, errorMessage };
-  return { transcript: finals.join(" ").trim() || null, firstPartialMs, errorMessage: null };
+  if (errorMessage) return { transcript: null, firstPartialMs, lastFinalMs, errorMessage };
+  return {
+    transcript: finals.join(" ").trim() || null,
+    firstPartialMs,
+    lastFinalMs,
+    errorMessage: null,
+  };
+}
+
+/** M-10b: how long the vendor took to finish transcribing after the audio
+ * ran out. Both arguments are milliseconds since the same origin (the
+ * adapter uses `submittedAtMs`), so the origin cancels.
+ *
+ * Null, never zero, whenever the number would not be a measurement:
+ * either anchor missing means nothing was observed, and a negative delta
+ * means the last final text predates the last chunk we sent -- the
+ * truncated-stream case this adapter already fails loudly on (11% of the
+ * 207 live Cartesia rows show that shape). A zero there would read as
+ * "instant", which is the opposite of what happened. */
+export function endOfAudioLatencyMs(
+  lastFinalMs: number | null,
+  lastAudioSentMs: number | null,
+): number | null {
+  if (lastFinalMs === null || lastAudioSentMs === null) return null;
+  const delta = lastFinalMs - lastAudioSentMs;
+  return delta < 0 ? null : delta;
 }
 
 // ---- Live adapter ----
@@ -234,6 +272,9 @@ export const cartesiaAdapter: ProviderAdapter = {
     const url = `wss://api.cartesia.ai/stt/websocket?${params.toString()}`;
 
     const events: CartesiaReceivedEvent[] = [];
+    // M-10b: when the last audio chunk left this process. Declared out here,
+    // not inside the promise, because the result below has to read it.
+    let lastAudioSentAtMs: number | null = null;
     let connectError: string | null = null;
     // T-06: set at the same instant as connectError, by whichever handler
     // actually observed the failure. Nothing downstream re-reads the
@@ -351,6 +392,10 @@ export const cartesiaAdapter: ProviderAdapter = {
           try {
             ws.send(chunk);
             bytesSent += chunk.length;
+            // Stamped on every chunk so it ends up holding the last one that
+            // actually went out. Set after send() so a throw leaves it on
+            // the previous chunk rather than claiming audio we never sent.
+            lastAudioSentAtMs = Date.now();
           } catch (err) {
             connectError = err instanceof Error ? err.message : String(err);
             connectFailureClass = "unknown";
@@ -434,6 +479,10 @@ export const cartesiaAdapter: ProviderAdapter = {
         reduced.firstPartialMs !== null
           ? new Date(submittedAtMs + reduced.firstPartialMs).toISOString()
           : null,
+      latencyEndOfAudioMs: endOfAudioLatencyMs(
+        reduced.lastFinalMs,
+        lastAudioSentAtMs === null ? null : lastAudioSentAtMs - submittedAtMs,
+      ),
       httpStatus: null, // WebSocket, not HTTP -- see wsCloseCode inside rawOutput instead
       hypothesisTranscript: reduced.transcript,
       rawOutput,
