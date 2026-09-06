@@ -2418,6 +2418,28 @@ and no screen. It belongs to M-10d, which is where the number becomes visible.
 
 ### M-10c — Rank 1 says it won on flags when it tied on flags
 
+**Status:** `done` 2026-09-07 (PR #106, `25f7c9f`), deployed `3d05093493b6 -> 25f7c9f7f41c`.
+
+**Widened while shipping, in two ways, both because the live data said so.** The step
+scoped the fix to rank 1 and to the all-tied case. Neither held up:
+
+1. **The count was a 3x undercount.** The step said the sentence was false on 33 of 62
+   groups (every provider tied). Measured on 2026-09-07, rank 1 had the fewest flags in
+   **1 of 62** groups. In 26 it was tied for fewest with *some* of the others -- a case
+   the step's predicate does not cover at all -- in 33 with all of them, and in 2 it had
+   **more** flags than the provider directly below it. False on **61 of 62 (98%)**, not
+   53%.
+2. **The runner-up sentence carries the same lie.** "Behind rank 1 on hybrid flag
+   composite (more or more-severe ... flags)" is wrong in those same 61 groups, and in
+   all 33 all-tied groups it sat on `cartesia-ink-whisper` -- identical flag badness and
+   **half the price** ($0.0022 against rank 1's $0.0043). The single most misleading cell
+   on the page. It is the same expression in the same file, so it was fixed here rather
+   than deferred: one defect, not two steps.
+
+Its parenthetical also still blamed confidence spans, which **T-2 removed from the
+composite on 2026-08-27**. Corrected in passing because the sentence was being rewritten
+anyway.
+
 **PR:** one.
 **Depends on:** M-10a (which changes how often the tie happens, so fixing this first would
 have to be re-verified after).
@@ -2442,6 +2464,68 @@ tied branch to emit the old sentence and watch the tied test fail.
 
 **Must not:** must not change the ordering, must not touch the composite, must not rewrite
 stored rows.
+
+**Shipped as:** a new pure module `artifacts/api-server/src/lib/ranking-recommendation.ts`
+(`rank1Recommendation`, `runnerUpRecommendation`), called from `aggregateRankingRows`.
+13 unit tests, 2 integration tests. api-server 102 -> 115, integration 124 -> 126.
+
+**What was learned:**
+
+1. **The step's own number was the thing to check first.** "33 of 62" came from a
+   backlog entry written while grilling M-10, and it was measuring the wrong predicate:
+   *every provider tied* rather than *rank 1 tied with anyone*. The second is the one the
+   sentence is a claim about. Grilling a step now includes re-deriving the number the
+   step quotes, not just reading it.
+2. **Weights do not tell you which term decided.** With `flags 0.85 / cost 0.15` it looks
+   safe to say flags decided. It is not: `flagComponent` is normalised into 0..1, so a
+   small flag gap is worth less than the full 0.15 the cost term can swing, and 2 live
+   groups have a flaggier provider ranked first. A sentence about cause has to be derived
+   from the values, never from the weights.
+3. **A tie is a third answer, not a rounding of the first two.** Flags tied *and* price
+   tied means nothing decided the order and it is whatever the sort left (bug-register
+   B-96). The old sentence had no way to say that, so it said the false thing instead.
+4. **"Absent is not zero" applies to causes.** `hybridCompositeScore` scores a null
+   `costPerMinute` as the *best possible* cost. The sentence deliberately does **not**
+   mirror that: an unknown price is unknown, and calling such a provider "cheapest" would
+   be the composite's bug leaking into English. Mirroring the code you sit next to is not
+   automatically correct.
+5. **A group of one was printing a comparison.** 2 live groups have a single provider and
+   still read "fewest ... among ready providers". Nobody had reported it; it fell out of
+   enumerating the branches honestly.
+6. **The number the composite ranks on was not on the aggregate.** `flagBadness` had to
+   be added: `avgPeerFlagCount + avgPeerFlagSeverityScore` is *not* it, because those two
+   average independently over their own non-null cells. Reconstructing a number instead
+   of carrying it is how a sentence quietly stops matching the ordering it explains.
+7. **The writer of the row had no integration coverage.** `rankings.int.test.ts` inserted
+   its rows directly and only ever tested the GET route, so nothing had ever executed
+   `aggregateRankingRows` in a test. Same shape as M-10a's untested combiner, one file
+   over. The break that mattered was unwiring run-executor from the new module and
+   watching the new integration test fail -- the unit tests all still passed.
+8. **This fix is invisible today.** There is no recompute route, and the step forbids
+   rewriting stored rows, so the 355 existing rankings keep the old sentence -- 63 rows
+   still read "fewest/least-severe" after deploy, verified. It stops the falsehood being
+   written; it does not retract what was written. A step that corrects generated text is
+   worth nothing to a reader until the generator runs again, and that should be said out
+   loud when such a step is registered.
+
+**Evidence (`visual-and-research`, run because this is copy a non-technical reader
+quotes):**
+- **Pattern to use:** state the coarser truth rather than a precise-sounding false one --
+  Linear deliberately ships half-year buckets instead of dates "so you never feel like you
+  have to give this sense of false precision ... that ends up with a whole bunch of
+  miscommunication down the line". *"Linear's secret to building beloved B2B products"*
+  (Nan Yu, 2025-01-30) https://www.youtube.com/watch?v=nTr21kgCFF4
+- **No evidence found for:** a UI pattern that explains a broken tie. Four Mobbin web
+  leaderboards ([Circle](https://mobbin.com/screens/d2ab497c-5477-4f03-a672-745bc497bc00),
+  [Whop](https://mobbin.com/screens/59002773-8028-402f-8d53-289a371704cb),
+  [Dub](https://mobbin.com/screens/689c21bf-97f4-4fce-a478-dafd48f8b3d1),
+  [Fey](https://mobbin.com/screens/8ef3e642-9067-472c-8d1a-5779fc403fd6)) show ranked
+  tables with no tie language at all; Fey's analyst table lists many equal ratings and
+  simply makes no claim about which is best. Circle explains its *ranking rule* in a
+  separate "How do points work?" modal -- adjacent, not the same thing.
+- **Changes to the plan:** none to the shape. It reinforced saying "tied" plainly rather
+  than reaching for a softer word, and reinforced that making no claim (Fey) beats making
+  a confident wrong one.
 
 ---
 

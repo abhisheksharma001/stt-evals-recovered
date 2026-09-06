@@ -1,3 +1,57 @@
+## Found 2026-09-07 (shipping M-10c): a provider with no price ranks as if it were free
+
+`hybridCompositeScore` (`lib/scoring/src/hybrid.ts:490`) scores a null `costPerMinute` as
+`costComponent = 1` -- the *best possible* value, identical to a provider that costs
+nothing. So a provider whose price we have never recorded outranks one whose price we
+know, on a term worth 0.15 of the composite. Not reachable on today's corpus (0 of 355
+ranking rows have a null `cost_per_minute`), which is why it has never been seen, but a
+newly added provider before its first priced cell is exactly that state.
+
+The same line already treats `maxCostPerMinute <= 0` as `1` for everyone, which is
+correct -- that is "nothing costs anything", not "this one is unknown". The two cases
+need separating.
+
+M-10c's *sentence* deliberately does not mirror this: it calls an unknown price unknown
+and reports the order as arbitrary. So the text and the ordering now disagree on purpose,
+and the ordering is the one that is wrong. Not fixed there because M-10c is forbidden
+from changing ordering.
+
+Reproduce:
+
+    select count(*) from benchmark_rankings where cost_per_minute is null;  -- 0 today
+
+## Found 2026-09-07 (shipping M-10c): a text fix cannot reach the rows already written
+
+`benchmark_rankings.recommendation` is stored, and rows are written only by
+`computeRankingsForBulk` / `computeRankingsForRun` -- both of which run at the end of an
+execution. There is no recompute route. So M-10c corrected the generator and **63 rows
+still read "fewest/least-severe" after deploy**, verified against the live DB. The
+Results page shows the old sentence until somebody spends money re-running a bulk.
+
+This is a shape, not a one-off: any step that fixes generated-and-stored text is
+invisible until the generator runs again. Either such steps say so at registration time,
+or the project needs a recompute-from-stored-scores route (no provider calls, reads
+`benchmark_scores` which is already there). The second is worth its own step -- it would
+also let M-10a's weight change apply to the 33 tied groups, where rank 1 is currently
+`deepgram-nova-3` on a composite that no longer exists.
+
+## Found 2026-09-07 (shipping M-10c): fresh sighting of the S-8 integration flake
+
+One run of the api-server integration suite failed on:
+
+    FAIL src/routes/__integration__/run-create.int.test.ts
+      > POST /api/benchmark/runs > blocks on unconfigured providers, ...
+    AssertionError: expected {} to have property 'length'
+      at src/routes/__integration__/run-create.int.test.ts:59:24
+        expect(audit.body).toHaveLength(1);
+
+`GET /api/benchmark/audit-log` returned an object where the test expects an array. The
+identical commit passed 126/126 immediately before and immediately after, so it is
+nondeterministic, and the assertion is on the audit-log read rather than on the run
+creation. Adds a concrete line number and a concrete symptom to **S-8** (`blocked`), which
+until now had no reproducer. Still must not be silenced with a retry, a timeout or
+`.skip`.
+
 ## Found 2026-09-07 (shipping M-10b): a step named an anchor that measures our own timer
 
 M-10b said to store the derived `end-of-audio -> final` figure. `finalAt` is stamped
@@ -108,6 +162,17 @@ with a `bulk_id`, **33 have every provider tied** on flag badness (`avg_peer_fla
 avg_peer_flag_severity_score` identical across all five). Nobody had the fewest. The
 sentence is false on 53 % of the groups on screen, and it is the sentence a reader is
 most likely to quote.
+
+> **Corrected 2026-09-07 while shipping M-10c.** The 53 % above is wrong -- it measures
+> the wrong predicate. "Every provider tied" is not what the sentence claims; the
+> sentence claims rank 1 beat *everyone*, so the test is whether rank 1 tied with
+> *anyone*. Re-measured: rank 1 had strictly the fewest flags in **1 of 62** groups. In
+> 26 it tied for fewest with some of the others, in 33 with all of them, and in **2 it
+> had more flags than the provider directly below it** (deepgram-nova-3 at 4.5 above
+> cartesia-ink-whisper at 4.0, which is also half the price). The sentence was false on
+> **61 of 62 groups -- 98 %, not 53 %.** The undercount came from reusing this entry's
+> `count(distinct flag_badness) = 1` query as the definition of the bug instead of as
+> one symptom of it.
 
 In those 33 groups the flag term cancels out of the composite, so the ordering came from
 latency and cost. Rank 1 is `deepgram-nova-3` in all 33 -- not the cheapest ($0.0043
