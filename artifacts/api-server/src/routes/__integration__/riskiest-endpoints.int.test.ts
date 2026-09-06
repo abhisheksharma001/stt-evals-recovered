@@ -188,6 +188,15 @@ describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
     expect(html.text).toContain("Least disagreement");
     expect(html.text).not.toContain("Winner");
     expect(html.text).toContain("nothing here is scored against a human-checked transcript");
+    // M-9b: the lowercase family too. The <style> block carries `.chip.winner`
+    // and the chip carries class="chip winner" -- both the enum, not copy --
+    // so both are stripped first, the same seam the unit guard uses.
+    // NOTE: this bulk seeds no scored calls, so what is proved here is the
+    // summary and legend path. No test anywhere renders a real scoring-built
+    // winner sentence into HTML; that gap is S-9, not this step.
+    const visible = html.text.replace(/<style>[\s\S]*?<\/style>/g, "").replace(/class="[^"]*"/g, "");
+    expect(visible).not.toMatch(/winner/i);
+    expect(visible).not.toMatch(/\bwins\b/i);
   });
 });
 

@@ -499,8 +499,8 @@ function RankingTable({
                   <CheckCircle2 className="w-3 h-3 mr-1" /> Least disagreement
                 </div>
               ) : r.rank === 1 ? (
-                <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above did not name a winner: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
-                  Ahead, not a winner
+                <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above decided nothing: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
+                  Ahead, but not decided
                 </div>
               ) : null}
             </TableCell>

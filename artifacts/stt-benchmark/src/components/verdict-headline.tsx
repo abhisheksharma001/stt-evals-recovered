@@ -122,14 +122,14 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
     return {
       tone: "winner",
       leadName: nameOf(data, topId),
-      sentence: `wins ${topN} of ${groups.length} group${groups.length === 1 ? "" : "s"} outright${rest > 0 ? `; ${rest} ha${rest === 1 ? "s" : "ve"} no clear winner yet` : ""}.`,
+      sentence: `has the least disagreement in ${topN} of ${groups.length} group${groups.length === 1 ? "" : "s"}${rest > 0 ? `; ${rest} ha${rest === 1 ? "s" : "ve"} nothing decided yet` : ""}.`,
       counts, totalCalls, groups: groups.length,
     }
   }
   if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls) {
-    return { tone: "too_close", leadName: null, sentence: "No clear winner: the top providers are too close to call on the calls so far.", counts, totalCalls, groups: groups.length }
+    return { tone: "too_close", leadName: null, sentence: "Nothing decided: the top providers are too close to call on the calls so far.", counts, totalCalls, groups: groups.length }
   }
-  return { tone: "too_few_calls", leadName: null, sentence: `No clear winner yet: ${counts.too_few_calls} of ${groups.length} group${groups.length === 1 ? "" : "s"} need more calls before one can be named.`, counts, totalCalls, groups: groups.length }
+  return { tone: "too_few_calls", leadName: null, sentence: `Nothing decided yet: ${counts.too_few_calls} of ${groups.length} group${groups.length === 1 ? "" : "s"} need more calls before one can be named.`, counts, totalCalls, groups: groups.length }
 }
 
 export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; groupLabels: Record<string, string> }) {
@@ -164,22 +164,22 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
     const [topId, topN] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]
     headline = (
       <>
-        <span className="font-semibold">{nameOf(data, topId)}</span> wins {topN} of {groups.length} org
-        {groups.length === 1 ? "" : "s"} outright
-        {winners.length > topN ? <> ({winners.length - topN} other group{winners.length - topN === 1 ? "" : "s"} have a different winner)</> : null}.
+        <span className="font-semibold">{nameOf(data, topId)}</span> has the least disagreement in {topN} of {groups.length} org
+        {groups.length === 1 ? "" : "s"}
+        {winners.length > topN ? <> ({winners.length - topN} other group{winners.length - topN === 1 ? "" : "s"} named a different provider)</> : null}.
         {counts.too_close + counts.too_few_calls + counts.insufficient > 0 && (
-          <> The remaining {groups.length - winners.length} have no winner yet.</>
+          <> The remaining {groups.length - winners.length} have nothing decided yet.</>
         )}
       </>
     )
   } else if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls) {
     tone = "too_close"
-    headline = <>No winner in this bulk: the top providers are inside the margin of error in every group with enough calls.</>
+    headline = <>Nothing decided in this bulk: the top providers are inside the margin of error in every group with enough calls.</>
   } else {
     tone = "too_few_calls"
     headline = (
       <>
-        No winner in this bulk yet: {counts.too_few_calls} of {groups.length} org
+        Nothing decided in this bulk yet: {counts.too_few_calls} of {groups.length} org
         {groups.length === 1 ? "" : "s"} have fewer than 5 calls that both top providers ran, the minimum for a verdict.
       </>
     )
@@ -197,7 +197,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
         <p className="text-lg leading-snug text-foreground" style={{ textWrap: "balance" }}>{headline}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground font-mono">
           <span>{groups.length} group{groups.length === 1 ? "" : "s"} · {totalCalls} call{totalCalls === 1 ? "" : "s"} scored</span>
-          <span title="Gap to the runner-up is bigger than the margin of error (95% bootstrap interval excludes zero)">{counts.winner} winner{counts.winner === 1 ? "" : "s"}</span>
+          <span title="Gap to the runner-up is bigger than the margin of error (95% bootstrap interval excludes zero)">{counts.winner} decided</span>
           <span title="Gap to the runner-up is inside the margin of error">{counts.too_close} too close</span>
           <span title="Fewer than 5 calls that both top providers ran">{counts.too_few_calls} not enough calls</span>
           {counts.insufficient > 0 && <span title="Fewer than two providers scored">{counts.insufficient} only one provider</span>}

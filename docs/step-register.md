@@ -1935,6 +1935,38 @@ denial wording chosen in decision 3.
    negative is "no winner" invites "so where is the winner?". Cheapest
    consistent pair: "Nothing decided" / "Ahead, but not decided".
 
+### S-9 — a settled verdict, rendered end-to-end, at least once
+
+**Status:** todo
+**PR:** one.
+**Depends on:** M-9b.
+**Files:** `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`
+(or a new `verdict-artefact.int.test.ts` beside it), reusing the seeding
+helpers already in `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`.
+**Today:** every test that asserts verdict copy uses a literal fixture. The
+unit suites build a `HeadlineVerdict` object by hand and pass it to the
+renderer; the one integration test that fetches `verdict.html` seeds a bulk
+with **no scored calls**, so the page it asserts on contains only the summary
+and the legend. Found while writing M-9b's break tests: the composed path
+`score() -> computeVerdict() -> renderVerdictArtefact() -> HTTP` has never
+been exercised for `decision === "winner"`. Every phrase M-9 and M-9b changed
+in `lib/scoring/src/verdict.ts` is therefore guarded by one unit assertion on
+the string, and by nothing that proves the string reaches a client.
+**Change:** seed one bulk with two providers and at least 5 calls both ran,
+with a flag gap wide enough to clear the noise floor, then fetch
+`/api/benchmark/bulks/{id}/verdict.html` and assert the settled wording is
+present in the response body: the `fewest` row tag, "has the least
+disagreement", and no form of "winner"/"wins" in the visible text.
+**Acceptance:** WHEN the integration suite runs THEN at least one test SHALL
+fetch a `verdict.html` whose verdict decision is `winner` and assert its
+rendered wording.
+**Verify:** `TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm --filter @workspace/api-server run test:integration`
+→ 27 files, 123 tests. Then break it: change the row tag in
+`artifacts/api-server/src/lib/verdict-artefact.ts` back to `winner` and watch
+this new test fail, not only the unit one.
+**Must not:** call a provider, spend money, or write to the dev database
+(`stt_evals`) — the integration suite runs against `stt_evals_test` only.
+
 ### M-10 — Latency means end-of-speech latency, or nothing
 
 **PR:** one.

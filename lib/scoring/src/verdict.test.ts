@@ -55,7 +55,7 @@ describe("computeVerdict", () => {
     expect(v.marginPct).toBe(50);
     expect(v.evidenceCalls).toBe(25);
     expect(v.provisional).toBe(false);
-    expect(v.sentence).toContain("A wins: ");
+    expect(v.sentence).toContain("A has the least disagreement: ");
     expect(v.sentence).toContain("50% fewer than B");
     expect(v.sentence).toContain("25 calls.");
   });

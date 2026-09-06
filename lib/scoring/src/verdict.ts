@@ -345,7 +345,7 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
           : "";
   const marginText = marginPct === null ? "" : `, ${fmtPct(marginPct)} fewer than ${name(runnerUp.providerId)}`;
   const sentence =
-    `${name(leader.providerId)} wins: ${fmtRate(leader.flagsPer100Words)} disagreements per 100 words${marginText}${vsProdClause}.${vsProdSentence} ${evidence}`;
+    `${name(leader.providerId)} has the least disagreement: ${fmtRate(leader.flagsPer100Words)} disagreements per 100 words${marginText}${vsProdClause}.${vsProdSentence} ${evidence}`;
 
   return {
     ...base,
