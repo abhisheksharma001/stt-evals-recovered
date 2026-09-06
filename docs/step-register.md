@@ -2757,13 +2757,27 @@ repo's own existing rule, not from evidence.
 
 ### M-10f — Show the end-of-audio number on the per-call comparison
 
+**Status:** `done` 2026-09-07 (PR #109, `5d1a6ad`), deployed `e02b35e5f4cd -> 5d1a6ada1de0`.
+
+**This step's own Files list named the wrong serialiser, corrected here rather than
+quietly elsewhere.** It said `artifacts/api-server/src/routes/benchmark.ts`, "near
+`latencyFinalMs: score.latencyFinalMs`". That line is real, and it is the **wrong one**:
+it belongs to the run-results serialisation (`ScoreDetail`), an endpoint no comparison
+view reads. The per-call comparison is built in `artifacts/api-server/src/lib/call-comparison.ts`,
+which carries a nearly identical line (`latencyFinalMs: score?.latencyFinalMs ?? null`).
+Grep cannot tell the two apart; only following the endpoint can. `routes/benchmark.ts` was
+not touched by this step. The same sentence said "the second and third `latencyFinalMs`
+entries" in the spec -- only the **third** (`ComparisonRow`) was this step's; the second
+(`ScoreDetail`) belongs to that other endpoint and is still un-carried, which is
+deliberate: nothing renders it.
+
 **PR:** one.
 **Depends on:** M-10e (the column, the copy and the dash treatment to match).
-**Files:** `lib/api-spec/openapi.yaml` **and the two generated clients it regenerates**
-(`lib/api-zod/src/generated/**`, `lib/api-client-react/src/generated/**`),
-`artifacts/api-server/src/routes/benchmark.ts` (the per-call provider-result
-serialisation near `latencyFinalMs: score.latencyFinalMs`, **not** the rankings block
-M-10e changed), `artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`,
+**Files (as shipped):** `lib/api-spec/openapi.yaml` **and the two generated clients it
+regenerates** (`lib/api-zod/src/generated/**`, `lib/api-client-react/src/generated/**`),
+`artifacts/api-server/src/lib/call-comparison.ts`,
+`artifacts/api-server/src/routes/__integration__/call-comparison.int.test.ts`,
+`artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`,
 `artifacts/stt-benchmark/src/components/provider-comparison-section.test.tsx`.
 
 **Today:** M-10e put the averaged number on the Results ranking table only. The per-call
@@ -2790,6 +2804,81 @@ replacing the cell's explaining title with the generic "Not measured in this run
 watch the component test fail.
 **Must not:** must not describe `latencyFinalMs` as lower-is-better (M-10d), must not
 render 0 for a batch provider, must not call it "end-of-speech", must not spend.
+
+**Shipped as:** 8 files, +174/-8. A seventh column, "After audio ends ↓", between Speed
+and Cost on the per-call comparison; `latencyEndOfAudioMs` on `ComparisonRow` in the spec
+and both generated clients (additive only, +12/-0); read straight off the score row in
+`call-comparison.ts`, never derived and never defaulted to 0.
+
+**Live after deploy:** `GET /api/benchmark/calls/<id>/comparison` -- field present on all
+5 rows of the most-attempted call, **0 non-null, 0 zeros**, `latencyFinalMs` non-null on
+all 5. Post-deploy bundle scan of `artifacts/stt-benchmark/dist/public` (1,214,814 chars):
+6 new strings present, 5 M-10d false forms all 0, "After audio ends" twice (Results and
+the comparison). RESULT: PASS.
+
+**Learned:**
+
+1. **A step's Files list can be wrong and nothing catches it.** Typecheck, the four
+   guards and CI all pass whichever of the two files you edit -- they only disagree about
+   which endpoint changes. Two serialisation blocks in different files carry near-identical
+   `latencyFinalMs: score...` lines. The check that works is following the route to the
+   function that builds the response, not grepping the field name.
+2. **`openapi.yaml` has three `latencyFinalMs` properties, one per schema** -- `Score`
+   (rankings, group average), `ScoreDetail` (run results, per cell), `ComparisonRow`
+   (per-call comparison, per cell). "Add the metric everywhere" is a decision per schema,
+   not per file. M-10e did `Score`; this did `ComparisonRow`; `ScoreDetail` is
+   deliberately still without it, because nothing renders it.
+3. **`ComparisonRow` now carries two structurally different nulls.** The `"missing"`
+   placeholder row (the run promised this provider and it never wrote a cell -- nothing
+   ran) and a scored batch cell (it ran fine; there was no moment the audio ended). Both
+   serialise `null`. The integration test asserts each separately with its own comment so
+   a later refactor cannot collapse them into one "no data" branch.
+4. **M-10e's reason for a per-cell tooltip does not hold here, and the tooltip is still
+   right.** M-10e argued the explanation had to live in the cell because *sorting*
+   detaches a cell from its header. This table does not sort. The tooltip stayed for a
+   different and better reason: it is the only column here whose blank is structural,
+   while every neighbouring dash means "not recorded on this run". An inherited reason
+   had to be re-derived rather than copied.
+5. **Seven breaks, one failing test each** -- three against the serialiser (batch null as
+   0; end-of-audio served from `latencyFinalMs`; the `"missing"` placeholder as 0), each
+   failing exactly **one** of 129 integration tests; four against the component (generic
+   dash title; header stops explaining the dash; column loses its arrow; the number stops
+   rendering).
+6. **A break test that fails to apply its mutation reports as a pass.** Break G's script
+   mangled a backtick template literal inside a shell heredoc, the `assert count == 1`
+   fired, nothing was edited -- and the suite then printed "128 passed", which reads
+   exactly like a guard doing its job. Only the traceback above it said otherwise. Second
+   consecutive step where the break *harness*, not the code, was the thing at fault
+   (M-10e: an assertion satisfied by a phrase's second occurrence). A break run must
+   confirm the mutation landed before its result means anything.
+7. **No schema change and no `drizzle-kit push`.** `benchmark_scores.latency_end_of_audio_ms`
+   has existed since M-10b; this step only carried it further. Nothing spent, no provider
+   called.
+
+**Evidence — end-of-audio column on the per-call comparison** (`visual-and-research`,
+2026-09-07)
+
+**Pattern to use:** put the explanation on the column label and keep the dash as the
+blank mark -- feature-comparison tables consistently use `—` for "not in this row" and
+hang an `ⓘ` off the *label*, never off the cell ← [Toggl Track plan comparison](https://mobbin.com/screens/d08c4a1a-c25b-4730-b8f5-e13b039ab997),
+[Webflow plans](https://mobbin.com/screens/1f702cb2-bd88-41e0-a1c1-9fa54542f3de),
+[Uxcel compare features](https://mobbin.com/screens/c0904ed2-237b-4c9e-ba9d-52ce7f01640f).
+**Patterns to avoid:** one mark for two different kinds of absence. Suno writes "Not
+available" as words for a hard no and uses a padlock for "upgrade to unlock" -- two
+absences, two marks ← [Suno compare plans](https://mobbin.com/screens/a82bb800-07e6-4717-9006-8073219e687b).
+Zendesk's alternative is a footnote symbol plus a legend under the table ← [Zendesk compare Support plans](https://mobbin.com/screens/9403349b-1892-4a69-abab-6d2a57d92258).
+**What operators say:** thin. The closest is Nicole Forsgren on making measurement legible:
+once a number is in a box on a screen, people start asking of it "is the data poor quality?
+are we missing data? was this a bad proxy?" -- an empty box invites the question, so the
+answer belongs next to it ← "How to measure AI developer productivity in 2025" (Nicole
+Forsgren, 2025-10-19) https://www.youtube.com/watch?v=SWcDfPVTizQ
+**Changes to the plan:** the dash treatment survived, but its *justification* changed --
+see learning 4. Suno's two-marks-for-two-absences is why the cell tooltip stayed rather
+than being folded into the header alone.
+**No evidence found for:** a numeric comparison table where a metric is unreportable for
+most rows by construction. Every match was a plan/feature matrix, where a blank means "you
+did not pay for this", not "this cannot be measured". The pattern was borrowed across that
+gap knowingly, not because the match was close.
 
 ---
 

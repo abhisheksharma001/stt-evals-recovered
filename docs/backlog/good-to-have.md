@@ -1,3 +1,79 @@
+## Found 2026-09-07 (shipping M-10f): a step's Files list pointed at the wrong file, and nothing could catch it
+
+M-10f's register entry said to change `artifacts/api-server/src/routes/benchmark.ts`
+"near `latencyFinalMs: score.latencyFinalMs`". That line exists. It is also the wrong
+one -- it serialises `ScoreDetail` for the run-results endpoint, which no comparison
+view reads. The per-call comparison is built in
+`artifacts/api-server/src/lib/call-comparison.ts`, whose corresponding line reads
+`latencyFinalMs: score?.latencyFinalMs ?? null`.
+
+Nothing in the toolchain distinguishes them. Typecheck passes whichever you edit; the
+four guards pass; CI passes. Both files are plausible on a grep for the field name. The
+only check that works is following the route handler to the function that builds the
+response body.
+
+**Reproduce:** `grep -rn "latencyFinalMs" artifacts/api-server/src` returns hits in two
+files that look interchangeable and are not.
+
+**Worth having:** when a step names a serialisation site, it should name the *endpoint*
+(`GET /benchmark/calls/:callId/comparison`) as well as the file, so the file can be
+checked against something. `check:api-routes` already walks routes; it could plausibly
+be extended to map each response schema to the single function that constructs it.
+
+---
+
+## Found 2026-09-07 (shipping M-10f): a break test that never applied its mutation reports as a pass
+
+Break G edited a TSX template literal (`` `${Math.round(x)}ms` ``) from inside a shell
+heredoc. The backticks were mangled, the script's `assert s.count(old) == 1` fired, and
+**nothing was written to the file**. The test suite then ran against unmodified code and
+printed `Tests 128 passed (128)`.
+
+Read quickly, that is indistinguishable from a break test whose guard held -- which is
+the opposite of what a break test means. The traceback sat above it in the same output
+and was easy to scroll past.
+
+This is the second consecutive step where the break *harness*, not the code, was the
+defective part (M-10e: an assertion satisfied by a phrase's second occurrence).
+
+**Worth having:** a break run should print a diff (or a byte count) proving the mutation
+landed before its test result is allowed to mean anything. "Nothing changed, tests pass"
+must never render the same as "guard removed, tests pass".
+
+---
+
+## Found 2026-09-07 (shipping M-10f): ComparisonRow now has two nulls that mean different things
+
+`latencyEndOfAudioMs` is null on a `"missing"` row (the run promised that provider and
+no cell was ever written -- nothing ran) and null on a scored batch cell (it ran fine;
+a batch API is handed a finished file, so there was no moment the audio ended).
+
+Today the UI cannot confuse them, because a non-`ok` row renders `""` rather than a dash.
+That is incidental, not designed: any change making the missing row show a dash would put
+two unrelated facts under one glyph. The integration test asserts each null separately
+with its own reason, which is the only thing currently holding them apart.
+
+Related to the open item from M-10e about a permanent null and a this-run null looking
+identical -- this is a third kind.
+
+---
+
+## Found 2026-09-07 (shipping M-10f): the comparison table's explanations are hover-only
+
+Every column on `provider-comparison-section.tsx` explains itself through a `title=`
+attribute. That means: invisible until hover, unavailable on touch, and not reachable by
+keyboard. The end-of-audio column added by M-10f leans on that copy harder than its
+neighbours do -- its dash is meaningless without the sentence.
+
+The evidence gathered for M-10f (Toggl Track, Webflow, Uxcel, Squarespace plan-comparison
+tables) all put a **visible `ⓘ`** next to the column label instead, precisely so the
+explanation announces that it exists.
+
+**Worth having:** a small info affordance on the labels of the columns that carry real
+explanation (Differ / ref, Speed, After audio ends). Not urgent, not this step's scope.
+
+---
+
 ## Found 2026-09-07 (shipping M-10e): a break test caught a bug in the test, not the code
 
 M-10e added a Results legend guard asserting the new column appears in the
