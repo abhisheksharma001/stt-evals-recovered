@@ -175,6 +175,54 @@ export function deepgramStreamDiarizationScore(events: DeepgramStreamEvent[]): n
 
 // ---- Live adapter ----
 
+/** M-11e. The socket's URL and its subprotocols, kept pure so that "the
+ * credential never appears in the URL" is testable without opening a socket.
+ * Deepgram documents two ways to authenticate a Listen socket: the
+ * `Authorization` header, which the global Node `WebSocket` cannot set, and
+ * the subprotocol pair `Sec-WebSocket-Protocol: token, <API_KEY>` for exactly
+ * that case. The query string carries no credential -- v1 /listen's
+ * documented parameter list contains no `token`, which is what M-11a got
+ * wrong when it put the key there.
+ *
+ * It builds the query parameters as well as the URL, rather than taking them,
+ * so there is exactly one place a credential could be added to the URL and a
+ * test can watch it. Taking a caller-built URLSearchParams left the adapter's
+ * own parameter block uncovered: putting `token` back there was a mutation the
+ * suite did not catch. */
+export function deepgramStreamSocketArgs(
+  apiKey: string,
+  opts: {
+    model: string;
+    encoding: string;
+    sampleRate: number;
+    channels: number;
+    diarize: boolean;
+    keywordBoosts?: string[];
+  },
+): { url: string; protocols: [string, string] } {
+  const params = new URLSearchParams({
+    model: opts.model,
+    encoding: opts.encoding,
+    sample_rate: String(opts.sampleRate),
+    channels: String(opts.channels),
+    // Matched to deepgram.ts's batch parameters on purpose. The two nova-3
+    // rows exist to be compared, and smart_format changes the text while
+    // diarize changes what the words carry -- differing here would turn a
+    // provider comparison into a settings comparison.
+    smart_format: "true",
+    diarize: String(opts.diarize),
+    // Required for a first-partial time to exist at all: without it the
+    // server sends only finished segments, and RUN-02's time-to-first-
+    // partial would be the time to the first FINAL, silently.
+    interim_results: "true",
+  });
+  for (const term of opts.keywordBoosts ?? []) params.append("keywords", term);
+  return {
+    url: `wss://api.deepgram.com/v1/listen?${params.toString()}`,
+    protocols: ["token", apiKey],
+  };
+}
+
 export const deepgramStreamingAdapter: ProviderAdapter = {
   providerId: PROVIDER_ID,
   // Same vendor as the batch adapter, deliberately: it is the same account
@@ -224,31 +272,16 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
     const pcm = input.audioBytes.subarray(wav.dataOffset, wav.dataOffset + wav.dataLength);
     const responseTimeoutMs = scaledPollTimeoutMs(input.audioDurationSeconds);
 
-    // token (query param), not the Authorization header: the global Node
-    // WebSocket client cannot set request headers, and Deepgram documents
-    // the query parameter for Listen v1/v2 for exactly that case. Same
-    // reason cartesia.ts uses access_token.
-    const params = new URLSearchParams({
+    // Every connect-time argument, credential included, is built in one
+    // place so that no later edit here can put the key back on the URL.
+    const { url, protocols } = deepgramStreamSocketArgs(apiKey, {
       model: input.model ?? DEFAULT_API_MODEL,
       encoding,
-      sample_rate: String(wav.sampleRate),
-      channels: String(wav.numChannels),
-      // Matched to deepgram.ts's batch parameters on purpose. The two nova-3
-      // rows exist to be compared, and smart_format changes the text while
-      // diarize changes what the words carry -- differing here would turn a
-      // provider comparison into a settings comparison.
-      smart_format: "true",
-      diarize: String(input.diarize ?? true),
-      // Required for a first-partial time to exist at all: without it the
-      // server sends only finished segments, and RUN-02's time-to-first-
-      // partial would be the time to the first FINAL, silently.
-      interim_results: "true",
-      token: apiKey,
+      sampleRate: wav.sampleRate,
+      channels: wav.numChannels,
+      diarize: input.diarize ?? true,
+      keywordBoosts: input.keywordBoosts,
     });
-    if (input.keywordBoosts?.length) {
-      for (const term of input.keywordBoosts) params.append("keywords", term);
-    }
-    const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
 
     const events: DeepgramStreamEvent[] = [];
     // M-10b: when the last audio chunk left this process. Declared out here,
@@ -284,16 +317,18 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
         resolve();
       };
 
-      // The URL carries the API key in its `token` parameter, and a thrown
-      // error's message is written verbatim into
+      // A thrown error's message is written verbatim into
       // benchmark_provider_call_results.error_message and rendered on screen
-      // (run-executor.ts, the `if (!result)` branch). So nothing this
-      // constructor might say about the URL is ever repeated: the message is
-      // a constant. Resolves directly rather than through finish(), which
-      // reads timers that do not exist yet at this point.
+      // (run-executor.ts, the `if (!result)` branch). Since M-11e the URL no
+      // longer carries the key -- it rides in the subprotocol -- but the
+      // reasoning holds whatever the arguments contain, and this constructor
+      // can throw on the subprotocol argument too: nothing it might say is
+      // ever repeated, the message is a constant. Resolves directly rather
+      // than through finish(), which reads timers that do not exist yet at
+      // this point.
       let ws: WebSocket;
       try {
-        ws = new WebSocket(url);
+        ws = new WebSocket(url, protocols);
       } catch {
         settled = true;
         connectError = "Deepgram streaming WebSocket could not be opened.";
