@@ -1,6 +1,7 @@
 import { assemblyAiAdapter } from "./adapters/assemblyai";
 import { cartesiaAdapter } from "./adapters/cartesia";
 import { deepgramAdapter } from "./adapters/deepgram";
+import { deepgramFluxAdapter } from "./adapters/deepgram-flux";
 import { deepgramStreamingAdapter } from "./adapters/deepgram-streaming";
 import { elevenLabsAdapter } from "./adapters/elevenlabs";
 import { gladiaAdapter } from "./adapters/gladia";
@@ -27,6 +28,12 @@ export const providerRegistry: Record<string, ProviderAdapter> = {
   // resolving to the batch adapter only because that one is declared first.
   // Pinned by a test rather than left to insertion order alone.
   [deepgramStreamingAdapter.providerId]: deepgramStreamingAdapter,
+  // M-11c. Third Deepgram adapter, and the same ordering rule applies: it is
+  // declared after the batch adapter so adapterByVendorPrefix() still returns
+  // the batch adapter for every deepgram-* id that is neither a registry key
+  // nor a catalog entry. Its own id IS deepgram-flux-general-en, the row that
+  // already exists, so it resolves on the exact-key branch above the catalog.
+  [deepgramFluxAdapter.providerId]: deepgramFluxAdapter,
 };
 
 /**
@@ -59,8 +66,13 @@ export type ProviderCatalogEntry = {
 export const providerCatalog: Record<string, ProviderCatalogEntry> = {
   "deepgram-nova-3": { adapterId: deepgramAdapter.providerId, apiModel: "nova-3" },
   "deepgram-nova-2": { adapterId: deepgramAdapter.providerId, apiModel: "nova-2" },
+  // M-11c. Repointed from the batch adapter, which could never have served
+  // it: Flux is streaming-only, so this row -- the model production actually
+  // runs on 86 of 121 corpus calls -- pointed at an adapter with no endpoint
+  // that could answer. The entry stays so getProviderApiModel keeps returning
+  // the exact model string; only the adapter behind it changed.
   "deepgram-flux-general-en": {
-    adapterId: deepgramAdapter.providerId,
+    adapterId: deepgramFluxAdapter.providerId,
     apiModel: "flux-general-en",
   },
   // M-11a. The id is not a slug of its model -- "nova-3" would derive

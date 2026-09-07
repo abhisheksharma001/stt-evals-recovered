@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseAssemblyAiResponse } from "./assemblyai";
 import {
   cartesiaEncodingForBitDepth,
@@ -7,6 +7,13 @@ import {
   reduceCartesiaTranscript,
 } from "./cartesia";
 import { deepgramAdapter, parseDeepgramResponse } from "./deepgram";
+import {
+  deepgramFluxAdapter,
+  deepgramFluxDiarizationScore,
+  deepgramFluxSocketArgs,
+  reduceDeepgramFluxTranscript,
+  type DeepgramFluxEvent,
+} from "./deepgram-flux";
 import {
   deepgramEncodingForBitDepth,
   deepgramStreamChunkBytes,
@@ -20,6 +27,8 @@ import {
   getProviderApiModel,
   getProviderAdapter,
   listProviderAdapters,
+  providerCatalog,
+  providerRegistry,
   vendorOf,
   vendorOfProviderId,
 } from "../registry";
@@ -513,7 +522,40 @@ describe("registry resolution with two Deepgram adapters", () => {
     expect(getProviderAdapter("deepgram-nova-3")).toBe(deepgramAdapter);
     expect(getProviderAdapter("deepgram-nova-2")).toBe(deepgramAdapter);
     expect(getProviderAdapter("deepgram-nova")).toBe(deepgramAdapter);
-    expect(getProviderAdapter("deepgram-flux-general-en")).toBe(deepgramAdapter);
+    // deepgram-flux-general-en used to be asserted here too. That assertion
+    // pinned a bug: Flux is streaming-only, so the batch adapter it resolved
+    // to had no endpoint that could serve it. M-11c repointed it; the
+    // replacement assertion is in the test below.
+  });
+
+  // M-11c. The repair itself, and the reason the step exists.
+  it("sends the flux id to the flux adapter, keeping its model string", () => {
+    expect(getProviderAdapter("deepgram-flux-general-en")).toBe(deepgramFluxAdapter);
+    expect(getProviderApiModel("deepgram-flux-general-en")).toBe("flux-general-en");
+  });
+
+  it("keeps the flux row in the Deepgram vendor bucket", () => {
+    expect(vendorOfProviderId("deepgram-flux-general-en")).toBe("deepgram");
+  });
+
+  // Found by M-11c's break test. getProviderAdapter checks the exact registry
+  // key BEFORE the catalog, and deepgram-flux-general-en is now both -- it is
+  // the flux adapter's own providerId. So the catalog's adapterId for that id
+  // is never read, and repointing it back at the batch adapter (the exact bug
+  // this step fixes) changed nothing any behavioural test could see.
+  //
+  // Asserted as an invariant over every entry rather than for flux alone,
+  // because the trap is structural: it springs for any catalog id that is
+  // also an adapter's own id, and it leaves the two structures stating
+  // different things about the same row with only one of them consulted.
+  it("never lets a catalog entry name a different adapter than the one that serves it", () => {
+    for (const [providerId, entry] of Object.entries(providerCatalog)) {
+      const named = providerRegistry[entry.adapterId];
+      expect(named, `catalog entry ${providerId} names unknown adapter ${entry.adapterId}`)
+        .toBeDefined();
+      expect(getProviderAdapter(providerId), `catalog entry ${providerId} is not the adapter that serves it`)
+        .toBe(named);
+    }
   });
 
   it("keeps the streaming row in the Deepgram vendor bucket", () => {
@@ -616,5 +658,300 @@ describe("deepgramStreamingAdapter socket wiring (M-11e)", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.protocols).toEqual(["token", key]);
     expect(seen[0]!.url).not.toContain(key);
+  });
+});
+
+
+describe("deepgramFluxSocketArgs (M-11c)", () => {
+  const opts = () => ({ model: "flux-general-en", encoding: "linear16", sampleRate: 16000 });
+
+  it("carries the credential in the subprotocol, never in the URL", () => {
+    const key = "dg-flux-secret-value";
+    const { url, protocols } = deepgramFluxSocketArgs(key, opts());
+    expect(url).not.toContain(key);
+    expect(url).not.toContain("token=");
+    expect(protocols).toEqual(["token", key]);
+  });
+
+  it("does not smuggle a key with URL-special characters in encoded", () => {
+    const key = "a/b+c=d e";
+    const { url } = deepgramFluxSocketArgs(key, opts());
+    const asAParam = new URLSearchParams({ v: key }).toString().slice(2);
+    expect(url).not.toContain(key);
+    expect(url).not.toContain(asAParam);
+    expect(url).not.toContain(encodeURIComponent(key));
+  });
+
+  it("addresses the v2 endpoint, not v1", () => {
+    const { url } = deepgramFluxSocketArgs("secret", opts());
+    expect(url.startsWith("wss://api.deepgram.com/v2/listen?")).toBe(true);
+    expect(url).toContain("model=flux-general-en");
+    expect(url).toContain("encoding=linear16");
+    expect(url).toContain("sample_rate=16000");
+  });
+
+  // The step's Must-not: no parameter the v2 reference does not document.
+  // Each of these IS documented on v1 and is sent by deepgram-streaming.ts,
+  // so copying that adapter's parameter block across is the likely mistake.
+  it("sends none of the v1-only parameters", () => {
+    const { url } = deepgramFluxSocketArgs("secret", {
+      ...opts(),
+      keywordBoosts: ["Ellavox"],
+    });
+    expect(url).not.toContain("channels=");
+    expect(url).not.toContain("smart_format=");
+    expect(url).not.toContain("diarize=");
+    expect(url).not.toContain("interim_results=");
+    expect(url).not.toContain("keywords=");
+  });
+
+  it("spells keyword boosts keyterm, once per term, with no credential", () => {
+    const key = "flux-boost-secret";
+    const { url } = deepgramFluxSocketArgs(key, {
+      ...opts(),
+      keywordBoosts: ["Ellavox", "Vapi"],
+    });
+    expect(url).toContain("keyterm=Ellavox");
+    expect(url).toContain("keyterm=Vapi");
+    expect(url).not.toContain(key);
+  });
+});
+
+describe("reduceDeepgramFluxTranscript (M-11c)", () => {
+  const at = (ms: number, message: DeepgramFluxEvent["message"]): DeepgramFluxEvent => ({
+    message,
+    receivedAtMs: 1_000 + ms,
+  });
+
+  it("joins the EndOfTurn transcripts in order", () => {
+    const out = reduceDeepgramFluxTranscript(
+      [
+        at(100, { type: "Connected" }),
+        at(200, { type: "TurnInfo", event: "StartOfTurn", turn_index: 0, transcript: "" }),
+        at(300, { type: "TurnInfo", event: "Update", turn_index: 0, transcript: "hello" }),
+        at(400, { type: "TurnInfo", event: "EndOfTurn", turn_index: 0, transcript: "hello there" }),
+        at(900, { type: "TurnInfo", event: "EndOfTurn", turn_index: 1, transcript: "second turn" }),
+      ],
+      1_000,
+    );
+    expect(out.transcript).toBe("hello there second turn");
+    expect(out.errorMessage).toBeNull();
+  });
+
+  // The step's Must-not. EagerEndOfTurn is a prediction; TurnResumed retracts
+  // it. Scoring it as final puts words the speaker went on to contradict into
+  // a transcript that is then compared against a gold one.
+  it("never treats EagerEndOfTurn as final, including when TurnResumed retracts it", () => {
+    const out = reduceDeepgramFluxTranscript(
+      [
+        at(100, { type: "TurnInfo", event: "EagerEndOfTurn", turn_index: 0, transcript: "cancel my" }),
+        at(200, { type: "TurnInfo", event: "TurnResumed", turn_index: 0, transcript: "cancel my" }),
+        at(300, { type: "TurnInfo", event: "EndOfTurn", turn_index: 0, transcript: "cancel my appointment please" }),
+      ],
+      1_000,
+    );
+    expect(out.transcript).toBe("cancel my appointment please");
+    expect(out.transcript).not.toContain("cancel my cancel my");
+  });
+
+  it("anchors first-partial on the first turn carrying text, not the first final", () => {
+    const out = reduceDeepgramFluxTranscript(
+      [
+        at(100, { type: "TurnInfo", event: "StartOfTurn", turn_index: 0, transcript: "" }),
+        at(250, { type: "TurnInfo", event: "Update", turn_index: 0, transcript: "hel" }),
+        at(800, { type: "TurnInfo", event: "EndOfTurn", turn_index: 0, transcript: "hello" }),
+      ],
+      1_000,
+    );
+    expect(out.firstPartialMs).toBe(250);
+    expect(out.lastFinalMs).toBe(800);
+  });
+
+  it("anchors last-final on the last turn that contributed text", () => {
+    const out = reduceDeepgramFluxTranscript(
+      [
+        at(300, { type: "TurnInfo", event: "EndOfTurn", turn_index: 0, transcript: "only words" }),
+        // A final turn that settles with nothing in it must not move the
+        // anchor: M-10b measures when the transcript stopped growing.
+        at(1200, { type: "TurnInfo", event: "EndOfTurn", turn_index: 1, transcript: "   " }),
+      ],
+      1_000,
+    );
+    expect(out.transcript).toBe("only words");
+    expect(out.lastFinalMs).toBe(300);
+  });
+
+  it("reports a fatal error and returns no transcript", () => {
+    const out = reduceDeepgramFluxTranscript(
+      [
+        at(100, { type: "TurnInfo", event: "EndOfTurn", turn_index: 0, transcript: "partial words" }),
+        at(200, { type: "FatalError", description: "unsupported encoding" }),
+      ],
+      1_000,
+    );
+    expect(out.errorMessage).toBe("unsupported encoding");
+    expect(out.transcript).toBeNull();
+  });
+
+  it("returns null rather than an empty string when nothing settled", () => {
+    const out = reduceDeepgramFluxTranscript(
+      [at(100, { type: "TurnInfo", event: "Update", turn_index: 0, transcript: "hel" })],
+      1_000,
+    );
+    expect(out.transcript).toBeNull();
+    expect(out.lastFinalMs).toBeNull();
+  });
+});
+
+describe("deepgramFluxDiarizationScore (M-11c)", () => {
+  // Absent is not zero. Zero is what deepgram-streaming.ts scores a response
+  // that could have carried speaker labels and did not; Flux was never asked,
+  // because its documented parameter list has no diarize at all.
+  it("is null, never 0, even when the turns are full of words", () => {
+    expect(deepgramFluxDiarizationScore()).toBeNull();
+  });
+});
+
+describe("deepgramFluxAdapter (M-11c)", () => {
+  it("declares the id the catalog and the database already use", () => {
+    expect(deepgramFluxAdapter.providerId).toBe("deepgram-flux-general-en");
+    expect(vendorOf(deepgramFluxAdapter)).toBe("deepgram");
+    // A third Deepgram adapter declaring listModels would render a third
+    // Deepgram card on Setup -- /benchmark/providers/models filters to the
+    // adapters that have one and groups them by vendor.
+    expect(deepgramFluxAdapter.listModels).toBeUndefined();
+  });
+
+  // v2 documents no `channels` parameter, so multi-channel audio cannot be
+  // described to Flux and must never reach the socket. The refusal happens
+  // inside parseWavPcm today; this asserts it at THIS adapter's boundary, so
+  // relaxing parseWavPcm for another vendor fails here rather than silently
+  // streaming interleaved samples to Deepgram as if they were mono.
+  //
+  // The WebSocket is stubbed to throw, so if that ever regresses the test
+  // fails fast on the failureClass instead of opening a real connection:
+  // a thrown constructor yields "unknown", never "audio_decode".
+  it("refuses multi-channel audio instead of streaming it as if it were mono", async () => {
+    const originalWs = globalThis.WebSocket;
+    const original = process.env.DEEPGRAM_API_KEY;
+    class RefusingWebSocket {
+      constructor() {
+        throw new Error("stub refused the connection");
+      }
+    }
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = RefusingWebSocket;
+    process.env.DEEPGRAM_API_KEY = "dg-flux-mono-guard";
+    try {
+      const result = await deepgramFluxAdapter.transcribe({
+        callId: "call-m11c-stereo",
+        audioBytes: buildMonoPcmWav({
+          sampleRate: 16000,
+          bitsPerSample: 16,
+          numChannels: 2,
+          samples: [0, 1, -1, 0],
+        }),
+      });
+      expect(result.status).toBe("failed");
+      expect(result.failureClass).toBe("audio_decode");
+      expect(result.errorMessage ?? "").toMatch(/mono/i);
+    } finally {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
+      if (original === undefined) delete process.env.DEEPGRAM_API_KEY;
+      else process.env.DEEPGRAM_API_KEY = original;
+    }
+  });
+
+  // Found by M-11c's break test: halving the send interval -- streaming at
+  // 2x real time -- passed every test. It would not be a wrong transcript, it
+  // would be a wrong LATENCY, which is the entire reason this adapter exists,
+  // and it would look plausible. M-11d's acceptance requires the adapter to
+  // have never sent audio faster than real time; this is where that is
+  // checked, because a live run cannot see its own send timestamps.
+  it("streams at real time: one second of wall clock sends one second of audio", async () => {
+    const bytesPerSecond = 16000 * 2; // 16 kHz, 16-bit, mono
+    const originalWs = globalThis.WebSocket;
+    const originalKey = process.env.DEEPGRAM_API_KEY;
+    let sentBytes = 0;
+    let openHandler: (() => void) | null = null;
+    let closeHandler: ((e: { code: number }) => void) | null = null;
+
+    class PacedWebSocket {
+      addEventListener(type: string, handler: (e: never) => void) {
+        if (type === "open") openHandler = handler as () => void;
+        if (type === "close") closeHandler = handler as (e: { code: number }) => void;
+      }
+      send(payload: unknown) {
+        // JSON control frames (CloseStream) are not audio.
+        if (typeof payload !== "string") sentBytes += (payload as Buffer).length;
+      }
+      close() {
+        closeHandler?.({ code: 1000 });
+      }
+    }
+
+    vi.useFakeTimers();
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = PacedWebSocket;
+    process.env.DEEPGRAM_API_KEY = "dg-flux-pacing";
+    try {
+      // Four seconds of audio, so one second in there is plenty left to send.
+      const pending = deepgramFluxAdapter.transcribe({
+        callId: "call-m11c-pacing",
+        audioBytes: buildMonoPcmWav({
+          sampleRate: 16000,
+          bitsPerSample: 16,
+          samples: new Array(16000 * 4).fill(0),
+        }),
+      });
+      await Promise.resolve();
+      openHandler!();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(sentBytes).toBeGreaterThan(0);
+      expect(sentBytes).toBeLessThanOrEqual(bytesPerSecond);
+
+      closeHandler!({ code: 1000 });
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
+      if (originalKey === undefined) delete process.env.DEEPGRAM_API_KEY;
+      else process.env.DEEPGRAM_API_KEY = originalKey;
+    }
+  });
+
+  it("hands the credential to the socket as a subprotocol, not on the URL", async () => {
+    const key = "dg-flux-wiring-secret-999";
+    const seen: Array<{ url: string; protocols: unknown }> = [];
+    const originalWs = globalThis.WebSocket;
+    const originalKey = process.env.DEEPGRAM_API_KEY;
+    // Throws on construction, which is the one place transcribe() settles
+    // before any timer exists -- so this test never opens a socket, never
+    // waits, and never leaves a handle pending.
+    class ThrowingWebSocket {
+      constructor(url: string, protocols?: unknown) {
+        seen.push({ url, protocols });
+        throw new Error("stub refused the connection");
+      }
+    }
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = ThrowingWebSocket;
+    process.env.DEEPGRAM_API_KEY = key;
+    try {
+      const result = await deepgramFluxAdapter.transcribe({
+        callId: "call-m11c",
+        audioBytes: buildMonoPcmWav({ sampleRate: 16000, bitsPerSample: 16, samples: [0, 1, -1, 0] }),
+      });
+      expect(result.status).toBe("failed");
+      // A thrown constructor's message is written verbatim into a persisted,
+      // rendered field, so it must be a constant that repeats no argument.
+      expect(result.errorMessage ?? "").not.toContain(key);
+    } finally {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
+      if (originalKey === undefined) delete process.env.DEEPGRAM_API_KEY;
+      else process.env.DEEPGRAM_API_KEY = originalKey;
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.protocols).toEqual(["token", key]);
+    expect(seen[0]!.url).not.toContain(key);
+    expect(seen[0]!.url).toContain("/v2/listen?");
   });
 });
