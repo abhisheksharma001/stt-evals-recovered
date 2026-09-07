@@ -3060,6 +3060,71 @@ declare `listModels` on the new adapter; change `cartesia.ts`; change the batch
 
 ### M-11e — Authenticate the Deepgram socket the way Deepgram documents it
 
+**Status:** `done` 2026-09-07 (PR #111, `f879ebe`), deployed
+`aca8280fa40f -> f879ebe430a7`. 2 files, +149/-29. `lib/stt-providers` 65 -> 70 tests.
+
+**Shipped as:** `deepgramStreamSocketArgs(apiKey, opts)` in
+`lib/stt-providers/src/adapters/deepgram-streaming.ts`, which builds the URL *and* its
+query parameters and returns `{ url, protocols }`. The credential rides in the
+`Sec-WebSocket-Protocol: token, <API_KEY>` subprotocol pair. Nothing else about the
+request changed: same endpoint, same parameters, same values. No provider was called and
+nothing was spent.
+
+**Live after deploy:** `/api/healthz` reports `f879ebe430a7`;
+`GET /api/benchmark/providers/models` still returns exactly one `deepgram` vendor card
+(`adapterId: deepgram-nova-3`); the four `deepgram%` rows in `benchmark_providers` are
+unchanged, so still nothing can select the streaming adapter. The deployed bundle
+contains `protocols: ["token", apiKey]` and exactly two `new WebSocket` calls -- one with
+a subprotocol (this adapter) and one without (`cartesia.ts`, untouched by design).
+
+**Break test:** 11 mutations, 11 caught, each confirmed landed on disk with
+`git diff --numstat` before its result was read, tree clean after. The first pass ran 7
+and **2 survived**; both are closed, which is why the PR has two commits.
+
+**Learned:**
+
+1. **Citing a source is not the same as reading it.** M-11a's evidence note lists
+   `docs/using-the-sec-websocket-protocol` among the pages checked, and the adapter still
+   authenticated with a query parameter that page does not describe and that the v1
+   `/listen` parameter list does not contain. The page was fetched; what it said did not
+   reach the code. A citation in a note proves a page was opened, nothing more.
+2. **The defect surfaced while grilling a different step.** Nothing about M-11e was
+   suspected. M-11b's Must-not forced a return to the vendor reference to check the
+   streaming message shape, and re-reading the same pages M-11a claimed to have read is
+   what turned up the auth error. Grilling the next step audits the last one for free.
+3. **A break test that finds holes is worth more than one that finds none.** Two of the
+   first seven mutations survived, and one of them -- putting `token` back into the
+   parameter block -- was *the exact bug this step exists to fix*. A step can fix a bug
+   and still leave the bug free to return.
+4. **An unused binding is not a guard here.** I expected a destructured-but-unused
+   `protocols` to fail the build; `tsconfig.base.json` sets `noUnusedLocals: false`, so
+   reverting to `new WebSocket(url)` typechecks clean. Checked rather than assumed, after
+   the mutation survived.
+5. **Closing a hole by construction beats closing it with a test.** Moving the parameter
+   building inside the helper leaves one place a credential could be added to the URL,
+   instead of two places and a test watching only one.
+6. **A constructor stub that throws is a cheap wiring test.** `new WebSocket` is the one
+   point in `transcribe()` that settles before any timer is created, so a stub that
+   records its arguments and throws proves the subprotocol reaches the socket while
+   opening nothing, waiting for nothing and leaving no handle pending.
+7. **Removing a hazard beats guarding it.** M-11a guarded a key-bearing URL against
+   `run-executor.ts` writing it into a rendered field. M-11e takes the key out of the
+   URL. The guard stays and is now an assertion rather than a comment -- mutation J,
+   which puts the key into the connect error message, is caught -- but it is defence in
+   depth instead of the only thing between a credential and the screen.
+
+**Evidence note:** `visual-and-research` deliberately not run -- an adapter's
+authentication method, with no screen, no copy and no label involved. Verified instead
+against the vendor's live references on 2026-09-07:
+developers.deepgram.com/reference/listen-live (the v1 parameter list, which has no
+`token`), .../reference/speech-to-text/listen-flux (v2, `Authorization` header only) and
+.../docs/using-the-sec-websocket-protocol (the subprotocol pair), plus a local check that
+Node 22's global `WebSocket` accepts a protocols array.
+
+**Still unproven:** the handshake itself. No Deepgram socket in this repo has ever been
+opened. This step swaps an undocumented method for a documented one; only M-11d proves
+either works.
+
 **PR:** one.
 **Depends on:** M-11a.
 **Files:** `lib/stt-providers/src/adapters/deepgram-streaming.ts`,
