@@ -3200,6 +3200,82 @@ M-11d's message log rather than guessing.
 
 ### M-11c — Deepgram Flux adapter, and repair the broken Flux mapping
 
+**Status:** `done` 2026-09-07 (PR #112, `4748e99`), deployed
+`f879ebe430a7 -> 4748e99b3f9d`. 4 files, +810/-3. `lib/stt-providers` 70 -> 89 tests.
+
+**Shipped as:** `lib/stt-providers/src/adapters/deepgram-flux.ts`, a v2 `/listen` adapter,
+with `providerCatalog["deepgram-flux-general-en"]` repointed at it. No new provider id --
+the adapter's own `providerId` is the id that already existed. No API call, nothing spent,
+no schema change; the row stays `disabled` / `manually_disabled`, so no enabled row's
+behaviour changed.
+
+**Live after deploy:** `/api/healthz` reports `4748e99b3f9d` and now lists
+`deepgram-flux-general-en` among `providersConfigured` (adapter and env-var NAMES only,
+per that route's standing rule -- 7 entries became 8);
+`GET /api/benchmark/providers/models` still returns exactly ONE `deepgram` vendor card
+(`adapterId: deepgram-nova-3`), so a third Deepgram adapter did not split the Setup page;
+the four `deepgram%` rows in `benchmark_providers` are unchanged. The deployed bundle
+contains exactly one `v2/listen`, two `new WebSocket(url, protocols)` calls (this adapter
+and the v1 streaming one) and one `new WebSocket(url)` (`cartesia.ts`, untouched by
+design), and zero occurrences of `token=`.
+
+**Break test:** 18 mutations, 18 caught, each confirmed landed on disk with
+`git diff --numstat` before its result was read, tree clean after. The first pass ran 16
+and **3 survived**; all three are closed, which is why the PR has two commits.
+
+**Learned:**
+
+1. **The bug came back for free, again, and for a new reason.** As in M-11e, the mutation
+   that reintroduced the exact defect being fixed -- repointing the catalog at the batch
+   adapter -- survived the first break pass. The cause was structural: `getProviderAdapter`
+   checks the exact registry key BEFORE the catalog, and this id is now both, so the
+   catalog's `adapterId` is never read for it. Two structures were free to state
+   different things about the same row with only one consulted. Fixed with an invariant
+   over every catalog entry, not an assertion about Flux, because the trap springs for any
+   id that is also an adapter's own id.
+2. **A guard that cannot fire, plus a test that passes on someone else's error, looks
+   exactly like working code.** The mono check written here could never run --
+   `parseWavPcm` already refuses non-mono -- and the test written to prove it worked was
+   matching `parseWavPcm`'s message, which also contains the word "mono". Both green,
+   both meaningless. Only the mutation exposed it. When a test asserts on an error
+   *message*, check which line actually threw.
+3. **The most dangerous mutation was the one that produced no wrong text.** Halving the
+   send interval streams at 2x real time: the transcript is unchanged and every latency
+   is halved. A wrong number that looks plausible is worse than a missing one, and
+   nothing in either streaming adapter asserted pacing until now. M-11d's acceptance
+   requires it and a live run cannot check it on itself, so it is checked here with fake
+   timers and a stub socket.
+4. **Grilling paid again, and in the same shape.** The block as split said to authenticate
+   "the way M-11e establishes". Reading the actual page showed it names the Listen
+   WebSocket, links to the **v1** reference, and never mentions v2 or Flux -- so applying
+   it here is an inference, not an established fact. Writing it down as established would
+   have been the M-11a defect a second time, one step after correcting it.
+5. **Copying a sibling adapter's parameter block is the specific hazard here.** Four
+   parameters the v1 adapter sends -- `channels`, `smart_format`, `diarize`,
+   `interim_results` -- are undocumented on v2. Each now has a test asserting its absence,
+   because "I did not add it" is not a property the next edit inherits.
+6. **Absent is not zero, and it needed a function to say so.** Flux documents no
+   `diarize`, so its diarization score is null. Zero is what the v1 adapter gives a
+   response that could have carried speaker labels and did not; scoring Flux the same way
+   would rank it below a provider that tried and failed. A one-line function returning
+   null makes the reason greppable and the mutation to `0` catchable.
+7. **A test can pin a bug.** `getProviderAdapter("deepgram-flux-general-en")` was asserted
+   to return the batch adapter. The mapping was wrong, the assertion was green, and the
+   assertion is why nobody looked. Flipping it was part of the acceptance, not a side
+   effect.
+
+**Evidence note:** `visual-and-research` deliberately not run -- a provider adapter and a
+registry mapping, with no screen, copy or label involved. Verified instead against the
+vendor's live reference on 2026-09-07:
+developers.deepgram.com/reference/speech-to-text/listen-flux (the v2 parameter list,
+message types and `TurnInfo` shape) and .../docs/using-the-sec-websocket-protocol (which
+names the Listen WebSocket and links to the v1 reference, and never mentions v2).
+
+**Still unproven:** every claim in this adapter about what the server actually sends. No
+Deepgram socket in this repo has been opened, so the authentication, the `FatalError`
+frame name, the turn sequence and the latencies are all reference-derived. M-11d is the
+step that finds out.
+
 **PR:** one.
 **Depends on:** M-11a, and M-11e for the authentication method.
 **Files:** new file lib/stt-providers/src/adapters/deepgram-flux.ts (plain: not written
