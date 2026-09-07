@@ -1,3 +1,41 @@
+## Found 2026-09-07 (grilling M-11c): the Flux provider row advertises diarization Deepgram does not offer
+
+`artifacts/api-server/src/routes/benchmark.ts` seeds `deepgram-flux-general-en` with
+`supportsDiarization: true`. Deepgram's Flux (v2 `/listen`) reference documents no
+`diarize` parameter at all -- its query parameters are model, encoding, sample_rate,
+eager_eot_threshold, eot_threshold, eot_timeout_ms, keyterm, language_hint,
+profanity_filter, numerals, redact, mip_opt_out, tag. The row was seeded by copying the
+nova-3 row's flags.
+
+**Consequence:** the Providers page tells a reader this row can separate speakers, and
+the M-11c adapter correctly reports a null diarization score for it -- so once the row is
+enabled the screen and the score disagree, with no explanation on either.
+
+**Not fixed in M-11c**, deliberately: the seed only applies on insert and the row already
+exists in the database (`disabled`, `manually_disabled = t`), so editing the seed alone
+would change nothing live. Fixing it properly means correcting the seed AND the existing
+row, which belongs with M-11d, the step that touches `defaultProviders` and enables the
+rows anyway.
+
+**Reproduce:** `select id, supports_diarization from benchmark_providers where id =
+'deepgram-flux-general-en';` returns `t`.
+
+## Found 2026-09-07 (building M-11c): two Deepgram streaming adapters duplicate ~180 lines of socket machinery
+
+`lib/stt-providers/src/adapters/deepgram-streaming.ts` and
+lib/stt-providers/src/adapters/deepgram-flux.ts (plain: written in M-11c) carry the same
+real-time chunking loop, connect timeout, response timeout, idle-close ladder and close
+handler. Only the URL, the client message names and the message reduction differ.
+
+**Why it was duplicated rather than shared:** at the time M-11c was built, neither
+adapter had ever opened a socket against the live service. Extracting a shared runner
+would have edited the v1 adapter too, so a failure in M-11d could no longer be attributed
+to the authentication, the Flux mapping, or the refactor itself.
+
+**When to do it:** after M-11d proves both adapters live. Then a shared runner has two
+known-good callers to be measured against, and any behaviour change it causes shows up
+as a difference from a recorded baseline instead of a mystery.
+
 ## Found 2026-09-07 (grilling M-11b): the Deepgram streaming adapter authenticates by a method Deepgram does not document
 
 `lib/stt-providers/src/adapters/deepgram-streaming.ts` (shipped in M-11a, PR #110) puts

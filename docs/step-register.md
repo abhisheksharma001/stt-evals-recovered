@@ -3201,7 +3201,7 @@ M-11d's message log rather than guessing.
 ### M-11c — Deepgram Flux adapter, and repair the broken Flux mapping
 
 **PR:** one.
-**Depends on:** M-11a.
+**Depends on:** M-11a, and M-11e for the authentication method.
 **Files:** new file lib/stt-providers/src/adapters/deepgram-flux.ts (plain: not written
 yet), `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/index.ts`,
 `lib/stt-providers/src/adapters/parsers.test.ts`.
@@ -3228,7 +3228,53 @@ available to end a turn early.
 SHALL return the `EndOfTurn` transcripts joined in order, and `getProviderAdapter(
 "deepgram-flux-general-en")` SHALL return the Flux adapter.
 **Must not:** call the API; treat `EagerEndOfTurn` as final (`TurnResumed` retracts it);
-add a second Flux provider id.
+add a second Flux provider id; send a query parameter the v2 reference does not document.
+
+**Grilled 2026-09-07, before building.** Five corrections, each read off the vendor's
+live reference rather than off this block:
+
+1. **The authentication method is an inference for v2, not a documented fact, and this
+   block previously read as though it were one.** The subprotocol page names "Deepgram's
+   Listen WebSocket endpoint" and links to the **v1** streaming reference; it never
+   mentions v2, `/v2/listen` or Flux, and the Flux reference itself documents only an
+   `Authorization` header and no subprotocol at all. So the adapter uses the M-11e
+   subprotocol pair because it is the only header-less method Deepgram documents
+   anywhere -- and marks it UNVERIFIED in code, per the `docs/provider-matrix.md`
+   convention that `deepgram-streaming.ts` already uses for its error frame. M-11d
+   confirms or refutes it. Saying "M-11e establishes it" for a v2 endpoint would be the
+   same move that produced the M-11a defect: carrying a claim across an endpoint
+   boundary the vendor never crossed.
+2. **v2 documents no `channels` parameter.** The v1 adapter sends one. This adapter must
+   not invent it, and must therefore fail loudly on anything but mono rather than send
+   interleaved stereo to an endpoint that cannot be told the audio is stereo -- that
+   would be decoded as noise and scored as recognition error. Every cached corpus file
+   checked is 16 kHz, 16-bit, mono PCM, so this is a guard, not a limitation.
+3. **v2 documents no `Finalize`.** The v1 adapter sends `Finalize` and then `CloseStream`.
+   Flux documents `CloseStream`, `ForceEndTurn` and `Configure` as its only client
+   messages, so the end-of-audio path sends `CloseStream` alone.
+4. **v2 documents no `interim_results`, and does not need one.** Partial text arrives as
+   `Update` / `StartOfTurn` `TurnInfo` events by default, so the first-partial anchor
+   exists without a parameter. On v1 that parameter was load-bearing; here asking for it
+   would be sending an undocumented one.
+5. **`TurnInfo` carries `transcript` and `words` at the top level**, alongside `event`,
+   `turn_index`, `sequence_id`, `audio_window_start`, `audio_window_end`,
+   `end_of_turn_confidence`, and `trigger` (`model` | `manual` | `timeout`) on
+   `EndOfTurn` only. It is NOT the `channel.alternatives[0]` shape -- that is v1/batch.
+
+**Also found:** `lib/stt-providers/src/adapters/parsers.test.ts` currently *pins the bug*
+-- it asserts `getProviderAdapter("deepgram-flux-general-en")` returns the batch adapter.
+Flipping that assertion is part of this step's acceptance, not a side effect. And the
+seed row for this id in `artifacts/api-server/src/routes/benchmark.ts` declares
+`supportsDiarization: true`, which correction 5's sibling fact (no `diarize` on v2) makes
+wrong; the row already exists in the database, so editing the seed would not fix it.
+Logged in `docs/backlog/good-to-have.md` and flagged for M-11d, not fixed here.
+
+**Deliberate duplication.** The ~180 lines of socket machinery -- real-time chunking,
+connect and response timeouts, idle close, close handling -- are duplicated from
+`deepgram-streaming.ts` rather than extracted into a shared runner. Extracting it would
+edit an adapter that has never been run against the live service, so a failure in M-11d
+could no longer be attributed to the auth, the Flux mapping, or the refactor. Logged as a
+post-M-11d candidate in `docs/backlog/good-to-have.md`.
 
 ---
 
