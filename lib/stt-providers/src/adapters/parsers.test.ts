@@ -536,12 +536,17 @@ describe("registry resolution with two Deepgram adapters", () => {
 });
 
 describe("deepgramStreamSocketArgs (M-11e)", () => {
-  const params = () =>
-    new URLSearchParams({ model: "nova-3", encoding: "linear16", sample_rate: "16000" });
+  const opts = () => ({
+    model: "nova-3",
+    encoding: "linear16",
+    sampleRate: 16000,
+    channels: 1,
+    diarize: true,
+  });
 
   it("carries the credential in the subprotocol, never in the URL", () => {
     const key = "dg-live-secret-value";
-    const { url, protocols } = deepgramStreamSocketArgs(key, params());
+    const { url, protocols } = deepgramStreamSocketArgs(key, opts());
     expect(url).not.toContain(key);
     expect(url).not.toContain("token=");
     expect(protocols).toEqual(["token", key]);
@@ -549,18 +554,67 @@ describe("deepgramStreamSocketArgs (M-11e)", () => {
 
   it("does not smuggle a key with URL-special characters in encoded", () => {
     const key = "a/b+c=d e";
-    const { url } = deepgramStreamSocketArgs(key, params());
+    const { url } = deepgramStreamSocketArgs(key, opts());
     const asAParam = new URLSearchParams({ v: key }).toString().slice(2);
     expect(url).not.toContain(key);
     expect(url).not.toContain(asAParam);
     expect(url).not.toContain(encodeURIComponent(key));
   });
 
-  it("still addresses v1 listen and keeps every query parameter", () => {
-    const { url } = deepgramStreamSocketArgs("secret", params());
+  it("still addresses v1 listen and carries the parameters deepgram.ts sends", () => {
+    const { url } = deepgramStreamSocketArgs("secret", opts());
     expect(url.startsWith("wss://api.deepgram.com/v1/listen?")).toBe(true);
     expect(url).toContain("model=nova-3");
     expect(url).toContain("encoding=linear16");
     expect(url).toContain("sample_rate=16000");
+    expect(url).toContain("channels=1");
+    expect(url).toContain("smart_format=true");
+    expect(url).toContain("diarize=true");
+    expect(url).toContain("interim_results=true");
+  });
+
+  it("appends every keyword boost and still no credential", () => {
+    const key = "boost-secret";
+    const { url } = deepgramStreamSocketArgs(key, { ...opts(), keywordBoosts: ["Ellavox", "Vapi"] });
+    expect(url).toContain("keywords=Ellavox");
+    expect(url).toContain("keywords=Vapi");
+    expect(url).not.toContain(key);
+  });
+});
+
+describe("deepgramStreamingAdapter socket wiring (M-11e)", () => {
+  it("hands the credential to the socket as a subprotocol, not on the URL", async () => {
+    const key = "dg-wiring-secret-999";
+    const seen: Array<{ url: string; protocols: unknown }> = [];
+    const originalWs = globalThis.WebSocket;
+    const originalKey = process.env.DEEPGRAM_API_KEY;
+    // Throws on construction, which is the one place transcribe() settles
+    // before any timer exists -- so this test never opens a socket, never
+    // waits, and never leaves a handle pending.
+    class ThrowingWebSocket {
+      constructor(url: string, protocols?: unknown) {
+        seen.push({ url, protocols });
+        throw new Error("stub refused the connection");
+      }
+    }
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = ThrowingWebSocket;
+    process.env.DEEPGRAM_API_KEY = key;
+    try {
+      const result = await deepgramStreamingAdapter.transcribe({
+        callId: "call-m11e",
+        audioBytes: buildMonoPcmWav({ sampleRate: 16000, bitsPerSample: 16, samples: [0, 1, -1, 0] }),
+      });
+      expect(result.status).toBe("failed");
+      // The guard M-11a added: a thrown constructor's message is written
+      // verbatim into a persisted, rendered field, so it must be a constant.
+      expect(result.errorMessage ?? "").not.toContain(key);
+    } finally {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
+      if (originalKey === undefined) delete process.env.DEEPGRAM_API_KEY;
+      else process.env.DEEPGRAM_API_KEY = originalKey;
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.protocols).toEqual(["token", key]);
+    expect(seen[0]!.url).not.toContain(key);
   });
 });

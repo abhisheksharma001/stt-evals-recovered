@@ -182,11 +182,41 @@ export function deepgramStreamDiarizationScore(events: DeepgramStreamEvent[]): n
  * the subprotocol pair `Sec-WebSocket-Protocol: token, <API_KEY>` for exactly
  * that case. The query string carries no credential -- v1 /listen's
  * documented parameter list contains no `token`, which is what M-11a got
- * wrong when it put the key there. */
+ * wrong when it put the key there.
+ *
+ * It builds the query parameters as well as the URL, rather than taking them,
+ * so there is exactly one place a credential could be added to the URL and a
+ * test can watch it. Taking a caller-built URLSearchParams left the adapter's
+ * own parameter block uncovered: putting `token` back there was a mutation the
+ * suite did not catch. */
 export function deepgramStreamSocketArgs(
   apiKey: string,
-  params: URLSearchParams,
+  opts: {
+    model: string;
+    encoding: string;
+    sampleRate: number;
+    channels: number;
+    diarize: boolean;
+    keywordBoosts?: string[];
+  },
 ): { url: string; protocols: [string, string] } {
+  const params = new URLSearchParams({
+    model: opts.model,
+    encoding: opts.encoding,
+    sample_rate: String(opts.sampleRate),
+    channels: String(opts.channels),
+    // Matched to deepgram.ts's batch parameters on purpose. The two nova-3
+    // rows exist to be compared, and smart_format changes the text while
+    // diarize changes what the words carry -- differing here would turn a
+    // provider comparison into a settings comparison.
+    smart_format: "true",
+    diarize: String(opts.diarize),
+    // Required for a first-partial time to exist at all: without it the
+    // server sends only finished segments, and RUN-02's time-to-first-
+    // partial would be the time to the first FINAL, silently.
+    interim_results: "true",
+  });
+  for (const term of opts.keywordBoosts ?? []) params.append("keywords", term);
   return {
     url: `wss://api.deepgram.com/v1/listen?${params.toString()}`,
     protocols: ["token", apiKey],
@@ -242,28 +272,16 @@ export const deepgramStreamingAdapter: ProviderAdapter = {
     const pcm = input.audioBytes.subarray(wav.dataOffset, wav.dataOffset + wav.dataLength);
     const responseTimeoutMs = scaledPollTimeoutMs(input.audioDurationSeconds);
 
-    // No credential in here: it rides in the subprotocol instead, see
-    // deepgramStreamSocketArgs above.
-    const params = new URLSearchParams({
+    // Every connect-time argument, credential included, is built in one
+    // place so that no later edit here can put the key back on the URL.
+    const { url, protocols } = deepgramStreamSocketArgs(apiKey, {
       model: input.model ?? DEFAULT_API_MODEL,
       encoding,
-      sample_rate: String(wav.sampleRate),
-      channels: String(wav.numChannels),
-      // Matched to deepgram.ts's batch parameters on purpose. The two nova-3
-      // rows exist to be compared, and smart_format changes the text while
-      // diarize changes what the words carry -- differing here would turn a
-      // provider comparison into a settings comparison.
-      smart_format: "true",
-      diarize: String(input.diarize ?? true),
-      // Required for a first-partial time to exist at all: without it the
-      // server sends only finished segments, and RUN-02's time-to-first-
-      // partial would be the time to the first FINAL, silently.
-      interim_results: "true",
+      sampleRate: wav.sampleRate,
+      channels: wav.numChannels,
+      diarize: input.diarize ?? true,
+      keywordBoosts: input.keywordBoosts,
     });
-    if (input.keywordBoosts?.length) {
-      for (const term of input.keywordBoosts) params.append("keywords", term);
-    }
-    const { url, protocols } = deepgramStreamSocketArgs(apiKey, params);
 
     const events: DeepgramStreamEvent[] = [];
     // M-10b: when the last audio chunk left this process. Declared out here,
