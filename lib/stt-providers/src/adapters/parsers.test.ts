@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseAssemblyAiResponse } from "./assemblyai";
 import {
   cartesiaEncodingForBitDepth,
@@ -27,6 +27,8 @@ import {
   getProviderApiModel,
   getProviderAdapter,
   listProviderAdapters,
+  providerCatalog,
+  providerRegistry,
   vendorOf,
   vendorOfProviderId,
 } from "../registry";
@@ -536,6 +538,26 @@ describe("registry resolution with two Deepgram adapters", () => {
     expect(vendorOfProviderId("deepgram-flux-general-en")).toBe("deepgram");
   });
 
+  // Found by M-11c's break test. getProviderAdapter checks the exact registry
+  // key BEFORE the catalog, and deepgram-flux-general-en is now both -- it is
+  // the flux adapter's own providerId. So the catalog's adapterId for that id
+  // is never read, and repointing it back at the batch adapter (the exact bug
+  // this step fixes) changed nothing any behavioural test could see.
+  //
+  // Asserted as an invariant over every entry rather than for flux alone,
+  // because the trap is structural: it springs for any catalog id that is
+  // also an adapter's own id, and it leaves the two structures stating
+  // different things about the same row with only one of them consulted.
+  it("never lets a catalog entry name a different adapter than the one that serves it", () => {
+    for (const [providerId, entry] of Object.entries(providerCatalog)) {
+      const named = providerRegistry[entry.adapterId];
+      expect(named, `catalog entry ${providerId} names unknown adapter ${entry.adapterId}`)
+        .toBeDefined();
+      expect(getProviderAdapter(providerId), `catalog entry ${providerId} is not the adapter that serves it`)
+        .toBe(named);
+    }
+  });
+
   it("keeps the streaming row in the Deepgram vendor bucket", () => {
     // Concurrency limits, confidence extraction and timed-word extraction
     // all switch on this. A different vendor key would give the streaming
@@ -800,8 +822,24 @@ describe("deepgramFluxAdapter (M-11c)", () => {
     expect(deepgramFluxAdapter.listModels).toBeUndefined();
   });
 
+  // v2 documents no `channels` parameter, so multi-channel audio cannot be
+  // described to Flux and must never reach the socket. The refusal happens
+  // inside parseWavPcm today; this asserts it at THIS adapter's boundary, so
+  // relaxing parseWavPcm for another vendor fails here rather than silently
+  // streaming interleaved samples to Deepgram as if they were mono.
+  //
+  // The WebSocket is stubbed to throw, so if that ever regresses the test
+  // fails fast on the failureClass instead of opening a real connection:
+  // a thrown constructor yields "unknown", never "audio_decode".
   it("refuses multi-channel audio instead of streaming it as if it were mono", async () => {
+    const originalWs = globalThis.WebSocket;
     const original = process.env.DEEPGRAM_API_KEY;
+    class RefusingWebSocket {
+      constructor() {
+        throw new Error("stub refused the connection");
+      }
+    }
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = RefusingWebSocket;
     process.env.DEEPGRAM_API_KEY = "dg-flux-mono-guard";
     try {
       const result = await deepgramFluxAdapter.transcribe({
@@ -817,8 +855,67 @@ describe("deepgramFluxAdapter (M-11c)", () => {
       expect(result.failureClass).toBe("audio_decode");
       expect(result.errorMessage ?? "").toMatch(/mono/i);
     } finally {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
       if (original === undefined) delete process.env.DEEPGRAM_API_KEY;
       else process.env.DEEPGRAM_API_KEY = original;
+    }
+  });
+
+  // Found by M-11c's break test: halving the send interval -- streaming at
+  // 2x real time -- passed every test. It would not be a wrong transcript, it
+  // would be a wrong LATENCY, which is the entire reason this adapter exists,
+  // and it would look plausible. M-11d's acceptance requires the adapter to
+  // have never sent audio faster than real time; this is where that is
+  // checked, because a live run cannot see its own send timestamps.
+  it("streams at real time: one second of wall clock sends one second of audio", async () => {
+    const bytesPerSecond = 16000 * 2; // 16 kHz, 16-bit, mono
+    const originalWs = globalThis.WebSocket;
+    const originalKey = process.env.DEEPGRAM_API_KEY;
+    let sentBytes = 0;
+    let openHandler: (() => void) | null = null;
+    let closeHandler: ((e: { code: number }) => void) | null = null;
+
+    class PacedWebSocket {
+      addEventListener(type: string, handler: (e: never) => void) {
+        if (type === "open") openHandler = handler as () => void;
+        if (type === "close") closeHandler = handler as (e: { code: number }) => void;
+      }
+      send(payload: unknown) {
+        // JSON control frames (CloseStream) are not audio.
+        if (typeof payload !== "string") sentBytes += (payload as Buffer).length;
+      }
+      close() {
+        closeHandler?.({ code: 1000 });
+      }
+    }
+
+    vi.useFakeTimers();
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = PacedWebSocket;
+    process.env.DEEPGRAM_API_KEY = "dg-flux-pacing";
+    try {
+      // Four seconds of audio, so one second in there is plenty left to send.
+      const pending = deepgramFluxAdapter.transcribe({
+        callId: "call-m11c-pacing",
+        audioBytes: buildMonoPcmWav({
+          sampleRate: 16000,
+          bitsPerSample: 16,
+          samples: new Array(16000 * 4).fill(0),
+        }),
+      });
+      await Promise.resolve();
+      openHandler!();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(sentBytes).toBeGreaterThan(0);
+      expect(sentBytes).toBeLessThanOrEqual(bytesPerSecond);
+
+      closeHandler!({ code: 1000 });
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
+      if (originalKey === undefined) delete process.env.DEEPGRAM_API_KEY;
+      else process.env.DEEPGRAM_API_KEY = originalKey;
     }
   });
 

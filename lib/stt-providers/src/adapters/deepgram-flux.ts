@@ -217,20 +217,20 @@ export const deepgramFluxAdapter: ProviderAdapter = {
     let encoding: "linear16";
     let chunkBytes: number;
     try {
+      // parseWavPcm already refuses anything but mono, which is the whole
+      // requirement here: v2 documents no `channels` parameter, so there is
+      // no way to tell Flux that samples are interleaved, and sending them
+      // anyway would have the server decode two channels as one at half
+      // speed and score the resulting noise as recognition error.
+      //
+      // An explicit re-check was written here first and removed: it could
+      // never fire, and the test written to prove it worked passed on
+      // parseWavPcm's error instead (its message also says "mono"). The
+      // requirement is asserted at this adapter's own boundary in
+      // parsers.test.ts, so relaxing parseWavPcm for some other vendor
+      // fails that test rather than silently letting stereo through here.
       wav = parseWavPcm(input.audioBytes);
       encoding = deepgramEncodingForBitDepth(wav.bitsPerSample);
-      if (wav.numChannels !== 1) {
-        // v2 documents no `channels` parameter, so there is no way to tell
-        // Flux the samples are interleaved. Sending them anyway would have
-        // the server decode two channels as one at half speed and score the
-        // resulting noise as recognition error -- a wrong number is worse
-        // than a missing one (PRO-01: fail loudly, never silently degrade).
-        throw new Error(
-          `Deepgram Flux adapter supports mono audio only, got ${wav.numChannels} channels: ` +
-            `the v2 /listen reference documents no channels parameter, so a multi-channel ` +
-            `stream cannot be described to the server.`,
-        );
-      }
       chunkBytes = deepgramStreamChunkBytes(wav, CHUNK_MS);
     } catch (err) {
       return {
