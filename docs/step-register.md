@@ -3384,10 +3384,35 @@ before Abhishek has seen the numbers; run without an explicit go-spend for this 
 **Blocked on Abhishek:** the go-spend. The 2026-09-04 "spend $3–5" go predates this
 split and is not being treated as covering it.
 
+**Grilled 2026-09-08, before the go-spend is asked for a second time.** One ordering
+hole, found while checking what the next step could be:
+
+1. **There is no `deepgram-nova-3-streaming` provider row to stream to.** The adapter
+   exists (`lib/stt-providers/src/registry.ts`), but the id appears nowhere in
+   `defaultProviders` and the dev database holds four `deepgram%` rows -- nova, nova-2,
+   nova-3, flux-general-en -- none of them the streaming one. So the step as written
+   ("stream ONE cached call to `deepgram-nova-3-streaming` ... only if both are green,
+   create/enable the rows") cannot start: the row it streams to is created by its own
+   last sentence. The Flux row does exist (disabled, `manually_disabled`), so only half
+   the step has this problem. Fix when the step runs: create BOTH rows disabled first,
+   stream to them while disabled, and let "enable" stay the thing that waits on the
+   numbers. Creating a disabled row spends nothing.
+2. **Confirmed no Deepgram socket has ever been opened**, so the "still unproven" note on
+   M-11a/M-11c/M-11e is exactly true rather than merely cautious:
+   `select provider_id, count(*) from benchmark_provider_call_results where provider_id
+   like '%streaming%' or provider_id like '%flux%'` returns zero rows.
+
 ### M-12 — AssemblyAI Universal-Streaming row
 
 **PR:** one.
-**Depends on:** M-11 (the streaming adapter pattern and the `mode` plumbing are proven).
+**Depends on:** M-11d, not M-11. Corrected 2026-09-08: this line used to read
+"M-11 (the streaming adapter pattern and the `mode` plumbing are proven)", and the
+parenthetical is the dependency -- *proven*, not *written*. M-11a, M-11c and M-11e wrote
+two streaming adapters and never opened a socket; the pattern is unit-tested against
+reference-derived messages only. Building a third streaming adapter on it before M-11d
+runs would copy an unverified pacing, lifecycle and finalize sequence a third time, and a
+later failure would be unattributable across three adapters at once. Same correction
+applies to M-13 and M-14.
 **Files:** new file lib/stt-providers/src/adapters/assemblyai-streaming.ts (plain),
 `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/adapters/parsers.test.ts`,
 `docs/provider-data-samples.md`.
@@ -3402,7 +3427,8 @@ timing rules as M-11; row `assemblyai-universal-streaming`, $0.15/hr (pricing pa
 ### M-13 — ElevenLabs Scribe v2 Realtime row
 
 **PR:** one.
-**Depends on:** M-11.
+**Depends on:** M-11d (see the correction under M-12: the streaming pattern is written,
+not proven).
 **Files:** new file lib/stt-providers/src/adapters/elevenlabs-streaming.ts (plain),
 `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/adapters/parsers.test.ts`,
 `docs/provider-data-samples.md`.
@@ -3415,7 +3441,8 @@ timing rules as M-11; row `assemblyai-universal-streaming`, $0.15/hr (pricing pa
 ### M-14 — Gladia live row
 
 **PR:** one.
-**Depends on:** M-11.
+**Depends on:** M-11d (see the correction under M-12: the streaming pattern is written,
+not proven).
 **Files:** new file lib/stt-providers/src/adapters/gladia-streaming.ts (plain),
 `lib/stt-providers/src/registry.ts`, `lib/stt-providers/src/adapters/parsers.test.ts`,
 `docs/provider-data-samples.md`.
@@ -3433,21 +3460,54 @@ justify it).
 **Files:** new file artifacts/api-server/src/mine-confirmed-entities.ts (plain: not
 written yet, same shape as `artifacts/api-server/src/mine-reading-pairs.ts`),
 `docs/PRD-v6-measure.md` (Part D2 gets the numbers).
-**Today:** 74 of 99 calls made tool calls; `fly-APPFOLIO_FIND_TENANT`, `CREATE_SHOWING`,
-`FIND_SHOWING`, `AVAILABILITY`, `CREATE_WORK_ORDER`, `SEND_SMS`, `dynamic_send_email`
-carry arguments the customer said (phone, email, name, date). Whether those values
-appear verbatim in the customer's turns — the condition for using them as a reference —
-is unknown.
+**Today:** 119 tool calls across 75 of the 100 saved artifacts.
+`fly-APPFOLIO_FIND_TENANT`, `CREATE_SHOWING`, `FIND_SHOWING`, `AVAILABILITY`,
+`CREATE_WORK_ORDER`, `SEND_SMS`, `dynamic_send_email` carry arguments the customer said
+(phone, email, name, date). Whether those values appear verbatim in the customer's turns
+— the condition for using them as a reference — is unknown.
 **Change:** the script reads every `<callId>.artifact.json`, collects `(tool, argument
-name, value)` for string arguments, checks whether the tool result reports success
-(result text without `error`/`not found`, or a status field — read three real results
-first and write the rule down), and whether the value (after `normalizeEntity()`) occurs
+name, value)` for string arguments, decides whether the tool result reports success by
+the rule grilled below, and checks whether the value (after `normalizeEntity()`) occurs
 in the joined `User:` turns of the draft. Prints counts only: candidates, confirmed,
 present-in-customer-turns, by tool and argument name. No values printed.
-**Acceptance:** WHEN the script runs THEN it SHALL print the three counts per tool, and
-the PR SHALL state whether ≥ 10 usable references exist.
+**Acceptance:** WHEN the script runs THEN it SHALL print the counts per tool, separating
+succeeded from status-unknown, and the PR SHALL state whether ≥ 10 usable references
+exist.
+
+**Grilled 2026-09-08, before building.** Four corrections, all counted on the 100 saved
+artifacts rather than recalled:
+
+1. **The corpus numbers were wrong and the right ones were already in the repo.** Not
+   "74 of 99": **119 tool calls across 75 of the 100** saved artifacts, which is what
+   `artifacts/api-server/src/lib/production-signals.ts` counted on 2026-09-06 and wrote
+   into its own header. The register and the code disagreed, and the code was right.
+2. **The seven named tools are a minority of the corpus.** They account for 38 of the
+   119 calls. The single largest tool is `transfer_call_waterside` (25), and the most
+   common argument name of all is `destination` (52) -- a transfer target the assistant
+   chose, not a value the customer said. Counting arguments without separating
+   customer-said from assistant-chosen would overstate the pool by roughly 3x.
+3. **The success rule as written inverts the answer on the only rows that can be
+   judged.** Three facts. (a) No result anywhere in the corpus contains "not found".
+   (b) There is no status *field* at the level the rule looks at: every parsed result is
+   either an MCP content block `{type, text}` (49), a nodemailer object (8), or plain
+   text (52+). (c) Unwrapping the `text` block and parsing it again is where the status
+   lives -- **a boolean `successful`, alongside `data` and `error`, on 34 of the 119
+   rows**. Those 34 rows therefore contain the substring "error" *and* the substring
+   "success" in every case, because those are its key names. A substring rule of "text
+   without `error`" marks all 34 as failed: the only honestly-reported rows in the
+   corpus, scored backwards. The rule is: unwrap, parse, read boolean `successful`;
+   the 8 nodemailer results report `accepted`/`rejected` arrays instead; the remaining
+   77 carry no status at all and are **unknown, never success**. Absent is not success,
+   the same way absent was not zero in M-11c.
+4. **"The joined `User:` turns of the draft" is not available for every call.** 175 of
+   176 `benchmark_calls` rows have a `draft_transcript` and 175 carry an `AI:` label,
+   but only **161 carry a `User:` label** -- 14 drafts are assistant-only. A call whose
+   draft has no customer turn cannot confirm or deny a reference, and must be reported
+   as its own bucket rather than folded into "not present".
 **Verify:** `pnpm --filter @workspace/api-server exec tsx ./src/mine-confirmed-entities.ts`.
-**Must not:** write to the database; print argument values (PII).
+**Must not:** write to the database; print argument values (PII); decide success by
+searching the result for a word (see correction 3); count a status-unknown result as a
+success.
 
 ---
 
