@@ -348,11 +348,18 @@ cache (B2 saves customer + assistant + artifact). No STT, no spend. **Check:** t
 agent runs once by hand; the audit log shows `call:import_vapi` with actor `scheduler`.
 
 **E3 — the selection band counts customer words, not seconds.** `lib/bulks.ts`'s
-`minDurationSeconds` stays; a new `minCustomerWords` (default 30, from the draft's
-`User:` lines) excludes the calls that cannot carry a signal — 60 of 121 today are
-under 30 s and half have ≤ 12 customer words. The preview names the bucket
-("excluded: fewer than 30 customer words — 61"). **Check:** the default preview on Land
-And Apartment matches fewer calls and every matched one has ≥ 30 customer words.
+`minDurationSeconds` stays; a new `minCustomerWords` (from the draft's `User:` lines)
+excludes the calls that cannot carry a signal. The preview names the bucket
+("excluded: fewer than 20 customer words — 3").
+
+**Shipped 2026-09-08 as M-16 (PR #114), with two numbers in this paragraph corrected.**
+The default is **20**, not 30 (see the answered question below). And the sentence that
+used to end this paragraph — "60 of 121 today are under 30 s and half have ≤ 12 customer
+words" — was wrong on both halves once counted: the corpus is 176 calls, 121 of them are
+under 60 s, and 66 (37%, not half) have ≤ 12 customer words. **64 of those 66 are already
+excluded by the seconds band**, so inside the default 60–120 s band only 2 of 38 calls
+fall under 12 words. This filter earns its place on a widened band, not on the default
+one. Live on the running API: 38 matched with no floor, 35 at 20, 31 at 30.
 
 **E4 — the data-handling record.** `docs/data-governance.md` §4 gets one filled-in
 block per vendor already sent audio (AssemblyAI, Cartesia, Gladia, Deepgram, ElevenLabs,
@@ -408,8 +415,17 @@ Costs three transcriptions.
    is a legal question the tool can only record.
 3. **F2:** three paid Deepgram calls to test the keyterm cap — pre-approved as cents,
    or a "go spend" each time?
-4. **E3 threshold:** 30 customer words as the default floor, or lower for the transfer-
-   heavy Land And Apartment assistants (median 2 customer turns per call)?
+4. ~~**E3 threshold:** 30 customer words as the default floor, or lower for the
+   transfer-heavy Land And Apartment assistants (median 2 customer turns per call)?~~
+   **Answered 2026-09-08 by M-16, with the corpus rather than a guess: 20.** The
+   transfer-heavy worry was right. `assistant-forwarded-call` is the largest outcome
+   bucket on file — **85 of 176 calls, median 18 customer words** — so a floor of 30
+   keeps 29 of them and a floor of 20 keeps 42. In the default 60–120 s band, 30 removes
+   7 of 38 calls (of 16, 21, 23, 25 and 29 words: real conversations) where 20 removes 3.
+   Separately worth knowing: a `vertical: trucking` bulk selects **zero** calls at any
+   floor of 12 or above (8 calls, median 4 customer words). The floor is one constant and
+   one field in the create dialog, so a different answer is a one-line change and a
+   re-preview — nothing is blocked on it.
 
 ## Proposed register rows
 

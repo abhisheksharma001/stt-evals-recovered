@@ -3589,6 +3589,79 @@ success.
 
 ### M-16 — The selection band counts customer words
 
+**Status:** `done` 2026-09-08 (PR #114, `7f015e1`), deployed
+`6beffc12538e -> 7f015e116814`. 15 files, +497/-14. `artifacts/api-server`
+136 → 141 tests, `stt-benchmark` 128 → 129, integration 129 → 131.
+
+**Live, against the real API with the default 60–120 s band** — the grill's
+predictions and the running server agree to the call:
+
+| floor | matched | named bucket |
+| --- | --- | --- |
+| none (`minCustomerWords: 0`) | 38 | — |
+| **20, applied because nobody asked** | **35** | fewer than 20 customer words 3 |
+| 30 (what this step originally specified) | 31 | fewer than 30 customer words 7 |
+
+T-14's invariant holds in all three: `35 + 121 + 17 + 3 = 176`.
+
+**Shipped as:** `artifacts/api-server/src/lib/customer-words.ts` (the count,
+unit tested), `minCustomerWords` on the criteria, `withCustomerWordsDefault`
+and one bucket in `exclusionBucketFor`, a field in the create dialog, and a
+`minCustomerWords` property in `lib/api-spec/openapi.yaml` regenerated
+through orval. No migration — the criteria are jsonb.
+
+**Break test:** 18 mutations, 18 caught, all four mutated files restored.
+
+**Learned:**
+
+1. **The first harness pass caught 13 of 18, and every hole was in a file
+   with no test.** Three would have shipped: `DEFAULT_MIN_CUSTOMER_WORDS = 0`
+   passed the entire suite, preview and create were free to disagree about
+   the default, and the page could drop `minCustomerWords` whenever it was 0
+   — the one value that means "no floor". That is M-15's lesson arriving on
+   schedule: point the harness at the untested caller, not only at the
+   tested rule.
+2. **Making every test state a new default out loud is what hides the
+   default.** Five existing cases had to say `minCustomerWords: 0` because a
+   fixture call has no draft — and once they all did, nothing anywhere
+   exercised the default. The fix was one case that deliberately says
+   nothing about customer words, which is what a person actually does.
+3. **A filter that changes no selection can still lie.** Checking the floor
+   before the duration band picks the same calls and renames the exclusion.
+   64 of the 66 low-word calls are also under 60 s, so that ordering would
+   have relabelled nearly all of them and made this filter look like it was
+   doing the band's work — the exact misattribution the grill had just
+   corrected in this block's own "Today" line.
+4. **The seconds band was already doing the job, and saying so is the
+   finding.** Only 2 of the 38 in-band calls fall under 12 customer words.
+   Shipping this anyway is right — the band is overridable and
+   `maxDurationSeconds: null` is legal — but the honest claim is "a guard for
+   the widened band", not "a fix for the corpus".
+5. **Order of operations is the whole trick and it is invisible.**
+   `normalizeTranscript` strips the `AI:` / `User:` labels, so normalising
+   first counts both speakers and every call looks talkative. Caught by a
+   unit test that asserts the count is under half the whole-transcript count.
+6. **`stubApi` recorded which endpoints a page hit but not what it asked
+   them for.** On the page that spends money, that is the half that matters:
+   a filter dropped on the way out looks identical from the outside. Six
+   lines, and two UI holes closed with it.
+
+**Evidence note:** `visual-and-research` run before the field and bucket copy.
+Mobbin returned no pattern for "why the result set shrank" — the closest,
+[Pinterest's empty state](https://mobbin.com/screens/45560b08-b73e-4f7e-8a82-878c035ddd68)
+naming each filter and offering to drop it, is what `describeEmptySelection`
+already does; [Uniswap](https://mobbin.com/screens/b6e01a16-7ab6-4f95-928a-52ffd931fe5e)
+shows per-option counts beside each filter. Lenny's: **no evidence found** on
+defaults changing under existing users. Plan unchanged; the bucket keeps the
+house phrasing (`fewer than N customer words`, beside `shorter than Ns`).
+
+**Still unproven:** nothing about the numbers — they were read from the live
+dev database and reproduced against the running API. Two limits stated rather
+than closed: the scope query still reads `draftTranscript` into memory before
+`toCandidate` drops it (it is the column the count comes from), and counting
+costs 3.3 ms across the whole 176-call corpus (0.019 ms/row), so ~1.9 s at
+100k calls per debounced preview — measured, far away, not optimised.
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/lib/bulks.ts` (the band beside
