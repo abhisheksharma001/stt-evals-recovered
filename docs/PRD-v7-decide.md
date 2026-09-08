@@ -181,7 +181,10 @@ least-disagreement sentence, with one caveat that never leaves it: production wa
 stream, the candidates ran batch on the same recording. Run visual-and-research for the
 copy before building; write the evidence note beside R-3. **Check:** on `42769f26` the
 first sentence names Flux, 6.6 and 2.6; on a bulk where `productionDisagreement` is null
-the banner is unchanged.
+the banner is unchanged. **Shipped 2026-09-09 (PR #119)** — and it took one correction the
+check above did not ask for: 2.6 in that sentence and 0.40 in the table beneath it are not
+the same measurement, so the sentence now names its own units. See `docs/scoring-policy.md`,
+"Two rates on one page, and how to tell them apart".
 
 ---
 
@@ -345,7 +348,7 @@ M-13 and M-14 parked.
 |---|---|---|
 | R-1 | A1 the denominator belongs to the call | none — **shipped 2026-09-08, PR #118**; the customer bulk now reads `too_close`, no winner |
 | R-2 | A2 one quantity ranks both surfaces (blocked on question 1) | none |
-| R-3 | A3 production against the pack is the headline sentence | none |
+| R-3 | A3 production against the pack is the headline sentence | none — **shipped 2026-09-09, PR #119**; the artefact and both pages now open on Flux, 6.6 vs 2.6 |
 | R-4 | B1 the assistant card stops claiming a decision | none |
 | R-5 | D1 the judge reads the assistant's prompt and vocabulary | cents (go-spend) |
 | R-6 | D2 conventions hidden in the comparison view, toggle to show | none |

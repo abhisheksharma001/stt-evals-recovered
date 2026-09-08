@@ -1673,7 +1673,7 @@ it, plus the page-level line saying why it is absent),
    in two different files at two different grains.
 
 **Change (as shipped):** when `productionDisagreement` is non-null, one org-level line
-naming both numbers on the ranking table's own per-100-words scale and the calls behind
+naming both numbers and the calls behind
 them, with a second muted line saying production is measured against the candidates and
 never ranked with them. When it is null, **nothing renders** — no zero, no dash, no "0%".
 Why it is null on a bulk that did not run on the caller-only channel is said **once at
@@ -1683,6 +1683,18 @@ own sentence so an untracked bulk is never described as mono. Same sentence in
 **Acceptance:** met. A customer-channel bulk's org block states production's disagreement
 and the closest candidate's on one scale with the call count; a null renders no figure
 anywhere; the output contains no `__production__` and no `rates` row is named production.
+
+**Correction to M-8b, found while building R-3 (2026-09-09):** this block said the line
+named both numbers "on the ranking table's own per-100-words scale", and the component's
+own header said "on the same 100-word scale the ranking table uses". Neither was true.
+Production's rate is mismatched WORDS over the aligned caller words a plurality existed
+at; the table's is peer FLAGS -- a filtered subset -- over the whole call's word basis.
+On `42769f26` the same provider reads 2.6 in the line and 0.40 in the table. What M-8b
+actually shipped, and what stays true, is that production's rate and the closest
+candidate's rate are on one scale **with each other** -- both come out of
+`computeCrossProviderDisagreement` over the same calls. The claim is struck above; R-3
+made the sentence name its own units and `docs/scoring-policy.md` now carries the
+two-rate table.
 **Verify (copy-pasteable):**
 ```
 pnpm run typecheck                                              # 4/4
@@ -4101,6 +4113,15 @@ information); leave M-18 on the old quantity.
 
 ### R-3 — Production against the pack is the headline sentence
 
+**Status:** done 2026-09-09 (PR #119, `8e71fa957af7`), deployed `5493df7ced85 ->
+8e71fa957af7`. Live on bulk `42769f26`, the acceptance case exactly. The artefact's first
+paragraph, and the first paragraph of its org section, now read: *"Production today
+(deepgram / flux-general-en) disagreed with the candidates on 6.6 of every 100 caller
+words the transcripts could be lined up on, over 17 of 17 calls. The closest candidate on
+those same words, AssemblyAI, sat at 2.6."* The roll-up verdict follows it, demoted from
+`class="summary"` to `class="sentence"`. Both mono bulks render no lead block at all and
+are byte-for-byte what they were.
+
 **PR:** one.
 **Depends on:** nothing (R-1 first is better, not required — this line does not use the
 rate).
@@ -4131,6 +4152,70 @@ integration case updated in the same PR; then the live artefact for `42769f26` r
 `curl -s localhost:8177/api/benchmark/bulks/42769f26-4d4a-4be0-bf04-c7b69f6b4b8f/verdict.html | head -c 1200`.
 **Must not:** rank production; count it as a candidate; name it a winner or a loser;
 drop the stream-versus-recording caveat.
+
+## Evidence — production-first headline (visual-and-research, 2026-09-09)
+**Pattern to use:** put both numbers in the lead, each tagged with whose it is, and state
+the direction in words above any chart or table — ← [Hootsuite industry
+benchmarking](https://mobbin.com/screens/be5d08de-8b50-4130-9a0b-d41ac166b52b), whose
+cards read "48K people ▪INDUSTRY ●YOU" with the sentence *"There's room to grow. You've
+reached 48K fewer people than your industry average."* above the series.
+**Patterns to avoid:** ranking the incumbent in the same table as the alternatives — ←
+[Peec AI rankings](https://mobbin.com/screens/e80877c2-6453-42be-b111-b761af9753b5) lists
+the owner's own brand among competitors, which is exactly what production must never be
+here. Also [Wix Benchmarks](https://mobbin.com/screens/a9b40b72-ce38-4469-af55-985fd0f97167),
+kept for the opposite reason: with too little data it says *"Not enough data yet"* rather
+than showing zeros — the null branch this step already had.
+**What operators say:** the status quo is a competitor and has to be named as one —
+*"Don't forget the status quo: in B2B, vendors typically lose about half their sales
+opportunities to whatever the prospect is currently using... we need to understand the
+strengths and weaknesses of the status quo solution"* — "A guide to advanced B2B
+positioning" (Lenny's Newsletter, 2026-03-10)
+https://www.lennysnewsletter.com/p/a-guide-to-advanced-b2b-positioning
+**Changes to the plan:** both numbers stay in one sentence rather than the number-plus-
+delta card Hootsuite uses (there is one metric here, not a dashboard of them); production
+keeps its own line and never enters the table.
+**No evidence found for:** how products label two same-unit metrics that are not the same
+measurement. Two Lenny's searches returned only generic "vanity metrics" material. The
+caveat's wording is this repo's own.
+
+**Correction to R-3 as it was written: the Files list named the wrong test and missed a
+surface.** (1) `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`
+seeds a bulk with **no scored calls**, so it proves the null path and can never see a
+production figure; the end-to-end assertion went where the production fixture already
+lives, `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`.
+(2) The Overview says this sentence too — `summarizeBulkVerdicts` in
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx` exists, by its own comment,
+"so the Overview can say the same sentence flat on the page", and
+`artifacts/stt-benchmark/src/pages/Dashboard.tsx` renders it. Changing the banner and not
+that comment would have made the comment false. (3) `artifacts/stt-benchmark/src/pages/Rankings.tsx`
+holds the order of the org box, so the swap lives there, not in the component.
+
+**Correction to a claim R-3 proved wrong:** M-8b's block above said the production line
+named both numbers "on the ranking table's own per-100-words scale". It never did. The
+claim is struck in M-8b, where it was made.
+
+**What it taught.**
+1. *Two numbers that share a unit are read as the same measurement, whatever the code
+   knows.* Production's 2.6 and the table's 0.40 had co-existed since M-8b without anyone
+   noticing, because 2.6 was the third line on the page. Making it the first line is what
+   forced the question. Prominence is not cosmetic — it decides which contradictions get
+   found.
+2. *A doc comment that claims parity between two surfaces is a dependency.* "so the
+   Overview can say the same sentence" turned a two-file step into a three-surface one,
+   and the compiler could not have told me.
+3. *A test that waits for the wrong thing passes for the wrong reason.* The Overview's
+   multi-org guard asserted "no lead block" while the verdict query was still in flight;
+   it survived its mutation on the first break-test pass. Assertions about an absence must
+   wait for something whose presence proves the data arrived.
+4. Fourth grill in a row where reading the Files list against the code found a surface the
+   step had not named — cf. R-1, M-18, M-8b (F-100, F-232).
+
+**Left for later.** The caveat renders twice on the artefact (once at document level, once
+in the org section) because the lead itself does; that matches how the verdict already
+repeats there. The Overview stays quiet on a bulk with two orgs carrying figures — the
+per-org lines are on Results; if a bulk ever holds two orgs, decide then whether the
+Overview should name the largest rather than none (no register row yet, nothing on the
+corpus needs it).
 
 ---
 
