@@ -65,9 +65,42 @@ function watchResponses(server: Server): void {
   // the exact failure this file exists to explain.
 }
 
+// S-8: bind the loopback address, never the wildcard.
+//
+// supertest stands up a fresh server per request -- 178 call sites, several
+// in loops -- with `app.listen(0)`, and `listen` with no host binds
+// 0.0.0.0. That bind SUCCEEDS even when another process already holds
+// 127.0.0.1 on the same port (SO_REUSEADDR), and a connection to
+// 127.0.0.1:P then goes to the more specific binding: the other process.
+// The test asks its own app a question and a stranger answers.
+//
+// Measured 2026-09-08. Two loopback-only listeners were stood up in one
+// process, one on 127.0.0.1:P and one on 0.0.0.0:P; the second bound with no
+// error and the connection reached the FIRST. Binding 127.0.0.1 instead
+// fails with EADDRINUSE, so the kernel hands out a genuinely free port and
+// the collision cannot happen. This machine holds around twenty
+// loopback-only listeners inside the ephemeral range (49152-65535) --
+// editor helpers, a bundler, local agent servers -- which is why the suite
+// failed roughly one run in eleven, in a different file every time.
+const LOOPBACK = "127.0.0.1";
+
+function bindLoopback(server: Server): void {
+  const listen = server.listen.bind(server);
+  server.listen = function patchedListen(...args: unknown[]): Server {
+    // Only the `listen(port, ...)` form with no host is rewritten: a caller
+    // that named an address meant it.
+    if (typeof args[0] === "number" && typeof args[1] !== "string") {
+      const [port, ...rest] = args;
+      return (listen as (...a: unknown[]) => Server)(port, LOOPBACK, ...rest);
+    }
+    return (listen as (...a: unknown[]) => Server)(...args);
+  } as typeof server.listen;
+}
+
 const createServer = http.createServer;
 http.createServer = function patchedCreateServer(this: unknown, ...args: unknown[]): Server {
   const server = (createServer as (...a: unknown[]) => Server).apply(this, args);
   watchResponses(server);
+  bindLoopback(server);
   return server;
 } as typeof http.createServer;
