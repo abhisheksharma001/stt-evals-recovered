@@ -166,6 +166,57 @@ export function callWordBasis(cells: { callId: string; words: number }[]): Map<s
   return basis;
 }
 
+/**
+ * R-3: the sentence a reader meets FIRST -- what the transcriber running in
+ * production today actually produced, held against the candidates that ran on
+ * the same recordings. It leads because that is the only number on the page
+ * the reader is already living with; everything else is an alternative to it.
+ *
+ * The words live here, in scoring, and not in a renderer, because THREE
+ * surfaces say them: the Results banner, the Overview's flat sentence and the
+ * shareable HTML artefact. R-1 (2026-09-08) is the reason -- one quantity
+ * written out in three places drifts, and the first thing to drift is the
+ * words around the number.
+ *
+ * `rate` is NOT the ranking table's quantity, and the caveat says so out loud.
+ * Here it is word-by-word: positions where production's own transcript
+ * differed from the candidates' plurality, over the caller's turns only,
+ * divided by the aligned words a plurality existed at (hybrid.ts,
+ * computeCrossProviderDisagreement). The table counts FLAGS -- a filtered
+ * subset -- over the whole call's word basis. On bulk 42769f26 the same
+ * provider reads 2.6 here and 0.40 there. Printing both without saying which
+ * is which is how a reader concludes the tool contradicts itself.
+ */
+export function productionLead(input: {
+  /** How production is named on screen: "vendor / model", the convention the
+   *  production baseline note already uses. Null when no call recorded it. */
+  productionLabel: string | null;
+  rate: number;
+  leaderName: string | null;
+  leaderRate: number | null;
+  calls: number;
+  totalCalls: number;
+  /** Prefixed only when the bulk has more than one org, so a number is never
+   *  read as the whole bulk's. */
+  orgLabel?: string | null;
+}): { lead: string; caveat: string } {
+  const per100 = (r: number) => (r * 100).toFixed(1);
+  const who = input.productionLabel ? `Production today (${input.productionLabel})` : "The transcriber in production today";
+  const calls = `over ${input.calls} of ${input.totalCalls} call${input.totalCalls === 1 ? "" : "s"}`;
+  const closest =
+    input.leaderName && input.leaderRate !== null
+      ? ` The closest candidate on those same words, ${input.leaderName}, sat at ${per100(input.leaderRate)}.`
+      : "";
+  const prefix = input.orgLabel ? `${input.orgLabel}: ` : "";
+  return {
+    lead: `${prefix}${who} disagreed with the candidates on ${per100(input.rate)} of every 100 caller words the transcripts could be lined up on, ${calls}.${closest}`,
+    caveat:
+      "Production ran live during the call; the candidates ran afterwards on the recording. " +
+      "It is measured against them, never ranked with them -- it appears in no row here and cannot win a bulk. " +
+      "This is a word-by-word count on the caller's turns, not the per-100-words flag count the ranking uses.",
+  };
+}
+
 export function pooledRate(cells: { flags: number; words: number }[]): number | null {
   const words = cells.reduce((s, c) => s + c.words, 0);
   if (words === 0) return null;

@@ -53,6 +53,33 @@ wrote. Ranking rows written before this date carry the old basis; there is no
 recompute route, so a bulk's stored rate changes on its next execution. The
 verdict is computed on read and changed immediately.
 
+## Two rates on one page, and how to tell them apart
+
+**R-3, 2026-09-09.** The Results page, the Overview and the shareable artefact
+all print two "per 100 words" numbers, and they are **not the same
+measurement**. The same provider on bulk `42769f26` reads **2.6** in one and
+**0.40** in the other. Both are right; reading them as one number is not.
+
+| | The ranking's rate | Production's rate |
+|---|---|---|
+| Where | every table row, the verdict sentence | the production lead sentence |
+| Numerator | **peer flags** — disagreements that survived the hybrid rules (a provider's own low-confidence spans excluded, entity checks applied) | **mismatched words** — every aligned position where the transcript differed from the plurality |
+| Denominator | the call's word basis, whole call (`callWordBasis`) | the aligned words a plurality existed at, **caller turns only** |
+| Computed in | `lib/scoring/src/verdict.ts` | `computeCrossProviderDisagreement`, `lib/scoring/src/hybrid.ts` |
+
+Production's is the coarser of the two by construction: it counts raw word
+mismatches rather than flags, and it is measured on the caller's turns because
+that is all production's draft contains. It cannot be put in the ranking table
+without becoming a different number, and production takes no part in the
+consensus it is measured against (`nonVoting`, M-8a) so that the providers'
+stored flag counts stay comparable.
+
+**The rule: whichever surface prints production's rate says, in the same
+breath, that it is a word-by-word count on the caller's turns and not the flag
+count the ranking uses.** The words are written once, in `productionLead`
+(`lib/scoring/src/verdict.ts`), and the three surfaces call it rather than
+writing their own — the banner, the Overview's sentence and the HTML artefact.
+
 ## The scoring form, rule by rule
 
 Applied in this order by `normalizeTranscript()`:

@@ -149,16 +149,63 @@ describe("renderVerdictArtefact renders no form of 'winner' or 'wins'", () => {
   });
 });
 
-// M-8b: production's own transcript on the ranking's scale -- or nothing.
+// M-8b/R-3: production's own transcript first -- or nothing.
 describe("renderVerdictArtefact production disagreement", () => {
+  const measured = { rate: 0.041, leaderProviderId: "a", leaderRate: 0.018, calls: 19, totalCalls: 56 };
+
   it("states production's own disagreement beside the closest candidate's, on one scale", () => {
-    const html = render(base, {}, { rate: 0.041, leaderProviderId: "a", leaderRate: 0.018, calls: 19, totalCalls: 56 });
-    expect(html).toContain("4.1 of every 100 compared words");
-    expect(html).toContain("against 1.8 for Alpha, the closest candidate");
-    expect(html).toContain("over 19 of 56 calls in this group");
+    const html = render(base, {}, measured);
+    expect(html).toContain("4.1 of every 100 caller words");
+    expect(html).toContain("The closest candidate on those same words, Alpha, sat at 1.8.");
+    expect(html).toContain("over 19 of 56 calls");
     // Must not: production is never a row, a rank or a candidate.
     expect(html).toContain("never ranked with them");
     expect(html).not.toContain("__production__");
+  });
+
+  // R-3: the reader is already living with production's number, so it is the
+  // first thing the document says and the first thing each org section says.
+  it("puts production before the decision, in the document and in the section", () => {
+    const html = render(base, {}, measured);
+    const lead = html.indexOf("4.1 of every 100 caller words");
+    const summary = html.indexOf("Nothing decided: the top providers are inside the noise");
+    const decision = html.indexOf("Ahead, but not decided: Alpha.");
+    expect(lead).toBeGreaterThan(-1);
+    expect(summary).toBeGreaterThan(lead);
+    expect(decision).toBeGreaterThan(lead);
+    // The org's own line comes back a second time, inside its section --
+    // and inside that section it is the paragraph in headline type, with the
+    // decision demoted under it.
+    expect(html.split("4.1 of every 100 caller words").length - 1).toBe(2);
+    const section = html.slice(html.indexOf('<section class="group">'));
+    expect(section).toContain('<p class="headline">Production today (Bravo) disagreed');
+    expect(section).toContain('<p class="sentence">Ahead, but not decided: Alpha.</p>');
+    expect(section.indexOf("4.1 of every 100 caller words")).toBeLessThan(section.indexOf("Ahead, but not decided"));
+    // The caveat rides with it, once at the top and once in the section.
+    expect(html).toContain("ran live during the call");
+    expect(html).toContain("not the per-100-words flag count the ranking uses");
+  });
+
+  it("prefixes the org's name only when the bulk holds more than one", () => {
+    const one = render(base, {}, measured);
+    expect(one).not.toContain("Rush &lt;Parts&gt;: Production today");
+    const two = render(base, {
+      verdicts: {
+        bulkId: "bulk-1",
+        providers: [
+          { id: "a", name: "Alpha" },
+          { id: "b", name: "Bravo" },
+        ],
+        groups: [
+          { clientLabel: "Rush <Parts>", assistantIds: ["x"], callCount: 9, vertical: "rush", production: { vendor: "Bravo", model: null, coverage: 9, total: 9 }, productionDisagreement: measured, verdict: base },
+          { clientLabel: null, assistantIds: [null], callCount: 4, vertical: "rush", production: null, productionDisagreement: { ...measured, rate: 0.02 }, verdict: base },
+        ],
+      },
+    });
+    // Operator text is escaped before the sentence is composed, never after.
+    expect(two).toContain("Rush &lt;Parts&gt;: Production today");
+    expect(two).toContain("Calls with no org label on file: The transcriber in production today");
+    expect(two).not.toContain("Rush <Parts>");
   });
 
   it("says nothing at all when there is no comparable number, never a zero", () => {
@@ -166,10 +213,13 @@ describe("renderVerdictArtefact production disagreement", () => {
     // they ran on the mono mix, where production's caller-only draft and the
     // candidates' both-speaker transcripts are not on one scale.
     const html = render(base);
-    expect(html).not.toContain("Production, measured");
-    expect(html).not.toContain("of every 100 compared words");
-    // The line that WAS always there is untouched.
+    expect(html).not.toContain("Production today (");
+    expect(html).not.toContain("of every 100 caller words");
+    // The line that WAS always there is untouched, and the decision keeps the
+    // big type it has when nothing displaces it.
     expect(html).toContain("In production today: Bravo on 9 of 9 calls");
+    expect(html).toContain('<p class="headline">Ahead, but not decided: Alpha.</p>');
+    expect(html).toContain('<p class="summary">Nothing decided: the top providers are inside the noise');
   });
 });
 

@@ -148,6 +148,72 @@ describe("Overview", () => {
     api.restore()
   })
 
+  // R-3: the Overview is where a reader lands first, so it says production's
+  // own number before the verdict -- the same words the Results banner and
+  // the shareable artefact use, from scoring's productionLead.
+  it("says what production itself produced before it names a verdict", async () => {
+    const measured: BulkVerdicts = {
+      ...verdicts,
+      groups: [
+        {
+          ...verdicts.groups[0]!,
+          productionDisagreement: { rate: 0.0657, leaderProviderId: "gladia-solaria", leaderRate: 0.0261, calls: 17, totalCalls: 17 },
+        },
+      ],
+    }
+    const api = stubApi({ ...happyRoutes, "GET /api/benchmark/bulks/bulk-1/verdicts": measured })
+    renderPage(<Dashboard />)
+
+    const lead = await screen.findByTestId("overview-production-lead")
+    expect(lead.textContent).toContain("Production today (deepgram / nova-3)")
+    expect(lead.textContent).toContain("6.6 of every 100 caller words")
+    expect(lead.textContent).toContain("Gladia Solaria, sat at 2.6")
+    expect(lead.textContent).toContain("not the per-100-words flag count the ranking uses")
+    // The verdict still follows it, in the same block.
+    expect(document.body.textContent!.indexOf("6.6 of every 100 caller words")).toBeLessThan(
+      document.body.textContent!.indexOf("has the least disagreement in 1 of 1 group"),
+    )
+    api.restore()
+  })
+
+  it("stays quiet when two orgs each have their own production number", async () => {
+    // These rates are pooled per org. Adding them together needs the word
+    // counts behind them, which this payload does not carry, and picking one
+    // org's would read as the whole bulk's. The Overview has one sentence's
+    // room, so it says none of them: the per-org lines are on Results.
+    const pd = { rate: 0.0657, leaderProviderId: "gladia-solaria", leaderRate: 0.0261, calls: 17, totalCalls: 17 }
+    const twoOrgs: BulkVerdicts = {
+      ...verdicts,
+      groups: [
+        { ...verdicts.groups[0]!, productionDisagreement: pd },
+        { ...verdicts.groups[0]!, clientLabel: "Second org", productionDisagreement: { ...pd, rate: 0.02 } },
+      ],
+    }
+    const api = stubApi({ ...happyRoutes, "GET /api/benchmark/bulks/bulk-1/verdicts": twoOrgs })
+    renderPage(<Dashboard />)
+
+    // Wait for the VERDICT to land, not just the bulk name -- an assertion
+    // made while the verdict query is still in flight passes for the wrong
+    // reason (found by break test, 2026-09-09).
+    expect(await screen.findByText(/least disagreement in 2 of 2 groups/)).toBeTruthy()
+    expect(screen.queryByTestId("overview-production-lead")).toBeNull()
+    expect(document.body.textContent).not.toContain("of every 100 caller words")
+    api.restore()
+  })
+
+  it("shows no production sentence at all on a mono bulk", async () => {
+    // The default fixture carries productionDisagreement: null, which is what
+    // both bulks on disk really return. Nothing moves: the verdict keeps the
+    // big type and there is no lead block at all.
+    const api = stubApi(happyRoutes)
+    renderPage(<Dashboard />)
+
+    expect(await screen.findByText(/least disagreement in 1 of 1 group/)).toBeTruthy()
+    expect(screen.queryByTestId("overview-production-lead")).toBeNull()
+    expect(document.body.textContent).not.toContain("of every 100 caller words")
+    api.restore()
+  })
+
   it("with no finished bulk it says so instead of showing a verdict", async () => {
     const api = stubApi({ ...happyRoutes, "GET /api/benchmark/dashboard": { ...dashboard, latestFinishedBulk: null } })
     renderPage(<Dashboard />)

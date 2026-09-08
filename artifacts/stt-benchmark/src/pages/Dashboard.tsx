@@ -114,10 +114,25 @@ function Verdict({ bulk }: { bulk: BenchmarkDashboard["latestFinishedBulk"] }) {
       {isLoading || !summary ? (
         <div className="h-8 w-2/3 animate-pulse rounded bg-muted" />
       ) : (
-        <p className="max-w-[40ch] text-2xl leading-snug" style={{ textWrap: "balance" }}>
-          {summary.leadName && <span className="font-semibold">{summary.leadName} </span>}
-          {summary.sentence}
-        </p>
+        <>
+          {/* R-3: the transcriber running in production today is the number
+              the reader is already living with, so the Overview says it
+              before the verdict. Absent -- and the verdict keeps the big
+              type -- when no org in the bulk has a comparable figure. */}
+          {summary.productionLead && (
+            <div className="space-y-1" data-testid="overview-production-lead">
+              <p className="max-w-[52ch] text-2xl leading-snug" style={{ textWrap: "balance" }}>{summary.productionLead.lead}</p>
+              <p className="max-w-[60ch] text-xs text-muted-foreground">{summary.productionLead.caveat}</p>
+            </div>
+          )}
+          <p
+            className={`max-w-[40ch] ${summary.productionLead ? "text-base" : "text-2xl"} leading-snug`}
+            style={{ textWrap: "balance" }}
+          >
+            {summary.leadName && <span className="font-semibold">{summary.leadName} </span>}
+            {summary.sentence}
+          </p>
+        </>
       )}
       <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
         {summary && <span>{summary.totalCalls} calls scored · {summary.groups} group{summary.groups === 1 ? "" : "s"}</span>}
