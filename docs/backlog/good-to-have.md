@@ -1,3 +1,24 @@
+## Found 2026-09-09 (building R-4): "N calls scored" is printed twice, and means two things
+Results prints the phrase in two places. The page-top bulk banner
+(`artifacts/stt-benchmark/src/components/verdict-headline.tsx` near line 303) says
+`{groups.length} group(s) - {totalCalls} call(s) scored`, where `totalCalls` is the SUM of
+every group's `evidenceCalls` across the whole bulk. The org box (same file, near line
+419) says `{verdict.evidenceCalls} call(s) scored` for that one org. On every bulk the
+tool has ever run -- all of them hold exactly one org -- the two are the same number in
+the same words, so the phrase reads as repetition. On a two-org bulk they would differ,
+correctly, and a reader who learned the phrase from the one-org case would read the
+banner's number as one org's.
+
+Neither is wrong; R-4's acceptance ("the org banner carries the evidence count exactly
+once") is met by the org box, and R-4's render test is scoped to it for that reason.
+Left alone because the fix is a naming decision, not a bug fix: the bulk banner's number
+wants a word that says *across the bulk* (`{n} calls scored in this bulk`), and choosing
+it is copy work for whichever step next touches that banner.
+
+Same family as R-3's finding, one rung down: **two places printing the same words for two
+different sums must say which sum, even while the corpus makes them equal.** The corpus
+is what will change first.
+
 ## Found 2026-09-09 (building R-3): two "per 100 words" numbers, one page, 6x apart
 On bulk `42769f26` the org box printed *"production ... 6.6 of every 100 compared
 words, against 2.6 for AssemblyAI, the closest candidate"* while the table under it

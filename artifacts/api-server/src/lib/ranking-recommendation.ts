@@ -1,6 +1,6 @@
 // M-10c: the sentence stored on every ranking row and shown on Results
-// under "Why this order:" (Rankings.tsx:952), and again as the row tooltip
-// (Rankings.tsx:484, :516).
+// under "What the calls showed:" (Rankings.tsx), and again as the row
+// tooltip.
 //
 // It used to be two fixed sentences: rank 1 got "fewest/least-severe hybrid
 // flags among ready providers", everyone else got "Behind rank 1 on hybrid
@@ -34,8 +34,31 @@
 // though hybridCompositeScore itself scores that null as the best possible
 // cost. Mirroring the composite's arithmetic here would let the sentence
 // claim a provider was cheapest when nobody knows what it costs.
+//
+// R-4 (2026-09-09): the sentence stopped being a recommendation. Rank 1
+// used to open "Leading candidate for this assistant's calls" and close
+// with "Confidence: low ... Do not treat as decision-grade" -- a pick and
+// its retraction in one sentence, on every card. Read live 2026-09-09: 0
+// of 29 assistant groups reach the >=12-call decision bar (the largest has
+// 9 scored calls), and 31 assistants over 176 calls means none reaches it
+// for months. The org verdict is the only surface that decides
+// (PROVISIONAL_EVIDENCE_CALLS = 20, MIN_SHARED_CALLS_FOR_VERDICT = 5), so
+// this sentence only describes now: how many calls, who raised the fewest
+// disagreements, who was cheapest. WHERE the decision is made is added by
+// the page, not stored here -- the aggregation cannot know the org or its
+// verdict's evidence count (Rankings.tsx). The claims stay as careful as
+// M-10c made them: a tie is never a win, an unknown price is never the
+// cheapest, and one provider is never a comparison.
+//
+// "disagreements" replaces "hybrid flags" throughout, including in the
+// runner-up sentences: both halves sit in the same column and the same
+// tooltip, and R-3's lesson is that one quantity gets one name on one page
+// (the table header has said "Ranked by disagreements, price" since T-57).
 
 export type RecommendationInput = {
+  /** R-4: the sentence names who was cleanest and who was cheapest, so the
+   *  provider's display name travels with its numbers. */
+  name: string;
   /** avgFlagCount-equivalent the composite actually reads: the average of
    *  (peerFlagCount + severityRank(peerFlagSeverity)) across this
    *  provider's cells. Null when no cell carried either. */
@@ -43,46 +66,60 @@ export type RecommendationInput = {
   costPerMinute: number | null;
 };
 
-const providers = (n: number): string => (n === 1 ? "1 other provider" : `${n} other providers`);
+const many = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 const strictlyCheaper = (a: RecommendationInput, b: RecommendationInput): boolean =>
   a.costPerMinute !== null && b.costPerMinute !== null && a.costPerMinute < b.costPerMinute;
 
 /**
- * The stored recommendation for rank 1. `ranked` is the group's providers in
- * rank order, rank 1 first; providers with a null composite (no cell
- * succeeded) get their own sentence upstream and are ignored here.
+ * The stored sentence for rank 1: what this group's calls showed, with no
+ * pick in it. `ranked` is the group's providers in rank order, rank 1
+ * first; providers whose every cell failed carry a null flagBadness, get
+ * their own sentence upstream, and are not rivals that tie or beat.
+ * `scopePhrase` already carries the call count ("this assistant's 7
+ * calls"), because how it is worded depends on whether the group has an
+ * assistant at all.
  */
 export function rank1Recommendation(
   ranked: readonly RecommendationInput[],
-  groupPhrase: string,
+  scopePhrase: string,
 ): string {
-  const me = ranked[0];
-  const peers = ranked.slice(1).filter((p) => p.flagBadness !== null);
+  const ready = ranked.filter((p) => p.flagBadness !== null);
 
-  if (me === undefined || me.flagBadness === null || peers.length === 0) {
-    // One provider ran. "Fewest flags among ready providers" is a
-    // comparison with nothing to compare against -- 2 such groups exist in
-    // the live corpus today.
-    return `Only candidate for ${groupPhrase} -- one provider ran, so this is not a comparison.`;
+  if (ready.length === 0) return `On ${scopePhrase}: no disagreement numbers yet.`;
+  if (ready.length === 1) {
+    return `On ${scopePhrase}: only ${ready[0]!.name} produced a transcript to compare, so nothing here is a comparison.`;
   }
 
-  const cleaner = peers.filter((p) => p.flagBadness! < me.flagBadness!).length;
-  if (cleaner > 0) {
-    return `Leading candidate for ${groupPhrase} -- cheaper per minute, though ${providers(cleaner)} raised fewer or less-severe hybrid flags. Price outweighed the flag gap; this is not an accuracy win.`;
+  const fewestBadness = Math.min(...ready.map((p) => p.flagBadness!));
+  const cleanest = ready.filter((p) => p.flagBadness === fewestBadness);
+  const fewest =
+    cleanest.length === 1
+      ? `fewest disagreements ${cleanest[0]!.name}`
+      : cleanest.length === ready.length
+        ? "every provider raised the same disagreements"
+        : `${many(cleanest.length, "provider")} tied for fewest disagreements`;
+
+  // "Absent is not zero": a null costPerMinute is an unknown price, so the
+  // group cannot be said to have a cheapest until every provider in it has
+  // a price. hybridCompositeScore scores that null as the best possible
+  // cost; this sentence must not inherit that.
+  const priced = ready.filter((p) => p.costPerMinute !== null);
+  let cheapest: string;
+  if (priced.length < ready.length) {
+    cheapest = "no price on file for every provider";
+  } else {
+    const lowestCost = Math.min(...priced.map((p) => p.costPerMinute!));
+    const cheapestOnes = priced.filter((p) => p.costPerMinute === lowestCost);
+    cheapest =
+      cheapestOnes.length === 1
+        ? `cheapest ${cheapestOnes[0]!.name}`
+        : cheapestOnes.length === priced.length
+          ? "every provider costs the same per minute"
+          : `${many(cheapestOnes.length, "provider")} tied on price`;
   }
 
-  const tied = peers.filter((p) => p.flagBadness! === me.flagBadness!).length;
-  if (tied === 0) {
-    return `Leading candidate for ${groupPhrase} -- fewest/least-severe hybrid flags among ready providers.`;
-  }
-
-  const priceDecided = peers.every(
-    (p) => p.flagBadness! !== me.flagBadness! || strictlyCheaper(me, p),
-  );
-  return priceDecided
-    ? `Leading candidate for ${groupPhrase} -- tied on hybrid flags with ${providers(tied)} and the cheapest of the tied. Price decided this order, not accuracy.`
-    : `No leader for ${groupPhrase} -- tied on hybrid flags with ${providers(tied)} and nothing separates them on price either, so this order is arbitrary. Do not read rank 1 as a pick.`;
+  return `On ${scopePhrase}: ${fewest}, ${cheapest}.`;
 }
 
 /** The stored recommendation for rank 2 and below. */
@@ -91,15 +128,15 @@ export function runnerUpRecommendation(
   rank1: RecommendationInput,
 ): string {
   if (me.flagBadness === null || rank1.flagBadness === null) {
-    return "Ranked below rank 1. Not enough flag evidence to say what separated them.";
+    return "Ranked below rank 1. Not enough evidence to say what separated them.";
   }
   if (me.flagBadness < rank1.flagBadness) {
-    return "Ranked below rank 1 on price, not on accuracy -- it raised fewer or less-severe hybrid flags than rank 1 did.";
+    return "Ranked below rank 1 on price, not on accuracy -- it raised fewer or less-severe disagreements than rank 1 did.";
   }
   if (me.flagBadness > rank1.flagBadness) {
-    return "Behind rank 1 on hybrid flags: more or more-severe cross-provider disagreement and entity mismatches.";
+    return "Behind rank 1 on disagreements: more or more-severe cross-provider disagreement and entity mismatches.";
   }
   return strictlyCheaper(rank1, me)
-    ? "Tied with rank 1 on hybrid flags; ranked below it on price alone."
-    : "Tied with rank 1 on hybrid flags with nothing separating them on price either -- this order is arbitrary.";
+    ? "Tied with rank 1 on disagreements; ranked below it on price alone."
+    : "Tied with rank 1 on disagreements with nothing separating them on price either -- this order is arbitrary.";
 }

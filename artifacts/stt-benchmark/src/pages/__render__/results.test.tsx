@@ -64,6 +64,10 @@ const rankings: VerticalRanking[] = [
     providerId: "deepgram-nova-3",
     providerName: "Deepgram Nova-3",
     rank: 1,
+    // R-4: the sentence run-executor stores for rank 1. It used to be "" in
+    // this fixture, so the card's own block never rendered and no assertion
+    // here could see it.
+    recommendation: "On this assistant's 12 calls: fewest disagreements Deepgram Nova-3, cheapest Deepgram Nova-3.",
     score: { ...emptyScore, avgFlagCount: 1.1, avgPeerFlagCount: 0.9, costPerMinute: 0.0043, latencyFinalMs: 3500 },
   }),
   row({
@@ -82,6 +86,8 @@ const rankings: VerticalRanking[] = [
     rank: 1,
     assistantId: null,
     assistantLabel: "Unassigned (no assistant ID captured at import)",
+    recommendation:
+      "On 3 calls with no assistant on file: only Deepgram Nova-3 produced a transcript to compare, so nothing here is a comparison.",
     score: { ...emptyScore, avgFlagCount: 3.0, avgPeerFlagCount: 2.8 },
   }),
 ]
@@ -378,6 +384,85 @@ describe("Results", () => {
 
     expect(await screen.findByText(/Unassigned \(no assistant ID captured at import\)/)).toBeTruthy()
     api.restore()
+  })
+
+  // R-4: the card describes; the org verdict decides. Before this, every
+  // card opened "Leading candidate for this assistant's calls" and closed
+  // "Confidence: low ... Do not treat as decision-grade" -- a pick and its
+  // retraction in one sentence, on all 29 live assistant groups, 0 of which
+  // reach the >=12-call bar.
+  it("the assistant card describes its own calls and sends the decision upstairs", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    const summary = screen.getAllByTestId("assistant-card-summary")[0]!
+    expect(summary.textContent).toContain("What the calls showed:")
+    expect(summary.textContent).toContain("On this assistant's 12 calls: fewest disagreements Deepgram Nova-3")
+    expect(summary.textContent).not.toContain("Why this order:")
+
+    const pointer = screen.getAllByTestId("assistant-card-decision-pointer")[0]!
+    expect(pointer.textContent).toContain("The decision for Default is made above, on 12 calls.")
+    expect(pointer.textContent).toContain("One assistant alone has too few calls to decide")
+  })
+
+  it("no card anywhere on the page claims a decision or retracts one", async () => {
+    stubApi(baseRoutes)
+    const { container } = renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    for (const card of screen.getAllByTestId("assistant-card-summary")) {
+      expect(card.textContent).not.toContain("Leading candidate")
+      expect(card.textContent).not.toContain("decision-grade")
+      expect(card.textContent).not.toContain("Confidence: low")
+    }
+    // And not in a tooltip either -- the same stored sentence is the row
+    // title attribute, which no visible-text assertion would catch.
+    const html = container.innerHTML
+    expect(html).not.toContain("Leading candidate")
+    expect(html).not.toContain("decision-grade")
+  })
+
+  it("the org banner carries the evidence count once, and the card does not repeat it", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    // Scoped to the ORG box on purpose. The page-top bulk banner also says
+    // "N calls scored", but that N is the sum across every group in the
+    // bulk -- a different quantity that happens to coincide when the bulk
+    // holds one org. Logged as a redundancy in docs/backlog/good-to-have.md
+    // (2026-09-09), not fixed here.
+    // Every org section gets a verdict box, including the unassigned
+    // bucket (whose box says it has no verdict), so this asks: exactly one
+    // of them carries the count, and it carries it once.
+    const orgBanners = screen.getAllByTestId("group-verdict-headline")
+    const carrying = orgBanners.filter((b) => /12 calls scored/.test(b.textContent ?? ""))
+    expect(carrying.length).toBe(1)
+    expect(within(carrying[0]!).getAllByText(/12 calls scored/).length).toBe(1)
+
+    // The card underneath states the evidence its own way (its call count
+    // opens the sentence) and never repeats the banner's phrasing.
+    for (const card of screen.getAllByTestId("assistant-card-summary")) {
+      expect(card.textContent).not.toContain("calls scored")
+    }
+  })
+
+  it("all-time combined points at where a decision is made, not at one that is not on the page", async () => {
+    // The verdict box is rendered only in One bulk. A card saying "the
+    // decision is made above" in All-time combined would be pointing at
+    // nothing at all.
+    stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+    fireEvent.click(screen.getByText("All-time combined"))
+    await screen.findAllByText("Deepgram Nova-3")
+
+    expect(screen.queryByTestId("group-verdict-headline")).toBeNull()
+    const pointer = screen.getAllByTestId("assistant-card-decision-pointer")[0]!
+    expect(pointer.textContent).toContain("No decision is made here")
+    expect(pointer.textContent).toContain("switch to One bulk above")
+    expect(pointer.textContent).not.toContain("is made above,")
   })
 
   it("switching to all-time drops the bulk filter and claims no verdict", async () => {
