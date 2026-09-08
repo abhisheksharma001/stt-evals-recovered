@@ -3751,6 +3751,62 @@ in `benchmark_calls` with their four cache files, and the audit log SHALL show
 
 ### M-18 — The manual place counts: proxy-agreement endpoint and line
 
+**Status:** done 2026-09-08 (PR #117, `9626b72`), deployed `ffe4342a86e8 -> 9626b727282d`.
+Live: `labelledCalls 2, n 2, top1Agreement 0.5, kendallTau 0.017`.
+
+**Corrections to M-18 as it was written** (all three found by grilling, before code):
+
+1. **A provider does not have one score per call, so "rank the providers that
+   scored it by WER" had no single value to rank.** The cell key is
+   `(run_id, call_id, provider_id)`; on the live corpus the same provider scored
+   **0.40 and 3.56 WER on the same call** in two different runs. Resolved with the
+   convention `run-executor`'s `providerAggregates` already uses -- the mean over a
+   provider's cells -- so the ordering compared here is the ordering the Results
+   page actually shows, not a second one invented for this endpoint.
+2. **The step said render whenever `n > 0`. M-20 sets a floor of 20 on the SAME
+   labelled set**, so as written the two steps contradicted each other on one page.
+   Adopted M-20's floor rather than inventing a threshold. This is not academic: on
+   the live corpus `n = 2` and tau-b is **0.017** -- no relationship at all -- which
+   "agreed 50% of the time" would have reported to a CEO as a real finding.
+3. **The Files list named `Rankings.tsx`; the line lives in
+   `artifacts/stt-benchmark/src/components/verdict-headline.tsx`**, which Rankings
+   renders. Exactly the miss M-9's Files list had, and that file's own comment
+   already said "PRD-v6 D4 appends the measured agreement figure to this line".
+
+**Change (as shipped):** `lib/scoring/src/rank-agreement.ts` (`kendallTauB`,
+`sharesTop1`, pure), `artifacts/api-server/src/lib/proxy-agreement.ts` and
+`artifacts/api-server/src/lib/proxy-agreement-aggregate.ts` (split the way T-85's
+`call-disagreement` is, so the arithmetic is unit-testable without a database),
+`GET /benchmark/proxy-agreement` (all-time, unscoped -- the labelled set is 2 calls
+and slicing it per bulk would leave nothing to measure), and one sentence under the
+M-9 legend. Only `ok` cells in `batch` runs count: agent-scan runs re-transcribe a
+call to judge it and never feed a ranking.
+
+**tau-b, not tau-a.** Ties are the normal case here, not an edge case -- rank 1 was
+tied for fewest flags in 59 of 62 assistant groups. tau-a counts every tied pair as
+a disagreement and would read low for a reason that has nothing to do with the
+ranking being wrong.
+
+**What it taught.** Three things.
+
+*A number that measures nothing must not be reported as a number that measured
+zero.* A call is dropped, never counted as agreement, whenever `kendallTauB` answers
+null. The tempting fallback -- "do the two best sets overlap" -- is satisfied
+trivially by an all-tied side, which would have filled the figure with calls that
+distinguished nothing. Same rule the codebase already applies to a null price.
+
+*A redundant guard reads as a second rule.* The break test's one survivor was
+`if (wers.length < 2) continue`, and it was not a hole: a call with under two
+rankable providers has no pairs, so tau's denominator is already zero. Two lines
+expressing one rule. Removed; 17 of 17 after.
+
+*Self-review caught a copy bug the tests could not have.* The sentence read "On the
+21 calls a person did check", attaching "a person did check" to `n`. `n` is the
+subset that could be **ranked**; a person checked `labelledCalls`. At 24 golded and
+21 rankable that credits them with three calls fewer than they did. Both counts are
+named now. No test would ever have failed on this -- it was true code and false
+English.
+
 **PR:** one.
 **Depends on:** M-9 (the line it appends to).
 **Files:** `lib/api-spec/openapi.yaml` (`GET /benchmark/proxy-agreement`),
@@ -3816,7 +3872,8 @@ judge-confidence lines on the assistant card).
 **Today:** the judge's pick is shown as a verdict input; its accuracy has never been
 measured (the judge-accuracy report was removed in batch 4).
 **Change:** for each labelled call (as M-18), the judge's pick either is or is not the
-lowest-WER provider. Report `n`, `agree`, and render "judge accuracy: X % of N" when
+lowest-WER provider. The floor of 20 is now shared: M-18 shipped reading it too, and
+the two lines sit on the same page, so they must appear and disappear together. Report `n`, `agree`, and render "judge accuracy: X % of N" when
 `n ≥ 20`, else "judge accuracy: not measured (N of 20)".
 **Acceptance:** WHEN fewer than 20 labelled calls exist THEN the card SHALL say "not
 measured (N of 20)" and no percentage.

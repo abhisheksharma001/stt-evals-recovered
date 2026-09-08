@@ -127,6 +127,51 @@ reader.
 **Worth having:** move both into a shared module (lib/stt-providers/src/audio.ts or
 similar -- plain: does not exist yet) and make the messages name the format problem, not a vendor.
 
+## Found 2026-09-08 (shipping M-18): one of the two human gold transcripts is a fragment, not a gold
+`benchmark_calls.gold_transcript` on call `3559ea45` is **137 characters** -- two
+lines -- while the hypotheses it is scored against are full call transcripts. That
+is why its WER runs to **3.56**: 356% error is not a bad transcription, it is a
+reference that is not a reference for that audio. The other gold (`64d8f463`, 978
+characters) looks like real work; its WERs sit between 0.02 and 0.89.
+
+M-18 deliberately did **not** invent a threshold to filter this. Any cutoff --
+"drop the call when the best WER exceeds 1.0", say -- is a guess dressed as a rule,
+and the best WER on this very call is 0.40, so that particular guess would not even
+have caught it. The honest fix is upstream and it is Abhishek's call: either finish
+the gold, or clear it so the call stops counting as labelled. Two of two labelled
+calls is a small enough set that one bad one is half the evidence.
+
+Until then the floor does the protecting: at `n = 2` nothing renders but a progress
+line, so the fragment cannot reach a reader as a percentage.
+
+## Found 2026-09-08 (shipping M-18): two sibling steps set different floors on the same set
+M-18 said render the agreement figure whenever `n > 0`. M-20, four rows below it,
+sets a floor of **20 labelled calls** before rendering the judge's accuracy -- on
+the same labelled set, on the same page. Both were written in the same sitting.
+Shipping M-18 as written would have put "agreed 50% of the time" and "not measured
+(2 of 20)" side by side, both true, both about the same two calls.
+
+Adopted M-20's floor, and added a line to M-20 saying the floor is now shared so the
+next person does not re-derive it. **The general shape: when two steps touch one
+surface, the second one written is where the contradiction hides, and neither step's
+own text will mention it.** Grilling a step against its own neighbours catches this;
+grilling it against the code does not.
+
+## Found 2026-09-08 (shipping M-18): the S-1 trap again -- a break test threw away an uncommitted fix
+The break-test harness restores each mutated file with `git checkout -- <path>`,
+which restores the **committed** file. M-18 was committed before the break test, as
+the rule requires. Then the self-review found a copy bug, it was fixed **without
+committing**, and the break test was re-run to check the four UI mutations against
+the new copy. The first mutation's restore silently reverted the fix; the third
+mutation then reported `SKIP -- anchor matched 0 times`, which is the only reason it
+was noticed at all.
+
+The rule as written ("commit first, then prove it by breaking it") reads as a
+one-time gate. It is not: **it holds for every re-run.** Anything the break test can
+restore must be committed before the break test runs again, not just before it runs
+the first time. Nothing was lost -- the fix was reapplied from the same script -- but
+the failure mode is silent unless a later anchor happens to miss.
+
 ## Found 2026-09-07 (shipping M-11a): `providersConfigured` lists things that cannot be run
 
 `GET /api/healthz` now reports `deepgram-nova-3-streaming` in `providersConfigured`,
