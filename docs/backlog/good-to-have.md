@@ -1,3 +1,26 @@
+## Found 2026-09-09 (building R-3): two "per 100 words" numbers, one page, 6x apart
+On bulk `42769f26` the org box printed *"production ... 6.6 of every 100 compared
+words, against 2.6 for AssemblyAI, the closest candidate"* while the table under it
+printed AssemblyAI at **0.40 disagreements / 100 words**. Same provider, same 17 calls,
+same three words of unit -- and a factor of 6.5 between them. Nothing was wrong with
+either figure: production's is raw mismatched words over the aligned CALLER words a
+plurality existed at (`computeCrossProviderDisagreement`, caller turns only, production
+non-voting); the table's is peer FLAGS -- a filtered subset -- over the whole call's word
+basis (`callWordBasis`, R-1). The page just never said which was which.
+
+It had been buried in a secondary line since M-8b. R-3 promotes that line to the FIRST
+sentence a reader meets, which is what turned a quiet hazard into one that had to be
+fixed before shipping: the loudest number on the page would have contradicted the table
+directly beneath it. Fixed inside R-3 -- the shared `productionLead` sentence names the
+units and carries the clause *"a word-by-word count on the caller's turns, not the
+per-100-words flag count the ranking uses"*, and `docs/scoring-policy.md` now carries the
+two-rate table.
+
+**Worth keeping as a rule:** two numbers on one page that share a unit must either be the
+same measurement or say, in their own words, that they are not. Same shape as R-2's rule
+for two rankings; this is the same failure one level down, at the unit rather than the
+order.
+
 ## Found 2026-09-08 (research for PRD v7): the honest bulk's winner is decided by filler words
 On bulk `42769f26` -- the only bulk ever run on the customer channel, 17 calls × 5
 providers -- the org verdict reads *"ElevenLabs has the least disagreement: 0.4 per 100

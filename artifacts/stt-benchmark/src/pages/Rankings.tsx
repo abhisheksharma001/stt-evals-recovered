@@ -924,15 +924,17 @@ export default function Rankings() {
                 repeated under every assistant. */}
             {viewMode === "bulk" && (
               <div className="overflow-hidden rounded-lg border border-border">
+                {/* M-8b/R-3: production's own transcript against the same
+                    consensus, at the same org grain, ABOVE the decision --
+                    the reader is already living with this number, so it is
+                    read first. Renders nothing at all when there is no
+                    comparable number, and then the decision is first as
+                    before. */}
+                <ProductionDisagreementLine data={verdicts} group={org.verdict} />
                 <GroupVerdictHeadline
                   verdict={org.verdict?.verdict}
                   scope={org.verdict ? { clientLabel: org.verdict.clientLabel, assistantCount: org.verdict.assistantIds.length, callCount: org.verdict.callCount } : undefined}
                 />
-                {/* M-8b: production's own transcript against the same
-                    consensus, on the same scale, at the same org grain --
-                    renders nothing at all when there is no comparable
-                    number. */}
-                <ProductionDisagreementLine data={verdicts} group={org.verdict} />
               </div>
             )}
             {/* T-24: the org as a whole -- every candidate's list price at

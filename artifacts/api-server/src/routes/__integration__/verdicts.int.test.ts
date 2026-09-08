@@ -195,6 +195,16 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     const rateIds = group.verdict.rates.map((r: { providerId: string }) => r.providerId);
     expect(rateIds.sort()).toEqual([...providers.map((p) => p.id)].sort());
     expect(JSON.stringify(res.body)).not.toContain("__production__");
+
+    // R-3: the shareable page opens on the same number, in the same words,
+    // before the roll-up verdict -- end to end, from the stored cells to the
+    // HTML a CEO is sent.
+    const html = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
+    expect(html.status).toBe(200);
+    expect(html.text).toContain("25.0 of every 100 caller words");
+    expect(html.text).toContain("sat at 0.0");
+    expect(html.text).toContain("not the per-100-words flag count the ranking uses");
+    expect(html.text.indexOf("25.0 of every 100 caller words")).toBeLessThan(html.text.indexOf('<p class="counts">'));
   });
 
   it("gives no production number at all on a mono bulk, rather than a flattering one", async () => {

@@ -1,4 +1,4 @@
-import type { HeadlineVerdict } from "@workspace/scoring";
+import { productionLead, type HeadlineVerdict } from "@workspace/scoring";
 import type { BulkVerdicts } from "./verdict";
 
 /**
@@ -81,6 +81,35 @@ export function costDeltaLine(
   return `${nameOf(winner)} ${fmtRate(wp)} is ${dir} production ${nameOf(v.productionProviderId)} ${fmtRate(pp)}.`;
 }
 
+/**
+ * R-3: production's own reading, in the shared words (scoring's
+ * productionLead), escaped for this document. The vendor, the model and the
+ * provider name are operator/Vapi text and this page is opened in a browser,
+ * so they go through `esc` BEFORE the sentence is composed -- the composed
+ * sentence is then our own literal text and must not be escaped again.
+ *
+ * Returns null when there is no comparable number: a mono bulk heard the
+ * assistant too and production's draft is the caller alone. Absent, never a
+ * zero (M-8b).
+ */
+function productionLeadFor(
+  g: BulkVerdicts["groups"][number],
+  nameOf: (id: string | null) => string,
+  orgLabel?: string | null,
+): { lead: string; caveat: string } | null {
+  const pd = g.productionDisagreement;
+  if (!pd) return null;
+  return productionLead({
+    productionLabel: g.production ? `${esc(g.production.vendor)}${g.production.model ? ` / ${esc(g.production.model)}` : ""}` : null,
+    rate: pd.rate,
+    leaderName: pd.leaderProviderId ? esc(nameOf(pd.leaderProviderId)) : null,
+    leaderRate: pd.leaderRate,
+    calls: pd.calls,
+    totalCalls: pd.totalCalls,
+    orgLabel: orgLabel ? esc(orgLabel) : null,
+  });
+}
+
 function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | null) => string, price: Record<string, number>): string {
   const v = g.verdict;
   const label = g.clientLabel ?? "Calls with no org label on file";
@@ -102,16 +131,13 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   const production = g.production
     ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — the named provider has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} disagreements than production` : ""}.`
     : "In production today: unknown (no call in this group recorded its live provider).";
-  // M-8b: production's OWN transcript against the candidates' consensus, on
-  // the same per-100-words scale as the table below. Absent -- never a zero
-  // and never a dash -- when there is no comparable number: a bulk measured
-  // on the mono mix heard the assistant too, and production's draft is the
-  // caller alone. See productionDisagreementFor in verdict.ts.
-  const pd = g.productionDisagreement;
-  const per100 = (rate: number) => (rate * 100).toFixed(1);
-  const productionMeasured = pd
-    ? `Production, measured: the transcript production actually produced disagreed with the candidates' consensus on ${per100(pd.rate)} of every 100 compared words${pd.leaderProviderId && pd.leaderRate !== null ? `, against ${per100(pd.leaderRate)} for ${esc(nameOf(pd.leaderProviderId))}, the closest candidate` : ""} — over ${n(pd.calls)} of ${n(pd.totalCalls)} call${pd.totalCalls === 1 ? "" : "s"} in this group. Production is scored against the candidates, never ranked with them: it takes no part in forming the consensus it is measured on, so it appears in no row below and cannot win a bulk.`
-    : null;
+  // M-8b/R-3: production's OWN transcript against the candidates' consensus.
+  // It is now the FIRST thing in the section, above the decision, because it
+  // is the only number the reader is already living with. Absent -- never a
+  // zero and never a dash -- when there is no comparable number: a bulk
+  // measured on the mono mix heard the assistant too, and production's draft
+  // is the caller alone. See productionDisagreementFor in verdict.ts.
+  const measured = productionLeadFor(g, nameOf);
   const caveats: string[] = [];
   if (v.provisional) caveats.push(`Early read (under 20 calls): trust the direction, not the size.`);
   if (v.confidenceComparable.total > 0 && v.confidenceComparable.reporting < v.confidenceComparable.total)
@@ -126,11 +152,11 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   return `
 <section class="group">
   <h2>${esc(label)} <span class="chip ${v.decision}">${DECISION_LABEL[v.decision]}</span></h2>
-  <p class="headline">${headline}</p>
+  ${measured ? `<p class="headline">${measured.lead}</p>\n  <p class="meta">${measured.caveat}</p>` : ""}
+  <p class="${measured ? "sentence" : "headline"}">${headline}</p>
   <p class="sentence">${esc(v.sentence)}</p>
   <p class="meta">${esc(evidence.join(" · "))}</p>
   <p class="meta">${production}</p>
-  ${productionMeasured ? `<p class="meta">${productionMeasured}</p>` : ""}
   <p class="meta">Cost: ${esc(costDeltaLine(v, nameOf, price))}</p>
   ${caveats.map((c) => `<p class="caveat">${esc(c)}</p>`).join("")}
   <table>
@@ -159,6 +185,15 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
   } else if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls)
     summary = "Nothing decided: the top providers are inside the noise in every group with enough calls to judge.";
   else summary = `Nothing decided yet: ${counts.too_few_calls} of ${groups.length} org${groups.length === 1 ? "" : "s"} have fewer than 5 calls shared by the top two providers.`;
+
+  // R-3: the document opens on production, when there is a figure for it --
+  // the roll-up verdict follows. One line per org that has one, prefixed with
+  // the org's name only when the bulk holds more than one, because these
+  // rates are pooled per org and cannot be added together into a bulk-wide
+  // number without the word counts behind them.
+  const leads = groups
+    .map((g) => productionLeadFor(g, nameOf, groups.length > 1 ? (g.clientLabel ?? "Calls with no org label on file") : null))
+    .filter((x): x is { lead: string; caveat: string } => x !== null);
 
   const status = bulk.status === "complete" ? "complete" : `${bulk.status} — figures may change if the bulk is retried`;
 
@@ -204,7 +239,11 @@ export function renderVerdictArtefact(input: VerdictArtefactInput): string {
   Produced ${fmtStamp(producedAt)} · build ${esc(buildCommitSha)} · scoring ${esc(scoringVersion)} · bulk ${esc(bulk.id)}<br>
   Bulk launched ${fmtDate(bulk.createdAt)}${bulk.completedAt ? `, completed ${fmtDate(bulk.completedAt)}` : ""} · status: ${esc(status)}
 </div>
-<p class="summary">${summary}</p>
+${
+  leads.length > 0
+    ? `${leads.map((l) => `<p class="summary">${l.lead}</p>`).join("\n")}\n<p class="meta">${leads[0]!.caveat}</p>\n<p class="sentence">${summary}</p>`
+    : `<p class="summary">${summary}</p>`
+}
 <p class="counts">${groups.length} org${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} call${totalEvidence === 1 ? "" : "s"} scored · ${counts.winner} decided · ${counts.too_close} too close · ${counts.too_few_calls} not enough calls${counts.insufficient ? ` · ${counts.insufficient} only one provider` : ""}</p>
 ${groups.map((g) => groupSection(g, nameOf, price)).join("\n")}
 <div class="legend">

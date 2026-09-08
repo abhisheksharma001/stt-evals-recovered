@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapNoiseFloor, callWordBasis, computeVerdict, pooledRate, type VerdictCell } from "./verdict";
+import { bootstrapNoiseFloor, callWordBasis, computeVerdict, pooledRate, productionLead, type VerdictCell } from "./verdict";
 
 function cellsFor(providerId: string, flags: number[], words = 100): VerdictCell[] {
   return flags.map((f, i) => ({ callId: `c${i}`, providerId, peerFlagCount: f, words }));
@@ -202,5 +202,61 @@ describe("computeVerdict", () => {
     const v = computeVerdict(cells, { confidenceReportingProviderIds: ["a", "zzz-not-in-group"] });
     expect(v.confidenceComparable).toEqual({ reporting: 1, total: 2 });
     expect(v.sentence).not.toContain("report confidence");
+  });
+});
+
+// R-3: the sentence three surfaces say. It is tested here, once, because
+// that is the whole reason it lives in scoring rather than in a renderer.
+describe("productionLead", () => {
+  const live = {
+    productionLabel: "deepgram / flux-general-en",
+    rate: 0.0657,
+    leaderName: "AssemblyAI",
+    leaderRate: 0.0261,
+    calls: 17,
+    totalCalls: 17,
+  };
+
+  it("names production, its rate, the closest candidate and the calls behind both", () => {
+    const { lead } = productionLead(live);
+    expect(lead).toContain("Production today (deepgram / flux-general-en)");
+    expect(lead).toContain("6.6 of every 100 caller words");
+    expect(lead).toContain("over 17 of 17 calls");
+    expect(lead).toContain("The closest candidate on those same words, AssemblyAI, sat at 2.6.");
+  });
+
+  it("says which count this is, so 2.6 here is never read as the 0.40 in the table", () => {
+    const { caveat } = productionLead(live);
+    // The units differ on purpose: word-by-word on the caller's turns here,
+    // filtered flags over the whole call's word basis in the ranking. On bulk
+    // 42769f26 the same provider reads 2.6 and 0.40. Saying so is the whole
+    // job of this line.
+    expect(caveat).toContain("word-by-word count on the caller's turns");
+    expect(caveat).toContain("not the per-100-words flag count the ranking uses");
+    // The two caveats R-3 must not drop.
+    expect(caveat).toContain("ran live during the call");
+    expect(caveat).toContain("never ranked with them");
+  });
+
+  it("drops the candidate clause rather than printing a zero for it", () => {
+    const { lead } = productionLead({ ...live, leaderName: null, leaderRate: null });
+    expect(lead).not.toContain("closest candidate");
+    expect(lead).not.toContain("0.0");
+    expect(lead).toContain("6.6 of every 100 caller words");
+  });
+
+  it("says who it is even when no call recorded the live transcriber", () => {
+    const { lead } = productionLead({ ...live, productionLabel: null });
+    expect(lead).toContain("The transcriber in production today");
+    expect(lead).not.toContain("(null)");
+  });
+
+  it("carries the org's name only when it is given one", () => {
+    expect(productionLead(live).lead.startsWith("Production today")).toBe(true);
+    expect(productionLead({ ...live, orgLabel: "Land And Apartment" }).lead).toContain("Land And Apartment: Production today");
+  });
+
+  it("keeps one call singular", () => {
+    expect(productionLead({ ...live, calls: 1, totalCalls: 1 }).lead).toContain("over 1 of 1 call.");
   });
 });

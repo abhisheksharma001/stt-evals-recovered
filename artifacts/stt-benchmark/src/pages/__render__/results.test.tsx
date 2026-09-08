@@ -565,7 +565,7 @@ describe("Results", () => {
     expect(screen.getAllByText("Export CSV").length).toBe(2)
     expect(screen.getAllByTestId("org-section").length).toBe(1)
     expect(lines.length).toBe(1)
-    expect(lines[0].textContent).toContain("4.1 of every 100 compared words")
+    expect(lines[0].textContent).toContain("4.1 of every 100 caller words")
     expect(lines[0].textContent).toContain("1.8")
     expect(lines[0].textContent).toContain("Gladia Solaria")
     expect(lines[0].textContent).toContain("19 of 56 calls")
@@ -574,6 +574,42 @@ describe("Results", () => {
     expect(document.body.textContent).not.toContain("__production__")
     // A customer bulk has a figure, so the page has no absence to explain.
     expect(screen.queryByTestId("production-disagreement-unavailable")).toBeNull()
+    api.restore()
+  })
+
+  // R-3: production is what the reader is already living with, so it leads --
+  // in the banner at the top of the page and inside the org box, above the
+  // decision. Both say the same words because both call scoring's
+  // productionLead.
+  it("leads the banner and the org box with production, before the decision", async () => {
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/bulks/bulk-1": detailFor(true),
+      "GET /api/benchmark/bulks/bulk-1/verdicts": measuredVerdicts,
+    })
+    renderPage(<Results />, { path: "/results" })
+
+    const banner = await screen.findByTestId("bulk-verdict-banner")
+    const lead = within(banner).getByTestId("verdict-production-lead")
+    expect(lead.textContent).toContain("4.1 of every 100 caller words")
+    expect(lead.textContent).toContain("Gladia Solaria")
+    // The units differ from the table's on purpose, and the banner says so.
+    expect(lead.textContent).toContain("not the per-100-words flag count the ranking uses")
+    expect(lead.textContent).toContain("ran live during the call")
+    // One org in this bulk, so its name is not prefixed onto the number.
+    expect(lead.textContent).not.toContain("Default:")
+    // The verdict still follows, in the same banner.
+    expect(banner.textContent).toContain("has the least disagreement in 1 of 1 org")
+    expect(banner.textContent!.indexOf("4.1 of every 100 caller words")).toBeLessThan(
+      banner.textContent!.indexOf("has the least disagreement in 1 of 1 org"),
+    )
+
+    // In the org box, production is above the decision headline.
+    const box = screen.getByTestId("production-disagreement").parentElement!
+    const kids = [...box.children]
+    expect(kids.indexOf(screen.getByTestId("production-disagreement"))).toBeLessThan(
+      kids.indexOf(screen.getByTestId("group-verdict-headline")),
+    )
     api.restore()
   })
 
@@ -587,7 +623,10 @@ describe("Results", () => {
     expect(why.textContent).toContain("not compared on this bulk")
     expect(why.textContent).toContain("mono mix")
     expect(screen.queryByTestId("production-disagreement")).toBeNull()
-    expect(document.body.textContent).not.toContain("of every 100 compared words")
+    expect(document.body.textContent).not.toContain("of every 100 caller words")
+    // R-3: with no figure, nothing moves -- the banner has no lead block and
+    // the verdict keeps the big type it always had.
+    expect(screen.queryByTestId("verdict-production-lead")).toBeNull()
     api.restore()
   })
 

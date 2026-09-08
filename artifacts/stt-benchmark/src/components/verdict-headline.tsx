@@ -6,6 +6,7 @@ import {
   type BulkVerdicts,
   type HeadlineVerdict,
 } from "@workspace/api-client-react"
+import { productionLead } from "@workspace/scoring"
 import { Trophy, Scale, Hourglass, CircleOff, Radio } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 
@@ -94,6 +95,30 @@ function nameOf(data: BulkVerdicts, id: string | null): string {
 }
 
 /**
+ * R-3: production's own reading for one org, in the words scoring owns
+ * (productionLead), so the banner, the Overview and the shareable artefact
+ * cannot drift apart. Null when there is no comparable number -- a mono bulk
+ * heard the assistant too and production's draft is the caller alone (M-8b).
+ */
+function productionLeadForGroup(
+  data: BulkVerdicts,
+  group: BulkVerdicts["groups"][number],
+  orgLabel?: string | null,
+): { lead: string; caveat: string } | null {
+  const pd = group.productionDisagreement
+  if (!pd) return null
+  return productionLead({
+    productionLabel: group.production ? `${group.production.vendor}${group.production.model ? ` / ${group.production.model}` : ""}` : null,
+    rate: pd.rate,
+    leaderName: pd.leaderProviderId ? nameOf(data, pd.leaderProviderId) : null,
+    leaderRate: pd.leaderRate,
+    calls: pd.calls,
+    totalCalls: pd.totalCalls,
+    orgLabel,
+  })
+}
+
+/**
  * T-84: the banner's rolled-up reading of a bulk, as data, so the Overview
  * can say the same sentence flat on the page without a card. Still the
  * only source is GET /bulks/{id}/verdicts -- nothing here re-derives a
@@ -103,17 +128,26 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
   tone: HeadlineVerdict["decision"]
   leadName: string | null
   sentence: string
+  /** R-3: production's own reading, which the Overview says BEFORE the
+   *  verdict. Non-null only when exactly one org in the bulk has a figure:
+   *  these rates are pooled per org and cannot be added together into a
+   *  bulk-wide number without the word counts behind them, and the Overview
+   *  has one sentence's worth of room. With more than one org the per-org
+   *  lines are on Results, where the banner prints all of them. */
+  productionLead: { lead: string; caveat: string } | null
   counts: { winner: number; too_close: number; too_few_calls: number; insufficient: number }
   totalCalls: number
   groups: number
 } {
   const groups = data.groups
+  const leads = groups.map((g) => productionLeadForGroup(data, g)).filter((x) => x !== null)
+  const productionLead = leads.length === 1 ? leads[0]! : null
   const counts = { winner: 0, too_close: 0, too_few_calls: 0, insufficient: 0 }
   for (const g of groups) counts[g.verdict.decision] += 1
   const winners = groups.filter((g) => g.verdict.decision === "winner")
   const totalCalls = groups.reduce((s, g) => s + g.verdict.evidenceCalls, 0)
   if (groups.length === 0) {
-    return { tone: "insufficient", leadName: null, sentence: "No verdict yet: this bulk has no scored calls.", counts, totalCalls, groups: 0 }
+    return { tone: "insufficient", leadName: null, sentence: "No verdict yet: this bulk has no scored calls.", productionLead, counts, totalCalls, groups: 0 }
   }
   if (winners.length > 0) {
     const tally = new Map<string, number>()
@@ -124,13 +158,13 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
       tone: "winner",
       leadName: nameOf(data, topId),
       sentence: `has the least disagreement in ${topN} of ${groups.length} group${groups.length === 1 ? "" : "s"}${rest > 0 ? `; ${rest} ha${rest === 1 ? "s" : "ve"} nothing decided yet` : ""}.`,
-      counts, totalCalls, groups: groups.length,
+      productionLead, counts, totalCalls, groups: groups.length,
     }
   }
   if (counts.too_close > 0 && counts.too_close >= counts.too_few_calls) {
-    return { tone: "too_close", leadName: null, sentence: "Nothing decided: the top providers are too close to call on the calls so far.", counts, totalCalls, groups: groups.length }
+    return { tone: "too_close", leadName: null, sentence: "Nothing decided: the top providers are too close to call on the calls so far.", productionLead, counts, totalCalls, groups: groups.length }
   }
-  return { tone: "too_few_calls", leadName: null, sentence: `Nothing decided yet: ${counts.too_few_calls} of ${groups.length} group${groups.length === 1 ? "" : "s"} need more calls before one can be named.`, counts, totalCalls, groups: groups.length }
+  return { tone: "too_few_calls", leadName: null, sentence: `Nothing decided yet: ${counts.too_few_calls} of ${groups.length} group${groups.length === 1 ? "" : "s"} need more calls before one can be named.`, productionLead, counts, totalCalls, groups: groups.length }
 }
 
 /**
@@ -239,6 +273,15 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
   }
 
   const meta = DECISION_META[tone]
+  // R-3: the transcriber already running in production is the only number on
+  // this page the reader is living with, so it goes FIRST and the verdict
+  // follows it. One line per org that has a figure -- prefixed with the org's
+  // name only when the bulk holds more than one, because these rates are
+  // pooled per org and adding them together would need the word counts behind
+  // them. When no org has one, nothing here moves.
+  const leads = groups
+    .map((g) => productionLeadForGroup(data, g, groups.length > 1 ? (g.clientLabel ?? "calls with no org label") : null))
+    .filter((x) => x !== null)
 
   return (
     <Card className={`border-l-4 ${meta.border}`} data-testid="bulk-verdict-banner">
@@ -247,7 +290,15 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
           <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">Verdict</span>
           <DecisionChip decision={tone} />
         </div>
-        <p className="text-lg leading-snug text-foreground" style={{ textWrap: "balance" }}>{headline}</p>
+        {leads.length > 0 && (
+          <div className="space-y-1" data-testid="verdict-production-lead">
+            {leads.map((l) => (
+              <p key={l.lead} className="text-lg leading-snug text-foreground" style={{ textWrap: "balance" }}>{l.lead}</p>
+            ))}
+            <p className="text-xs text-muted-foreground">{leads[0]!.caveat}</p>
+          </div>
+        )}
+        <p className={`${leads.length > 0 ? "text-sm" : "text-lg"} leading-snug text-foreground`} style={{ textWrap: "balance" }}>{headline}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground font-mono">
           <span>{groups.length} group{groups.length === 1 ? "" : "s"} · {totalCalls} call{totalCalls === 1 ? "" : "s"} scored</span>
           <span title="Gap to the runner-up is bigger than the margin of error (95% bootstrap interval excludes zero)">{counts.winner} decided</span>
@@ -298,7 +349,14 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
 
 /**
  * M-8b: how far the transcript production actually produced sat from the
- * candidates' consensus, on the same 100-word scale the ranking table uses.
+ * candidates' consensus.
+ *
+ * R-3 correction: this line used to claim it was "on the same 100-word scale
+ * the ranking table uses". It never was. Its numerator is mismatched WORDS on
+ * the caller's turns; the table's is filtered FLAGS over the whole call's word
+ * basis. Same three words of unit, a factor of six between them on bulk
+ * 42769f26. The sentence now names its own units (scoring's productionLead)
+ * and docs/scoring-policy.md carries the two-rate table.
  *
  * It lives HERE, at org level beside the verdict, and not in Rankings'
  * per-assistant ProductionBaselineNote, because `productionDisagreement` is
@@ -321,29 +379,14 @@ export function ProductionDisagreementLine({
   data: BulkVerdicts | undefined
   group: BulkVerdicts["groups"][number] | undefined
 }) {
-  const d = group?.productionDisagreement
-  if (!data || !d) return null
-  const per100 = (rate: number) => (rate * 100).toFixed(1)
+  const copy = data && group ? productionLeadForGroup(data, group) : null
+  if (!copy) return null
   return (
-    <div className="flex items-start gap-3 bg-muted/10 px-4 py-3" data-testid="production-disagreement">
+    <div className="flex items-start gap-3 border-b bg-muted/10 px-4 py-3" data-testid="production-disagreement">
       <Radio className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="flex flex-col gap-1 min-w-0">
-        <p className="text-sm text-foreground" style={{ textWrap: "balance" }}>
-          <span className="font-semibold">Production, measured:</span> the transcript production actually produced
-          disagreed with the candidates' consensus on{" "}
-          <span className="font-semibold">{per100(d.rate)}</span> of every 100 compared words
-          {d.leaderProviderId && d.leaderRate != null && (
-            <>
-              , against <span className="font-semibold">{per100(d.leaderRate)}</span> for{" "}
-              {nameOf(data, d.leaderProviderId)}, the closest candidate
-            </>
-          )}
-          {" "}-- over {d.calls} of {d.totalCalls} call{d.totalCalls === 1 ? "" : "s"} in this org.
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          Production is scored against the candidates, never ranked with them: it takes no part in forming the
-          consensus it is measured on, so it appears in no row above and cannot win a bulk.
-        </p>
+        <p className="text-sm text-foreground" style={{ textWrap: "balance" }}>{copy.lead}</p>
+        <p className="text-[11px] text-muted-foreground">{copy.caveat}</p>
       </div>
     </div>
   )
