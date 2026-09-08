@@ -10,7 +10,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -61,7 +61,7 @@ type WordsToWatchBody = {
 };
 
 async function getWords(query: Record<string, string> = {}) {
-  const res = await request(app).get("/api/benchmark/words-to-watch").query(query);
+  const res = await request(server).get("/api/benchmark/words-to-watch").query(query);
   expect(res.status).toBe(200);
   return res.body as WordsToWatchBody;
 }
@@ -159,12 +159,12 @@ describe("GET /api/benchmark/words-to-watch", () => {
   });
 
   it("answers 404 for an unknown bulk and a sentence for a malformed bulkId", async () => {
-    const missing = await request(app)
+    const missing = await request(server)
       .get("/api/benchmark/words-to-watch")
       .query({ bulkId: "00000000-0000-4000-8000-000000000000" });
     expect(missing.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/words-to-watch").query({ bulkId: "not-a-uuid" });
+    const malformed = await request(server).get("/api/benchmark/words-to-watch").query({ bulkId: "not-a-uuid" });
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });

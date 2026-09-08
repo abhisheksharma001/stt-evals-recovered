@@ -9,7 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { providerIdForModel } from "@workspace/stt-providers";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -21,7 +21,7 @@ afterAll(async () => {
 
 describe("POST /api/benchmark/providers", () => {
   it("derives a readable id, stores the price, and lands not_configured", async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/providers")
       .set("x-actor", fx.actor)
       .send({
@@ -47,7 +47,7 @@ describe("POST /api/benchmark/providers", () => {
       status: "not_configured",
     });
 
-    const audit = await request(app)
+    const audit = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "provider", entityId: res.body.id });
     expect(audit.body).toHaveLength(1);
@@ -55,11 +55,11 @@ describe("POST /api/benchmark/providers", () => {
   });
 
   it("refuses a provider with no name and one with no price", async () => {
-    const noName = await request(app).post("/api/benchmark/providers").send({ model: "m", costPerMinute: 1 });
+    const noName = await request(server).post("/api/benchmark/providers").send({ model: "m", costPerMinute: 1 });
     expect(noName.status).toBe(400);
     expect(noName.body.error).toMatch(/name/);
 
-    const noPrice = await request(app)
+    const noPrice = await request(server)
       .post("/api/benchmark/providers")
       .send({ name: `fx ${fx.suffix}`, model: "m" });
     expect(noPrice.status).toBe(400);
@@ -71,7 +71,7 @@ describe("PATCH /api/benchmark/providers/:providerId", () => {
   it("changes price and disabled flag, keeps the rest, and audits before/after", async () => {
     const provider = await fx.provider({ costPerMinute: 1, configNote: `original ${fx.suffix}` });
 
-    const res = await request(app)
+    const res = await request(server)
       .patch(`/api/benchmark/providers/${provider.id}`)
       .set("x-actor", fx.actor)
       .send({ costPerMinute: 2.5, disabled: true });
@@ -87,7 +87,7 @@ describe("PATCH /api/benchmark/providers/:providerId", () => {
       status: "disabled",
     });
 
-    const audit = await request(app)
+    const audit = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "provider", entityId: provider.id });
     expect(audit.body).toHaveLength(1);
@@ -96,13 +96,13 @@ describe("PATCH /api/benchmark/providers/:providerId", () => {
   });
 
   it("answers 404 for an unknown provider and 400 for a bad price", async () => {
-    const unknown = await request(app)
+    const unknown = await request(server)
       .patch(`/api/benchmark/providers/fx-no-such-${fx.suffix}`)
       .send({ costPerMinute: 1 });
     expect(unknown.status).toBe(404);
 
     const provider = await fx.provider();
-    const badPrice = await request(app)
+    const badPrice = await request(server)
       .patch(`/api/benchmark/providers/${provider.id}`)
       .send({ costPerMinute: "free" });
     expect(badPrice.status).toBe(400);
@@ -120,11 +120,11 @@ describe("PATCH /api/benchmark/providers/:providerId", () => {
 // ones that ask the network can come back empty without failing anything.
 describe("GET /api/benchmark/providers/models", () => {
   it("reports a providerId that exists for every model it calls enabled", async () => {
-    const providers = await request(app).get("/api/benchmark/providers");
+    const providers = await request(server).get("/api/benchmark/providers");
     expect(providers.status).toBe(200);
     const rowIds = new Set<string>(providers.body.map((p: { id: string }) => p.id));
 
-    const res = await request(app).get("/api/benchmark/providers/models");
+    const res = await request(server).get("/api/benchmark/providers/models");
     expect(res.status).toBe(200);
 
     const enabled = (res.body.vendors as { models: { providerId: string; enabled: boolean }[] }[])
@@ -164,9 +164,9 @@ describe("GET /api/benchmark/providers/models", () => {
     // finally differ, and reporting the wrong one is visible.
     await fx.provider({ id: "gladia-solaria-3", name: "Gladia", model: "Solaria-3" });
 
-    const providers = await request(app).get("/api/benchmark/providers");
+    const providers = await request(server).get("/api/benchmark/providers");
     const rowIds = new Set<string>(providers.body.map((p: { id: string }) => p.id));
-    const res = await request(app).get("/api/benchmark/providers/models");
+    const res = await request(server).get("/api/benchmark/providers/models");
 
     const models = (res.body.vendors as { vendor: string; models: { apiModel: string; providerId: string; enabled: boolean }[] }[])
       .flatMap((v) => v.models.map((m) => ({ ...m, vendor: v.vendor })));
@@ -179,7 +179,7 @@ describe("GET /api/benchmark/providers/models", () => {
   });
 
   it("keeps the synthesised id for a model that is not enabled, because that is what enabling would create", async () => {
-    const res = await request(app).get("/api/benchmark/providers/models");
+    const res = await request(server).get("/api/benchmark/providers/models");
     expect(res.status).toBe(200);
     // Only the vendors whose catalogue is a static list. Deepgram's and
     // OpenAI's come from their APIs, so asserting on their model names here
@@ -199,13 +199,13 @@ describe("GET /api/benchmark/providers/models", () => {
 
 describe("POST /api/benchmark/providers/models/enable", () => {
   it("refuses an unknown vendor before asking any vendor for its models", async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/providers/models/enable")
       .send({ vendor: `fx-no-such-vendor-${fx.suffix}`, apiModel: "whatever" });
     expect(res.status).toBe(404);
     expect(res.body.error).toContain(`fx-no-such-vendor-${fx.suffix}`);
 
-    const invalid = await request(app).post("/api/benchmark/providers/models/enable").send({ vendor: "" });
+    const invalid = await request(server).post("/api/benchmark/providers/models/enable").send({ vendor: "" });
     expect(invalid.status).toBe(400);
     expect(invalid.body.error).toMatch(/apiModel|vendor/);
   });

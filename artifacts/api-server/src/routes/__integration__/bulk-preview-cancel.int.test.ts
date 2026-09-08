@@ -7,7 +7,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -39,7 +39,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
     // costPerMinute is dollars; one minute at $0.50 is 50 cents.
     const provider = await fx.provider({ costPerMinute: 0.5 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({
         // M-5: this case is about the duration band, not the audio
@@ -90,7 +90,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
     });
 
     const send = (criteria: Record<string, unknown>) =>
-      request(app)
+      request(server)
         .post("/api/benchmark/bulks/preview")
         .send({
           criteria: { accountLabel, requireCustomerAudio: false, ...criteria },
@@ -142,7 +142,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
     expect(both.durationSeconds).toBe(5);
 
     // A hand-picked call still skips the floor, exactly as it skips the band.
-    const picked = await request(app)
+    const picked = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({
         criteria: { callIds: [talkative.id], requireCustomerAudio: false, minCustomerWords: 500 },
@@ -179,7 +179,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
       maxDurationSeconds: 300,
     };
 
-    const preview = await request(app).post("/api/benchmark/bulks/preview").send(body);
+    const preview = await request(server).post("/api/benchmark/bulks/preview").send(body);
     expect(preview.status).toBe(200);
     expect(preview.body.inScopeCount).toBe(2);
     // The quiet call is gone without anyone asking for it to be, and the
@@ -188,7 +188,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
     expect(preview.body.matchedCount).toBe(1);
     expect(preview.body.excluded).toEqual([{ bucket: "fewer than 20 customer words", count: 1 }]);
 
-    const created = await request(app)
+    const created = await request(server)
       .post("/api/benchmark/bulks")
       .set("x-actor", fx.actor)
       .send({ name: `m16 default ${fx.suffix}`, ...body });
@@ -205,7 +205,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
     // and outcome filters are skipped for it by design.
     const shorty = await fx.call({ durationSeconds: 5 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({ criteria: { callIds: [shorty.id], requireCustomerAudio: false }, providerIds: [], minDurationSeconds: 30, maxDurationSeconds: 300 });
     expect(res.status).toBe(200);
@@ -217,7 +217,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
   it("prices nothing when no provider is picked, and refuses an upside-down band", async () => {
     const call = await fx.call({ durationSeconds: 60 });
 
-    const noProviders = await request(app)
+    const noProviders = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({ criteria: { callIds: [call.id], requireCustomerAudio: false }, providerIds: [] });
     expect(noProviders.status).toBe(200);
@@ -225,7 +225,7 @@ describe("POST /api/benchmark/bulks/preview", () => {
     // No providers picked yet is "unknown", not "free".
     expect(noProviders.body.estimate).toBeNull();
 
-    const band = await request(app)
+    const band = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({ criteria: { callIds: [call.id], requireCustomerAudio: false }, providerIds: [], minDurationSeconds: 120, maxDurationSeconds: 30 });
     expect(band.status).toBe(400);
@@ -238,26 +238,26 @@ describe("POST /api/benchmark/bulks/:bulkId/cancel", () => {
     const bulk = await fx.bulk({ status: "running" });
     const queued = await fx.run({ bulkId: bulk.id, status: "queued", purpose: "batch" });
 
-    const res = await request(app).post(`/api/benchmark/bulks/${bulk.id}/cancel`).set("x-actor", fx.actor);
+    const res = await request(server).post(`/api/benchmark/bulks/${bulk.id}/cancel`).set("x-actor", fx.actor);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: bulk.id, status: "cancelled" });
     expect(res.body.completedAt).not.toBeNull();
 
     // A shard that had not started is stopped with it; nothing is left
     // queued to wake up later and spend money.
-    const detail = await request(app).get(`/api/benchmark/bulks/${bulk.id}`);
+    const detail = await request(server).get(`/api/benchmark/bulks/${bulk.id}`);
     expect(detail.body.runs.find((r: { id: string }) => r.id === queued.id).status).toBe("cancelled");
 
-    const again = await request(app).post(`/api/benchmark/bulks/${bulk.id}/cancel`).set("x-actor", fx.actor);
+    const again = await request(server).post(`/api/benchmark/bulks/${bulk.id}/cancel`).set("x-actor", fx.actor);
     expect(again.status).toBe(409);
     expect(again.body.error).toMatch(/already cancelled/);
   });
 
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
-    const unknown = await request(app).post("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/cancel");
+    const unknown = await request(server).post("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/cancel");
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).post("/api/benchmark/bulks/not-a-uuid/cancel");
+    const malformed = await request(server).post("/api/benchmark/bulks/not-a-uuid/cancel");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });
@@ -275,7 +275,7 @@ describe("POST /api/benchmark/bulks with a selection that matches nothing", () =
     await fx.call({ durationSeconds: 600, sourceAccountLabel: accountLabel });
     const provider = await fx.provider({ costPerMinute: 0.5 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks")
       .set("x-actor", fx.actor)
       .send({
@@ -299,7 +299,7 @@ describe("POST /api/benchmark/bulks with a selection that matches nothing", () =
     );
 
     // Refused means refused: no bulk row was left behind under that name.
-    const list = await request(app).get("/api/benchmark/bulks");
+    const list = await request(server).get("/api/benchmark/bulks");
     expect(list.status).toBe(200);
     expect(list.body.find((b: { name: string }) => b.name === `empty selection ${fx.suffix}`)).toBeUndefined();
   });

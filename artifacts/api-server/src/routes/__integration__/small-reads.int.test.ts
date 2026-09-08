@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { expectStatus } from "./expect-status";
 import { Fixtures } from "./fixtures";
 
@@ -21,7 +21,7 @@ afterAll(async () => {
 
 describe("GET /api/benchmark/settings", () => {
   it("answers exactly the two settings fields", async () => {
-    const res = await request(app).get("/api/benchmark/settings");
+    const res = await request(server).get("/api/benchmark/settings");
     expectStatus(res, 200);
     // Values are shared state (another suite or a person may have set
     // them); the shape is the contract.
@@ -33,7 +33,7 @@ describe("GET /api/benchmark/providers", () => {
   it("derives a seeded provider's status at read time instead of trusting the row", async () => {
     const planted = await fx.provider({ status: "ready" });
 
-    const res = await request(app).get("/api/benchmark/providers");
+    const res = await request(server).get("/api/benchmark/providers");
     expectStatus(res, 200);
     const mine = res.body.find((p: { id: string }) => p.id === planted.id);
     expect(mine).toBeDefined();
@@ -48,7 +48,7 @@ describe("GET /api/benchmark/providers", () => {
 describe("GET /api/benchmark/calls/:callId", () => {
   it("answers the call with its audio decoration", async () => {
     const call = await fx.call({ vertical: "trucking", entityNotes: `fx-note-${fx.suffix}` });
-    const res = await request(app).get(`/api/benchmark/calls/${call.id}`);
+    const res = await request(server).get(`/api/benchmark/calls/${call.id}`);
     expectStatus(res, 200);
     expect(res.body).toMatchObject({
       id: call.id,
@@ -62,10 +62,10 @@ describe("GET /api/benchmark/calls/:callId", () => {
   });
 
   it("answers 404 for an unknown call and a sentence for a malformed id", async () => {
-    const missing = await request(app).get("/api/benchmark/calls/00000000-0000-4000-8000-000000000000");
+    const missing = await request(server).get("/api/benchmark/calls/00000000-0000-4000-8000-000000000000");
     expectStatus(missing, 404);
 
-    const malformed = await request(app).get("/api/benchmark/calls/not-a-uuid");
+    const malformed = await request(server).get("/api/benchmark/calls/not-a-uuid");
     expectStatus(malformed, 400);
     expect(malformed.body.error).toMatch(/callId/);
   });

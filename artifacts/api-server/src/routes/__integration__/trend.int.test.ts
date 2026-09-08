@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -61,7 +61,7 @@ beforeAll(async () => {
   const r4 = await fx.result(runningRun.id, flagged.id, scored.id, { hypothesisTranscript: "moving point" });
   await fx.score(r4.id, { peerFlagCount: 0 });
 
-  const res = await request(app).get("/api/benchmark/trend");
+  const res = await request(server).get("/api/benchmark/trend");
   expect(res.status).toBe(200);
   body = res.body;
 });

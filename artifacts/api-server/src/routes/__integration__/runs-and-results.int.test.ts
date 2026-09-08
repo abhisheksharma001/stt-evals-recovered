@@ -8,7 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { benchmarkScoresTable, db, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -27,7 +27,7 @@ describe("GET /api/benchmark/runs", () => {
     // executor; they belong to the Agent view, never this list.
     const agentRun = await fx.run({ purpose: "agent_scan" });
 
-    const res = await request(app).get("/api/benchmark/runs");
+    const res = await request(server).get("/api/benchmark/runs");
     expect(res.status).toBe(200);
     const mine = res.body.filter((r: { id: string }) => [shardRun.id, adHocRun.id, agentRun.id].includes(r.id));
     expect(mine.map((r: { id: string }) => r.id)).toEqual([adHocRun.id, shardRun.id]);
@@ -69,7 +69,7 @@ describe("GET /api/benchmark/runs/:runId/results", () => {
       errorMessage: "took too long",
     });
 
-    const res = await request(app).get(`/api/benchmark/runs/${run.id}/results`);
+    const res = await request(server).get(`/api/benchmark/runs/${run.id}/results`);
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(3);
     const byProvider = new Map(res.body.map((r: { providerId: string }) => [r.providerId, r])) as Map<
@@ -116,7 +116,7 @@ describe("GET /api/benchmark/runs/:runId/results", () => {
       failureSuggestedFix: "operator's fix",
     });
 
-    const res = await request(app).get(`/api/benchmark/runs/${run.id}/results`);
+    const res = await request(server).get(`/api/benchmark/runs/${run.id}/results`);
     expect(res.status).toBe(200);
     expect(res.body[0].failureDiagnosis).toBe("operator wrote this one");
     expect(res.body[0].failureSuggestedFix).toBe("operator's fix");
@@ -158,11 +158,11 @@ describe("GET /api/benchmark/runs/:runId/results", () => {
   });
 
   it("an unknown run answers an empty list; a malformed id answers a sentence", async () => {
-    const unknown = await request(app).get("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/results");
+    const unknown = await request(server).get("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/results");
     expect(unknown.status).toBe(200);
     expect(unknown.body).toEqual([]);
 
-    const malformed = await request(app).get("/api/benchmark/runs/not-a-uuid/results");
+    const malformed = await request(server).get("/api/benchmark/runs/not-a-uuid/results");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/runId/);
   });

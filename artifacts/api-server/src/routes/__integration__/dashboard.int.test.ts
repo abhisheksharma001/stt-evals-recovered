@@ -11,13 +11,13 @@ import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq } from "drizzle-orm";
 import { benchmarkProvidersTable, benchmarkRunsTable, db, pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
 
 async function getDashboard() {
-  const res = await request(app).get("/api/benchmark/dashboard");
+  const res = await request(server).get("/api/benchmark/dashboard");
   expect(res.status).toBe(200);
   return res.body;
 }

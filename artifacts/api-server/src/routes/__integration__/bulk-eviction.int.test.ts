@@ -11,7 +11,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import request from "supertest";
 import { db, pool, benchmarkAgentScansTable, benchmarkBulksTable } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -49,7 +49,7 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
     const fresh = await fx.call({ durationSeconds: 60, sourceAccountLabel: accountLabel });
     const provider = await fx.provider({ costPerMinute: 0.5 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks")
       .set("x-actor", fx.actor)
       .send({
@@ -89,7 +89,7 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
     // and status survive the run that produced them.
     expect(kept.status).toBe("flagged");
     // The call it describes is untouched -- eviction never reaches the corpus.
-    const stillThere = await request(app).get(`/api/benchmark/calls/${scannedCall.id}`);
+    const stillThere = await request(server).get(`/api/benchmark/calls/${scannedCall.id}`);
     expect(stillThere.status).toBe(200);
   });
 });

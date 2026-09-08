@@ -12,7 +12,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -24,7 +24,7 @@ afterAll(async () => {
 
 describe("GET /api/benchmark/assistants/:assistantId/transcriber", () => {
   it("refuses when no imported call carries the assistant", async () => {
-    const res = await request(app).get(`/api/benchmark/assistants/fx-unknown-${fx.suffix}/transcriber`);
+    const res = await request(server).get(`/api/benchmark/assistants/fx-unknown-${fx.suffix}/transcriber`);
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/No imported call carries this assistant id/);
   });
@@ -37,7 +37,7 @@ describe("GET /api/benchmark/assistants/:assistantId/transcriber", () => {
     await fx.call({ sourceAssistantId: assistantId, sourceAccountLabel: majority });
     await fx.call({ sourceAssistantId: assistantId, sourceAccountLabel: minority });
 
-    const res = await request(app).get(`/api/benchmark/assistants/${assistantId}/transcriber`);
+    const res = await request(server).get(`/api/benchmark/assistants/${assistantId}/transcriber`);
     expect(res.status).toBe(404);
     // The label most of the assistant's calls carry decides, and the
     // refusal quotes it so the operator knows which env var is missing.
@@ -49,7 +49,7 @@ describe("GET /api/benchmark/assistants/:assistantId/transcriber", () => {
     const assistantId = `fx-assist-nolabel-${fx.suffix}`;
     await fx.call({ sourceAssistantId: assistantId, sourceAccountLabel: null });
 
-    const res = await request(app).get(`/api/benchmark/assistants/${assistantId}/transcriber`);
+    const res = await request(server).get(`/api/benchmark/assistants/${assistantId}/transcriber`);
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/matches no configured Vapi account/);
   });
@@ -57,7 +57,7 @@ describe("GET /api/benchmark/assistants/:assistantId/transcriber", () => {
 
 describe("GET /api/benchmark/vapi/assistants", () => {
   it("refuses an unknown account id before any request leaves the machine", async () => {
-    const res = await request(app).get("/api/benchmark/vapi/assistants").query({ accountId: `fx-no-such-${fx.suffix}` });
+    const res = await request(server).get("/api/benchmark/vapi/assistants").query({ accountId: `fx-no-such-${fx.suffix}` });
     expect(res.status).toBe(400);
     // Two honest messages depending on this machine's environment: the id
     // is unknown among the configured accounts, or nothing is configured

@@ -10,7 +10,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { SCORING_VERSION } from "@workspace/scoring";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -60,7 +60,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
   it("groups by org, resolves production, and refuses a winner on two calls", async () => {
     const { bulk, org, production, challenger } = await seedBulk();
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
     expect(res.status).toBe(200);
     expect(res.body.bulkId).toBe(bulk.id);
     expect(res.body.providers.map((p: { id: string }) => p.id).sort()).toEqual([production.id, challenger.id].sort());
@@ -137,7 +137,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
       }
     }
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
     expect(res.status).toBe(200);
     const group = res.body.groups.find((g: { clientLabel: string | null }) => g.clientLabel === org);
 
@@ -173,7 +173,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
       await fx.score(cell.id, { peerFlagCount: 0 });
     }
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
     expect(res.status).toBe(200);
     const group = res.body.groups.find((g: { clientLabel: string | null }) => g.clientLabel === org);
     // Present and null -- the field is required by the contract, so a reader
@@ -182,10 +182,10 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
   });
 
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
-    const unknown = await request(app).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts");
+    const unknown = await request(server).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts");
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/bulks/not-a-uuid/verdicts");
+    const malformed = await request(server).get("/api/benchmark/bulks/not-a-uuid/verdicts");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });
@@ -195,7 +195,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
   it("is one self-contained, dated, stamped document", async () => {
     const { bulk } = await seedBulk();
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/html/);
     // Saved as a file, named for the bulk and the day it was produced.
@@ -258,7 +258,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
     // Precondition, and the whole reason this test is not vacuous: if the seed
     // ever drifts back under the five-call floor, the page renders "Nothing
     // decided" and every assertion below passes for the wrong reason.
-    const json = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    const json = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
     expect(json.status).toBe(200);
     expect(json.body.groups).toHaveLength(1);
     expect(json.body.groups[0].verdict).toMatchObject({
@@ -267,7 +267,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
       runnerUpProviderId: runnerUp.id,
     });
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
     expect(res.status).toBe(200);
     const html = res.text;
     // The row tag, exactly. The legend sentence also contains the word
@@ -286,10 +286,10 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
   });
 
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
-    const unknown = await request(app).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdict.html");
+    const unknown = await request(server).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdict.html");
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/bulks/not-a-uuid/verdict.html");
+    const malformed = await request(server).get("/api/benchmark/bulks/not-a-uuid/verdict.html");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });

@@ -5,7 +5,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -23,20 +23,20 @@ describe("GET /api/benchmark/agent/scans", () => {
     const newerScan = await fx.scan(mine.id, { status: "flagged", agentPickReasoning: "newer" });
     const otherScan = await fx.scan(other.id, { status: "clean" });
 
-    const res = await request(app).get("/api/benchmark/agent/scans").query({ callId: mine.id });
+    const res = await request(server).get("/api/benchmark/agent/scans").query({ callId: mine.id });
     expect(res.status).toBe(200);
     expect(res.body.map((s: { id: string }) => s.id)).toEqual([newerScan.id, olderScan.id]);
     expect(res.body.map((s: { id: string }) => s.id)).not.toContain(otherScan.id);
     expect(res.body[0]).toMatchObject({ callId: mine.id, status: "flagged" });
 
-    const all = await request(app).get("/api/benchmark/agent/scans");
+    const all = await request(server).get("/api/benchmark/agent/scans");
     expect(all.status).toBe(200);
     const allIds = all.body.map((s: { id: string }) => s.id);
     expect(allIds).toContain(otherScan.id);
   });
 
   it("a malformed callId answers a sentence", async () => {
-    const res = await request(app).get("/api/benchmark/agent/scans").query({ callId: "not-a-uuid" });
+    const res = await request(server).get("/api/benchmark/agent/scans").query({ callId: "not-a-uuid" });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/callId/);
   });
@@ -56,18 +56,18 @@ describe("GET /api/benchmark/audit-log", () => {
     const mineIds = [callOnA.id, callOnB.id, providerOnA.id];
     const mineOf = (body: { id: string }[]) => body.map((r) => r.id).filter((id) => mineIds.includes(id));
 
-    const unfiltered = await request(app).get("/api/benchmark/audit-log");
+    const unfiltered = await request(server).get("/api/benchmark/audit-log");
     expect(unfiltered.status).toBe(200);
     expect(mineOf(unfiltered.body).sort()).toEqual([...mineIds].sort());
 
-    const byType = await request(app).get("/api/benchmark/audit-log").query({ entityType: "call" });
+    const byType = await request(server).get("/api/benchmark/audit-log").query({ entityType: "call" });
     // Newest first: callOnB was written after callOnA.
     expect(mineOf(byType.body)).toEqual([callOnB.id, callOnA.id]);
 
-    const byId = await request(app).get("/api/benchmark/audit-log").query({ entityId: entityA });
+    const byId = await request(server).get("/api/benchmark/audit-log").query({ entityId: entityA });
     expect(mineOf(byId.body)).toEqual([providerOnA.id, callOnA.id]);
 
-    const combined = await request(app)
+    const combined = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "call", entityId: entityA });
     expect(mineOf(combined.body)).toEqual([callOnA.id]);

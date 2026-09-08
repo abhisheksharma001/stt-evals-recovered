@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { ensureAudioCacheDir } from "../../lib/audio-cache";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -25,7 +25,7 @@ const CACHE_DIR = path.join(process.cwd(), "audio-cache");
 const cacheFiles: string[] = [];
 
 async function listCalls(query: Record<string, string> = {}) {
-  const res = await request(app).get("/api/benchmark/calls").query(query);
+  const res = await request(server).get("/api/benchmark/calls").query(query);
   expect(res.status).toBe(200);
   return res.body as {
     id: string;
@@ -107,7 +107,7 @@ describe("GET /api/benchmark/calls", () => {
   });
 
   it("rejects an unknown vertical with a sentence, not silently returning everything", async () => {
-    const res = await request(app).get("/api/benchmark/calls").query({ vertical: "haulage" });
+    const res = await request(server).get("/api/benchmark/calls").query({ vertical: "haulage" });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/vertical/);
   });
