@@ -292,6 +292,22 @@ Entity matching becomes exact-token (fixing the substring gap in
 confirmed values exist and how many appear verbatim in the customer turns; below 10
 the step is not worth building yet.
 
+**Grilled 2026-09-08 (M-15, PR #113). The answer is 8, so D2 is not worth building on
+this corpus.** `artifacts/api-server/src/mine-confirmed-entities.ts` counted, across 119
+tool calls in 75 of the 100 saved artifacts: **41 results succeeded, 1 failed, 77 report
+no status at all**, so two thirds of tool calls cannot confirm anything whatever they
+carry. Of the arguments belonging to a succeeded call, **10 appear in the customer's own
+turns and 2 of those are short enough to be substring accidents, leaving 8** -- all of
+them `firstName` / `lastName` on `fly-APPFOLIO_CREATE_SHOWING`, across 5 calls.
+
+Two findings worth keeping even though the answer is no. **Every phone number passed to
+a tool appears in zero customer turns** (18 arguments, all from succeeded calls): the
+assistant passes the caller's number off call metadata rather than something it heard,
+so the entity this plan assumed was the easiest to confirm is the one that never
+confirms. And the largest argument in the corpus is `destination` (52), the transfer
+target, whose tool never reports a status. Re-run the script after the corpus grows --
+it is permanent, read-only and spends nothing.
+
 **D3 — production monitoring signals, stored per call.** From the artifact:
 `transcriberLatencyAverage`, `endpointingLatencyAverage`, `numAssistantInterrupted`,
 tool-call count and success, `endedReason` (already stored), `successEvaluation`

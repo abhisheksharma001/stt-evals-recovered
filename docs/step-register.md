@@ -3454,6 +3454,75 @@ not proven).
 
 ### M-15 — Confirmed-entity references from tool calls — grill script first
 
+**Status:** `done` 2026-09-08 (PR #113, `6beffc1`), deployed
+`4748e99b3f9d -> 6beffc12538e`. 3 files, +569/-0. `artifacts/api-server` 115 -> 136 tests.
+
+**Answer: no.** 8 usable references, 10 counting matches short enough to be substring
+accidents. The bar was 10. Every one of them comes from a single tool,
+`fly-APPFOLIO_CREATE_SHOWING` (firstName / lastName), across 5 calls. **The feature D2
+describes is not worth building on this corpus**, and D2 now carries the numbers.
+
+**What the counts say**, from `pnpm --filter @workspace/api-server exec tsx
+--env-file-if-exists=.env ./src/mine-confirmed-entities.ts` against the dev database and
+the 100 saved artifacts:
+
+- 119 tool calls across 75 of the 100 artifacts, 176 calls in the database.
+- Results: **41 succeeded, 1 failed, 77 status unknown.** Two thirds of tool calls cannot
+  confirm anything, whatever they carry.
+- **Every phone number passed to a tool appears in zero customer turns** -- 18 arguments
+  across `CREATE_WORK_ORDER`, `FIND_SHOWING`, `FIND_TENANT` and the maintenance tools,
+  all from succeeded calls, none of them spoken. The assistant passes the caller's number
+  off call metadata, not something it heard. The most obvious candidate never works.
+- The largest single argument in the corpus is `destination` (52), the transfer target,
+  and no transfer result reports a status at all.
+
+**Shipped as:** `artifacts/api-server/src/lib/confirmed-entities.ts` (the rules, unit
+tested) and `artifacts/api-server/src/mine-confirmed-entities.ts` (the runner, which
+reads disk and the database and prints counts). The split is not what the Files line
+said; it is the same split `lib/production-signals.ts` has from
+`backfill-m7a-production-signals.ts`, and it is what lets the rules be proved without a
+test reading real caller PII.
+
+**Break test:** 22 mutations, 22 caught, all by tests, tree clean after each. The first
+pass ran 18 against the rules and caught 18 -- which was the signal to move the harness,
+not to stop.
+
+**Learned:**
+
+1. **The step's own success rule was inverted, and only counting the whole corpus showed
+   it.** The block said to "read three real results first and write the rule down".
+   77 of the 119 results carry no status at all, so three random reads had roughly a 1 in
+   4 chance of never showing the `successful` key the rule depends on -- and the rule
+   that would have been written from the other three is the word search that marks every
+   honestly-reported result as failed. Sampling three is not the same as counting 119.
+2. **A grill script earns its keep by saying no.** One PR, no schema, no provider call,
+   nothing spent, and a feature that would have been built on 8 references is not being
+   built. The register's own instruction to grill before building is what produced that.
+3. **A break test that catches everything means the harness is pointed at the wrong
+   file.** 18 of 18 caught against the tested rules; moving the same harness one level up
+   found a `console.log(argument.value)` in the runner passing typecheck and all 132
+   tests. The corpus is a real caller's phone number and a real caller's words, and
+   "must not print argument values" was guarded by nothing but a reviewer noticing.
+4. **A PII rule has to be structural or it is not a rule.** Closed the way M-11e closed
+   its credential: `tallyToolCall()` returns counts per argument name, so a value cannot
+   enter the runner's scope. `.value` appears zero times in the runner now. What could
+   not be closed is said plainly rather than papered over -- the runner still holds
+   `row.draftTranscript`, because it comes from the row it queries.
+5. **The most useful finding was a negative one.** Nothing in the plan predicted that
+   phone numbers -- the entity everyone assumes is confirmable -- appear in zero customer
+   turns. It was invisible until the counts were per argument name rather than per tool.
+6. **Numbers next to the code that produced them survive; numbers copied into a plan
+   drift.** `production-signals.ts` had 119 across 75 of 100 in its own header, correct
+   since 2026-09-06, while the register still said "74 of 99". The code was right.
+
+**Evidence note:** `visual-and-research` deliberately not run -- a read-only script that
+prints counts to a terminal, with no screen, no copy and no label involved.
+
+**Still unproven:** nothing about the numbers themselves; they were read from the live
+dev database and the artifacts on disk. What is untested is the runner, on purpose: its
+job is to print, its output is read by a person, and the part of it that could be wrong
+was moved into the tested file instead.
+
 **PR:** one (the script and its findings; the feature is a later step only if the numbers
 justify it).
 **Depends on:** M-6 (artifact files exist for the 99).
@@ -3504,7 +3573,11 @@ artifacts rather than recalled:
    but only **161 carry a `User:` label** -- 14 drafts are assistant-only. A call whose
    draft has no customer turn cannot confirm or deny a reference, and must be reported
    as its own bucket rather than folded into "not present".
-**Verify:** `pnpm --filter @workspace/api-server exec tsx ./src/mine-confirmed-entities.ts`.
+**Verify:** `pnpm --filter @workspace/api-server exec tsx --env-file-if-exists=.env
+./src/mine-confirmed-entities.ts`. Corrected 2026-09-08: without the env flag the command
+this line used to give exits 1 with "DATABASE_URL must be set" -- `artifacts/api-server`
+keeps its own `.env`, and `backfill-m7a-production-signals.ts` already invoked itself the
+working way.
 **Must not:** write to the database; print argument values (PII); decide success by
 searching the result for a word (see correction 3); count a status-unknown result as a
 success.
