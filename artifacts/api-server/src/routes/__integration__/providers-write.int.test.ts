@@ -148,6 +148,36 @@ describe("GET /api/benchmark/providers/models", () => {
     if (pro?.enabled) expect(pro.providerId).toBe("assemblyai-universal");
   });
 
+  // Found by the break test: the case above only proves the reported id is
+  // SOME real row. Reporting the adapter's own row for every enabled model
+  // passed it -- a model would then name a sibling row, which still exists,
+  // so nothing complained. S-5 reads this id to decide whether a row is in
+  // its vendor's catalogue, so naming the wrong row is the same lie S-4 was
+  // written to stop, just aimed at a different vendor.
+  it("names the row that made THIS model enabled, not just some row of the same vendor", async () => {
+    // Seeded, and this is the whole point of the case. Every row already in
+    // the database is either the adapter's own id or a model with no row, so
+    // `adapter.providerId` and the synthesised id are the same string and a
+    // mutation that swaps them is invisible. Gladia's adapter row is
+    // `gladia-solaria`; the synthesised id for its OTHER catalogued model,
+    // solaria-3, is `gladia-solaria-3`. With that row present the two ids
+    // finally differ, and reporting the wrong one is visible.
+    await fx.provider({ id: "gladia-solaria-3", name: "Gladia", model: "Solaria-3" });
+
+    const providers = await request(app).get("/api/benchmark/providers");
+    const rowIds = new Set<string>(providers.body.map((p: { id: string }) => p.id));
+    const res = await request(app).get("/api/benchmark/providers/models");
+
+    const models = (res.body.vendors as { vendor: string; models: { apiModel: string; providerId: string; enabled: boolean }[] }[])
+      .flatMap((v) => v.models.map((m) => ({ ...m, vendor: v.vendor })));
+
+    // A model whose OWN row exists must report that row. The legacy path is
+    // a fallback for models with no row of their own, never an override.
+    const ownRow = models.filter((m) => m.enabled && rowIds.has(providerIdForModel(m.vendor, m.apiModel)));
+    expect(ownRow.length).toBeGreaterThan(0);
+    for (const m of ownRow) expect(m.providerId).toBe(providerIdForModel(m.vendor, m.apiModel));
+  });
+
   it("keeps the synthesised id for a model that is not enabled, because that is what enabling would create", async () => {
     const res = await request(app).get("/api/benchmark/providers/models");
     expect(res.status).toBe(200);
