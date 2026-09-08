@@ -214,6 +214,20 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
   if (vendor.error) return <p className="text-[11px] text-muted-foreground" data-testid="vendor-models">Model list unavailable: {vendor.error}</p>
   const onEnable = (apiModel: string) => enable.mutate({ data: { vendor: vendor.vendor, apiModel } })
   const latest = vendor.models.find((m) => m.latest)
+  // S-5: a provider row this tool runs that the vendor's own list does not
+  // contain. `deepgram-flux-general-en` is the real case -- it is what the
+  // Rush assistant runs in production, and Deepgram's model-list API never
+  // returns it, so the catalog and the "Newest" line structurally cannot
+  // see it. Without a word on screen that reads as the row being stale.
+  //
+  // Compared by providerId, the only key both sides agree on: a row's
+  // `model` is a display name ("Flux General EN") and the catalog's is the
+  // API string ("flux-general-en"). This lives inside VendorModelsLine so it
+  // inherits the `if (!vendor) return null` guard above -- a vendor with no
+  // catalog at all (Speechmatics) says nothing, because "not in the list" and
+  // "there is no list" are different facts.
+  const catalogIds = new Set(vendor.models.map((m) => m.providerId))
+  const unlisted = providers.filter((p) => !catalogIds.has(p.id))
   // T-107: a catalog list has no API behind it -- it is only as fresh as the
   // day someone last checked the vendor's docs. Say how old that check is,
   // and flag it once it is older than the re-check window.
@@ -244,6 +258,13 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
           )}
           <span className="text-[11px] text-muted-foreground">({when})</span>
         </div>
+      )}
+      {unlisted.length > 0 && (
+        <p className="text-[11px] text-muted-foreground" data-testid="vendor-unlisted-rows">
+          {unlisted.length} provider row{unlisted.length === 1 ? " is" : "s are"} not in this
+          vendor&rsquo;s list API ({unlisted.map((p) => p.id.replace(`${vendor.vendor}-`, "")).join(", ")}) &mdash;{" "}
+          {unlisted.length === 1 ? "a separate product" : "separate products"}, not a missing model.
+        </p>
       )}
       {vendor.models.length > 1 && (
         <details className="text-[11px] text-muted-foreground">
