@@ -121,6 +121,26 @@ describe("POST /api/benchmark/bulks/preview", () => {
       { bucket: "fewer than 500 customer words", count: 2 },
     ]);
 
+    // A call that fails BOTH the band and the floor is named under the band,
+    // because that is the order a person reads the filters in and T-14's
+    // rule is that a call failing several is counted once, under the first.
+    // This is not a detail: 64 of the 66 calls in the corpus with 12 or
+    // fewer customer words are also shorter than 60s, so checking the floor
+    // first would relabel almost every one of them and make the new filter
+    // look like it was doing the duration band's work.
+    const both = await fx.call({
+      durationSeconds: 5,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(5),
+    });
+    const ordered = await send({ minCustomerWords: 20 });
+    expect(ordered.body.inScopeCount).toBe(3);
+    expect(ordered.body.excluded).toEqual([
+      { bucket: "fewer than 20 customer words", count: 1 },
+      { bucket: "shorter than 30s", count: 1 },
+    ]);
+    expect(both.durationSeconds).toBe(5);
+
     // A hand-picked call still skips the floor, exactly as it skips the band.
     const picked = await request(app)
       .post("/api/benchmark/bulks/preview")
@@ -129,6 +149,55 @@ describe("POST /api/benchmark/bulks/preview", () => {
         providerIds: [],
       });
     expect(picked.body.matchedCount).toBe(1);
+  });
+
+  // M-16, found by the break test: every case above states its floor out
+  // loud, which left the DEFAULT itself asserted by nothing -- setting
+  // DEFAULT_MIN_CUSTOMER_WORDS to 0 passed the whole suite. So did letting
+  // preview and create disagree about it, which is the one thing M-5's
+  // comment on previewBulkSelection says must never happen. This case says
+  // nothing about customer words on purpose: it is the only one that
+  // exercises what a person actually gets when they do not ask.
+  it("applies its own floor when nobody states one, and freezes exactly what it previewed", async () => {
+    const accountLabel = `fx-default-${fx.suffix}`;
+    const talkative = await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(40),
+    });
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(5),
+    });
+    const provider = await fx.provider({ costPerMinute: 0.5 });
+
+    const body = {
+      criteria: { accountLabel, requireCustomerAudio: false },
+      providerIds: [provider.id],
+      minDurationSeconds: 30,
+      maxDurationSeconds: 300,
+    };
+
+    const preview = await request(app).post("/api/benchmark/bulks/preview").send(body);
+    expect(preview.status).toBe(200);
+    expect(preview.body.inScopeCount).toBe(2);
+    // The quiet call is gone without anyone asking for it to be, and the
+    // bucket says which floor did it -- so the number in the name is the
+    // default, not a coincidence.
+    expect(preview.body.matchedCount).toBe(1);
+    expect(preview.body.excluded).toEqual([{ bucket: "fewer than 20 customer words", count: 1 }]);
+
+    const created = await request(app)
+      .post("/api/benchmark/bulks")
+      .set("x-actor", fx.actor)
+      .send({ name: `m16 default ${fx.suffix}`, ...body });
+    expect(created.status).toBe(201);
+    fx.adoptBulk(created.body.id);
+    // M-5's rule, one step on: the count in the dialog is the count that
+    // gets frozen. Same calls, and the floor is on the bulk's own record.
+    expect(created.body.selectionCriteria.minCustomerWords).toBe(20);
+    expect(created.body.selectionCriteria.resolvedCallIds).toEqual([talkative.id]);
   });
 
   it("does not second-guess a hand-picked call against the band", async () => {

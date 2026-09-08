@@ -14,7 +14,7 @@
 // no bulk. Getting that wrong shows the same run twice, which is how a
 // reader over-counts what a bulk did.
 import { afterEach, describe, expect, it } from "vitest"
-import { cleanup, fireEvent, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type { BenchmarkRun, Bulk, BulkPreview, BulkTemplate, Provider } from "@workspace/api-client-react"
 import Bulks from "../Bulks"
 import { installBrowserShims, renderPage, reply, stubApi, type StubRoutes } from "./harness"
@@ -126,6 +126,46 @@ describe("Bulks", () => {
     expect(posts.every((p) => p.startsWith("POST /api/benchmark/bulks/preview"))).toBe(true)
     expect(api.calls.some((c) => c.includes("/launch"))).toBe(false)
     expect(api.calls.some((c) => c.includes("/retry-failed"))).toBe(false)
+    expect(api.unmatched).toEqual([])
+    api.restore()
+  })
+
+  // M-16, both found by the break test. The floor the dialog offers and the
+  // floor it sends are two different things, and neither was asserted
+  // anywhere: moving the page's constant to 45 passed the whole suite, and
+  // so did dropping `minCustomerWords` from the request whenever it was 0 --
+  // which is exactly the case that means "no floor", so clearing the box
+  // would have quietly handed the decision back to the server's default of
+  // 20 while the box read empty.
+  it("offers the same customer-word floor it sends, and sends zero when the box is cleared", async () => {
+    // Opening the dialog is the only thing on this page that reaches for the
+    // assistant picker, so these two are stubbed here rather than in
+    // baseRoutes -- every other case should still fail if it asks.
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/vapi/assistants": [],
+      "GET /api/benchmark/vapi/accounts": [],
+    })
+    renderPage(<Bulks />, { path: "/bulks" })
+    await screen.findAllByText("August sweep")
+
+    const sent = () =>
+      api.bodyFor("POST /api/benchmark/bulks/preview") as
+        | { criteria?: { minCustomerWords?: number } }
+        | undefined
+
+    await waitFor(() => expect(sent()?.criteria?.minCustomerWords).toBe(20))
+
+    fireEvent.click(screen.getByText("New bulk"))
+    const field = await screen.findByPlaceholderText("no floor")
+    // What the dialog shows is what it just asked the server for.
+    expect((field as HTMLInputElement).value).toBe("20")
+
+    // Empty means no floor, and the request has to say so out loud: leaving
+    // the key off would let the server's create-time default back in.
+    fireEvent.change(field, { target: { value: "" } })
+    await waitFor(() => expect(sent()?.criteria?.minCustomerWords).toBe(0))
+
     expect(api.unmatched).toEqual([])
     api.restore()
   })

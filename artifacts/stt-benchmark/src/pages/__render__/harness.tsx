@@ -124,6 +124,15 @@ export type StubbedApi = {
   readonly unmatched: string[]
   /** True when the page asked for this path (query string ignored). */
   asked(methodAndPath: string): boolean
+  /**
+   * M-16: the parsed JSON body of the LAST request to this path, or
+   * undefined if the page never sent one. `calls` says which endpoints a
+   * page hit; this says what it asked them for -- which is the half that
+   * matters when the page is building a selection someone will pay to run,
+   * and a filter silently dropped on the way out looks identical from the
+   * outside.
+   */
+  bodyFor(methodAndPath: string): unknown
   restore(): void
 }
 
@@ -148,6 +157,7 @@ export function stubApi(routes: StubRoutes): StubbedApi {
   const original = globalThis.fetch
   const calls: string[] = []
   const unmatched: string[] = []
+  const bodies = new Map<string, unknown>()
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -155,6 +165,13 @@ export function stubApi(routes: StubRoutes): StubbedApi {
     // Relative URLs are the norm here (the client's default base is "/api").
     const url = new URL(raw, "http://test.local")
     calls.push(`${method} ${url.pathname}${url.search}`)
+    if (typeof init?.body === "string") {
+      try {
+        bodies.set(`${method} ${url.pathname}`, JSON.parse(init.body))
+      } catch {
+        bodies.set(`${method} ${url.pathname}`, init.body)
+      }
+    }
 
     const matched = matchRoute(routes, `${method} ${url.pathname}`)
     if (matched === undefined) {
@@ -178,6 +195,7 @@ export function stubApi(routes: StubRoutes): StubbedApi {
     calls,
     unmatched,
     asked: (methodAndPath: string) => calls.some((c) => c.split("?")[0] === methodAndPath),
+    bodyFor: (methodAndPath: string) => bodies.get(methodAndPath),
     restore: () => {
       globalThis.fetch = original
     },
