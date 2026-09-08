@@ -12,6 +12,17 @@ import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
 
+/** M-16: a draft whose customer says exactly `count` words and whose
+ *  assistant says a great many more, so a count that accidentally reads the
+ *  whole transcript cannot pass. */
+function draftWithCustomerWords(count: number): string {
+  return [
+    `AI: ${"thanks for calling and holding ".repeat(20).trim()}`,
+    `User: ${Array.from({ length: count }, (_, i) => `word${i}`).join(" ")}`,
+    `AI: ${"understood let me check that for you ".repeat(20).trim()}`,
+  ].join("\n");
+}
+
 afterAll(async () => {
   await fx.cleanup();
   await pool.end();
@@ -33,8 +44,10 @@ describe("POST /api/benchmark/bulks/preview", () => {
       .send({
         // M-5: this case is about the duration band, not the audio
         // channel -- said out loud so the new customer-channel default
-        // does not silently empty it.
-        criteria: { accountLabel, requireCustomerAudio: false },
+        // does not silently empty it. M-16 adds a floor on customer words
+        // with exactly the same problem, and the same answer: a fixture
+        // call has no draft, so every one of them has 0 customer words.
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,
@@ -58,6 +71,64 @@ describe("POST /api/benchmark/bulks/preview", () => {
     expect(res.body.estimate.totalCostCents).toBe(50 + (res.body.estimate.agentCostCents ?? 0));
     expect(res.body.estimate.overThreshold).toBe(false);
     expect(res.body.costThresholdCents).toBeGreaterThan(0);
+  });
+
+  // M-16: the customer-word floor. Its whole point is that the seconds band
+  // cannot see it -- both calls here sit inside the same duration band and
+  // only one of them is a conversation.
+  it("names the calls the customer barely spoke on, and does not touch the ones they did", async () => {
+    const accountLabel = `fx-words-${fx.suffix}`;
+    const talkative = await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(40),
+    });
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(5),
+    });
+
+    const send = (criteria: Record<string, unknown>) =>
+      request(app)
+        .post("/api/benchmark/bulks/preview")
+        .send({
+          criteria: { accountLabel, requireCustomerAudio: false, ...criteria },
+          providerIds: [],
+          minDurationSeconds: 30,
+          maxDurationSeconds: 300,
+        });
+
+    const floored = await send({ minCustomerWords: 20 });
+    expect(floored.status).toBe(200);
+    expect(floored.body.inScopeCount).toBe(2);
+    expect(floored.body.matchedCount).toBe(1);
+    expect(floored.body.excluded).toEqual([{ bucket: "fewer than 20 customer words", count: 1 }]);
+
+    // Both calls are 90s, so the band alone cannot tell them apart: drop the
+    // floor and the quiet call comes straight back. This is the "prove it by
+    // breaking it" half, run as a test rather than trusted.
+    const unfloored = await send({ minCustomerWords: 0 });
+    expect(unfloored.status).toBe(200);
+    expect(unfloored.body.matchedCount).toBe(2);
+    expect(unfloored.body.excluded).toEqual([]);
+
+    // And a floor nobody clears empties the selection by name rather than
+    // silently -- what a `vertical: trucking` bulk will actually see.
+    const impossible = await send({ minCustomerWords: 500 });
+    expect(impossible.body.matchedCount).toBe(0);
+    expect(impossible.body.excluded).toEqual([
+      { bucket: "fewer than 500 customer words", count: 2 },
+    ]);
+
+    // A hand-picked call still skips the floor, exactly as it skips the band.
+    const picked = await request(app)
+      .post("/api/benchmark/bulks/preview")
+      .send({
+        criteria: { callIds: [talkative.id], requireCustomerAudio: false, minCustomerWords: 500 },
+        providerIds: [],
+      });
+    expect(picked.body.matchedCount).toBe(1);
   });
 
   it("does not second-guess a hand-picked call against the band", async () => {
@@ -142,7 +213,10 @@ describe("POST /api/benchmark/bulks with a selection that matches nothing", () =
         name: `empty selection ${fx.suffix}`,
         // M-5: still a 400, but it has to be the BAND that empties this,
         // not the audio channel -- the assertion below names the filter.
-        criteria: { accountLabel, requireCustomerAudio: false },
+        // M-16: the band already fires first for all three of these calls,
+        // so the floor changes nothing here; stated anyway, so the comment
+        // above stays true by construction rather than by ordering luck.
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,

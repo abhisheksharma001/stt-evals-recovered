@@ -67,6 +67,7 @@ import {
   BulkSelectionEmptyError,
   cancelBulk,
   createBulkFromCriteria,
+  DEFAULT_MIN_CUSTOMER_WORDS,
   resolveDurationBand,
   isUniqueViolation,
   launchBulk,
@@ -94,6 +95,8 @@ function criteriaFromBody(criteria: {
   // M-5: absent means "no opinion" and the caller's default decides -- see
   // withCustomerAudioDefault; it is NOT read as false here.
   requireCustomerAudio?: boolean;
+  // M-16: same rule -- absent means "no opinion", not "no floor".
+  minCustomerWords?: number;
   callIds?: string[];
 }): BulkSelectionCriteria {
   const iso = (value?: Date | string): string | undefined =>
@@ -203,6 +206,8 @@ router.post("/benchmark/bulks", async (req, res): Promise<void> => {
       // M-5: a bulk created from now on measures the caller-only track
       // unless the caller says otherwise in the criteria.
       requireCustomerAudioDefault: true,
+      // M-16: and it only holds calls the customer actually spoke on.
+      minCustomerWordsDefault: DEFAULT_MIN_CUSTOMER_WORDS,
     });
     respondJson(res, CreateBulkResponse, serializeBulk(bulk), 201);
   } catch (err) {
@@ -234,6 +239,7 @@ router.post("/benchmark/bulks/preview", async (req, res): Promise<void> => {
       // M-5: this endpoint previews what POST /benchmark/bulks would do,
       // so it must carry that route's default, not its own.
       requireCustomerAudioDefault: true,
+      minCustomerWordsDefault: DEFAULT_MIN_CUSTOMER_WORDS,
     });
     respondJson(res, PreviewBulkSelectionResponse, preview);
   } catch (err) {
@@ -853,6 +859,10 @@ router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Pr
       // numbers it produced -- the caller-only track is opted into by
       // saving a template that says so, never applied retroactively.
       requireCustomerAudioDefault: false,
+      // M-16: same, and it matters more here -- a floor applied to an old
+      // template would quietly shrink a saved selection a person is
+      // comparing against last month's numbers.
+      minCustomerWordsDefault: undefined,
     });
 
   try {

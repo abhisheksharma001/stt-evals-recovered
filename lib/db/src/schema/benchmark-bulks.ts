@@ -48,6 +48,16 @@ export type BulkSelectionCriteria = {
   // numbers; only a bulk created after M-5 gets the new default of true
   // (applied at create time in bulks.ts, not read as a default here).
   requireCustomerAudio?: boolean;
+  // M-16 (2026-09-08): a floor on how much the CUSTOMER actually said,
+  // counted from the draft's `User:` lines. The seconds band says how long
+  // the call ran; this says how much of it was the caller, and the two can
+  // disagree -- a 90 s call can be assistant speech and one customer word.
+  // Absent -> no floor, exactly as every bulk behaved before M-16. Only a
+  // bulk created after M-16 gets the default of 20 (applied at create time
+  // in bulks.ts, not read as a default here), so a template saved earlier
+  // keeps resolving to the calls it always resolved to -- same rule as
+  // requireCustomerAudio above, for the same reason.
+  minCustomerWords?: number;
   // Explicit corpus picks; merged with filter matches.
   callIds?: string[];
   // Frozen resolution, set on bulks only, at creation time.
