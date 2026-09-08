@@ -343,7 +343,7 @@ M-13 and M-14 parked.
 
 | ID | Row | Spend |
 |---|---|---|
-| R-1 | A1 the denominator belongs to the call | none |
+| R-1 | A1 the denominator belongs to the call | none — **shipped 2026-09-08, PR #118**; the customer bulk now reads `too_close`, no winner |
 | R-2 | A2 one quantity ranks both surfaces (blocked on question 1) | none |
 | R-3 | A3 production against the pack is the headline sentence | none |
 | R-4 | B1 the assistant card stops claiming a decision | none |

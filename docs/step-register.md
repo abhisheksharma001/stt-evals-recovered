@@ -3976,6 +3976,51 @@ spends nothing unless its **Must not** or its **Blocked on Abhishek** line says 
 
 ### R-1 — The verdict's denominator belongs to the call, not the provider
 
+**Status:** done 2026-09-08 (PR #118, `0acac898d5e4`), deployed `7509f25b018d ->
+0acac898d5e4`. Live on bulk `42769f26`, the acceptance case exactly: decision
+`too_close`, `winnerProviderId` null, all five providers on the same 998-word
+basis, AssemblyAI and ElevenLabs both 4 flags -> 0.401 per 100 words, noise floor
+`difference 0, ci95 [0, 0]`. The sentence now reads *"Too close to call:
+AssemblyAI (0.4) and ElevenLabs (0.4) are inside the margin of error... Effectively
+tied. More calls won't separate them."* It used to name ElevenLabs the winner.
+
+**Correction to R-1 as it was written: the Files list was two thirds of the
+surfaces.** `artifacts/api-server/src/lib/trend.ts` computes the same rate on the
+same basis -- its own header says "on exactly the T-19 basis the rankings use" --
+and was found by grilling before any code was written. Fixing two of three would
+have left the cross-bulk trend strip drawing a different line from the rankings it
+tracks, which is the defect R-2 exists to remove. It went in this PR, with its own
+integration case. Also corrected in place: the `peer_flags_per_100_words` comment
+in `lib/db/src/schema/benchmark-rankings.ts` and the two OpenAPI descriptions
+(`peerFlagsPer100Words`, `HeadlineVerdict`), which described the old denominator;
+`pnpm --filter @workspace/api-spec run codegen` re-ran for the generated clients.
+
+**What it taught.** Three things.
+
+*A correct statistic on the wrong quantity is worse than no statistic.* The paired
+bootstrap was right to call the ElevenLabs gap "outside noise" -- ElevenLabs really
+is consistently wordier, call after call -- so the machinery built to refuse weak
+claims certified a bias instead. Nothing in the verdict pipeline could have caught
+it; only reading the two providers' per-call flags side by side did.
+
+*When the numerator and the denominator come from different normalisers, say so out
+loud.* Flags are counted on `canonicalTranscript` (fillers folded out); the
+denominator was `normalizeTranscript` (fillers kept in). Both forms are deliberate
+and documented (T-101), and the mismatch between them still went unnoticed for the
+life of the metric. `docs/scoring-policy.md` now carries the rule in the section
+where the two forms are introduced, not in a comment on one file.
+
+*Grill the Files list, not just the change.* Two of this step's four verify commands
+were written against files the step named; the third surface had no line in the
+step at all. The rate was greppable in one pass (`Per100Words`), which is how it
+turned up.
+
+**Left for later:** ranking rows written before today keep the old basis --
+`computeRankingsForBulk` is a free, idempotent rewrite from stored cells and could
+be run for the three finished bulks on Abhishek's word (O-36, no spend). Until then
+a historical bulk's Results column can disagree with its trend-strip point. R-2
+(which single quantity both surfaces rank on) is untouched and still blocked.
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/lib/verdict.ts` (the `words` per cell, built near the
