@@ -13,6 +13,7 @@ import {
   customerTurnsOf,
   mentionsEntity,
   stringArgumentsOf,
+  tallyToolCall,
   toolOutcome,
 } from "./confirmed-entities";
 
@@ -158,5 +159,41 @@ describe("stringArgumentsOf", () => {
     expect(stringArgumentsOf("t", "{ not json")).toEqual([]);
     expect(stringArgumentsOf("t", undefined)).toEqual([]);
     expect(stringArgumentsOf("t", JSON.stringify(["a", "b"]))).toEqual([]);
+  });
+});
+
+// tallyToolCall is what the runner calls, and the reason it exists is that
+// the runner must never hold an argument value -- a console.log of one in
+// the runner's loop was caught by nothing. These assert the counting, and
+// that a value is never returned to a caller that could print it.
+describe("tallyToolCall", () => {
+  const args = JSON.stringify({ lastName: "Rodriguez", firstName: "Ann", propertyId: 12 });
+  const turns = "this is Ann Rodriguez calling";
+
+  it("counts a succeeded call's arguments, flagging the fragile match", () => {
+    expect(tallyToolCall("t", args, "succeeded", turns)).toEqual([
+      { name: "lastName", tally: { candidates: 1, fromSucceeded: 1, present: 1, fragile: 0 } },
+      { name: "firstName", tally: { candidates: 1, fromSucceeded: 1, present: 1, fragile: 1 } },
+    ]);
+  });
+
+  it("never runs the mention check on a result that reported no status", () => {
+    for (const outcome of ["unknown", "failed"] as const) {
+      expect(tallyToolCall("t", args, outcome, turns)).toEqual([
+        { name: "lastName", tally: { candidates: 1, fromSucceeded: 0, present: 0, fragile: 0 } },
+        { name: "firstName", tally: { candidates: 1, fromSucceeded: 0, present: 0, fragile: 0 } },
+      ]);
+    }
+  });
+
+  it("hands back names and numbers only, never a value", () => {
+    const counted = tallyToolCall("t", args, "succeeded", turns);
+    expect(JSON.stringify(counted)).not.toContain("Rodriguez");
+    for (const entry of counted) expect(Object.keys(entry).sort()).toEqual(["name", "tally"]);
+  });
+
+  it("counts nothing for a tool call with no string arguments", () => {
+    expect(tallyToolCall("t", JSON.stringify({ max_results: 5 }), "succeeded", turns)).toEqual([]);
+    expect(tallyToolCall("t", "{ not json", "succeeded", turns)).toEqual([]);
   });
 });

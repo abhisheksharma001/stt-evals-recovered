@@ -156,3 +156,46 @@ export function stringArgumentsOf(tool: string, rawArguments: unknown): ToolCall
   }
   return out;
 }
+
+export type ArgumentTally = {
+  candidates: number;
+  fromSucceeded: number;
+  present: number;
+  fragile: number;
+};
+
+/**
+ * One tool call, reduced to counts per argument name.
+ *
+ * This is the only thing the runner calls, and it exists so the runner
+ * never holds an argument value at all. M-15's Must-not is "print argument
+ * values (PII)", and the break test proved that rule was guarded by
+ * nothing: a `console.log(argument.value)` added to the runner's own loop
+ * passed typecheck and all 132 tests, and a script printing a real caller's
+ * phone number looks exactly like a working script. The runner has no test
+ * and should not need one -- so the value stops here instead, and the rule
+ * is kept by construction rather than by a reviewer noticing.
+ *
+ * A tool whose result carried no status contributes candidates and nothing
+ * else: the mention check is not even run, because a value confirmed by a
+ * tool that never said whether it worked is not a confirmed value.
+ */
+export function tallyToolCall(
+  tool: string,
+  rawArguments: unknown,
+  outcome: ToolOutcome,
+  customerTurns: string,
+): { name: string; tally: ArgumentTally }[] {
+  const out: { name: string; tally: ArgumentTally }[] = [];
+  for (const argument of stringArgumentsOf(tool, rawArguments)) {
+    const tally: ArgumentTally = { candidates: 1, fromSucceeded: 0, present: 0, fragile: 0 };
+    if (outcome === "succeeded") {
+      tally.fromSucceeded = 1;
+      const check = mentionsEntity(customerTurns, argument.value);
+      tally.present = check.present ? 1 : 0;
+      tally.fragile = check.fragile ? 1 : 0;
+    }
+    out.push({ name: argument.name, tally });
+  }
+  return out;
+}

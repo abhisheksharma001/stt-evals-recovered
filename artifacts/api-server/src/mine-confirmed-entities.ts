@@ -24,15 +24,16 @@
  */
 import { readFile } from "node:fs/promises";
 
+import type { ArgumentTally } from "./lib/confirmed-entities";
+
 const { db, pool, benchmarkCallsTable } = await import("@workspace/db");
 const { artifactCachePathFor } = await import("./lib/audio-cache");
-const {
-  customerTurnsOf,
-  mentionsEntity,
-  stringArgumentsOf,
-  toolOutcome,
-  FRAGILE_MAX_LENGTH,
-} = await import("./lib/confirmed-entities");
+// tallyToolCall, not stringArgumentsOf: an argument VALUE never enters this
+// file. See its own comment -- the corpus is real caller PII and the break
+// test found nothing stopping a debug print here.
+const { customerTurnsOf, tallyToolCall, toolOutcome, FRAGILE_MAX_LENGTH } = await import(
+  "./lib/confirmed-entities"
+);
 
 type ArtifactMessage = {
   role?: unknown;
@@ -42,19 +43,17 @@ type ArtifactMessage = {
   toolCalls?: unknown;
 };
 
-type Tally = {
-  candidates: number;
-  fromSucceeded: number;
-  present: number;
-  fragile: number;
-};
-
-const emptyTally = (): Tally => ({ candidates: 0, fromSucceeded: 0, present: 0, fragile: 0 });
+const emptyTally = (): ArgumentTally => ({
+  candidates: 0,
+  fromSucceeded: 0,
+  present: 0,
+  fragile: 0,
+});
 
 const corpus = { calls: 0, artifact: 0, unreadable: 0, withToolCalls: 0, toolCalls: 0 };
 const outcomes = { succeeded: 0, failed: 0, unknown: 0 };
 const drafts = { present: 0, missing: 0, noCustomerTurn: 0 };
-const byPair = new Map<string, Tally>();
+const byPair = new Map<string, ArgumentTally>();
 const totals = emptyTally();
 
 const rows = await db
@@ -103,25 +102,14 @@ for (const row of rows) {
           : "unknown";
       outcomes[outcome] += 1;
 
-      for (const argument of stringArgumentsOf(tool, call.function?.arguments)) {
-        const key = `${argument.tool} ${argument.name}`;
-        const tally = byPair.get(key) ?? emptyTally();
-        tally.candidates += 1;
-        totals.candidates += 1;
-        if (outcome === "succeeded") {
-          tally.fromSucceeded += 1;
-          totals.fromSucceeded += 1;
-          const check = mentionsEntity(turns, argument.value);
-          if (check.present) {
-            tally.present += 1;
-            totals.present += 1;
-            if (check.fragile) {
-              tally.fragile += 1;
-              totals.fragile += 1;
-            }
-          }
+      for (const counted of tallyToolCall(tool, call.function?.arguments, outcome, turns)) {
+        const key = `${tool} ${counted.name}`;
+        const running = byPair.get(key) ?? emptyTally();
+        for (const field of ["candidates", "fromSucceeded", "present", "fragile"] as const) {
+          running[field] += counted.tally[field];
+          totals[field] += counted.tally[field];
         }
-        byPair.set(key, tally);
+        byPair.set(key, running);
       }
     }
   }
