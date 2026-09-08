@@ -52,6 +52,28 @@ const providers: Provider[] = [
   },
 ]
 
+/**
+ * S-5: a provider row this tool runs that its vendor's list API never
+ * returns. Deliberately NOT in the shared `providers` fixture -- adding a
+ * third row there changes what every other case on this page counts, and a
+ * fixture that quietly grows is how an unrelated assertion starts failing.
+ */
+const providersWithUnlistedRow: Provider[] = [
+  ...providers,
+  {
+    id: "deepgram-flux-general-en",
+    name: "Deepgram",
+    model: "Flux General EN",
+    status: "ready",
+    supportsStreaming: true,
+    supportsDiarization: false,
+    costPerMinute: 0.0077,
+    keywordBoosting: true,
+    hasAdapter: true,
+    apiKeyConfigured: true,
+  },
+]
+
 const settings: AppSettings = { activeProviderId: "deepgram-nova-3", agentModel: null }
 
 const agentModels: AgentModelList = {
@@ -103,6 +125,83 @@ const baseRoutes: StubRoutes = {
 }
 
 describe("Setup", () => {
+  // S-2: the vendor block stacks the vendor's catalogue (a menu, costs
+  // nothing) on top of the provider rows (what actually runs), and a person
+  // seeing it for the first time cannot tell them apart. Both captions have
+  // to be readable with no hovering, clicking or expanding -- note the model
+  // list itself is a <details> and is collapsed on first render.
+  it("says what the catalogue is and what the cards are, without anything being opened", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Setup />, { path: "/setup" })
+
+    const catalog = (await screen.findAllByTestId("catalog-caption"))[0]
+    // The apostrophe on screen is a curly one (&rsquo;), so the assertion
+    // reads around it rather than guessing which character rendered.
+    expect(catalog.textContent).toContain("This vendor")
+    expect(catalog.textContent).toContain("own list")
+    expect(catalog.textContent).toContain("the models they sell")
+    expect(catalog.textContent).toContain("Nothing here costs money until you run a bulk with it")
+
+    const rows = screen.getAllByTestId("rows-caption")[0]
+    expect(rows.textContent).toContain("What this tool can run")
+    expect(rows.textContent).toContain("its own price and its own results")
+
+    // Not a tooltip: neither sentence may be hiding in a title attribute,
+    // and neither may sit inside a collapsed <details>.
+    for (const el of [catalog, rows]) {
+      expect(el.getAttribute("title")).toBeNull()
+      expect(el.closest("details")).toBeNull()
+    }
+    api.restore()
+  })
+
+  // S-5: a provider row this tool runs that the vendor's list API does not
+  // return. deepgram-flux-general-en is the real one -- production runs it,
+  // Deepgram's /v1/models never mentions it. Before this, the row simply
+  // failed to appear in the catalog and read as stale or wrong.
+  it("names a provider row the vendor's own list does not contain", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/providers": providersWithUnlistedRow })
+    renderPage(<Setup />, { path: "/setup" })
+
+    const line = await screen.findByTestId("vendor-unlisted-rows")
+    expect(line.textContent).toContain("1 provider row is not in this vendor")
+    expect(line.textContent).toContain("flux-general-en")
+    expect(line.textContent).toContain("a separate product, not a missing model")
+    // Not an error, not stale, not disabled -- it works, it is just unlisted.
+    expect(line.textContent).not.toMatch(/stale|error|disabled|missing model\b(?!.)/)
+    api.restore()
+  })
+
+  it("says nothing when every row of a vendor is in its catalog", async () => {
+    // The shared fixture: every Deepgram row is in the catalog, so no line.
+    const api = stubApi(baseRoutes)
+    renderPage(<Setup />, { path: "/setup" })
+
+    await screen.findByText("nova-3")
+    expect(screen.queryByTestId("vendor-unlisted-rows")).toBeNull()
+    api.restore()
+  })
+
+  // Speechmatics has a provider row and NO catalog vendor in the response at
+  // all. "Not in the vendor's list" and "there is no list" are different
+  // facts, and only the first is this line's job.
+  it("stays silent for a vendor that has no catalog at all", async () => {
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/providers": providersWithUnlistedRow,
+      "GET /api/benchmark/providers/models": {
+        ...models,
+        vendors: models.vendors.filter((v) => v.vendor !== "speechmatics"),
+      },
+    })
+    renderPage(<Setup />, { path: "/setup" })
+
+    await screen.findByText("ursa-2")
+    const lines = screen.queryAllByTestId("vendor-unlisted-rows")
+    for (const l of lines) expect(l.textContent).not.toContain("ursa")
+    api.restore()
+  })
+
   it("shows the server's status per provider and says what a missing key blocks", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Setup />, { path: "/setup" })

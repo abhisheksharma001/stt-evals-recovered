@@ -214,6 +214,20 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
   if (vendor.error) return <p className="text-[11px] text-muted-foreground" data-testid="vendor-models">Model list unavailable: {vendor.error}</p>
   const onEnable = (apiModel: string) => enable.mutate({ data: { vendor: vendor.vendor, apiModel } })
   const latest = vendor.models.find((m) => m.latest)
+  // S-5: a provider row this tool runs that the vendor's own list does not
+  // contain. `deepgram-flux-general-en` is the real case -- it is what the
+  // Rush assistant runs in production, and Deepgram's model-list API never
+  // returns it, so the catalog and the "Newest" line structurally cannot
+  // see it. Without a word on screen that reads as the row being stale.
+  //
+  // Compared by providerId, the only key both sides agree on: a row's
+  // `model` is a display name ("Flux General EN") and the catalog's is the
+  // API string ("flux-general-en"). This lives inside VendorModelsLine so it
+  // inherits the `if (!vendor) return null` guard above -- a vendor with no
+  // catalog at all (Speechmatics) says nothing, because "not in the list" and
+  // "there is no list" are different facts.
+  const catalogIds = new Set(vendor.models.map((m) => m.providerId))
+  const unlisted = providers.filter((p) => !catalogIds.has(p.id))
   // T-107: a catalog list has no API behind it -- it is only as fresh as the
   // day someone last checked the vendor's docs. Say how old that check is,
   // and flag it once it is older than the re-check window.
@@ -225,6 +239,14 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
     : ""
   return (
     <div className="mt-2 space-y-1 text-xs" data-testid="vendor-models">
+      {/* S-2: this block and the provider cards below it are two different
+          kinds of thing stacked on top of each other, and nothing said so.
+          A caption, not a tooltip: the point is that it reads without
+          hovering, clicking or expanding. */}
+      <p className="text-[11px] text-muted-foreground" data-testid="catalog-caption">
+        This vendor&rsquo;s own list &mdash; the models they sell. Enabling one adds it below.
+        Nothing here costs money until you run a bulk with it.
+      </p>
       {age != null && age > CATALOG_RECHECK_DAYS && (
         <p className="flex items-center gap-1.5 rounded-md border border-warning/25 bg-warning/10 px-2 py-1 text-[11px] text-warning" data-testid="catalog-age">
           <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -244,6 +266,13 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
           )}
           <span className="text-[11px] text-muted-foreground">({when})</span>
         </div>
+      )}
+      {unlisted.length > 0 && (
+        <p className="text-[11px] text-muted-foreground" data-testid="vendor-unlisted-rows">
+          {unlisted.length} provider row{unlisted.length === 1 ? " is" : "s are"} not in this
+          vendor&rsquo;s list API ({unlisted.map((p) => p.id.replace(`${vendor.vendor}-`, "")).join(", ")}) &mdash;{" "}
+          {unlisted.length === 1 ? "a separate product" : "separate products"}, not a missing model.
+        </p>
       )}
       {vendor.models.length > 1 && (
         <details className="text-[11px] text-muted-foreground">
@@ -301,6 +330,9 @@ function VendorGrid({ groups }: { groups: [string, Provider[]][] }) {
                 <VendorModelsLine providers={models} />
               </CardHeader>
               <CardContent className="space-y-4">
+                <p className="text-[11px] text-muted-foreground" data-testid="rows-caption">
+                  What this tool can run. Each has its own price and its own results.
+                </p>
                 {models.map((provider) => (
                   <div key={provider.id} className="rounded-lg border border-border p-3 space-y-3">
                     <div className="flex items-start justify-between gap-2">
