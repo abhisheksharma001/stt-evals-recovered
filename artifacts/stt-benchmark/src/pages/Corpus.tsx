@@ -61,6 +61,11 @@ import { JudgeChip } from "@/components/judge-chip"
 // verification result, plus the audio player. No second page, no navigation.
 // ---------------------------------------------------------------------------
 
+// S-6: T-96 already keys an org group this way. The filter reuses the same
+// constant so "this call has no account label" means one thing on the page,
+// not two that can drift apart.
+const NO_ORG = "__no_org__"
+
 export default function Corpus() {
   const { data: calls, isLoading, isError, error, refetch } = useListBenchmarkCalls()
   // T-117: the latest AI-check verdict per call, for a chip on the row. Same
@@ -84,7 +89,10 @@ export default function Corpus() {
   // UX review 2026-08-25: label/id substring search alone couldn't answer
   // "show me the needs_review trucking calls" on a 1000-row corpus.
   const [statusFilter, setStatusFilter] = React.useState("all")
-  const [verticalFilter, setVerticalFilter] = React.useState("all")
+  // S-6: the filter narrows by the Vapi account (the org a reader
+  // recognises), not by the internal `vertical` tag it replaced. "all"
+  // or an account label, or NO_ORG for the calls that carry none.
+  const [orgFilter, setOrgFilter] = React.useState("all")
   // T-74 (E.1): "what needs a human" is the page's first question. The
   // strip above the table answers it and its chips filter the table.
   // T-113: Results links here as ?hard=1 to open the table already filtered
@@ -156,11 +164,25 @@ export default function Corpus() {
       .filter(c =>
         (c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) &&
         (statusFilter === "all" || c.status === statusFilter) &&
-        (verticalFilter === "all" || c.vertical === verticalFilter) &&
+        (orgFilter === "all" || (c.sourceAccountLabel ?? NO_ORG) === orgFilter) &&
         (!hardCasesOnly || c.hardCases.length > 0)
       )
       .sort((a, b) => rank(b.id) - rank(a.id) || a.label.localeCompare(b.label))
-  }, [calls, searchText, statusFilter, verticalFilter, hardCasesOnly, disagreementOf])
+  }, [calls, searchText, statusFilter, orgFilter, hardCasesOnly, disagreementOf])
+
+  // S-6: account labels are not an enum -- they are whatever Vapi accounts
+  // have been added -- so the options are read off the loaded calls rather
+  // than written down. Over `calls`, not `filteredCalls`: options that
+  // vanish as soon as one is chosen cannot be changed to another.
+  const orgOptions = React.useMemo(() => {
+    const labels = new Set<string>()
+    let unlabelled = false
+    for (const c of calls ?? []) {
+      if (c.sourceAccountLabel) labels.add(c.sourceAccountLabel)
+      else unlabelled = true
+    }
+    return { labels: [...labels].sort((a, b) => a.localeCompare(b)), unlabelled }
+  }, [calls])
 
   // T-124: counted over the filtered view so the summary always matches the
   // rows on screen. "Gone" = uncached past the retention window, a fact
@@ -192,7 +214,7 @@ export default function Corpus() {
     const byOrg = new Map<string, OrgGroup>()
     for (const c of filteredCalls) {
       const label = c.sourceAccountLabel ?? null
-      const orgKey = label ?? "__no_org__"
+      const orgKey = label ?? NO_ORG
       const org = byOrg.get(orgKey) ?? { key: orgKey, label, calls: 0, needsReview: 0, hardCases: 0, assistants: [] }
       const aId = c.sourceAssistantId ?? null
       const aKey = `${orgKey}/${aId ?? "__no_assistant__"}`
@@ -228,18 +250,20 @@ export default function Corpus() {
                           <div className="font-medium text-foreground">{call.label}</div>
                           <div className="text-xs font-mono text-muted-foreground">{call.id.substring(0, 8)}...</div>
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
+                        <TableCell data-group-start className="text-right font-mono tabular-nums">
                           {disagreementOf.has(call.id) ? disagreementOf.get(call.id) : <span className="text-muted-foreground" title="No scored transcript yet">—</span>}
                         </TableCell>
                         <TableCell>
-                          <span className="capitalize text-xs font-mono px-2 py-0.5 rounded-md border border-border bg-secondary text-secondary-foreground">
-                            {call.vertical.replace('_', ' ')}
+                          {/* Plain text, not the enum chip this replaced: an org
+                              is a proper name, and mono + capitalize rewrites it. */}
+                          <span className="text-sm">
+                            {call.sourceAccountLabel ?? <span className="text-muted-foreground">Unlabelled org</span>}
                           </span>
                         </TableCell>
                         <TableCell>
                           <span className="font-mono text-sm tabular-nums">{Math.floor(call.durationSeconds / 60)}:{(call.durationSeconds % 60).toString().padStart(2, '0')}</span>
                         </TableCell>
-                        <TableCell>
+                        <TableCell data-group-start>
                           <div className="flex items-center gap-1.5">
                             <StatusBadge status={call.status} />
                             <JudgeChip scan={latestScanByCall.get(call.id) ?? null} />
@@ -256,7 +280,7 @@ export default function Corpus() {
                             {call.hardCases.length === 0 && <span className="text-muted-foreground text-xs">—</span>}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-group-start className="text-right">
                           <div className="flex justify-end gap-1.5">
                             <Button
                               variant={expanded ? "secondary" : "outline"}
@@ -305,13 +329,16 @@ export default function Corpus() {
               <SelectItem value="ready_to_run">Ready to run</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={verticalFilter} onValueChange={setVerticalFilter}>
-            <SelectTrigger aria-label="Filter by vertical" className="h-9 w-48 capitalize"><SelectValue /></SelectTrigger>
+          <Select value={orgFilter} onValueChange={setOrgFilter}>
+            <SelectTrigger aria-label="Filter by org" className="h-9 w-48"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All verticals</SelectItem>
-              <SelectItem value="rush">Rush</SelectItem>
-              <SelectItem value="property_management">Property management</SelectItem>
-              <SelectItem value="trucking">Trucking</SelectItem>
+              <SelectItem value="all">All orgs</SelectItem>
+              {orgOptions.labels.map((l) => (
+                <SelectItem key={l} value={l}>{l}</SelectItem>
+              ))}
+              {/* Without this the calls that carry no account label are
+                  reachable by "all" and by nothing else. */}
+              {orgOptions.unlabelled && <SelectItem value={NO_ORG}>Unlabelled org</SelectItem>}
             </SelectContent>
           </Select>
           <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
@@ -370,15 +397,15 @@ export default function Corpus() {
               <TableRow>
                 <TableHead className="w-8" />
                 <TableHead>Call ID / Label</TableHead>
-                <TableHead className="text-right" title="Sum of disagreements across every provider's transcript of this call. Lower is better; blank means no scored transcript yet. The table is sorted by this, most disagreement first.">
+                <TableHead data-group-start className="text-right" title="Sum of disagreements across every provider's transcript of this call. Lower is better; blank means no scored transcript yet. The table is sorted by this, most disagreement first.">
                   Disagreements ↓
                   <div className="text-[10px] font-normal normal-case tracking-normal text-muted-foreground">most first</div>
                 </TableHead>
-                <TableHead>Vertical</TableHead>
+                <TableHead>Org</TableHead>
                 <TableHead>Duration</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead data-group-start>Status</TableHead>
                 <TableHead>Hard Cases</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead data-group-start className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -412,7 +439,7 @@ export default function Corpus() {
                         onClick={() => {
                           setSearchText("")
                           setStatusFilter("all")
-                          setVerticalFilter("all")
+                          setOrgFilter("all")
                           setHardCasesOnly(false)
                         }}
                       >

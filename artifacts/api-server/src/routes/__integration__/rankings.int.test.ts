@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { asc, eq } from "drizzle-orm";
 import { benchmarkRankingsTable, benchmarkRunsTable, db, pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { computeRankingsForRun } from "../../lib/run-executor";
 import { expectStatus } from "./expect-status";
 import { Fixtures } from "./fixtures";
@@ -25,7 +25,7 @@ const asstLatest = `fx-asst-latest-${fx.suffix}`;
 const asstAgent = `fx-asst-agent-${fx.suffix}`;
 
 async function getRankings(query: Record<string, string> = {}) {
-  const res = await request(app).get("/api/benchmark/rankings").query(query);
+  const res = await request(server).get("/api/benchmark/rankings").query(query);
   expectStatus(res, 200);
   return res.body as { assistantId: string | null; assistantLabel: string; providerId: string; rank: number; runId: string }[];
 }
@@ -82,7 +82,7 @@ describe("GET /api/benchmark/rankings", () => {
   });
 
   it("rejects a malformed bulkId with a sentence, not a 500", async () => {
-    const res = await request(app).get("/api/benchmark/rankings").query({ bulkId: "not-a-uuid" });
+    const res = await request(server).get("/api/benchmark/rankings").query({ bulkId: "not-a-uuid" });
     expectStatus(res, 400);
     expect(res.body.error).toMatch(/bulkId/);
   });

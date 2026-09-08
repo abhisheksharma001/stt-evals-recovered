@@ -247,6 +247,22 @@ const baseRoutes: StubRoutes = {
 }
 
 describe("Results", () => {
+  // S-7: one hairline where identity ends and measurement begins. The break
+  // test showed nothing on this page was looked at, so marking every metric
+  // column -- the spreadsheet-grid mistake -- passed unnoticed.
+  it("rules off the measurements once, not once per metric column", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    // One table per assistant group on this page, so scope to the first.
+    const headers = within(screen.getAllByRole("table")[0]).getAllByRole("columnheader")
+    const marked = headers.filter((h) => h.hasAttribute("data-group-start"))
+    expect(marked).toHaveLength(1)
+    expect(headers.indexOf(marked[0])).toBeGreaterThan(1)
+    expect(marked[0].className).toContain("data-[group-start]:border-l")
+  })
+
   it("One bulk asks for that bulk's rankings and names the verdict's winner", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Results />, { path: "/results" })

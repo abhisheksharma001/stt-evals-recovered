@@ -7,7 +7,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -20,7 +20,7 @@ afterAll(async () => {
 
 describe("GET /api/benchmark/vapi/accounts", () => {
   it("answers the configured accounts as an array of env-derived rows, no network", async () => {
-    const res = await request(app).get("/api/benchmark/vapi/accounts");
+    const res = await request(server).get("/api/benchmark/vapi/accounts");
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     for (const account of res.body) {
@@ -37,17 +37,17 @@ describe("GET /api/benchmark/vapi/accounts", () => {
 describe("GET /api/benchmark/volume", () => {
   it("an unknown account label answers 404 naming the label, not a crash", async () => {
     const label = `fx-no-such-account-${fx.suffix}`;
-    const res = await request(app).get("/api/benchmark/volume").query({ accountLabel: label });
+    const res = await request(server).get("/api/benchmark/volume").query({ accountLabel: label });
     expect(res.status).toBe(404);
     expect(res.body.error).toContain(label);
   });
 
   it("a missing or empty accountLabel answers a sentence, never reaches Vapi", async () => {
-    const missing = await request(app).get("/api/benchmark/volume");
+    const missing = await request(server).get("/api/benchmark/volume");
     expect(missing.status).toBe(400);
     expect(missing.body.error).toMatch(/accountLabel/);
 
-    const empty = await request(app).get("/api/benchmark/volume").query({ accountLabel: "" });
+    const empty = await request(server).get("/api/benchmark/volume").query({ accountLabel: "" });
     expect(empty.status).toBe(400);
     expect(empty.body.error).toMatch(/accountLabel/);
   });

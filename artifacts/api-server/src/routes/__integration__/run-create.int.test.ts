@@ -13,7 +13,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -28,7 +28,7 @@ describe("POST /api/benchmark/runs", () => {
     const call = await fx.call({ goldTranscript: `fx gold ${fx.suffix}` });
     const provider = await fx.provider();
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/runs")
       .set("x-actor", fx.actor)
       .send({ callIds: [call.id], providerIds: [provider.id], notes: `fx note ${fx.suffix}` });
@@ -42,18 +42,18 @@ describe("POST /api/benchmark/runs", () => {
 
     // RUN-01: the manifest is frozen even for a run that never ran -- it
     // records what the run WOULD have executed against.
-    const manifest = await request(app).get(`/api/benchmark/runs/${res.body.id}/manifest`);
+    const manifest = await request(server).get(`/api/benchmark/runs/${res.body.id}/manifest`);
     expect(manifest.status).toBe(200);
     expect(manifest.body.calls).toHaveLength(1);
     expect(manifest.body.providers[0].id).toBe(provider.id);
 
     // Nothing was started: no cells, and the status has not moved.
-    const results = await request(app).get(`/api/benchmark/runs/${res.body.id}/results`);
+    const results = await request(server).get(`/api/benchmark/runs/${res.body.id}/results`);
     expect(results.body).toEqual([]);
-    const list = await request(app).get("/api/benchmark/runs");
+    const list = await request(server).get("/api/benchmark/runs");
     expect(list.body.find((r: { id: string }) => r.id === res.body.id).status).toBe("blocked");
 
-    const audit = await request(app)
+    const audit = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "run", entityId: res.body.id });
     expect(audit.body).toHaveLength(1);
@@ -64,7 +64,7 @@ describe("POST /api/benchmark/runs", () => {
     const call = await fx.call();
     const provider = await fx.provider();
 
-    const missingCall = await request(app)
+    const missingCall = await request(server)
       .post("/api/benchmark/runs")
       .set("x-actor", fx.actor)
       .send({ callIds: ["00000000-0000-4000-8000-000000000000"], providerIds: [provider.id] });
@@ -73,7 +73,7 @@ describe("POST /api/benchmark/runs", () => {
     expect(missingCall.body.status).toBe("blocked");
     expect(missingCall.body.notes).toContain("Blocked: one or more calls do not exist");
 
-    const missingProvider = await request(app)
+    const missingProvider = await request(server)
       .post("/api/benchmark/runs")
       .set("x-actor", fx.actor)
       .send({ callIds: [call.id], providerIds: [`fx-no-such-${fx.suffix}`] });
@@ -83,11 +83,11 @@ describe("POST /api/benchmark/runs", () => {
   });
 
   it("refuses a run with no calls or no providers", async () => {
-    const noCalls = await request(app).post("/api/benchmark/runs").send({ callIds: [], providerIds: ["x"] });
+    const noCalls = await request(server).post("/api/benchmark/runs").send({ callIds: [], providerIds: ["x"] });
     expect(noCalls.status).toBe(400);
     expect(noCalls.body.error).toMatch(/callIds/);
 
-    const noProviders = await request(app).post("/api/benchmark/runs").send({ callIds: ["x"], providerIds: [] });
+    const noProviders = await request(server).post("/api/benchmark/runs").send({ callIds: ["x"], providerIds: [] });
     expect(noProviders.status).toBe(400);
     expect(noProviders.body.error).toMatch(/providerIds/);
   });

@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -63,7 +63,7 @@ describe("GET /api/benchmark/calls/disagreement", () => {
     });
     await fx.score(failedCell.id, { peerFlagCount: 100 });
 
-    const res = await request(app).get("/api/benchmark/calls/disagreement");
+    const res = await request(server).get("/api/benchmark/calls/disagreement");
     expect(res.status).toBe(200);
     expect(res.body.bulkId).toBeNull();
 
@@ -92,20 +92,20 @@ describe("GET /api/benchmark/calls/disagreement", () => {
     const otherCell = await fx.result(elsewhere.id, other.id, provider.id);
     await fx.score(otherCell.id, { peerFlagCount: 9 });
 
-    const res = await request(app).get("/api/benchmark/calls/disagreement").query({ bulkId: bulk.id });
+    const res = await request(server).get("/api/benchmark/calls/disagreement").query({ bulkId: bulk.id });
     expect(res.status).toBe(200);
     expect(res.body.bulkId).toBe(bulk.id);
     expect(res.body.calls).toEqual([{ callId: mine.id, disagreements: 3, providers: 1 }]);
   });
 
   it("a bulk with no runs answers an empty list; a malformed bulkId answers a sentence", async () => {
-    const empty = await request(app)
+    const empty = await request(server)
       .get("/api/benchmark/calls/disagreement")
       .query({ bulkId: "00000000-0000-4000-8000-000000000000" });
     expect(empty.status).toBe(200);
     expect(empty.body.calls).toEqual([]);
 
-    const malformed = await request(app).get("/api/benchmark/calls/disagreement").query({ bulkId: "not-a-uuid" });
+    const malformed = await request(server).get("/api/benchmark/calls/disagreement").query({ bulkId: "not-a-uuid" });
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });

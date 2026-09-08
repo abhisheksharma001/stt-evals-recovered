@@ -7,7 +7,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -19,7 +19,7 @@ afterAll(async () => {
 
 describe("POST /api/benchmark/calls", () => {
   it("lands runnable, rounds the duration, and audits the creation", async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/calls")
       .set("x-actor", fx.actor)
       .send({
@@ -43,7 +43,7 @@ describe("POST /api/benchmark/calls", () => {
       entityNotes: `notes ${fx.suffix}`,
     });
 
-    const audit = await request(app)
+    const audit = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "call", entityId: res.body.id });
     expect(audit.body).toHaveLength(1);
@@ -51,11 +51,11 @@ describe("POST /api/benchmark/calls", () => {
   });
 
   it("refuses a call with no label and an unknown vertical, naming the field", async () => {
-    const noLabel = await request(app).post("/api/benchmark/calls").send({ vertical: "rush", durationSeconds: 30 });
+    const noLabel = await request(server).post("/api/benchmark/calls").send({ vertical: "rush", durationSeconds: 30 });
     expect(noLabel.status).toBe(400);
     expect(noLabel.body.error).toMatch(/label/);
 
-    const badVertical = await request(app)
+    const badVertical = await request(server)
       .post("/api/benchmark/calls")
       .send({ label: `fx-bad-${fx.suffix}`, vertical: "banking", durationSeconds: 30 });
     expect(badVertical.status).toBe(400);
@@ -67,7 +67,7 @@ describe("POST /api/benchmark/calls/:callId/attest-deid", () => {
   it("takes two distinct approvers and refuses the same person twice, whatever the casing", async () => {
     const call = await fx.call();
     const attest = (approverLabel: string) =>
-      request(app).post(`/api/benchmark/calls/${call.id}/attest-deid`).send({ approverLabel });
+      request(server).post(`/api/benchmark/calls/${call.id}/attest-deid`).send({ approverLabel });
 
     const first = await attest(`Bob-${fx.suffix}`);
     expect(first.status).toBe(200);
@@ -90,7 +90,7 @@ describe("POST /api/benchmark/calls/:callId/attest-deid", () => {
 
     // Both attestations are in the trail under the approver's own name,
     // newest first.
-    const audit = await request(app)
+    const audit = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "call", entityId: call.id });
     expect(audit.body.map((r: { action: string }) => r.action)).toEqual(["attest_deid_second", "attest_deid_first"]);
@@ -98,7 +98,7 @@ describe("POST /api/benchmark/calls/:callId/attest-deid", () => {
   });
 
   it("answers 404 for an unknown call", async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/calls/00000000-0000-4000-8000-000000000000/attest-deid")
       .send({ approverLabel: `Bob-${fx.suffix}` });
     expect(res.status).toBe(404);

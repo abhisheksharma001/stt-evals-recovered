@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -15,7 +15,7 @@ let newerRunningId: string;
 type BulkRow = { id: string; name: string; status: string; providerIds: string[]; shardSize: number };
 
 async function listBulks(query: Record<string, string> = {}) {
-  const res = await request(app).get("/api/benchmark/bulks").query(query);
+  const res = await request(server).get("/api/benchmark/bulks").query(query);
   expect(res.status).toBe(200);
   return res.body as BulkRow[];
 }
@@ -67,7 +67,7 @@ describe("GET /api/benchmark/bulks", () => {
   });
 
   it("an unknown status answers a sentence, not the whole list", async () => {
-    const res = await request(app).get("/api/benchmark/bulks").query({ status: "bogus" });
+    const res = await request(server).get("/api/benchmark/bulks").query({ status: "bogus" });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/status/);
   });

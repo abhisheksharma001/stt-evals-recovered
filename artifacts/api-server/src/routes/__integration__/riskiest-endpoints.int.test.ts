@@ -39,7 +39,7 @@ import {
   benchmarkProviderCallResultsTable,
   benchmarkRunsTable,
 } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { expectStatus, serverSaid } from "./expect-status";
 import { upsertResult } from "../../lib/run-executor";
 
@@ -143,11 +143,11 @@ describe("(a) T-27 upsertResult", () => {
 describe("(b) POST /api/benchmark/bulks/:id/launch", () => {
   it("accepts the first launch and refuses the second with 409", async () => {
     const bulk = await seedBulk("t77 launch", "draft");
-    const first = await request(app).post(`/api/benchmark/bulks/${bulk.id}/launch`).send();
+    const first = await request(server).post(`/api/benchmark/bulks/${bulk.id}/launch`).send();
     expectStatus(first, 202);
     expect(first.body.status).toBe("running");
 
-    const second = await request(app).post(`/api/benchmark/bulks/${bulk.id}/launch`).send();
+    const second = await request(server).post(`/api/benchmark/bulks/${bulk.id}/launch`).send();
     expectStatus(second, 409);
     expect(second.body.error).toMatch(/not launchable/);
 
@@ -159,26 +159,26 @@ describe("(b) POST /api/benchmark/bulks/:id/launch", () => {
   });
 
   it("404s on an unknown bulk", async () => {
-    const res = await request(app).post(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/launch`).send();
+    const res = await request(server).post(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/launch`).send();
     expectStatus(res, 404);
   });
 });
 
 describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
   it("404s on an unknown bulk", async () => {
-    const json = await request(app).get(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts`);
+    const json = await request(server).get(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts`);
     expectStatus(json, 404);
-    const html = await request(app).get(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdict.html`);
+    const html = await request(server).get(`/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdict.html`);
     expectStatus(html, 404);
   });
 
   it("returns the verdict shape and a dated HTML page for a seeded bulk", async () => {
     const bulk = await seedBulk("t77 verdicts", "complete");
-    const json = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    const json = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
     expectStatus(json, 200);
     expect(json.body).toEqual({ bulkId: bulk.id, providers: [], groups: [] });
 
-    const html = await request(app).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
+    const html = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
     expectStatus(html, 200);
     expect(html.headers["content-type"]).toMatch(/text\/html/);
     expect(html.text).toContain(`STT verdict: ${bulk.name}`);
@@ -203,7 +203,7 @@ describe("(c) GET /api/benchmark/bulks/:id/verdicts and verdict.html", () => {
 
 describe("(d) GET /api/benchmark/disagreement-spans", () => {
   it("404s on an unknown call", async () => {
-    const res = await request(app).get("/api/benchmark/disagreement-spans").query({ callId: "00000000-0000-4000-8000-000000000000" });
+    const res = await request(server).get("/api/benchmark/disagreement-spans").query({ callId: "00000000-0000-4000-8000-000000000000" });
     expectStatus(res, 404);
   });
 
@@ -226,7 +226,7 @@ describe("(d) GET /api/benchmark/disagreement-spans", () => {
       rawOutput: deepgramRaw(["book", "the", "road"]),
     });
 
-    const res = await request(app).get("/api/benchmark/disagreement-spans").query({ callId, runId: run.id });
+    const res = await request(server).get("/api/benchmark/disagreement-spans").query({ callId, runId: run.id });
     // A 500 here is the T-136 regression: the response did not satisfy its
     // own schema, which no typecheck can catch.
     expectStatus(res, 200);
@@ -253,11 +253,11 @@ describe("(e) POST /api/benchmark/runs/:runId/archive", () => {
       .returning();
     runIds.push(adhoc.id);
 
-    const archived = await request(app).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: true });
+    const archived = await request(server).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: true });
     expectStatus(archived, 200);
     expect(archived.body.archivedAt).not.toBeNull();
 
-    const restored = await request(app).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: false });
+    const restored = await request(server).post(`/api/benchmark/runs/${adhoc.id}/archive`).send({ archived: false });
     expectStatus(restored, 200);
     expect(restored.body.archivedAt).toBeNull();
 
@@ -269,19 +269,19 @@ describe("(e) POST /api/benchmark/runs/:runId/archive", () => {
       .values({ status: "complete", purpose: "batch", bulkId: bulk.id, providerIds: [providerId], callIds: [callId], callCount: 1 })
       .returning();
     runIds.push(shard.id);
-    const refused = await request(app).post(`/api/benchmark/runs/${shard.id}/archive`).send({ archived: true });
+    const refused = await request(server).post(`/api/benchmark/runs/${shard.id}/archive`).send({ archived: true });
     expectStatus(refused, 409);
   });
 
   it("404s on an unknown run", async () => {
-    const res = await request(app).post("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/archive").send({ archived: true });
+    const res = await request(server).post("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/archive").send({ archived: true });
     expectStatus(res, 404);
   });
 });
 
 describe("(f) POST /api/benchmark/calls/cache-audio", () => {
   it("answers with counts, and never throws when there is nothing to save", async () => {
-    const res = await request(app).post("/api/benchmark/calls/cache-audio").send();
+    const res = await request(server).post("/api/benchmark/calls/cache-audio").send();
     expectStatus(res, 200);
     // The endpoint takes no body: it sweeps every uncached call. The seeded
     // call has no recording anywhere, so it can only be a failure -- what
@@ -314,7 +314,7 @@ describe("(g) parameter validation", () => {
       `/api/benchmark/runs/${junk}/manifest`,
     ];
     for (const path of paths) {
-      const res = await request(app).get(path);
+      const res = await request(server).get(path);
       expectStatus(res, 400, path);
     }
   });
@@ -326,7 +326,7 @@ describe("(g) parameter validation", () => {
       `/api/benchmark/words-to-watch?bulkId=${junk}`,
       `/api/benchmark/assistant-signals?bulkId=${junk}`,
     ]) {
-      const res = await request(app).get(path);
+      const res = await request(server).get(path);
       expectStatus(res, 400, path);
     }
   });
@@ -342,14 +342,14 @@ describe("(g) parameter validation", () => {
       "/api/benchmark/volume": "accountLabel is required",
     };
     for (const [path, sentence] of Object.entries(expected)) {
-      const res = await request(app).get(path);
+      const res = await request(server).get(path);
       expectStatus(res, 400, path);
       expect(`${path} -> ${res.body.error}`).toBe(`${path} -> ${sentence}`);
     }
   });
 
   it("refuses a repeated parameter instead of joining it with a comma", async () => {
-    const res = await request(app).get(`/api/benchmark/disagreement-spans?callId=${callId}&callId=${callId}`);
+    const res = await request(server).get(`/api/benchmark/disagreement-spans?callId=${callId}&callId=${callId}`);
     expectStatus(res, 400);
     expect(res.body.error).toBe("callId must be a string, not an array");
   });
@@ -364,7 +364,7 @@ describe("(g) parameter validation", () => {
       `/api/benchmark/words-to-watch?assistantId=${junk}`,
     ];
     for (const path of ok) {
-      const res = await request(app).get(path);
+      const res = await request(server).get(path);
       expectStatus(res, 200, path);
     }
   });
@@ -374,11 +374,11 @@ describe("(h) the two routes that read their params raw, and what a refusal says
   const junk = "not-a-uuid";
 
   it("T-146: the audio and archive routes answer 400 for a malformed id, not 500", async () => {
-    const audio = await request(app).get(`/api/benchmark/calls/${junk}/audio`);
+    const audio = await request(server).get(`/api/benchmark/calls/${junk}/audio`);
     expectStatus(audio, 400, "audio");
     expect(audio.body.error).toBe("callId must be a valid uuid");
 
-    const archive = await request(app).post(`/api/benchmark/runs/${junk}/archive`).send({ archived: true });
+    const archive = await request(server).post(`/api/benchmark/runs/${junk}/archive`).send({ archived: true });
     expectStatus(archive, 400, "archive");
     expect(archive.body.error).toBe("runId must be a valid uuid");
   });
@@ -387,7 +387,7 @@ describe("(h) the two routes that read their params raw, and what a refusal says
     // The seeded call has no cached bytes and no source recording, so the
     // honest answer is 404 (or a Vapi error) -- never 500, and never the
     // uuid refusal above.
-    const audio = await request(app).get(`/api/benchmark/calls/${callId}/audio`);
+    const audio = await request(server).get(`/api/benchmark/calls/${callId}/audio`);
     expect([200, 206, 302, 404, 502, 503], serverSaid(audio)).toContain(audio.status);
     expect(audio.status, serverSaid(audio)).not.toBe(400);
 
@@ -396,7 +396,7 @@ describe("(h) the two routes that read their params raw, and what a refusal says
       .values({ status: "complete", purpose: "batch", providerIds: [], callIds: [callId], callCount: 1 })
       .returning();
     runIds.push(run.id);
-    const noBody = await request(app).post(`/api/benchmark/runs/${run.id}/archive`).send({});
+    const noBody = await request(server).post(`/api/benchmark/runs/${run.id}/archive`).send({});
     expectStatus(noBody, 400, "no body");
     expect(noBody.body.error).toBe("archived is required");
   });
@@ -406,7 +406,7 @@ describe("(h) the two routes that read their params raw, and what a refusal says
       ["post", "/api/benchmark/agent/scans"],
       ["get", "/api/benchmark/nope"],
     ] as const) {
-      const res = await request(app)[method](path);
+      const res = await request(server)[method](path);
       expectStatus(res, 404, path);
       expect(res.headers["content-type"]).toContain("application/json");
       expect(res.body.error).toBe(`No such endpoint: ${method.toUpperCase()} ${path}`);
@@ -417,14 +417,14 @@ describe("(h) the two routes that read their params raw, and what a refusal says
     // Both bodies leave nothing to set -- zod strips the unknown key -- and
     // both used to reach drizzle's `.set({})` and answer 500.
     for (const body of [{}, { judgeModel: 123 }]) {
-      const res = await request(app).patch("/api/benchmark/settings").send(body);
+      const res = await request(server).patch("/api/benchmark/settings").send(body);
       expectStatus(res, 400, JSON.stringify(body));
       expect(res.body.error).toContain("Name at least one setting to change");
     }
   });
 
   it("T-150: a rejected body says what is wrong in a sentence", async () => {
-    const res = await request(app).post("/api/benchmark/bulks").send({ label: "x" });
+    const res = await request(server).post("/api/benchmark/bulks").send({ label: "x" });
     expectStatus(res, 400);
     expect(res.body.error).toContain("criteria is required");
     // The old answer opened with zod's serialised issue array.

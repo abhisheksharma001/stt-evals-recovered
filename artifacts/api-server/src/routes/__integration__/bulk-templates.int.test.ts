@@ -7,7 +7,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -18,13 +18,13 @@ afterAll(async () => {
 });
 
 const auditFor = async (entityId: string) => {
-  const res = await request(app).get("/api/benchmark/audit-log").query({ entityType: "bulk_template", entityId });
+  const res = await request(server).get("/api/benchmark/audit-log").query({ entityType: "bulk_template", entityId });
   expect(res.status).toBe(200);
   return res.body as { action: string; actorLabel: string; beforeState: unknown }[];
 };
 
 const create = (name: string, body: Record<string, unknown> = {}) =>
-  request(app)
+  request(server)
     .post("/api/benchmark/bulk-templates")
     .set("x-actor", fx.actor)
     .send({ name, criteria: { vertical: "trucking" }, providerIds: [`fx-${fx.suffix}-p`], ...body });
@@ -50,7 +50,7 @@ describe("bulk templates", () => {
     // Defaults land on the row, not on the caller: shard size 50.
     expect(first.body.shardSize).toBe(50);
 
-    const list = await request(app).get("/api/benchmark/bulk-templates");
+    const list = await request(server).get("/api/benchmark/bulk-templates");
     expect(list.status).toBe(200);
     const mine = list.body
       .map((t: { id: string }) => t.id)
@@ -79,12 +79,12 @@ describe("bulk templates", () => {
     const made = await create(`fx-tpl-del-${fx.suffix}`);
     expect(made.status).toBe(201);
 
-    const deleted = await request(app)
+    const deleted = await request(server)
       .delete(`/api/benchmark/bulk-templates/${made.body.id}`)
       .set("x-actor", fx.actor);
     expect(deleted.status).toBe(204);
 
-    const list = await request(app).get("/api/benchmark/bulk-templates");
+    const list = await request(server).get("/api/benchmark/bulk-templates");
     expect(list.body.map((t: { id: string }) => t.id)).not.toContain(made.body.id);
 
     // T-50: the recipe is gone, but what it was is still recoverable.
@@ -92,10 +92,10 @@ describe("bulk templates", () => {
     expect(rows.map((r) => r.action)).toEqual(["delete", "create"]);
     expect((rows[0].beforeState as { name: string }).name).toBe(`fx-tpl-del-${fx.suffix}`);
 
-    const again = await request(app).delete(`/api/benchmark/bulk-templates/${made.body.id}`);
+    const again = await request(server).delete(`/api/benchmark/bulk-templates/${made.body.id}`);
     expect(again.status).toBe(404);
 
-    const malformed = await request(app).delete("/api/benchmark/bulk-templates/not-a-uuid");
+    const malformed = await request(server).delete("/api/benchmark/bulk-templates/not-a-uuid");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/templateId/);
   });

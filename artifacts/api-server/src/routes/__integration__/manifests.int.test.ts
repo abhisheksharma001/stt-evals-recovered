@@ -10,7 +10,7 @@ import request from "supertest";
 import { eq } from "drizzle-orm";
 import { benchmarkCallsTable, db, pool } from "@workspace/db";
 import { SCORING_VERSION } from "@workspace/scoring";
-import app from "../../app";
+import { server } from "./server";
 import { buildRunManifest } from "../../lib/manifest";
 import { Fixtures } from "./fixtures";
 
@@ -30,7 +30,7 @@ describe("GET /api/benchmark/runs/:runId/manifest", () => {
     const manifest = await buildRunManifest([call.id], [provider.id]);
     const run = await fx.run({ manifest, callIds: [call.id], providerIds: [provider.id], callCount: 1 });
 
-    const res = await request(app).get(`/api/benchmark/runs/${run.id}/manifest`);
+    const res = await request(server).get(`/api/benchmark/runs/${run.id}/manifest`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ manifestVersion: 1, scoringVersion: SCORING_VERSION, runId: run.id });
     expect(new Date(res.body.createdAt).toISOString()).toBe(manifest.createdAt);
@@ -47,21 +47,21 @@ describe("GET /api/benchmark/runs/:runId/manifest", () => {
       .set({ goldTranscript: `${gold} corrected`, label: `fx-renamed-${fx.suffix}` })
       .where(eq(benchmarkCallsTable.id, call.id));
 
-    const after = await request(app).get(`/api/benchmark/runs/${run.id}/manifest`);
+    const after = await request(server).get(`/api/benchmark/runs/${run.id}/manifest`);
     expect(after.status).toBe(200);
     expect(after.body.calls).toEqual([{ id: call.id, label: call.label, goldTranscriptSha256: sha(gold) }]);
   });
 
   it("a run that predates manifests is refused as such; unknown 404, malformed 400", async () => {
     const legacy = await fx.run();
-    const predates = await request(app).get(`/api/benchmark/runs/${legacy.id}/manifest`);
+    const predates = await request(server).get(`/api/benchmark/runs/${legacy.id}/manifest`);
     expect(predates.status).toBe(404);
     expect(predates.body.error).toMatch(/predates manifests/);
 
-    const unknown = await request(app).get("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/manifest");
+    const unknown = await request(server).get("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/manifest");
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/runs/not-a-uuid/manifest");
+    const malformed = await request(server).get("/api/benchmark/runs/not-a-uuid/manifest");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/runId/);
   });
@@ -81,7 +81,7 @@ describe("GET /api/benchmark/bulks/:bulkId/manifest", () => {
     const shard1 = await fx.run({ bulkId: bulk.id, shardIndex: 1, status: "failed" });
     const shard0 = await fx.run({ bulkId: bulk.id, shardIndex: 0, manifest, callIds: [call.id], providerIds: [provider.id], callCount: 1 });
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/manifest`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/manifest`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       manifestVersion: 1,
@@ -113,10 +113,10 @@ describe("GET /api/benchmark/bulks/:bulkId/manifest", () => {
   });
 
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
-    const unknown = await request(app).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/manifest");
+    const unknown = await request(server).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/manifest");
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/bulks/not-a-uuid/manifest");
+    const malformed = await request(server).get("/api/benchmark/bulks/not-a-uuid/manifest");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });

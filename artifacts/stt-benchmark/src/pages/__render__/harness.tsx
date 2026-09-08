@@ -73,6 +73,17 @@ export function installBrowserShims(): void {
   if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = function scrollIntoView() {}
   }
+  if (typeof Element !== "undefined" && !Element.prototype.hasPointerCapture) {
+    // S-6: a radix Select refuses to open without these -- it asks the
+    // trigger whether it owns the pointer, and jsdom implements none of the
+    // Pointer Capture API. Without them a filter cannot be tested at all,
+    // only looked at.
+    Element.prototype.hasPointerCapture = function hasPointerCapture() {
+      return false
+    }
+    Element.prototype.setPointerCapture = function setPointerCapture() {}
+    Element.prototype.releasePointerCapture = function releasePointerCapture() {}
+  }
   if (typeof HTMLMediaElement !== "undefined") {
     // Call audio players mount on several pages. jsdom throws
     // "Not implemented" from play/pause/load unless they are replaced.

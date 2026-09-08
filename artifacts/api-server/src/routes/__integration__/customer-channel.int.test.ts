@@ -14,7 +14,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
 import { ensureAudioCacheDir } from "../../lib/audio-cache";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -52,7 +52,7 @@ describe("M-5 customer-channel selection", () => {
 
     // Default criteria: this endpoint previews POST /benchmark/bulks, which
     // requires the customer channel unless told otherwise.
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks/preview")
       // M-16: `minCustomerWords: 0` because this case is about the channel.
       // A fixture call carries no draft transcript, so without saying so it
@@ -74,7 +74,7 @@ describe("M-5 customer-channel selection", () => {
     await fx.call({ durationSeconds: 60, sourceAccountLabel: accountLabel });
     await writeCustomerAudio(withChannel.id);
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({
         criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
@@ -94,7 +94,7 @@ describe("M-5 customer-channel selection", () => {
     // premise is the caller-only track, whoever chose it.
     const noChannel = await fx.call({ durationSeconds: 5 });
 
-    const res = await request(app)
+    const res = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({ criteria: { callIds: [noChannel.id] }, providerIds: [], minDurationSeconds: 30, maxDurationSeconds: 300 });
 
@@ -111,12 +111,12 @@ describe("M-5 customer-channel selection", () => {
     await writeCustomerAudio(withChannel.id);
     const provider = await fx.provider({ costPerMinute: 0.5 });
 
-    const preview = await request(app)
+    const preview = await request(server)
       .post("/api/benchmark/bulks/preview")
       .send({ criteria: { accountLabel, minCustomerWords: 0 }, providerIds: [provider.id], minDurationSeconds: 30, maxDurationSeconds: 300 });
     expect(preview.body.matchedCount).toBe(1);
 
-    const created = await request(app)
+    const created = await request(server)
       .post("/api/benchmark/bulks")
       .set("x-actor", fx.actor)
       .send({
@@ -149,7 +149,7 @@ describe("M-5 customer-channel selection", () => {
     await fx.call({ durationSeconds: 60, sourceAccountLabel: accountLabel });
     const provider = await fx.provider({ costPerMinute: 0.5 });
 
-    const template = await request(app)
+    const template = await request(server)
       .post("/api/benchmark/bulk-templates")
       .set("x-actor", fx.actor)
       .send({
@@ -161,7 +161,7 @@ describe("M-5 customer-channel selection", () => {
       });
     expect(template.status).toBe(201);
 
-    const launched = await request(app)
+    const launched = await request(server)
       .post(`/api/benchmark/bulk-templates/${template.body.id}/launch`)
       .set("x-actor", fx.actor)
       .send({ name: `m5 template launch ${fx.suffix}` });
@@ -172,6 +172,6 @@ describe("M-5 customer-channel selection", () => {
     expect(launched.body.selectionCriteria.requireCustomerAudio).toBe(false);
     expect(launched.body.selectionCriteria.resolvedCallIds).toHaveLength(2);
 
-    await request(app).delete(`/api/benchmark/bulk-templates/${template.body.id}`).set("x-actor", fx.actor);
+    await request(server).delete(`/api/benchmark/bulk-templates/${template.body.id}`).set("x-actor", fx.actor);
   });
 });

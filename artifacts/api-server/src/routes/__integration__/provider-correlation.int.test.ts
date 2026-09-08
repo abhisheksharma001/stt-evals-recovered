@@ -7,7 +7,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -34,7 +34,7 @@ describe("GET /api/benchmark/bulks/:bulkId/provider-correlation", () => {
     const d = await fx.provider({ id: `fx-${fx.suffix}-corr-d` });
     await fx.result(run.id, call.id, d.id, { status: "failed", hypothesisTranscript: "noise noise noise" });
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/provider-correlation`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/provider-correlation`);
     expect(res.status).toBe(200);
     expect(res.body.bulkId).toBe(bulk.id);
     expect(res.body.callCount).toBe(1);
@@ -64,19 +64,19 @@ describe("GET /api/benchmark/bulks/:bulkId/provider-correlation", () => {
     await fx.result(run.id, call.id, a.id, { hypothesisTranscript: "same words here" });
     await fx.result(run.id, call.id, b.id, { hypothesisTranscript: "same words here" });
 
-    const res = await request(app).get(`/api/benchmark/bulks/${bulk.id}/provider-correlation`);
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/provider-correlation`);
     expect(res.status).toBe(200);
     expect(res.body.pairs).toHaveLength(1);
     expect(res.body.pairs[0]).toMatchObject({ agreement: 1, excessAgreement: null });
   });
 
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
-    const missing = await request(app).get(
+    const missing = await request(server).get(
       "/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/provider-correlation",
     );
     expect(missing.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/bulks/not-a-uuid/provider-correlation");
+    const malformed = await request(server).get("/api/benchmark/bulks/not-a-uuid/provider-correlation");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/bulkId/);
   });

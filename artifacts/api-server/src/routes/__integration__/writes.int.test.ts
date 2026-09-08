@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq } from "drizzle-orm";
 import { APP_SETTINGS_ID, appSettingsTable, db, pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -18,13 +18,13 @@ const fx = new Fixtures();
 let originalSettings: { activeProviderId: string | null; agentModel: string | null } | null = null;
 
 const auditFor = async (entityType: string, entityId: string) => {
-  const res = await request(app).get("/api/benchmark/audit-log").query({ entityType, entityId });
+  const res = await request(server).get("/api/benchmark/audit-log").query({ entityType, entityId });
   expect(res.status).toBe(200);
   return res.body as { action: string; actorLabel: string; beforeState: unknown; afterState: unknown }[];
 };
 
 beforeAll(async () => {
-  const res = await request(app).get("/api/benchmark/settings");
+  const res = await request(server).get("/api/benchmark/settings");
   originalSettings = res.body;
 });
 
@@ -43,7 +43,7 @@ describe("PATCH /api/benchmark/calls/:callId", () => {
   it("lands the change and writes the before/after audit row", async () => {
     const call = await fx.call({ status: "needs_review", entityNotes: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .patch(`/api/benchmark/calls/${call.id}`)
       .set("x-actor", fx.actor)
       .send({ status: "ready_to_run", entityNotes: `checked ${fx.suffix}`, hardCases: ["accent"] });
@@ -56,7 +56,7 @@ describe("PATCH /api/benchmark/calls/:callId", () => {
     });
 
     // Persisted, not just echoed.
-    const reread = await request(app).get(`/api/benchmark/calls/${call.id}`);
+    const reread = await request(server).get(`/api/benchmark/calls/${call.id}`);
     expect(reread.body).toMatchObject({ status: "ready_to_run", hardCases: ["accent"] });
 
     // NFR-5: the transition is recoverable from the audit trail alone --
@@ -69,14 +69,14 @@ describe("PATCH /api/benchmark/calls/:callId", () => {
   });
 
   it("answers 404 for an unknown call, 400 for a malformed id, and writes nothing", async () => {
-    const unknown = await request(app)
+    const unknown = await request(server)
       .patch("/api/benchmark/calls/00000000-0000-4000-8000-000000000000")
       .set("x-actor", fx.actor)
       .send({ status: "archived" });
     expect(unknown.status).toBe(404);
     expect(await auditFor("call", "00000000-0000-4000-8000-000000000000")).toEqual([]);
 
-    const malformed = await request(app).patch("/api/benchmark/calls/not-a-uuid").send({ status: "archived" });
+    const malformed = await request(server).patch("/api/benchmark/calls/not-a-uuid").send({ status: "archived" });
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/callId/);
   });
@@ -86,7 +86,7 @@ describe("PATCH /api/benchmark/settings", () => {
   it("sets a known provider, clears with null, and audits both", async () => {
     const provider = await fx.provider();
 
-    const set = await request(app)
+    const set = await request(server)
       .patch("/api/benchmark/settings")
       .set("x-actor", fx.actor)
       .send({ activeProviderId: provider.id });
@@ -94,7 +94,7 @@ describe("PATCH /api/benchmark/settings", () => {
     expect(set.body.activeProviderId).toBe(provider.id);
 
     // An empty agentModel means "no override", which is null, not "".
-    const cleared = await request(app)
+    const cleared = await request(server)
       .patch("/api/benchmark/settings")
       .set("x-actor", fx.actor)
       .send({ activeProviderId: null, agentModel: "" });
@@ -107,15 +107,15 @@ describe("PATCH /api/benchmark/settings", () => {
   });
 
   it("refuses a body that changes nothing and an unknown provider id", async () => {
-    const nothing = await request(app).patch("/api/benchmark/settings").set("x-actor", fx.actor).send({});
+    const nothing = await request(server).patch("/api/benchmark/settings").set("x-actor", fx.actor).send({});
     expect(nothing.status).toBe(400);
     expect(nothing.body.error).toMatch(/Name at least one setting/);
 
     // A body whose only field is a typo is the same case: zod strips it.
-    const typo = await request(app).patch("/api/benchmark/settings").set("x-actor", fx.actor).send({ judgeModel: "x" });
+    const typo = await request(server).patch("/api/benchmark/settings").set("x-actor", fx.actor).send({ judgeModel: "x" });
     expect(typo.status).toBe(400);
 
-    const unknown = await request(app)
+    const unknown = await request(server)
       .patch("/api/benchmark/settings")
       .set("x-actor", fx.actor)
       .send({ activeProviderId: `fx-no-such-${fx.suffix}` });
@@ -129,7 +129,7 @@ describe("POST /api/benchmark/agent/scans/:scanId/approve | reject", () => {
     const call = await fx.call();
     const flagged = await fx.scan(call.id, { status: "flagged", agentPickReasoning: "reads better" });
 
-    const approved = await request(app)
+    const approved = await request(server)
       .post(`/api/benchmark/agent/scans/${flagged.id}/approve`)
       .send({ approverLabel: fx.actor });
     expect(approved.status).toBe(200);
@@ -142,11 +142,11 @@ describe("POST /api/benchmark/agent/scans/:scanId/approve | reject", () => {
     expect(rows.map((r) => r.action)).toEqual(["approved"]);
 
     // Already decided: neither route may quietly overwrite it.
-    const again = await request(app)
+    const again = await request(server)
       .post(`/api/benchmark/agent/scans/${flagged.id}/approve`)
       .send({ approverLabel: fx.actor });
     expect(again.status).toBe(409);
-    const rejectAfter = await request(app)
+    const rejectAfter = await request(server)
       .post(`/api/benchmark/agent/scans/${flagged.id}/reject`)
       .send({ approverLabel: fx.actor });
     expect(rejectAfter.status).toBe(409);
@@ -157,13 +157,13 @@ describe("POST /api/benchmark/agent/scans/:scanId/approve | reject", () => {
     const call = await fx.call();
     const clean = await fx.scan(call.id, { status: "clean" });
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/benchmark/agent/scans/${clean.id}/approve`)
       .send({ approverLabel: fx.actor });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/not awaiting a decision/);
 
-    const unknown = await request(app)
+    const unknown = await request(server)
       .post("/api/benchmark/agent/scans/00000000-0000-4000-8000-000000000000/approve")
       .send({ approverLabel: fx.actor });
     expect(unknown.status).toBe(404);

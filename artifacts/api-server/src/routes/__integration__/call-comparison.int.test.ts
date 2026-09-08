@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import app from "../../app";
+import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
@@ -83,7 +83,7 @@ afterAll(async () => {
 
 describe("GET /api/benchmark/calls/:callId/comparison", () => {
   it("answers the full picture: reference, ok row with diff, failed row with verdict, missing row with its run", async () => {
-    const res = await request(app).get(`/api/benchmark/calls/${callId}/comparison`);
+    const res = await request(server).get(`/api/benchmark/calls/${callId}/comparison`);
     expect(res.status).toBe(200);
 
     expect(res.body.reference).toEqual({ kind: "draft", text: "the quick brown fox jumps" });
@@ -122,7 +122,7 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
   // from different runs, and a re-read on the caller-only channel sits next
   // to one that never got re-read.
   it("carries each cell's own channel through, and invents none for cells that have none", async () => {
-    const res = await request(app).get(`/api/benchmark/calls/${callId}/comparison`);
+    const res = await request(server).get(`/api/benchmark/calls/${callId}/comparison`);
     expect(res.status).toBe(200);
     const byProvider = new Map<string, any>(res.body.rows.map((r: any) => [r.providerId, r]));
 
@@ -137,7 +137,7 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
   // rankings block carries the group average, this carries the single cell.
   // Both had to be wired separately, so both have to be proved separately.
   it("carries each cell's end-of-audio wait, and leaves it null where there was no end of audio", async () => {
-    const res = await request(app).get(`/api/benchmark/calls/${callId}/comparison`);
+    const res = await request(server).get(`/api/benchmark/calls/${callId}/comparison`);
     expect(res.status).toBe(200);
     const byProvider = new Map<string, any>(res.body.rows.map((r: any) => [r.providerId, r]));
 
@@ -160,10 +160,10 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
   });
 
   it("404s on an unknown call and refuses a malformed id with a sentence", async () => {
-    const unknown = await request(app).get("/api/benchmark/calls/00000000-0000-4000-8000-000000000000/comparison");
+    const unknown = await request(server).get("/api/benchmark/calls/00000000-0000-4000-8000-000000000000/comparison");
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).get("/api/benchmark/calls/not-a-uuid/comparison");
+    const malformed = await request(server).get("/api/benchmark/calls/not-a-uuid/comparison");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/callId/);
   });
