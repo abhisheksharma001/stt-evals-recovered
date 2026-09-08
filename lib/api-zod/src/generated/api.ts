@@ -1306,6 +1306,8 @@ export const listBulksResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const listBulksResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const listBulksResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const ListBulksResponseItem = zod.object({
@@ -1325,6 +1327,7 @@ export const ListBulksResponseItem = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(listBulksResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1354,6 +1357,8 @@ export const createBulkBodyCriteriaMinDurationSecondsMin = 0;
 
 export const createBulkBodyCriteriaMaxDurationSecondsMin = 0;
 
+export const createBulkBodyCriteriaMinCustomerWordsMin = 0;
+
 
 export const createBulkBodyShardSizeMax = 500;
 
@@ -1378,6 +1383,7 @@ export const CreateBulkBody = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(createBulkBodyCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1393,6 +1399,8 @@ export const CreateBulkBody = zod.object({
 export const createBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const createBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
+export const createBulkResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
 
 
@@ -1413,6 +1421,7 @@ export const CreateBulkResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(createBulkResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1440,6 +1449,8 @@ export const previewBulkSelectionBodyCriteriaMinDurationSecondsMin = 0;
 
 export const previewBulkSelectionBodyCriteriaMaxDurationSecondsMin = 0;
 
+export const previewBulkSelectionBodyCriteriaMinCustomerWordsMin = 0;
+
 export const previewBulkSelectionBodyMinDurationSecondsMin = 0;
 
 export const previewBulkSelectionBodyMaxDurationSecondsMin = 0;
@@ -1460,6 +1471,7 @@ export const PreviewBulkSelectionBody = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(previewBulkSelectionBodyCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1505,6 +1517,8 @@ export const getBulkResponseOneSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const getBulkResponseOneSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const getBulkResponseOneSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const GetBulkResponse = zod.object({
@@ -1524,6 +1538,7 @@ export const GetBulkResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(getBulkResponseOneSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1591,6 +1606,8 @@ export const launchBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const launchBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const launchBulkResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const LaunchBulkResponse = zod.object({
@@ -1610,6 +1627,7 @@ export const LaunchBulkResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(launchBulkResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1641,6 +1659,8 @@ export const retryBulkFailedResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const retryBulkFailedResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const retryBulkFailedResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const RetryBulkFailedResponse = zod.object({
@@ -1660,6 +1680,7 @@ export const RetryBulkFailedResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(retryBulkFailedResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1691,6 +1712,8 @@ export const cancelBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const cancelBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const cancelBulkResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const CancelBulkResponse = zod.object({
@@ -1710,6 +1733,7 @@ export const CancelBulkResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(cancelBulkResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1847,6 +1871,8 @@ export const getBulkManifestResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const getBulkManifestResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const getBulkManifestResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const GetBulkManifestResponse = zod.object({
@@ -1867,6 +1893,7 @@ export const GetBulkManifestResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(getBulkManifestResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1905,6 +1932,8 @@ export const listBulkTemplatesResponseSelectionCriteriaMinDurationSecondsMin = 0
 
 export const listBulkTemplatesResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const listBulkTemplatesResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const ListBulkTemplatesResponseItem = zod.object({
@@ -1923,6 +1952,7 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1946,6 +1976,8 @@ export const ListBulkTemplatesResponse = zod.array(ListBulkTemplatesResponseItem
 export const createBulkTemplateBodyCriteriaMinDurationSecondsMin = 0;
 
 export const createBulkTemplateBodyCriteriaMaxDurationSecondsMin = 0;
+
+export const createBulkTemplateBodyCriteriaMinCustomerWordsMin = 0;
 
 
 export const createBulkTemplateBodyShardSizeMax = 500;
@@ -1971,6 +2003,7 @@ export const CreateBulkTemplateBody = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(createBulkTemplateBodyCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1985,6 +2018,8 @@ export const CreateBulkTemplateBody = zod.object({
 export const createBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin = 0;
 
 export const createBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin = 0;
+
+export const createBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
 
 
@@ -2004,6 +2039,7 @@ export const CreateBulkTemplateResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(createBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -2048,6 +2084,8 @@ export const launchBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin = 
 
 export const launchBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
+export const launchBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
 
 
 export const LaunchBulkTemplateResponse = zod.object({
@@ -2067,6 +2105,7 @@ export const LaunchBulkTemplateResponse = zod.object({
   "excludeEndedReasons": zod.array(zod.string()).optional(),
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
+  "minCustomerWords": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()

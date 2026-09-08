@@ -22,6 +22,7 @@ import { writeAudit } from "./audit";
 import { logger } from "./logger";
 import { resolveProductionProviderId } from "./verdict";
 import { describeEmptySelection, type SelectionExclusion } from "./empty-selection";
+import { countCustomerWords } from "./customer-words";
 
 // 2026-08-27, per Abhishek ("let's not take the calls which are 14 days
 // back, so we never encounter this problem again"): matches the warning
@@ -105,6 +106,16 @@ export type ResolvedCriteriaCallIds = {
 export const DEFAULT_MIN_DURATION_SECONDS = 60;
 export const DEFAULT_MAX_DURATION_SECONDS = 120;
 
+// M-16: the floor on customer words, chosen from the corpus rather than
+// guessed. Counted over all 176 calls on 2026-09-08: inside the default
+// 60-120s band a floor of 20 removes 3 of 38 (the 2-, 7- and 16-word calls)
+// while 30 removed 7 of 38, including 21-, 23-, 25- and 29-word calls that
+// are real conversations. `assistant-forwarded-call` is the largest outcome
+// bucket in the corpus (85 of 176, median 18 customer words), so a higher
+// floor falls hardest on exactly the transfer-heavy assistants PRD v6 E3
+// asked about: 30 keeps 29 of those 85, 20 keeps 42.
+export const DEFAULT_MIN_CUSTOMER_WORDS = 20;
+
 export class BulkDurationBandError extends Error {}
 
 /** M-5: fills in `requireCustomerAudio` when the criteria do not state one,
@@ -116,6 +127,20 @@ export function withCustomerAudioDefault(
 ): BulkSelectionCriteria {
   return criteria.requireCustomerAudio === undefined
     ? { ...criteria, requireCustomerAudio: fallback }
+    : criteria;
+}
+
+/** M-16: fills in `minCustomerWords` when the criteria do not state one, at
+ * CREATE time. Deliberately not a `??` inside the matcher: a resolve-time
+ * default would silently change what every already-saved template selects,
+ * which is the one thing this step must not do. `fallback: undefined` means
+ * "this caller has no floor to offer" and leaves the criteria untouched. */
+export function withCustomerWordsDefault(
+  criteria: BulkSelectionCriteria,
+  fallback: number | undefined,
+): BulkSelectionCriteria {
+  return criteria.minCustomerWords === undefined && fallback !== undefined
+    ? { ...criteria, minCustomerWords: fallback }
     : criteria;
 }
 
@@ -161,6 +186,10 @@ type CandidateRow = {
   sourceStartedAt: Date | null;
   sourceEndedReason: string | null;
   sourceSuccessEvaluation: string | null;
+  // M-16: counted at query time, not carried as the transcript. The matcher
+  // below is pure and gets a number; the draft itself (a caller's own words)
+  // never outlives the row it came from.
+  customerWordCount: number;
 };
 
 /**
@@ -192,6 +221,15 @@ function exclusionBucketFor(
   if (c.durationSeconds < minDurationSeconds) return `shorter than ${minDurationSeconds}s`;
   if (maxDurationSeconds !== null && c.durationSeconds > maxDurationSeconds) {
     return `longer than ${maxDurationSeconds}s`;
+  }
+  // M-16: read straight after the band a person just read, because it is the
+  // same question asked about the other speaker. Absent = no floor; see
+  // `minCustomerWords` on the criteria type for why that is not a `??`.
+  if (
+    criteria.minCustomerWords !== undefined &&
+    c.customerWordCount < criteria.minCustomerWords
+  ) {
+    return `fewer than ${criteria.minCustomerWords} customer words`;
   }
   // T-13: an unknown outcome never passes an outcome filter, and is its own
   // bucket rather than hiding inside a reason it does not have.
@@ -247,7 +285,25 @@ export async function resolveCriteriaSelection(
     sourceStartedAt: benchmarkCallsTable.sourceStartedAt,
     sourceEndedReason: benchmarkCallsTable.sourceEndedReason,
     sourceSuccessEvaluation: benchmarkCallsTable.sourceSuccessEvaluation,
+    // M-16: selected so the customer-word count can be taken, then dropped
+    // by `toCandidate` -- the count travels, the transcript does not.
+    draftTranscript: benchmarkCallsTable.draftTranscript,
   };
+  const toCandidate = (row: {
+    id: string;
+    durationSeconds: number;
+    sourceStartedAt: Date | null;
+    sourceEndedReason: string | null;
+    sourceSuccessEvaluation: string | null;
+    draftTranscript: string | null;
+  }): CandidateRow => ({
+    id: row.id,
+    durationSeconds: row.durationSeconds,
+    sourceStartedAt: row.sourceStartedAt,
+    sourceEndedReason: row.sourceEndedReason,
+    sourceSuccessEvaluation: row.sourceSuccessEvaluation,
+    customerWordCount: countCustomerWords(row.draftTranscript),
+  });
 
   // Scope = the "who" filters. Everything after (date, band, outcome) is a
   // named exclusion counted against this pool.
@@ -266,7 +322,7 @@ export async function resolveCriteriaSelection(
       .select(columns)
       .from(benchmarkCallsTable)
       .where(scopeConditions.length ? and(...scopeConditions) : undefined);
-    for (const row of rows) inScope.set(row.id, row);
+    for (const row of rows) inScope.set(row.id, toCandidate(row));
   }
 
   // Explicit picks merge in unfiltered, exactly as before: a hand-picked
@@ -280,7 +336,7 @@ export async function resolveCriteriaSelection(
       .from(benchmarkCallsTable)
       .where(inArray(benchmarkCallsTable.id, criteria.callIds));
     for (const row of explicit) {
-      inScope.set(row.id, row);
+      inScope.set(row.id, toCandidate(row));
       explicitIds.add(row.id);
     }
   }
@@ -455,9 +511,17 @@ export async function previewBulkSelection(input: {
    *  match what the creator this preview stands in for will use, or the
    *  count in the dialog is not the count that gets frozen. */
   requireCustomerAudioDefault: boolean;
+  /** M-16: what an absent `criteria.minCustomerWords` means here. Same rule
+   *  as the channel default above -- it must match what the creator this
+   *  preview stands in for will use, or the count in the dialog is not the
+   *  count that gets frozen. */
+  minCustomerWordsDefault: number | undefined;
 }): Promise<BulkPreviewResult> {
   const { min, max } = resolveDurationBand(input);
-  const criteria = withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault);
+  const criteria = withCustomerWordsDefault(
+    withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault),
+    input.minCustomerWordsDefault,
+  );
   const selection = await resolveCriteriaSelection(criteria, min, max);
   const providerIds = input.providerIds ?? [];
   let estimate: BulkPreviewResult["estimate"] = null;
@@ -539,6 +603,14 @@ export async function createBulkFromCriteria(input: {
    * what it matched, and producing the numbers it produced).
    */
   requireCustomerAudioDefault: boolean;
+  /**
+   * M-16: what an absent `criteria.minCustomerWords` means for THIS
+   * creation. Required, not defaulted, for the same reason as the channel
+   * above: POST /benchmark/bulks passes DEFAULT_MIN_CUSTOMER_WORDS, and a
+   * template launch passes undefined, because a template saved before M-16
+   * has no floor on file and must keep matching exactly what it matched.
+   */
+  minCustomerWordsDefault: number | undefined;
 }): Promise<CreateBulkResult> {
   const now = new Date();
   const { min: minDuration, max: maxDuration } = resolveDurationBand(input);
@@ -562,7 +634,10 @@ export async function createBulkFromCriteria(input: {
   // `requireCustomerAudio: true` onto a call set that was selected without
   // it would give a bulk that claims the caller-only track while holding
   // calls that have none -- the exact dishonesty this step removes.
-  const criteria = withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault);
+  const criteria = withCustomerWordsDefault(
+    withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault),
+    input.minCustomerWordsDefault,
+  );
   const { callIds, inScopeCount, excluded, excludedRetentionExpiredCount } = await resolveCriteriaSelection(criteria, minDuration, maxDuration, now);
   if (callIds.length === 0) {
     throw new BulkSelectionEmptyError(describeEmptySelection(inScopeCount, excluded));

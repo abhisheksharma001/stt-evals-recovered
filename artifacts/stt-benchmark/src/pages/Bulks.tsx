@@ -108,6 +108,8 @@ type CriteriaDraft = {
   minDurationSeconds: string
   // T-10: empty string = no cap.
   maxDurationSeconds: string
+  // M-16: empty string = no floor (sent as 0, which excludes nothing).
+  minCustomerWords: string
   // T-13: outcome filters. Empty = no filter. A call with no captured
   // outcome (null) never passes either list -- same rule as the server.
   includeEndedReasons: string[]
@@ -115,6 +117,11 @@ type CriteriaDraft = {
   // "" = any, else exact match on the stored string ("true" / "false").
   successEvaluation: string
 }
+
+// M-16: mirrors DEFAULT_MIN_CUSTOMER_WORDS in artifacts/api-server/src/lib/bulks.ts
+// (the UI does not import that package). Chosen from the corpus: inside the
+// default 60-120s band a floor of 20 drops 3 of 38 calls, a floor of 30 drops 7.
+const DEFAULT_MIN_CUSTOMER_WORDS = 20
 
 // T-13 "worth benchmarking" preset -- mirrors WORTH_BENCHMARKING_ENDED_REASONS
 // in lib/db/src/schema/benchmark-bulks.ts (the UI does not import that package).
@@ -132,6 +139,7 @@ const EMPTY_CRITERIA: CriteriaDraft = {
   lastNDays: String(VAPI_RETENTION_WINDOW_DAYS),
   minDurationSeconds: "60",
   maxDurationSeconds: "120",
+  minCustomerWords: String(DEFAULT_MIN_CUSTOMER_WORDS),
   includeEndedReasons: [],
   excludeEndedReasons: [],
   successEvaluation: "",
@@ -284,6 +292,7 @@ function criteriaSummary(c: BulkSelectionCriteria): string {
   if (c.minDurationSeconds || c.maxDurationSeconds) {
     parts.push(c.maxDurationSeconds ? `${c.minDurationSeconds ?? 0}–${c.maxDurationSeconds}s` : `≥${c.minDurationSeconds}s`)
   }
+  if (c.minCustomerWords) parts.push(`≥${c.minCustomerWords} customer words`)
   if (c.includeEndedReasons?.length) parts.push(`outcome in ${c.includeEndedReasons.join("/")}`)
   if (c.excludeEndedReasons?.length) parts.push(`outcome not ${c.excludeEndedReasons.join("/")}`)
   if (c.successEvaluation) parts.push(`success=${c.successEvaluation}`)
@@ -442,6 +451,21 @@ function CriteriaFields({
           />
         </div>
         <div className="space-y-2">
+          <Label>Min customer words (empty = no floor)</Label>
+          <Input
+            type="number"
+            min={0}
+            placeholder="no floor"
+            value={criteria.minCustomerWords}
+            onChange={(e) => setCriteria({ ...criteria, minCustomerWords: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">
+            Default {DEFAULT_MIN_CUSTOMER_WORDS}: the duration band above measures how long the call
+            ran, this measures how much of it the caller said. A 90-second call can be almost all
+            assistant.
+          </p>
+        </div>
+        <div className="space-y-2">
           <Label>Calls per run</Label>
           <Input
             type="number"
@@ -574,6 +598,15 @@ function parseMaxDuration(raw: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+// M-16: always a number, never absent. An empty box means "no floor", and 0
+// is how you say that out loud -- leaving the field off would instead let the
+// server's create-time default of 20 back in, so clearing the box would not
+// clear the floor.
+function parseMinCustomerWords(raw: string): number {
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 function buildCriteria(input: CriteriaDraft): BulkSelectionCriteria {
   const criteria: BulkSelectionCriteria = {}
   if (input.assistantIds.length > 0) criteria.assistantIds = input.assistantIds
@@ -583,6 +616,7 @@ function buildCriteria(input: CriteriaDraft): BulkSelectionCriteria {
   const minDuration = Number.parseInt(input.minDurationSeconds, 10)
   if (Number.isFinite(minDuration) && minDuration > 0) criteria.minDurationSeconds = minDuration
   criteria.maxDurationSeconds = parseMaxDuration(input.maxDurationSeconds)
+  criteria.minCustomerWords = parseMinCustomerWords(input.minCustomerWords)
   if (input.includeEndedReasons.length > 0) criteria.includeEndedReasons = input.includeEndedReasons
   if (input.excludeEndedReasons.length > 0) criteria.excludeEndedReasons = input.excludeEndedReasons
   if (input.successEvaluation) criteria.successEvaluation = input.successEvaluation

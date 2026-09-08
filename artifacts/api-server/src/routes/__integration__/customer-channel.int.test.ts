@@ -54,7 +54,10 @@ describe("M-5 customer-channel selection", () => {
     // requires the customer channel unless told otherwise.
     const res = await request(app)
       .post("/api/benchmark/bulks/preview")
-      .send({ criteria: { accountLabel }, providerIds: [], minDurationSeconds: 30, maxDurationSeconds: 300 });
+      // M-16: `minCustomerWords: 0` because this case is about the channel.
+      // A fixture call carries no draft transcript, so without saying so it
+      // would be the word floor emptying this, not the missing audio.
+      .send({ criteria: { accountLabel, minCustomerWords: 0 }, providerIds: [], minDurationSeconds: 30, maxDurationSeconds: 300 });
 
     expect(res.status).toBe(200);
     expect(res.body.inScopeCount).toBe(3);
@@ -74,7 +77,7 @@ describe("M-5 customer-channel selection", () => {
     const res = await request(app)
       .post("/api/benchmark/bulks/preview")
       .send({
-        criteria: { accountLabel, requireCustomerAudio: false },
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
         providerIds: [],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,
@@ -110,7 +113,7 @@ describe("M-5 customer-channel selection", () => {
 
     const preview = await request(app)
       .post("/api/benchmark/bulks/preview")
-      .send({ criteria: { accountLabel }, providerIds: [provider.id], minDurationSeconds: 30, maxDurationSeconds: 300 });
+      .send({ criteria: { accountLabel, minCustomerWords: 0 }, providerIds: [provider.id], minDurationSeconds: 30, maxDurationSeconds: 300 });
     expect(preview.body.matchedCount).toBe(1);
 
     const created = await request(app)
@@ -118,7 +121,7 @@ describe("M-5 customer-channel selection", () => {
       .set("x-actor", fx.actor)
       .send({
         name: `m5 freeze ${fx.suffix}`,
-        criteria: { accountLabel },
+        criteria: { accountLabel, minCustomerWords: 0 },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,
@@ -135,7 +138,10 @@ describe("M-5 customer-channel selection", () => {
   });
 
   it("a template saved before M-5 keeps matching exactly what it matched", async () => {
-    // The template's stored criteria carry no opinion about the channel.
+    // The template's stored criteria carry no opinion about the channel --
+    // and, from M-16, none about customer words either. Deliberately left
+    // bare: this case is the proof that a criteria object saved before
+    // either step keeps resolving to exactly the calls it always did.
     // Launching it must not retroactively apply the new default, or a
     // saved template quietly starts measuring something else.
     const accountLabel = `m5-tmpl-${fx.suffix}`;

@@ -12,6 +12,17 @@ import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
 
+/** M-16: a draft whose customer says exactly `count` words and whose
+ *  assistant says a great many more, so a count that accidentally reads the
+ *  whole transcript cannot pass. */
+function draftWithCustomerWords(count: number): string {
+  return [
+    `AI: ${"thanks for calling and holding ".repeat(20).trim()}`,
+    `User: ${Array.from({ length: count }, (_, i) => `word${i}`).join(" ")}`,
+    `AI: ${"understood let me check that for you ".repeat(20).trim()}`,
+  ].join("\n");
+}
+
 afterAll(async () => {
   await fx.cleanup();
   await pool.end();
@@ -33,8 +44,10 @@ describe("POST /api/benchmark/bulks/preview", () => {
       .send({
         // M-5: this case is about the duration band, not the audio
         // channel -- said out loud so the new customer-channel default
-        // does not silently empty it.
-        criteria: { accountLabel, requireCustomerAudio: false },
+        // does not silently empty it. M-16 adds a floor on customer words
+        // with exactly the same problem, and the same answer: a fixture
+        // call has no draft, so every one of them has 0 customer words.
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,
@@ -58,6 +71,133 @@ describe("POST /api/benchmark/bulks/preview", () => {
     expect(res.body.estimate.totalCostCents).toBe(50 + (res.body.estimate.agentCostCents ?? 0));
     expect(res.body.estimate.overThreshold).toBe(false);
     expect(res.body.costThresholdCents).toBeGreaterThan(0);
+  });
+
+  // M-16: the customer-word floor. Its whole point is that the seconds band
+  // cannot see it -- both calls here sit inside the same duration band and
+  // only one of them is a conversation.
+  it("names the calls the customer barely spoke on, and does not touch the ones they did", async () => {
+    const accountLabel = `fx-words-${fx.suffix}`;
+    const talkative = await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(40),
+    });
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(5),
+    });
+
+    const send = (criteria: Record<string, unknown>) =>
+      request(app)
+        .post("/api/benchmark/bulks/preview")
+        .send({
+          criteria: { accountLabel, requireCustomerAudio: false, ...criteria },
+          providerIds: [],
+          minDurationSeconds: 30,
+          maxDurationSeconds: 300,
+        });
+
+    const floored = await send({ minCustomerWords: 20 });
+    expect(floored.status).toBe(200);
+    expect(floored.body.inScopeCount).toBe(2);
+    expect(floored.body.matchedCount).toBe(1);
+    expect(floored.body.excluded).toEqual([{ bucket: "fewer than 20 customer words", count: 1 }]);
+
+    // Both calls are 90s, so the band alone cannot tell them apart: drop the
+    // floor and the quiet call comes straight back. This is the "prove it by
+    // breaking it" half, run as a test rather than trusted.
+    const unfloored = await send({ minCustomerWords: 0 });
+    expect(unfloored.status).toBe(200);
+    expect(unfloored.body.matchedCount).toBe(2);
+    expect(unfloored.body.excluded).toEqual([]);
+
+    // And a floor nobody clears empties the selection by name rather than
+    // silently -- what a `vertical: trucking` bulk will actually see.
+    const impossible = await send({ minCustomerWords: 500 });
+    expect(impossible.body.matchedCount).toBe(0);
+    expect(impossible.body.excluded).toEqual([
+      { bucket: "fewer than 500 customer words", count: 2 },
+    ]);
+
+    // A call that fails BOTH the band and the floor is named under the band,
+    // because that is the order a person reads the filters in and T-14's
+    // rule is that a call failing several is counted once, under the first.
+    // This is not a detail: 64 of the 66 calls in the corpus with 12 or
+    // fewer customer words are also shorter than 60s, so checking the floor
+    // first would relabel almost every one of them and make the new filter
+    // look like it was doing the duration band's work.
+    const both = await fx.call({
+      durationSeconds: 5,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(5),
+    });
+    const ordered = await send({ minCustomerWords: 20 });
+    expect(ordered.body.inScopeCount).toBe(3);
+    expect(ordered.body.excluded).toEqual([
+      { bucket: "fewer than 20 customer words", count: 1 },
+      { bucket: "shorter than 30s", count: 1 },
+    ]);
+    expect(both.durationSeconds).toBe(5);
+
+    // A hand-picked call still skips the floor, exactly as it skips the band.
+    const picked = await request(app)
+      .post("/api/benchmark/bulks/preview")
+      .send({
+        criteria: { callIds: [talkative.id], requireCustomerAudio: false, minCustomerWords: 500 },
+        providerIds: [],
+      });
+    expect(picked.body.matchedCount).toBe(1);
+  });
+
+  // M-16, found by the break test: every case above states its floor out
+  // loud, which left the DEFAULT itself asserted by nothing -- setting
+  // DEFAULT_MIN_CUSTOMER_WORDS to 0 passed the whole suite. So did letting
+  // preview and create disagree about it, which is the one thing M-5's
+  // comment on previewBulkSelection says must never happen. This case says
+  // nothing about customer words on purpose: it is the only one that
+  // exercises what a person actually gets when they do not ask.
+  it("applies its own floor when nobody states one, and freezes exactly what it previewed", async () => {
+    const accountLabel = `fx-default-${fx.suffix}`;
+    const talkative = await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(40),
+    });
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      draftTranscript: draftWithCustomerWords(5),
+    });
+    const provider = await fx.provider({ costPerMinute: 0.5 });
+
+    const body = {
+      criteria: { accountLabel, requireCustomerAudio: false },
+      providerIds: [provider.id],
+      minDurationSeconds: 30,
+      maxDurationSeconds: 300,
+    };
+
+    const preview = await request(app).post("/api/benchmark/bulks/preview").send(body);
+    expect(preview.status).toBe(200);
+    expect(preview.body.inScopeCount).toBe(2);
+    // The quiet call is gone without anyone asking for it to be, and the
+    // bucket says which floor did it -- so the number in the name is the
+    // default, not a coincidence.
+    expect(preview.body.matchedCount).toBe(1);
+    expect(preview.body.excluded).toEqual([{ bucket: "fewer than 20 customer words", count: 1 }]);
+
+    const created = await request(app)
+      .post("/api/benchmark/bulks")
+      .set("x-actor", fx.actor)
+      .send({ name: `m16 default ${fx.suffix}`, ...body });
+    expect(created.status).toBe(201);
+    fx.adoptBulk(created.body.id);
+    // M-5's rule, one step on: the count in the dialog is the count that
+    // gets frozen. Same calls, and the floor is on the bulk's own record.
+    expect(created.body.selectionCriteria.minCustomerWords).toBe(20);
+    expect(created.body.selectionCriteria.resolvedCallIds).toEqual([talkative.id]);
   });
 
   it("does not second-guess a hand-picked call against the band", async () => {
@@ -142,7 +282,10 @@ describe("POST /api/benchmark/bulks with a selection that matches nothing", () =
         name: `empty selection ${fx.suffix}`,
         // M-5: still a 400, but it has to be the BAND that empties this,
         // not the audio channel -- the assertion below names the filter.
-        criteria: { accountLabel, requireCustomerAudio: false },
+        // M-16: the band already fires first for all three of these calls,
+        // so the floor changes nothing here; stated anyway, so the comment
+        // above stays true by construction rather than by ordering luck.
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,

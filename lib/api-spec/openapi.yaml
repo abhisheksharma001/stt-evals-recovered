@@ -2344,6 +2344,13 @@ components:
         # matching exactly what it matched. Frozen to a real boolean on
         # every bulk at creation, so a bulk's channel is never inferred.
         requireCustomerAudio: { type: boolean }
+        # M-16: a floor on how many words the CUSTOMER said, counted from the
+        # draft's `User:` lines. The seconds band measures how long the call
+        # ran; this measures how much of it was the caller. Absent means "no
+        # opinion", exactly like requireCustomerAudio: POST /benchmark/bulks
+        # reads it as 20, a template launch leaves it absent so a template
+        # saved before M-16 keeps matching exactly what it matched.
+        minCustomerWords: { type: number, minimum: 0 }
         callIds:
           type: array
           items: { type: string }

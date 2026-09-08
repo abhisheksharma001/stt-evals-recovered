@@ -57,7 +57,10 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
         // M-5: this case is about bulk eviction at the cap, not the audio
         // channel -- stated so the new customer-channel default does not
         // empty the selection and turn a 201 into a 400.
-        criteria: { accountLabel, requireCustomerAudio: false },
+        // M-16: this case is about eviction, not about how much the caller
+        // said, and a fixture call has no draft transcript at all -- so the
+        // floor is said out loud rather than inherited from the route.
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
         providerIds: [provider.id],
         minDurationSeconds: 30,
         maxDurationSeconds: 300,
