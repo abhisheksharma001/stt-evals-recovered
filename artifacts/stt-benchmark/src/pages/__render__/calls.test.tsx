@@ -151,6 +151,31 @@ describe("Calls", () => {
     expect(screen.queryByText("F manual")).toBeNull()
   })
 
+  // Closes three holes the break test found: nothing here proved the filter
+  // could REACH every org. It proved it narrowed, which a filter that
+  // silently drops the unlabelled calls also does.
+  it("offers and applies the unlabelled org, and still offers the others afterwards", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Corpus />, { path: "/corpus" })
+    fireEvent.click(await screen.findByText("Flat"))
+    await screen.findByText("A saved")
+
+    fireEvent.keyDown(screen.getByLabelText("Filter by org"), { key: "ArrowDown" })
+    // The calls with no account label need an option of their own, or "all"
+    // is the only thing that can reach them.
+    fireEvent.click(await screen.findByRole("option", { name: "Unlabelled org" }))
+    await waitFor(() => expect(screen.queryByText("A saved")).toBeNull())
+    expect(screen.getByText("F manual")).toBeTruthy()
+    expect(screen.queryByText("C gone")).toBeNull()
+
+    // And the options are read off every loaded call, not off the ones this
+    // filter has already left standing -- otherwise the first pick is the
+    // last one you can make.
+    fireEvent.keyDown(screen.getByLabelText("Filter by org"), { key: "ArrowDown" })
+    expect(await screen.findByRole("option", { name: "Default" })).toBeTruthy()
+    expect(screen.getByRole("option", { name: "Land And Apartment" })).toBeTruthy()
+  })
+
   // S-7: the grill found row height and padding already shared -- every table
   // inherits them from one component. What was missing is the boundary, and
   // the two ways to get it wrong are drawing it everywhere (a spreadsheet
@@ -179,6 +204,16 @@ describe("Calls", () => {
     // pointing at nothing.
     const cells = within(screen.getByText("A saved").closest("tr")!).getAllByRole("cell")
     expect(cells.flatMap((c, i) => (c.hasAttribute("data-group-start") ? [i] : []))).toEqual(markedHeads)
+
+    // Placement is not the rule. The attribute can sit in exactly the right
+    // three places while the component draws nothing at all, or draws
+    // between every pair of columns -- so assert the class that does the
+    // drawing, on the header and on the body, and assert it is CONDITIONAL:
+    // an unprefixed border-l is a rule on every column.
+    for (const el of [headers[markedHeads[0]], cells[markedHeads[0]]]) {
+      expect(el.className).toContain("data-[group-start]:border-l")
+      expect(el.className).not.toMatch(/(^|\s)border-l(\s|$)/)
+    }
   })
 
   // The options are read off the loaded calls, so they cannot offer an
