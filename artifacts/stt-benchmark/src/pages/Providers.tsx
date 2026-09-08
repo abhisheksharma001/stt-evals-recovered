@@ -239,6 +239,14 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
     : ""
   return (
     <div className="mt-2 space-y-1 text-xs" data-testid="vendor-models">
+      {/* S-2: this block and the provider cards below it are two different
+          kinds of thing stacked on top of each other, and nothing said so.
+          A caption, not a tooltip: the point is that it reads without
+          hovering, clicking or expanding. */}
+      <p className="text-[11px] text-muted-foreground" data-testid="catalog-caption">
+        This vendor&rsquo;s own list &mdash; the models they sell. Enabling one adds it below.
+        Nothing here costs money until you run a bulk with it.
+      </p>
       {age != null && age > CATALOG_RECHECK_DAYS && (
         <p className="flex items-center gap-1.5 rounded-md border border-warning/25 bg-warning/10 px-2 py-1 text-[11px] text-warning" data-testid="catalog-age">
           <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -322,6 +330,9 @@ function VendorGrid({ groups }: { groups: [string, Provider[]][] }) {
                 <VendorModelsLine providers={models} />
               </CardHeader>
               <CardContent className="space-y-4">
+                <p className="text-[11px] text-muted-foreground" data-testid="rows-caption">
+                  What this tool can run. Each has its own price and its own results.
+                </p>
                 {models.map((provider) => (
                   <div key={provider.id} className="rounded-lg border border-border p-3 space-y-3">
                     <div className="flex items-start justify-between gap-2">

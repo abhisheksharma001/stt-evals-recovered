@@ -125,6 +125,36 @@ const baseRoutes: StubRoutes = {
 }
 
 describe("Setup", () => {
+  // S-2: the vendor block stacks the vendor's catalogue (a menu, costs
+  // nothing) on top of the provider rows (what actually runs), and a person
+  // seeing it for the first time cannot tell them apart. Both captions have
+  // to be readable with no hovering, clicking or expanding -- note the model
+  // list itself is a <details> and is collapsed on first render.
+  it("says what the catalogue is and what the cards are, without anything being opened", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Setup />, { path: "/setup" })
+
+    const catalog = (await screen.findAllByTestId("catalog-caption"))[0]
+    // The apostrophe on screen is a curly one (&rsquo;), so the assertion
+    // reads around it rather than guessing which character rendered.
+    expect(catalog.textContent).toContain("This vendor")
+    expect(catalog.textContent).toContain("own list")
+    expect(catalog.textContent).toContain("the models they sell")
+    expect(catalog.textContent).toContain("Nothing here costs money until you run a bulk with it")
+
+    const rows = screen.getAllByTestId("rows-caption")[0]
+    expect(rows.textContent).toContain("What this tool can run")
+    expect(rows.textContent).toContain("its own price and its own results")
+
+    // Not a tooltip: neither sentence may be hiding in a title attribute,
+    // and neither may sit inside a collapsed <details>.
+    for (const el of [catalog, rows]) {
+      expect(el.getAttribute("title")).toBeNull()
+      expect(el.closest("details")).toBeNull()
+    }
+    api.restore()
+  })
+
   // S-5: a provider row this tool runs that the vendor's list API does not
   // return. deepgram-flux-general-en is the real one -- production runs it,
   // Deepgram's /v1/models never mentions it. Before this, the row simply
