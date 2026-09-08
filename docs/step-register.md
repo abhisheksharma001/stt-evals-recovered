@@ -4075,6 +4075,21 @@ from the catalog shows the line; a fixture where every row is in the catalog doe
 
 ### S-6 — The Calls table says Org, not Vertical
 
+**Status:** done
+
+**What it taught:** a rename and a derived list are not the same size of
+change. Renaming the header was one line; the filter was the step, because its
+options had been a hardcoded enum of three and account labels are not an enum.
+Two things fell out of that and neither was in the step as written: the options
+must be read off `calls` rather than `filteredCalls` (read off the filtered
+rows, the first pick is the last one you can make -- and the break test could
+not see that until the mutation also moved the memo's dependency array, since
+a memo pinned to `[calls]` never recomputes and the wrong version behaves
+correctly by accident), and a call with no account label needs a sentinel the
+enum never did, or "all" is the only thing that can reach it. Reusing T-96's
+own `__no_org__` key rather than inventing a second one is the reason "no
+label" still means one thing on this page.
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/stt-benchmark/src/pages/Corpus.tsx`
@@ -4132,6 +4147,20 @@ leaves only its rows, and `document.body.textContent` does not contain "ertical"
 ---
 
 ### S-7 — One table style, properly spaced
+
+**Status:** done
+
+**What it taught:** most of this step had already shipped and nobody had
+looked. Every table inherits `h-10 px-4` and `p-4` from one component, and the
+five per-page overrides that read like drift are the chevron column, the two
+expanded panels and the group-header rows -- all deliberate. Deleting them, as
+the step said to, would have undone T-96. **Read the thing before believing
+the sentence that describes it**, even when the sentence is one you wrote.
+What was left was real and small: the boundary. The second lesson came from
+the break test -- the first version of the test asserted `data-group-start`,
+which is placement, and the rule lives in the class, so the attribute could
+sit in exactly the right three places while the component drew nothing at all
+or drew between every pair of columns. Three mutations survived on that alone.
 
 **PR:** one.
 **Depends on:** S-6 should land first so the Calls table is not restyled twice.
@@ -4206,7 +4235,74 @@ described but not grilled, so they stay here with the questions that block them.
 
 ### S-8 — the integration suite flakes, and it is not one file
 
-**Status:** todo
+**Status:** done
+
+**Found 2026-09-08 — the cause is outside this repository, and every theory in
+this block was looking in the wrong place.**
+
+Three failures in 33 runs, in three files, two never implicated before:
+
+- `riskiest-endpoints.int.test.ts` T-150 expected 400 and got **401** carrying
+  `{"type":"error","error":{"type":"authentication_error",...},"request_id":null}`
+  -- an Anthropic API error envelope. That string appears nowhere in this
+  repository, and BAML's clients here are `provider openai`.
+- `riskiest-endpoints.int.test.ts` (d) expected 404 and got **400** with
+  `content-type: text/html` and the body `WebSockets request was expected`.
+- `calls-write.int.test.ts` failed with `audit.body.map is not a function`
+  from a route whose only 200 shape is an array.
+
+The M-6c setup file was extended for those runs to stamp every response the
+app under test sends. **The failing answer carried no stamp: the app never saw
+the request.**
+
+**The mechanism, reproduced in isolation and printing the same body.**
+`supertest` stands up a fresh server per request -- 178 call sites, several
+inside loops -- with `app.listen(0)`, and `listen` with no host binds the
+wildcard address. That bind **succeeds** even while another process holds
+`127.0.0.1` on the same port, and a connection to `127.0.0.1:P` then reaches
+the more specific binding: the stranger. This machine holds around twenty
+loopback-only listeners inside the ephemeral range 49152-65535. Binding
+`127.0.0.1` instead fails with `EADDRINUSE`, so the kernel hands out a
+genuinely free port and the collision cannot happen.
+
+**Corrections to this block, which was wrong in the way that mattered.** It
+said "start with what is actually shared: the `pool` each file ends in its own
+`afterAll`, the fixture cleanup order, and whether a file's `pool.end()` can
+land while another file's request is in flight." None of the three is
+involved. **Two of the recorded failures are on routes that answer before
+touching the database at all** -- `POST /benchmark/runs` and
+`POST /benchmark/bulks` both fail zod and return 400 with no query -- which
+rules the database out on its own and is the thread that was worth pulling.
+Class 3, the 30-second hang the block called the decisive one, is a `ws`
+server on the other end waiting for a handshake that never comes.
+
+**The fix is not a retry, a timeout or a `.skip`** (O-27). One pre-bound
+loopback server per file, in
+`artifacts/api-server/src/routes/__integration__/server.ts`, handed to
+supertest in place of the app -- so the suite opens 27 servers where it used
+to open 178, and every one of them binds `127.0.0.1`. Nothing is silenced;
+the cause is removed.
+
+**The first fix was wrong and is worth keeping written down.** Patching
+`server.listen` in `setup.ts` to insert the host looked like the smaller
+change and broke all 27 files at once: `listen(port, host)` resolves the host
+through `dns.lookup`, which defers even for an IP literal, so
+`server.address()` is still null on the next line -- and supertest reads it
+synchronously, dying with `Cannot read properties of null (reading 'port')`.
+**Adding a host argument turns a synchronous bind into an asynchronous one.**
+Awaiting the bind once at module load is the only way to hand supertest an
+address that is already there.
+
+**Verified:** the acceptance asks for ten runs in a row with the full count
+passing. **Thirty were run and all thirty printed `Tests 134 passed (134)`** --
+three times the bar, chosen because at the measured rate (3 failures in 33
+runs before the fix) ten clean runs would have had better than a one-in-three
+chance of happening by luck.
+
+**What it taught:** when a response cannot have come from your code, stop
+reading your code. The step said "do not assume the fix is in whichever file
+failed most recently" and was right about that and wrong about the rest -- it
+still assumed the fix was in a file.
 **PR:** one.
 **Depends on:** nothing.
 **Files:** not yet located — that is the step. The evidence lives in

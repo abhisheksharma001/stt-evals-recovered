@@ -1983,6 +1983,45 @@ stakeholder" the research kept circling back to.
   before the log has been read** -- a re-run that passes destroys the only
   evidence the previous failure produced. This is the whole point of M-6a and
   M-6c, discarded on the first occurrence after shipping them.
+  **Diagnosed and fixed 2026-09-08 (S-8). It was never in this repository.**
+  Three failures in 33 runs that day, in three files, two of which had never
+  been implicated: a 401 whose body was an Anthropic API error envelope
+  (`authentication_error` / `request_id` -- a string that appears nowhere in
+  this repository, and BAML's clients here are `provider openai`); a 400 whose
+  body was `WebSockets request was expected` with `content-type: text/html`;
+  and `audit.body.map is not a function` from a route whose only 200 shape is
+  an array. The M-6c setup file was extended for the run to stamp every
+  response the app under test sends with a header; the answer that failed
+  carried no stamp. **The app never saw the request.**
+  The mechanism, reproduced in isolation and printing the same body:
+  `supertest` stands up a fresh server per request -- 178 call sites, several
+  inside loops -- with `app.listen(0)`, and `listen` with no host binds the
+  wildcard address. **That bind succeeds even when another process already
+  holds `127.0.0.1` on the same port**, and a connection to `127.0.0.1:P` then
+  goes to the more specific binding: the stranger. This machine holds around
+  twenty loopback-only listeners inside the ephemeral range 49152-65535 --
+  editor helpers, a bundler, local agent servers. Binding `127.0.0.1` instead
+  fails with `EADDRINUSE`, so the kernel hands out a genuinely free port and
+  the collision cannot happen. The suite now takes one pre-bound loopback
+  server per file (`artifacts/api-server/src/routes/__integration__/server.ts`)
+  and passes it to supertest, instead of handing supertest the app and letting
+  it stand up 178 of them. **Patching `listen` in the setup file was tried
+  first and broke all 27 files at once**: `listen(port, host)` resolves the
+  host through `dns.lookup`, which defers even for an IP literal, so
+  `server.address()` is still null on the next line and supertest -- which
+  reads it synchronously -- dies with `Cannot read properties of null (reading
+  'port')`. **Adding a host argument turns a synchronous bind into an
+  asynchronous one.** Awaiting the bind once at module load is the only way to
+  hand supertest an address that is already there.
+  **The lesson to keep, and it invalidates every theory written above:
+  each of them looked for shared state inside the process --
+  the pool, the fixture cleanup order, `pool.end()` landing mid-request -- and
+  the shared state was the machine's port space.** Two of the recorded
+  failures were on routes that answer before touching the database at all
+  (`POST /benchmark/bulks` and `POST /benchmark/runs` both fail zod and return
+  400 with no query), which ruled the database out on its own and was the
+  thread worth pulling. **When a response cannot have come from your code, stop
+  reading your code.**
 - **The mono file is the only one of the four written world-readable**
   (found 2026-09-05 by looking at the first M-6 import on disk). The three
   files M-6 writes are 0600; the mono mix beside them, written by
