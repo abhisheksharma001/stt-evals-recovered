@@ -1390,10 +1390,10 @@ export default function Bulks() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Selection</TableHead>
+                <TableHead data-group-start>Selection</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead className="text-right">Detail</TableHead>
+                <TableHead data-group-start className="text-right">Detail</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1425,7 +1425,7 @@ export default function Bulks() {
                       </button>
                     </TableCell>
                     <TableCell><BulkStatusBadge status={bulk.status} /></TableCell>
-                    <TableCell className="max-w-xs truncate text-sm text-muted-foreground" title={criteriaSummary(bulk.selectionCriteria)}>
+                    <TableCell data-group-start className="max-w-xs truncate text-sm text-muted-foreground" title={criteriaSummary(bulk.selectionCriteria)}>
                       {criteriaSummary(bulk.selectionCriteria)}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
@@ -1435,7 +1435,7 @@ export default function Bulks() {
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDistanceToNow(new Date(bulk.createdAt), { addSuffix: true })}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-group-start className="text-right">
                       <BulkDetailDialog bulk={bulk}>
                         <Button size="sm" variant="outline">Open</Button>
                       </BulkDetailDialog>

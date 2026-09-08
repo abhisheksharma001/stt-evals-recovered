@@ -12,7 +12,7 @@
 //     leaves a button that can never reach zero.
 // Dates are relative to now, so the fixtures do not rot.
 import { afterEach, describe, expect, it } from "vitest"
-import { cleanup, fireEvent, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type {
   AgentScan,
   BenchmarkCall,
@@ -118,6 +118,91 @@ function chipFor(label: string): string {
 }
 
 describe("Calls", () => {
+  // S-6: `vertical` is an internal tag (rush / property_management /
+  // trucking). The org -- the Vapi account -- is what a reader recognises,
+  // and it is the thing the table already groups by.
+  it("names the org, not the internal vertical tag, and narrows rows by account label", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Corpus />, { path: "/corpus" })
+    fireEvent.click(await screen.findByText("Flat"))
+    await screen.findByText("A saved")
+
+    expect(screen.getByRole("columnheader", { name: "Org" })).toBeTruthy()
+    // The acceptance, asserted the way it is written: nothing a reader can
+    // see says "vertical". The Add Call and call-detail dialogs still do,
+    // and are deliberately out of scope -- both are closed, so neither is
+    // in the document.
+    expect(document.body.textContent).not.toMatch(/ertical/)
+
+    // Each row carries its own account label, and a call with none says so
+    // rather than showing an empty cell.
+    expect(within(screen.getByText("A saved").closest("tr")!).getByText("Default")).toBeTruthy()
+    expect(
+      within(screen.getByText("F manual").closest("tr")!).getByText("Unlabelled org"),
+    ).toBeTruthy()
+
+    fireEvent.keyDown(screen.getByLabelText("Filter by org"), { key: "ArrowDown" })
+    fireEvent.click(await screen.findByRole("option", { name: "Land And Apartment" }))
+
+    await waitFor(() => expect(screen.queryByText("A saved")).toBeNull())
+    expect(screen.getByText("C gone")).toBeTruthy()
+    expect(screen.getByText("D expiring")).toBeTruthy()
+    // The unlabelled call is not swept in with everything else.
+    expect(screen.queryByText("F manual")).toBeNull()
+  })
+
+  // S-7: the grill found row height and padding already shared -- every table
+  // inherits them from one component. What was missing is the boundary, and
+  // the two ways to get it wrong are drawing it everywhere (a spreadsheet
+  // grid) and drawing it in the header only (a line that points at nothing).
+  it("rules off column groups at the boundaries only, and the body agrees with the header", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Corpus />, { path: "/corpus" })
+    fireEvent.click(await screen.findByText("Flat"))
+    await screen.findByText("A saved")
+
+    const headers = screen.getAllByRole("columnheader")
+    const markedHeads = headers.flatMap((h, i) => (h.hasAttribute("data-group-start") ? [i] : []))
+
+    // Three boundaries on eight columns: identity | the call's own facts |
+    // state | actions. Named, so inserting a column cannot quietly move one.
+    const names = markedHeads.map((i) => headers[i].textContent?.replace(/\s+/g, " ").trim() ?? "")
+    expect(names).toHaveLength(3)
+    // The disagreement header carries its own "most first" sub-label, so it
+    // is matched on its name rather than its whole text.
+    expect(names[0]).toContain("Disagreements")
+    expect(names[1]).toBe("Status")
+    expect(names[2]).toBe("Actions")
+    expect(markedHeads.length).toBeLessThan(headers.length / 2)
+
+    // A rule in the header that the body does not continue is a line
+    // pointing at nothing.
+    const cells = within(screen.getByText("A saved").closest("tr")!).getAllByRole("cell")
+    expect(cells.flatMap((c, i) => (c.hasAttribute("data-group-start") ? [i] : []))).toEqual(markedHeads)
+  })
+
+  // The options are read off the loaded calls, so they cannot offer an
+  // account that is not there -- which is the whole difference from the
+  // three-value enum this replaced.
+  it("offers only the orgs the loaded calls carry, and drops the unlabelled option when none is", async () => {
+    stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/calls": calls
+        .filter((c) => c.sourceAccountLabel === "Default")
+        .map((c) => ({ ...c })),
+    })
+    renderPage(<Corpus />, { path: "/corpus" })
+    fireEvent.click(await screen.findByText("Flat"))
+    await screen.findByText("A saved")
+
+    fireEvent.keyDown(screen.getByLabelText("Filter by org"), { key: "ArrowDown" })
+    await screen.findByRole("option", { name: "Default" })
+    expect(screen.queryByRole("option", { name: "Land And Apartment" })).toBeNull()
+    expect(screen.queryByRole("option", { name: "Unlabelled org" })).toBeNull()
+    // The three tags the old filter hardcoded are gone with it.
+    expect(screen.queryByRole("option", { name: "Trucking" })).toBeNull()
+  })
+
   it("states each call's audio as a fact, and invents no state for a call with no known age", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Corpus />, { path: "/corpus" })

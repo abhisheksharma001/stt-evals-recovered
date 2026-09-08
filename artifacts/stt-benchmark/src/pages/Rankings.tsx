@@ -476,9 +476,12 @@ function RankingTable({
           <TableHead>Provider</TableHead>
           {(Object.keys(SORT_ASC_DEFAULT) as SortKey[])
             .filter((k) => k !== "rank")
-            .map((key) => (
+            .map((key, i) => (
               <TableHead
                 key={key}
+                // S-7: one hairline where identity ends and measurement
+                // begins. The rest of the metric columns share a band.
+                data-group-start={i === 0 ? "" : undefined}
                 aria-sort={sortAria(key)}
                 className="text-right cursor-pointer select-none hover:text-foreground"
                 onClick={() => toggleSort(key)}
@@ -534,7 +537,7 @@ function RankingTable({
                 right underneath -- lower is better, so a negative
                 (green) delta means this candidate beats the active
                 provider. */}
-            <TableCell className="text-right font-mono font-medium" title={r.recommendation ?? undefined}>
+            <TableCell data-group-start className="text-right font-mono font-medium" title={r.recommendation ?? undefined}>
               {r.score.avgFlagCount != null ? r.score.avgFlagCount.toFixed(2) : <span title="Not measured in this run">—</span>}
               {activeRow && r.providerId !== activeProviderId && r.score.avgFlagCount != null && activeRow.score.avgFlagCount != null && (() => {
                 const delta = r.score.avgFlagCount! - activeRow.score.avgFlagCount!
