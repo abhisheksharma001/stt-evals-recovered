@@ -4085,6 +4085,42 @@ Vapi account, already grouped in the table — is what a person recognises.
 `sourceAccountLabel` (falling back to "Unlabelled org" as the grouping rows already do).
 The filter's options come from the account labels present in the loaded calls. `vertical`
 stays in the data, in the API, and in the CSV export — it is only leaving the screen.
+**Grill, 2026-09-08 — three corrections, the step still stands:**
+
+1. _The filter is a change in kind, not a rename._ Today's options are a hardcoded
+enum of three (`rush`, `property_management`, `trucking`) written into the JSX. Account
+labels are not an enum — they are whatever Vapi accounts have been added, so the options
+have to be derived from the loaded calls. That also needs a sentinel the enum never
+needed: a call with no `sourceAccountLabel` is a real row (one of the seven in the render
+fixture), and without an "Unlabelled org" option the filter cannot reach it. Verified in
+`Corpus.tsx` lines 308-316 and in the fixture.
+
+2. _The word survives in two places the acceptance does not reach, and both should keep
+it._ `CreateCallDialog` has a Vertical `<select>` whose value is POSTed as
+`createBenchmarkCall({ vertical })` — deleting the control would mean inventing a value,
+which is a data change, not a screen change. `CallDetailsDialog` shows
+`DetailRow label="Vertical"` beside Vapi call id and corpus id: that panel is a raw-field
+inspector by design. Both are inside closed dialogs, so neither is in the DOM when the
+page renders and the acceptance holds as written. Named here so "vertical is gone" is
+never read as more than it is: it is gone from the TABLE and the FILTER.
+
+3. _The table already groups by org (T-96), so the column repeats its group header._
+Kept anyway: group headers are not sticky, so on a long org the header scrolls away and
+the column is the only thing left saying which org a row belongs to — and `groupBy=flat`
+has no headers at all. Navan's Users table carries a "Legal entity" column under exactly
+this redundancy.
+
+**Evidence (visual-and-research, 2026-09-08).** Pattern to use: the account name is an
+ordinary per-row column, and the filter offers only values the loaded rows actually
+contain, under an "All …" first option — [Attio Companies](https://mobbin.com/screens/b1f51bfb-4b7f-4d77-a7ce-9a1568db223e),
+[Lightfield Accounts](https://mobbin.com/screens/3b7cee8b-447e-444c-a7be-cc2ac5a27e68),
+[Twenty](https://mobbin.com/screens/378afbed-05be-40c9-9cad-0ecc6c36f8cd),
+[Navan Users](https://mobbin.com/screens/8f0621ba-42c5-4413-8bb4-c826c9733451). No
+evidence found for the naming half of the question — nothing in Lenny's archive covers
+replacing an internal tag with a customer-facing one in a table header, and the four
+"jargon" hits are about positioning and AI terms. Changes to the plan: the derived
+options and the "Unlabelled org" sentinel above; nothing else.
+
 **Acceptance:** WHEN the Calls page renders THEN no visible text SHALL contain the word
 "vertical", and the filter SHALL narrow rows by account label.
 **Verify:** `cd artifacts/stt-benchmark && pnpm run test`. Extend
@@ -4110,6 +4146,35 @@ overrides, so the four tables do not match.
 a group separator (a hairline left border on the first cell of a group, applied via a
 `data-group-start` attribute the pages set). Delete the per-page overrides so all four
 tables inherit it.
+**Grill, 2026-09-08 — the premise is false and the step shrinks:**
+
+_"Each page has its own padding overrides, so the four tables do not match" is not true._
+Every table on every page already inherits `h-10 px-4` (`TableHead`) and `p-4`
+(`TableCell`) from the one shared component, and there is nothing to delete. Scanned all
+seven pages for a `p-/px-/py-/h-` class on a `TableCell`/`TableHead`/`TableRow`: Rankings
+has none, Bulks has one, Corpus has four, and all five are deliberate rather than drift —
+`pr-0` on the chevron column, `p-0` on the two full-width expanded panels, and
+`py-2`/`py-1.5 pl-8` on the org and assistant group-header rows, which are meant to be
+tighter than data rows because they ARE the T-96 hierarchy. Deleting any of them would
+undo a shipped step. So the row-height and padding half of this step is already done, and
+what is left is the half that is real: **column groups run together.**
+
+Also corrected: the acceptance names Setup, which owns no table — it is a 45-line tab
+shell around Providers and Import (`Setup.tsx`). Providers renders cards, not a table. The
+tables that exist are Calls, Results, Bulks, Import and Runs.
+
+**Evidence (visual-and-research, 2026-09-08).** Patterns to avoid: a rule on every column
+boundary. [Deputy/Sigma](https://mobbin.com/screens/5f44a43d-b87b-48b2-aa01-25ca30110aaa)
+draws all of them and reads as a spreadsheet dump rather than a report;
+[Sentry](https://mobbin.com/screens/11820743-80a4-4680-be5f-473608bea7c3) and
+[Profound](https://mobbin.com/screens/5c9e8405-3355-4b9b-88b6-70f539560476) draw none and
+separate by whitespace and a group-by control instead. Pattern to use: a hairline at the
+boundaries only, as in [Peec AI](https://mobbin.com/screens/59ca615c-22e8-4f9a-8839-3bc750d1f801),
+with the heavier grouping carried by full-width section rows the way
+[Xero](https://mobbin.com/screens/dd15bfb2-c72b-4380-9ab7-fb16b3f7e9de) does — which this
+table already has. Changes to the plan: the separator is opt-in per boundary
+(`data-group-start`), applied two or three times per table, never per column.
+
 **Acceptance:** WHEN Calls, Results, Bulks and Setup are open at 1440px THEN their tables
 SHALL share the same row height and cell padding, and column groups SHALL be visually
 separated.
