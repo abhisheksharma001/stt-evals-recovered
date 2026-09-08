@@ -98,4 +98,29 @@ describe("GET /api/benchmark/trend", () => {
     // The null-flag-count cell vanishes entirely -- not counted as clean.
     expect(body.cells.map((c) => c.providerId)).not.toContain(unscoredProviderId);
   });
+
+  // R-1: the strip divides by the same word basis the rankings and the
+  // verdict do -- the call's, not each provider's own count -- or it would
+  // draw a different line from the numbers it claims to track.
+  it("gives both providers on a call the same word basis", async () => {
+    const call = await fx.call({ sourceAccountLabel: `fx-basis-${fx.suffix}` });
+    const lean = await fx.provider({ name: `fx trend lean ${fx.suffix}` });
+    const wordy = await fx.provider({ name: `fx trend wordy ${fx.suffix}` });
+    const bulk = await fx.bulk({ status: "complete", completedAt });
+    const run = await fx.run({ bulkId: bulk.id, purpose: "batch" });
+    // Three words against five; the basis is the median, four.
+    for (const [provider, transcript] of [
+      [lean, "hello world something"],
+      [wordy, "hello world something extra bits"],
+    ] as const) {
+      const cell = await fx.result(run.id, call.id, provider.id, { hypothesisTranscript: transcript });
+      await fx.score(cell.id, { peerFlagCount: 1 });
+    }
+
+    const res = await request(server).get("/api/benchmark/trend");
+    expect(res.status).toBe(200);
+    const cells: TrendCell[] = res.body.cells.filter((c: TrendCell) => c.bulkId === bulk.id);
+    expect(cells).toHaveLength(2);
+    expect(cells.map((c) => c.words)).toEqual([4, 4]);
+  });
 });

@@ -7,7 +7,9 @@
 // excluded so every provider is measured on the same signal). Lower is
 // better. Each provider's rate is pooled -- total flags / total words over
 // its scored cells -- not a mean of per-call rates, so a 30-word call
-// doesn't weigh as much as a 900-word one.
+// doesn't weigh as much as a 900-word one. R-1 (2026-09-08): the words are
+// the CALL's, one basis shared by every provider on it -- see
+// callWordBasis below for why a provider's own count was the wrong one.
 //
 // Noise floor: a paired bootstrap over the calls the top two providers
 // both scored. Resample those calls with replacement, recompute both pooled
@@ -37,7 +39,8 @@ export type VerdictCell = {
   /** Peer-only flag count for this cell. null = never hybrid-flagged; the
    *  cell is excluded, never counted clean. */
   peerFlagCount: number | null;
-  /** Word count of this provider's normalised transcript for the call. */
+  /** R-1: the call's word basis -- the SAME number for every provider on
+   *  that call, from callWordBasis. Not this provider's own word count. */
   words: number;
 };
 
@@ -124,6 +127,43 @@ function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))));
   return sorted[idx]!;
+}
+
+/** R-1: one word basis per call, shared by every provider measured on it.
+ *  Median of the per-cell normalised word counts in the scope being ranked
+ *  (a bulk's runs for a bulk verdict, the run for an ad-hoc one), rounded
+ *  to a whole word. Callers count the words themselves, with the same
+ *  normalizeTranscript tokenisation as before, and pass them in.
+ *
+ *  Why not the provider's own count, as it was until 2026-09-08: peer flags
+ *  are computed on canonicalTranscript, which folds fillers, hyphenation and
+ *  number words out; the denominator used normalizeTranscript, which keeps
+ *  them in. So a wordier provider bought itself a lower rate for words its
+ *  flags were never scored on. Live proof, bulk 42769f26: ElevenLabs and
+ *  AssemblyAI carried identical peer flags on all 17 calls, and ElevenLabs
+ *  was named winner by 4% for writing 1,047 words to 1,003 -- 61 filler
+ *  tokens to 37. The bootstrap called that "outside noise" and was right to:
+ *  the bias is consistent, which is exactly what makes a correct statistic
+ *  on the wrong quantity worse than none. The tool's own WER rule (PRD
+ *  FR-S1) divides by the reference length for this reason.
+ *
+ *  Median, not mean: it cannot be dragged by one runaway cell, and with two
+ *  providers it is their midpoint, so neither is measured on its own habits. */
+export function callWordBasis(cells: { callId: string; words: number }[]): Map<string, number> {
+  const byCall = new Map<string, number[]>();
+  for (const c of cells) {
+    const counts = byCall.get(c.callId) ?? [];
+    counts.push(c.words);
+    byCall.set(c.callId, counts);
+  }
+  const basis = new Map<string, number>();
+  for (const [callId, counts] of byCall) {
+    counts.sort((a, b) => a - b);
+    const mid = counts.length >> 1;
+    const median = counts.length % 2 === 1 ? counts[mid]! : (counts[mid - 1]! + counts[mid]!) / 2;
+    basis.set(callId, Math.round(median));
+  }
+  return basis;
 }
 
 export function pooledRate(cells: { flags: number; words: number }[]): number | null {

@@ -103,6 +103,50 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     expect(orphanGroup.verdict.sentence).toMatch(/nothing to compare/);
   });
 
+  // R-1: the route hands the pure scorer one word basis per CALL, so two
+  // providers that disagreed on exactly the same words are not separated by
+  // which of them typed more. Seeded as the live shape on bulk 42769f26:
+  // identical peer flags on every call, one provider 20% wordier.
+  it("measures both providers on the call's words, not on their own", async () => {
+    const lean = await fx.provider({ name: `fx-lean-${fx.suffix}`, model: "x" });
+    const wordy = await fx.provider({ name: `fx-wordy-${fx.suffix}`, model: "x" });
+    const org = `fx-verbose-org-${fx.suffix}`;
+    // Ten words; the wordier provider writes the same ten plus two fillers,
+    // which normalizeTranscript keeps and the flag pass never scored.
+    const leanText = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+    const wordyText = `${leanText} um uh`;
+    // Five calls -- exactly MIN_SHARED_CALLS_FOR_VERDICT, so a decision is
+    // reached instead of too_few_calls -- carrying the same flags on both.
+    const flagsPerCall = [1, 0, 2, 1, 1];
+    const calls = await Promise.all(
+      flagsPerCall.map(() => fx.call({ sourceAccountLabel: org, sourceAssistantId: `fx-va-${fx.suffix}` })),
+    );
+    const bulk = await fx.bulk({ providerIds: [lean.id, wordy.id] });
+    const run = await fx.run({
+      bulkId: bulk.id,
+      callIds: calls.map((c) => c.id),
+      providerIds: [lean.id, wordy.id],
+      callCount: calls.length,
+    });
+    for (const [i, call] of calls.entries()) {
+      const leanCell = await fx.result(run.id, call.id, lean.id, { hypothesisTranscript: leanText });
+      await fx.score(leanCell.id, { peerFlagCount: flagsPerCall[i] });
+      const wordyCell = await fx.result(run.id, call.id, wordy.id, { hypothesisTranscript: wordyText });
+      await fx.score(wordyCell.id, { peerFlagCount: flagsPerCall[i] });
+    }
+
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    expect(res.status).toBe(200);
+    const group = res.body.groups.find((g: { clientLabel: string | null }) => g.clientLabel === org);
+    expect(group.verdict).toMatchObject({ decision: "too_close", winnerProviderId: null });
+    // 11 words a call -- the median of 10 and 12 -- for both, five calls.
+    const rates: { providerId: string; totalWords: number; totalFlags: number; flagsPer100Words: number }[] =
+      group.verdict.rates;
+    expect(rates.map((r) => r.totalWords)).toEqual([55, 55]);
+    expect(rates.map((r) => r.totalFlags)).toEqual([5, 5]);
+    expect(rates[0]!.flagsPer100Words).toBe(rates[1]!.flagsPer100Words);
+  });
+
   // M-8a: production (Flux) is streaming-only, never has cells of its own,
   // and resolveProductionProviderId is only handed the providers that RAN --
   // so `vsProductionPct` is null on every real bulk and always has been. What

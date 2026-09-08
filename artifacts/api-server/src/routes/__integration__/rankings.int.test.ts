@@ -174,6 +174,42 @@ describe("computeRankingsForRun -- the stored recommendation sentence", () => {
   });
 });
 
+// R-1. The stored rate is the number the trend strip and the Results table
+// read; it must divide by the same thing the verdict does. Held against a
+// stored row, not the helper, because the bug it replaces lived in the
+// aggregation and not in the arithmetic.
+describe("computeRankingsForRun -- the stored disagreement rate", () => {
+  it("divides both providers by the call's words, not by their own", async () => {
+    const asst = `fx-asst-basis-${fx.suffix}`;
+    const run = await fx.run({ purpose: "batch" });
+    const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const lean = await fx.provider();
+    const wordy = await fx.provider();
+
+    // Same flags, same words heard -- one provider just writes the fillers
+    // down. Six words against eight; the basis is the median, seven.
+    for (const [provider, transcript] of [
+      [lean, "the tenant asked about the lease"],
+      [wordy, "um the tenant asked about the lease uh"],
+    ] as const) {
+      const result = await fx.result(run.id, call.id, provider.id, { hypothesisTranscript: transcript });
+      await fx.score(result.id, { peerFlagCount: 2, peerFlagSeverity: "low" });
+    }
+
+    await computeRankingsForRun(run.id, [call.id], [lean.id, wordy.id]);
+    const rows = await db
+      .select()
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.runId, run.id));
+    await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
+
+    const rateOf = (id: string) => rows.find((r) => r.providerId === id)!.peerFlagsPer100Words;
+    expect(rows).toHaveLength(2);
+    expect(rateOf(lean.id)).toBeCloseTo((2 / 7) * 100, 4);
+    expect(rateOf(wordy.id)).toBe(rateOf(lean.id));
+  });
+});
+
 // M-10e. The end-of-audio average is the first ranking metric that is null
 // for six of seven providers BY CONSTRUCTION rather than by accident: a
 // batch adapter is handed a finished file, so there is no moment the audio

@@ -81,9 +81,15 @@ export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   avgPeerFlagSeverityScore: real("avg_peer_flag_severity_score"),
   // T-19: rates, so two providers (or two bulks) with different call
   // lengths compare. peerFlagsPer100Words = total peer flags / total words
-  // this provider transcribed in the group x 100 (peer-only, same basis as
-  // the composite). cleanCallRate = share of this provider's scored calls
-  // with zero peer flags, 0..1. Null when nothing was scored -- never 0.
+  // of the group's calls x 100 (peer-only, same basis as the composite).
+  // R-1 (2026-09-08): those words are the CALL's -- the median of what the
+  // providers on it wrote, shared by all of them (callWordBasis in
+  // @workspace/scoring) -- not the provider's own count, which paid a
+  // wordier provider a lower rate for filler its flags never covered. Rows
+  // written before that date carry the old basis; there is no recompute
+  // route (O-36), so a bulk's row changes on its next execution.
+  // cleanCallRate = share of this provider's scored calls with zero peer
+  // flags, 0..1. Null when nothing was scored -- never 0.
   peerFlagsPer100Words: real("peer_flags_per_100_words"),
   cleanCallRate: real("clean_call_rate"),
   // T-1: how many distinct calls actually scored ok and fed this row --

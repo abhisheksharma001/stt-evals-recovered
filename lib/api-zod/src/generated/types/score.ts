@@ -53,7 +53,7 @@ export interface Score {
      */
   avgPeerFlagSeverityScore: number | null;
   /**
-     * Peer-only flags per 100 words this provider transcribed in the group. Same basis as the composite; comparable across call lengths.
+     * Peer-only flags per 100 words of the group's calls. R-1: the words are the CALL's -- the median of what the providers on it wrote, shared by all of them -- not this provider's own count. Same basis as the composite; comparable across providers and call lengths.
      * @nullable
      */
   peerFlagsPer100Words: number | null;
