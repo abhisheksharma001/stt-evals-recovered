@@ -3947,8 +3947,13 @@ around the `providerIdForModel` call), plus a new case in
 `<vendor>-<apiModel>`, while "is it enabled" can match the vendor's older row instead
 (the `legacyDefault` path). Three ids in the live response today point at rows that do
 not exist: `assemblyai-universal-3-5-pro`, `elevenlabs-scribe-v2`, `gladia-solaria-1`.
-The real rows are `assemblyai-universal`, `elevenlabs-scribe`, `gladia-solaria`. Nothing
-follows that id yet, so nothing is broken — it is a trap for the next consumer.
+The real rows are `assemblyai-universal`, `elevenlabs-scribe`, `gladia-solaria`.
+
+**Re-checked live 2026-09-08** against the running API: still exactly those three, out of
+9 enabled models across 6 vendors and 30 catalogued models. **And "nothing follows that
+id yet" has stopped being true** — S-5, the very next step, compares provider rows
+against the catalog by this id, and without this fix it reports three vendors as having a
+row their vendor does not list. The trap has a consumer now.
 **Change:** when `enabledAs` resolves to the legacy row, report that id as `providerId`.
 When the model is not enabled, keep the synthesised id (it is what the enable call will
 create).
@@ -3968,7 +3973,29 @@ restore the unconditional synthesised id and watch exactly that test fail.
 ### S-5 — Name a provider the vendor's list API does not return
 
 **PR:** one.
-**Depends on:** S-1 is not required; S-2 is not required.
+**Depends on:** **S-4, added 2026-09-08 — this line used to read "S-1 is not required;
+S-2 is not required" and never considered S-4.** S-5 compares a vendor's provider rows
+against its catalog, and the catalog's `providerId` is exactly what S-4 fixes. Run
+against the live API today, four vendors would show this line and **three of them would
+be lying**: `assemblyai-universal`, `elevenlabs-scribe` and `gladia-solaria` all look
+absent from their catalogs only because the models route reports the synthesised id
+(`assemblyai-universal-3-5-pro` and friends) instead of the enabled row's real id. Ship
+S-4 first and exactly one line remains — Deepgram's `deepgram-flux-general-en`, which is
+the true case this step is for.
+
+**Grilled 2026-09-08, before building.** Two more corrections:
+
+1. **Compare by `providerId`, never by the row's `model` string.** A provider row's
+   `model` is a display name ("Nova-3", "Flux General EN", "Universal") while the
+   catalog's `apiModel` is the API string ("nova-3", "flux-general-en", "universal-2").
+   Comparing those two directly reports **10 of 11 rows** as absent. The catalog already
+   carries a `providerId` per model; that is the only key both sides agree on.
+2. **A vendor with no catalog at all is not the same as a row missing from one.**
+   Speechmatics has one provider row and no catalog vendor in the models response, so
+   `VendorModelsLine` already returns null for it. This step's line must obey the same
+   guard, or it will tell a person that Speechmatics Realtime "is not in this vendor's
+   list API" when the truth is that we have never had a list for that vendor.
+
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
 **Today:** `deepgram-flux-general-en` is a provider row here and is what the Rush
 assistant runs in production, but Deepgram's model-list API never returns it, so it is
