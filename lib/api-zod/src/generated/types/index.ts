@@ -143,6 +143,7 @@ export * from './providerModelOption';
 export * from './providerModelOptionSource';
 export * from './providerStatus';
 export * from './providerUpdate';
+export * from './proxyAgreement';
 export * from './resultFailureAnalysis';
 export * from './runArchiveBody';
 export * from './runManifest';

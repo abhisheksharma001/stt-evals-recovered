@@ -72,6 +72,7 @@ import type {
   ProviderInput,
   ProviderModelList,
   ProviderUpdate,
+  ProxyAgreement,
   ResultFailureAnalysis,
   RunArchiveBody,
   RunManifest,
@@ -564,6 +565,83 @@ export function useGetCallDisagreement<TData = Awaited<ReturnType<typeof getCall
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCallDisagreementQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetProxyAgreementUrl = () => {
+
+
+
+
+  return `/api/benchmark/proxy-agreement`
+}
+
+/**
+ * @summary M-18 (PRD-v6 D4) -- on the calls a person wrote a gold transcript for, how far the disagreement ranking this tool shows sits from the WER ranking that human transcript produces. Kendall tau-b and top-1 agreement, averaged over those calls. "ok" cells in "batch" runs only. n counts the calls that could be ranked two ways, which is fewer than labelledCalls whenever a call has under two scored providers or one of its two orderings is entirely tied. The figures are not a measurement below 20 calls -- clients must say so rather than render a percentage (the floor M-20 sets on this same labelled set).
+ */
+export const getProxyAgreement = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProxyAgreement> => {
+
+  return customFetch<ProxyAgreement>(getGetProxyAgreementUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProxyAgreementQueryKey = () => {
+    return [
+    `/api/benchmark/proxy-agreement`
+    ] as const;
+    }
+
+
+export const getGetProxyAgreementQueryOptions = <TData = Awaited<ReturnType<typeof getProxyAgreement>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProxyAgreement>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProxyAgreementQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProxyAgreement>>> = ({ signal }) => getProxyAgreement({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProxyAgreement>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProxyAgreementQueryResult = NonNullable<Awaited<ReturnType<typeof getProxyAgreement>>>
+export type GetProxyAgreementQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary M-18 (PRD-v6 D4) -- on the calls a person wrote a gold transcript for, how far the disagreement ranking this tool shows sits from the WER ranking that human transcript produces. Kendall tau-b and top-1 agreement, averaged over those calls. "ok" cells in "batch" runs only. n counts the calls that could be ranked two ways, which is fewer than labelledCalls whenever a call has under two scored providers or one of its two orderings is entirely tied. The figures are not a measurement below 20 calls -- clients must say so rather than render a percentage (the floor M-20 sets on this same labelled set).
+ */
+
+export function useGetProxyAgreement<TData = Awaited<ReturnType<typeof getProxyAgreement>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProxyAgreement>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProxyAgreementQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

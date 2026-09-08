@@ -211,6 +211,17 @@ export const GetCallDisagreementResponse = zod.object({
 
 
 /**
+ * @summary M-18 (PRD-v6 D4) -- on the calls a person wrote a gold transcript for, how far the disagreement ranking this tool shows sits from the WER ranking that human transcript produces. Kendall tau-b and top-1 agreement, averaged over those calls. "ok" cells in "batch" runs only. n counts the calls that could be ranked two ways, which is fewer than labelledCalls whenever a call has under two scored providers or one of its two orderings is entirely tied. The figures are not a measurement below 20 calls -- clients must say so rather than render a percentage (the floor M-20 sets on this same labelled set).
+ */
+export const GetProxyAgreementResponse = zod.object({
+  "labelledCalls": zod.number().int().describe('Calls whose gold transcript is non-empty and differs from the draft.'),
+  "n": zod.number().int().describe('Of those, the calls that carried two rankable orderings and so contributed to the figures.'),
+  "top1Agreement": zod.number().nullable().describe('Fraction of contributing calls where some provider was best on both orderings. Null when n is 0.'),
+  "kendallTau": zod.number().nullable().describe('Mean Kendall tau-b over the contributing calls, -1 to 1. Null when n is 0.')
+})
+
+
+/**
  * @summary T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
  */
 export const GetAssistantTranscriberParams = zod.object({
