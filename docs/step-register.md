@@ -4221,6 +4221,9 @@ corpus needs it).
 
 ### R-4 — The assistant card stops claiming a decision
 
+**Status:** done 2026-09-09 (PR #120, `cee7a5af6aff`), deployed `67187d6a1d1f -> cee7a5af6aff`.
+**Live acceptance is NOT yet met, and knowingly so** — see "The one thing R-4 could not
+finish" below.
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/lib/run-executor.ts` (`confidenceNoteFor` and the
@@ -4246,6 +4249,98 @@ banner SHALL carry the evidence count exactly once.
 artefact for "Leading candidate" finds only test names and comments.
 **Must not:** remove the cards; hide any column; change what `benchmark_rankings`
 groups by.
+
+**What shipped.** The card reads, on a group of 7:
+
+> **What the calls showed:** On this assistant's 7 calls: fewest disagreements Deepgram,
+> cheapest Cartesia.
+> *The decision for Land And Apartment is made above, on 17 calls. One assistant alone
+> has too few calls to decide.*
+
+Verified live before building (2026-09-09): 31 assistants over 176 calls, **0 of 29
+assistant groups at the >=12 bar**, largest group 9 scored calls. The block's "Today"
+paragraph was accurate in every number.
+
+**Correction to R-4 as it was written: the Change is one sentence, and it takes two
+places to write.** The block reads as though `run-executor` composes the whole thing.
+It cannot: the aggregation knows the group's scored-call count, who was cleanest and who
+was cheapest, but it does not know the org or its verdict's `evidenceCalls`. Those exist
+only on the page. So the stored half is descriptive
+(`rank1Recommendation(recommendationInputs, scopePhrase)`) and the pointer half is
+rendered in `Rankings.tsx` from the verdict already above the card. Two further things
+the block did not account for:
+
+1. **All-time combined has no verdict box at all** — it is gated on `viewMode === "bulk"`
+   (`Rankings.tsx`). "The decision is made above" would have pointed at nothing in that
+   view, on every card. The pointer branches: in All-time it says where a decision is
+   found instead.
+2. **The render test could not see the card.** `results.test.tsx`'s fixture carried
+   `recommendation: ""`, so the whole block was unrendered and no assertion in that file
+   could ever have touched it. Same class of gap as R-3's. Fixed by giving the rank-1
+   rows the real stored sentence.
+
+The Files list itself was **right on all five entries** — the first step in this run
+whose Files list needed no correction.
+
+**The one thing R-4 could not finish.** The card renders the *stored* `recommendation`
+column. Every bulk already scored keeps the old sentence until its rankings are
+recomputed, so on the live page today all 29 rank-1 rows still read "Leading candidate
+... Do not treat as decision-grade" (checked through `GET /benchmark/rankings` after
+deploy: 29 of 29). The acceptance is met by the code and by every new computation; it is
+not yet met by what is on screen. The fix is **O-84** — run `computeRankingsForBulk` for
+the finished bulks — which is free, idempotent, spends no provider or LLM money, and has
+been waiting on Abhishek's word since before this step. R-4 did not do it unasked.
+
+**What it taught.**
+
+1. **A sentence that names a leader and then retracts it is not caution, it is two
+   sentences.** The confidence note was added in good faith (threshold review
+   2026-08-25) and was individually correct every single time it fired. It became noise
+   the moment it fired on 100% of rows, because a caveat that never varies carries no
+   information — it just teaches the reader to stop at the comma.
+2. **Ask which process can know the fact before deciding where the sentence lives.** The
+   split here was not a design preference; the aggregation physically cannot see the org.
+   R-3's lesson was one sentence, one home. R-4's refinement: one sentence, one home *per
+   fact it asserts*.
+3. **A view that hides a surface breaks copy that points at it.** All-time combined drops
+   the verdict box, and nothing in the step's text hinted at that. Any copy containing
+   the word "above" needs a check that "above" exists in every view.
+4. **Copy stored in a column is deployed twice** — once as code, once as data. The
+   second deploy is a recompute, and it is not free of a decision even when it is free of
+   money.
+
+**Left for later.** The redundant "N calls scored" (bulk banner vs org box) is in
+`docs/backlog/good-to-have.md`, 2026-09-09 — equal on every bulk so far because every
+bulk has held one org, and a naming decision rather than a bug.
+
+## Evidence — the card that describes instead of deciding (visual-and-research, 2026-09-09)
+
+**Pattern to use:** when the evidence is short, state the plain fact instead of ranking
+and then retracting — Circle's leaderboard shows **"Not enough activity"** as the whole
+panel rather than a ranked list carrying a disclaimer, and Braintrust (an eval tool)
+writes **"This row has not been run yet"** with no score and no hedge.
+← [Circle leaderboard](https://mobbin.com/screens/85e85326-8911-42ee-8934-44b7c95bc653),
+[Braintrust dataset row](https://mobbin.com/screens/1d289ea4-016c-4144-b577-1607a283a747)
+
+**Patterns to avoid:** a per-segment card that reports numbers and a verdict in the same
+breath. Apollo's data health center keeps each tile to counts and shares, with the
+interpretation left to the reader.
+← [Apollo data health center](https://mobbin.com/screens/b36c564d-0708-41cb-abdb-46e68975f8cf)
+
+**What operators say:** "Many teams build eval dashboards that look useful but are
+ultimately ignored and don't lead to better products, because the metrics these evals
+report are disconnected from real user problems." A dashboard sentence that says two
+things at once is exactly the kind that gets skipped.
+← "Building eval systems that improve your AI product" (Hamel Husain & Shreya Shankar,
+2025-09-09) https://www.lennysnewsletter.com/p/building-eval-systems-that-improve-your-ai-product
+
+**Changes to the plan:** the card states its evidence size in its own opening clause
+("On this assistant's 7 calls") instead of appending a confidence caveat, which is the
+Circle/Braintrust shape — the fact, not the fact plus a warning about the fact.
+
+**No evidence found for:** a product that shows a per-segment card explicitly deferring
+its decision to a higher-level summary on the same page. Searched Mobbin twice (web) for
+breakdown cards that point at an overall result. The pointer sentence is ours.
 
 ---
 

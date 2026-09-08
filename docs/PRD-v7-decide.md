@@ -201,7 +201,13 @@ descriptive: which provider had the fewest flags and which was cheapest *on this
 assistant's N calls*, and where the decision is made. The grouping key of
 `benchmark_rankings` does not change; the CSV keeps every column. Visual-and-research
 before the copy. **Check:** no card contains "Leading candidate"; every card names the
-org verdict; the banner carries the evidence count once.
+org verdict; the banner carries the evidence count once. **Shipped 2026-09-09 (PR
+#120)** — and it needed one thing the check above did not ask for: the sentence takes two
+places to write, because the aggregation cannot see the org, and All-time combined has no
+verdict box for a card to point at. The check is met by the code and by every new
+computation, but **not yet by the live page**: the card reads the stored `recommendation`
+column, and all 29 rank-1 rows still carry the old sentence until O-84's free recompute
+runs.
 
 ---
 
@@ -349,7 +355,7 @@ M-13 and M-14 parked.
 | R-1 | A1 the denominator belongs to the call | none — **shipped 2026-09-08, PR #118**; the customer bulk now reads `too_close`, no winner |
 | R-2 | A2 one quantity ranks both surfaces (blocked on question 1) | none |
 | R-3 | A3 production against the pack is the headline sentence | none — **shipped 2026-09-09, PR #119**; the artefact and both pages now open on Flux, 6.6 vs 2.6 |
-| R-4 | B1 the assistant card stops claiming a decision | none |
+| R-4 | B1 the assistant card stops claiming a decision | none — **shipped 2026-09-09, PR #120**; live acceptance waits on O-84's recompute |
 | R-5 | D1 the judge reads the assistant's prompt and vocabulary | cents (go-spend) |
 | R-6 | D2 conventions hidden in the comparison view, toggle to show | none |
 | R-7 | E1 count the triage seeds (grill script) | none |
