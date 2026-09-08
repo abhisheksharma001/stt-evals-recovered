@@ -3577,7 +3577,10 @@ artifacts rather than recalled:
 ./src/mine-confirmed-entities.ts`. Corrected 2026-09-08: without the env flag the command
 this line used to give exits 1 with "DATABASE_URL must be set" -- `artifacts/api-server`
 keeps its own `.env`, and `backfill-m7a-production-signals.ts` already invoked itself the
-working way.
+working way. Ignore the `.env not found. Continuing without it.` line the flag prints:
+`pnpm --filter ... exec` runs with cwd set to the package directory, the file IS read, and
+dropping the flag still kills the script — checked both ways 2026-09-08 while grilling
+M-16.
 **Must not:** write to the database; print argument values (PII); decide success by
 searching the result for a word (see correction 3); count a status-unknown result as a
 success.
@@ -3593,18 +3596,62 @@ success.
 `lib/api-spec/openapi.yaml`, `artifacts/stt-benchmark/src/pages/Bulks.tsx` (Advanced
 field + the excluded bucket), `artifacts/api-server/src/routes/__integration__/` (the
 bulk preview case).
-**Today:** the band is seconds (default 60–120 s). Half the corpus has ≤ 12 customer
-words; a call can be 90 s of assistant speech and one customer word.
-**Change:** `minCustomerWords?: number` on the criteria (default 30), counted from the
-draft's `User:` lines (words = whitespace tokens after `normalizeTranscript()`); the
-preview excludes under a named bucket "fewer than N customer words — M". The seconds band
-stays and still applies.
+**Today:** the band is seconds (default 60–120 s). A call can be 90 s of assistant
+speech and one customer word.
+**Change:** `minCustomerWords?: number` on the criteria (default 20, see correction 3),
+counted from the draft's `User:` lines (words = whitespace tokens after
+`normalizeTranscript()`); the preview excludes under a named bucket "fewer than N
+customer words — M". The seconds band stays and still applies.
+
+**Grilled 2026-09-08, before building.** Counted over all 176 `benchmark_calls` with the
+real `normalizeTranscript()`, not sampled. Six corrections:
+
+1. **The "Today" line above was wrong and has been cut.** It used to read "Half the
+   corpus has ≤ 12 customer words". The real number is 66 of 176 (37%); the median call
+   has 23 customer words, p75 is 55, the longest is 284. Not half.
+2. **The seconds band already does 97% of this step's job.** Of the 66 calls at or under
+   12 customer words, **64 are shorter than 60 s** — every one of them already excluded
+   by the existing default band, including all 15 calls with zero customer words (2–34 s,
+   drafts present but carrying no `User:` line at all). Inside the default 60–120 s band
+   there are 38 calls and only **2** fall under 12 words. The example this step is built
+   on — 90 s of assistant speech and one customer word — is exactly one call in 176
+   (2 words, in band). The step is still worth building, because the band is overridable
+   and `maxDurationSeconds: null` is legal, but it is a guard for the widened-band case,
+   not the fix for a corpus-wide problem.
+3. **The default of 30 was too high, and this answers PRD v6 E3.** In band, a floor of 30
+   cuts 7 of 38 — 18% of an already small pool — and the calls it cuts are 16, 21, 23,
+   25 and 29 customer words, real conversations rather than empty ones. Corpus-wide,
+   `assistant-forwarded-call` is the largest outcome bucket (**85 of 176**, median **18**
+   customer words) and a floor of 30 keeps only 29 of them: E3's worry about
+   transfer-heavy assistants is real and now measured. **20** cuts 3 of 38 in band
+   (removing 2, 7 and 16), keeps 95 of 176 corpus-wide and 42 of the 85 transfers. The
+   default is one constant; E3 can still move it.
+4. **A `vertical: trucking` bulk selects zero calls at any floor of 12 or above.**
+   8 calls, median 4 customer words, 1 reaches 12, 0 reach 30. The named bucket makes
+   that legible instead of mysterious, but the selection will be empty and
+   `describeEmptySelection` is what a person will see.
+5. **Where the default is applied decides whether saved templates change.**
+   `resolveDurationBand` reads `criteria.minDurationSeconds ?? DEFAULT` at resolve time;
+   copying that shape here would silently change what every already-saved template
+   selects, which is what the Must-not below forbids. M-5 already solved this and wrote
+   it down in `lib/db/src/schema/benchmark-bulks.ts`: "Absent -> false ... only a bulk
+   created after M-5 gets the new default of true (applied at create time in bulks.ts,
+   not read as a default here)." Follow M-5, not `resolveDurationBand`.
+6. **The matcher cannot see the transcript, and the order of operations matters.**
+   `exclusionBucketFor` takes a `CandidateRow` that has no draft, so the scope query has
+   to select `draftTranscript` and the count has to be computed there, keeping the
+   matcher pure. And `normalizeTranscript` strips the line-leading `AI:` / `User:` label
+   (`lib/scoring/src/index.ts:167`), so normalizing first destroys the labels the count
+   depends on: extract the `User:` lines first, then normalize. `customerTurnsOf` in
+   `artifacts/api-server/src/lib/confirmed-entities.ts` (M-15) already does exactly that
+   extraction — reuse it rather than grow a second copy that can drift.
 **Acceptance:** WHEN a bulk is previewed with default criteria THEN every matched call
-SHALL have ≥ 30 customer words and the excluded bucket SHALL name the count.
+SHALL have ≥ 20 customer words and the excluded bucket SHALL name the count.
 **Verify:** integration case seeds two calls (40 and 5 customer words) and asserts one
 matched, one excluded under the bucket; prove by breaking (drop the filter, the
 excluded call matches). `pnpm run typecheck`.
-**Must not:** change the seconds band or any saved template's stored criteria.
+**Must not:** change the seconds band, or any saved template's stored criteria, or what a
+criteria object saved before this step resolves to (correction 5).
 
 ---
 
