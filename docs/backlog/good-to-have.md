@@ -1,3 +1,57 @@
+## Found 2026-09-08 (research for PRD v7): the honest bulk's winner is decided by filler words
+On bulk `42769f26` -- the only bulk ever run on the customer channel, 17 calls × 5
+providers -- the org verdict reads *"ElevenLabs has the least disagreement: 0.4 per 100
+words, 4% fewer than AssemblyAI"*, decision `winner`, bootstrap interval
+[0.0037, 0.0361], outside noise. Read per call: ElevenLabs and AssemblyAI carry
+**identical peer flags on all 17 calls** (flagged on the same 4). ElevenLabs is named
+because its transcripts total 1,047 words to AssemblyAI's 1,003, and the rate is
+flags ÷ *the provider's own word count* (`artifacts/api-server/src/lib/verdict.ts`
+near line 304; the T-19 rate in `artifacts/api-server/src/lib/run-executor.ts`).
+Counted with a filler regex (um, uh, hmm, mm, mhm, uh-huh, yeah, okay, ok): ElevenLabs
+**61** tokens, AssemblyAI **37**. The flags were computed on `canonicalTranscript`, which
+folds those out; the denominator is `normalizeTranscript`, which keeps them in.
+
+The bootstrap is right to say "outside noise" -- ElevenLabs is *consistently* wordier,
+call after call -- which is exactly why a correct statistic on the wrong quantity is
+worse than no statistic: it certifies the bias. The tool's own WER rule (`docs/PRD.md`
+FR-S1) divides by the reference length for this reason. **Fix is R-1:** one denominator
+per call, shared by every provider on it. The claim is corrected where it was made,
+`docs/PRD-v4-technical.md` V4-T14 item 1.
+
+**Reproduce:** `curl -s localhost:8177/api/benchmark/bulks/42769f26-4d4a-4be0-bf04-c7b69f6b4b8f/verdicts | jq '.groups[0].verdict.rates'`
+then the per-cell `peer_flag_count` for the two providers on that bulk's runs.
+
+## Found 2026-09-08 (research for PRD v7): the same page names two winners for the same 17 calls
+On the same bulk the assistant cards rank on `flagBadness` (per-cell count + severity,
+averaged, 85 %) with cost (15 %): every provider ties on flags in all 13 groups, the
+recommendation says "Price decided this order, not accuracy" 13 times, and Cartesia is
+rank 1 in 12 of 13. The org banner above the cards ranks on flags per 100 own words and
+names ElevenLabs. Two quantities, one page, two winners, neither for accuracy. M-18's
+proxy agreement compares the human-checked order against the *cards'* quantity, so
+today it certifies the order the banner does not show. **Fix is R-2** (one quantity for
+both, M-18 following it), blocked on Abhishek choosing the quantity -- PRD v7 open
+question 1.
+
+Worth keeping as a rule: **when two surfaces on one page rank the same things, they must
+read one number, and any check that certifies "the ranking" must name which one.**
+
+## Found 2026-09-08 (research for PRD v7): the boost-parity question has no subject on this corpus
+PRD v6 Part F and M-19 were written from the Rush assistant's 120 keyterms. Read live
+through `GET /benchmark/assistants/{id}/transcriber` on the 14 assistants with the most
+calls (124 of 176): **0 keyterms on every one**, `numerals` unset on every one, 11 of 14
+with a fallback transcriber. Production runs naked on the property-management corpus,
+so `boosts: production` (M-19) would carry an empty list for 124 of 176 calls, and v5
+E4's keep / add on top / replace has nothing to keep. M-19 is split: the parameter fix
+(`keywords` → `keyterm` for nova-3, a real silent bug) ships as M-19a; the plumbing
+waits for Tune mode to produce a list (M-19b). The good news inside it: Tune mode is
+greenfield for the whole main client, and Deepgram documents `keyterm` on Flux (up to
+100 terms, `Configure` mid-stream), so the production model can take what Tune finds.
+
+**Reproduce:** the fourteen `assistantId`s from
+`select source_assistant_id, count(*) from benchmark_calls group by 1 order by 2 desc limit 14`,
+each through the transcriber endpoint; read `keytermCount` and `numerals`. Free -- Vapi
+reads only.
+
 ## Found 2026-09-07 (grilling M-11c): the Flux provider row advertises diarization Deepgram does not offer
 
 `artifacts/api-server/src/routes/benchmark.ts` seeds `deepgram-flux-general-en` with

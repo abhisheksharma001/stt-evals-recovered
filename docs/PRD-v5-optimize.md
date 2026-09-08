@@ -278,6 +278,12 @@ The mechanism, stated now so E2 is built to feed it:
 - output: **a diff, never a write.** Current config on the left, proposed on the
   right, every change justified by a word and a call you can listen to.
 
+*Read live 2026-09-08 (PRD v7 §2, finding 3):* the 14 assistants with the most calls
+(124 of 176) have **no keyterms at all**, so for the main client this mode is greenfield
+and E4 below has nothing to keep, add to or replace yet. E stays the most valuable part
+on file; PRD v7 Part F carries the new inputs for its grill (Flux takes `keyterm`, up to
+100 terms, and can be reconfigured mid-stream).
+
 **V5-E4 — when a tuned config already exists.** Three explicit choices, never a
 silent merge: **Keep** (change nothing), **Add on top** (union of the existing
 list and the proposal, conflicts shown), **Replace** (proposal only; what is

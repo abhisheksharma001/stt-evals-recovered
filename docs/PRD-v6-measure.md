@@ -234,8 +234,8 @@ executor already stores both.
 | C1 `deepgram-nova-3-streaming` | `wss://api.deepgram.com/v1/listen` | $0.0043/min (list) |
 | C1 `deepgram-flux-general-en-streaming` | `wss://api.deepgram.com/v2/listen` (Flux requires v2) | $0.0065/min ([Deepgram pricing](https://deepgram.com/pricing)) |
 | C2 `assemblyai-universal-streaming` | Universal-Streaming WebSocket | $0.15/hr ([AssemblyAI](https://www.assemblyai.com/pricing)) |
-| C3 `elevenlabs-scribe-v2-realtime` | Scribe v2 Realtime WebSocket | $0.39/hr ([ElevenLabs](https://elevenlabs.io/pricing/api)) |
-| C4 `gladia-solaria-live` | live v2 WebSocket ([docs](https://docs.gladia.io/chapters/speech-to-text-api/pages/live-speech-recognition)) | $0.75/hr self-serve |
+| C3 `elevenlabs-scribe-v2-realtime` — *parked 2026-09-08, PRD v7* | Scribe v2 Realtime WebSocket | $0.39/hr ([ElevenLabs](https://elevenlabs.io/pricing/api)) |
+| C4 `gladia-solaria-live` — *parked 2026-09-08, PRD v7* | live v2 WebSocket ([docs](https://docs.gladia.io/chapters/speech-to-text-api/pages/live-speech-recognition)) | $0.75/hr self-serve |
 | — | Cartesia `ink-whisper` already streams (`lib/stt-providers/src/adapters/cartesia.ts`) | unchanged |
 
 Corpus is 123 audio minutes; customer-channel bytes are the same length, so the first
@@ -279,6 +279,12 @@ transcript-checked ranking X % of the time."* **Check:** grep the UI package and
 artefact for the word "Winner" — only test names, comments and the `verdictWinnerId`
 identifier remain. `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`
 asserts the artefact end-to-end and must be updated with this copy, not after it.
+
+*Corrected 2026-09-08 (PRD v7 §2):* "keeps its decision logic" above stands, and the
+decision logic has a bias the words cannot fix: its rate divides each provider's flags by
+that provider's own word count, so on the customer bulk the wordier of two providers
+with identical flags is named. Fix is R-1 (shared per-call denominator); the two
+surfaces then read one quantity under R-2.
 
 **D2 — entity references from confirmed tool calls.** 74 of the 99 rescued calls made
 tool calls; the entity-bearing ones (`fly-APPFOLIO_FIND_TENANT`, `CREATE_SHOWING`,
@@ -377,6 +383,11 @@ a provider whose disagreement rate moves more than 2 points from its own median 
 ## Part F — Boost parity: the Rush question
 
 Production Rush runs 120 Deepgram keyterms; candidates run naked. Not comparable.
+
+*Read live 2026-09-08 (PRD v7 §2, finding 3):* the 14 assistants with the most calls
+(124 of 176) carry **0 keyterms** and no `numerals` setting. The Rush premise below is
+true for Rush (8 calls) and for nothing else on file; M-19 is split into M-19a (the
+Deepgram parameter fix, now) and M-19b (the plumbing, once Tune mode has a list to carry).
 
 **F1 — candidates get the assistant's own boosts.** The bulk preview already reads the
 assistant's live transcriber config (`artifacts/api-server/src/lib/assistant-transcriber.ts`).

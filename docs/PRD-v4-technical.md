@@ -564,6 +564,12 @@ how many words*.
 1. **Normalise per 100 words.** `flagsPerHundredWords = avgPeerFlagCount /
    (avgWordCount / 100)`. A rate is comparable across calls of different lengths;
    a raw count is not.
+   *Corrected 2026-09-08 (PRD v7 §2, finding 1):* `avgWordCount` was implemented as
+   **the provider's own** word count (T-19), so a provider that writes more filler
+   words lowers its own rate. On the only customer-channel bulk the two leaders carry
+   identical flags on all 17 calls and the wordier one is named winner by 4 %. The
+   denominator must be a property of the call, shared by every provider on it — the
+   rule WER already follows (`docs/PRD.md` FR-S1). Fix: register step R-1.
 2. **A clean-call percentage.** `% of this provider's calls with zero peer flags` —
    the single number a non-technical reader understands immediately.
 3. **A headline verdict object** per ranking group:

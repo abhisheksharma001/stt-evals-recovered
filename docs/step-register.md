@@ -18,11 +18,15 @@ self-review → PR → CI → squash-merge → fast-forward → deploy → verif
 
 ## Where the steps come from
 
-`docs/PRD-v6-measure.md` (measurement — the reference, the audio, the product under
-test) and `docs/PRD-v5-optimize.md` (Setup polish, Tune mode) hold the reasoning. This
+`docs/PRD-v7-decide.md` (one verdict the corpus can carry — the denominator, the org as
+the unit of decision, the judge's context, the triage seeds), `docs/PRD-v6-measure.md`
+(measurement — the reference, the audio, the product under test) and
+`docs/PRD-v5-optimize.md` (Setup polish, Tune mode) hold the reasoning. This
 file holds the work. Only the parts that have been **grilled and settled** appear as
 steps; the rest are listed at the bottom with the questions that must be answered before
-they can be stepped. **Order as of 2026-09-04: Part M first (M-1 … M-21), then S-2 … S-7.**
+they can be stepped. ~~Order as of 2026-09-04: Part M first (M-1 … M-21), then S-2 … S-7.~~
+**Order as of 2026-09-08 (PRD v7): R-1 → R-3 → R-4 → M-11d → M-17 → R-6 → R-7 → M-20 →
+M-19a → R-5 → M-12 → R-2 → M-19b / M-21. M-13 and M-14 are parked.**
 
 ---
 
@@ -3426,6 +3430,12 @@ timing rules as M-11; row `assemblyai-universal-streaming`, $0.15/hr (pricing pa
 
 ### M-13 — ElevenLabs Scribe v2 Realtime row
 
+**Status:** `blocked` — parked 2026-09-08 (PRD v7, "Deliberately not doing"): production
+is Deepgram on 154 of 176 calls, no Deepgram socket has been opened yet (M-11d), and a
+third streaming adapter before the first is proven copies an unverified pattern once
+more (O-62). Built when a client names ElevenLabs; until then it waits on Abhishek
+saying so, and on M-11d.
+
 **PR:** one.
 **Depends on:** M-11d (see the correction under M-12: the streaming pattern is written,
 not proven).
@@ -3439,6 +3449,8 @@ not proven).
 ---
 
 ### M-14 — Gladia live row
+
+**Status:** `blocked` — parked 2026-09-08, same reason and same condition as M-13.
 
 **PR:** one.
 **Depends on:** M-11d (see the correction under M-12: the streaming pattern is written,
@@ -3832,6 +3844,16 @@ test for τ on a known permutation; render test for the line with `n: 0` and `n:
 
 ### M-19 — Candidates get the assistant's own boosts, and Deepgram gets `keyterm`
 
+**Status:** `split` 2026-09-08 into M-19a and M-19b below. Kept as a header so nothing
+that cites "M-19" dangles. **Why:** read live through
+`GET /benchmark/assistants/{id}/transcriber` on the 14 assistants with the most calls
+(124 of 176): every one carries **0 keyterms** and no `numerals` setting. The paired
+experiment this step was built for has one subject — the Rush assistant, 8 calls, all
+below the selection floors — so `boosts: production` would carry an empty list for the
+whole property-management corpus. The Deepgram parameter fix inside it is a real bug
+with a unit test and no spend, and does not need to wait: M-19a. The plumbing waits for
+a list to carry: M-19b. Everything below this line is the step as it was written.
+
 **PR:** one.
 **Depends on:** M-5.
 **Files:** `lib/stt-providers/src/adapters/deepgram.ts` (`keywords` → `keyterm` for
@@ -3859,6 +3881,47 @@ terms' SHA-256 (FR-P2, R6). Two bulks on the same calls are the paired experimen
 with a "go spend".
 **Must not:** default to `production`; send a boost list longer than the vendor's cap
 (Deepgram: 100 terms / 500 tokens — truncate and record `boostsTruncated: true`).
+
+---
+
+### M-19a — Deepgram nova-3 gets `keyterm`; nova-2 keeps `keywords`
+
+**PR:** one. Spends nothing.
+**Depends on:** nothing.
+**Files:** `lib/stt-providers/src/adapters/deepgram.ts` (batch), `lib/stt-providers/src/adapters/deepgram-streaming.ts`
+(nova-3 streaming), `lib/stt-providers/src/adapters/parsers.test.ts` (or the adapters'
+own test file if one exists by then), `docs/provider-matrix.md` (the boost parameter per
+row).
+**Today:** both files forward `input.keywordBoosts` as repeated `keywords` parameters —
+the nova-2 parameter. Nova-3 uses `keyterm`; every boost ever sent to a nova-3 row has
+had no effect, silently (backlog, 2026-09-07). `deepgram-flux.ts` already sends `keyterm`.
+**Change:** the URL builder picks the parameter from the model: `keyterm` for `nova-3*`
+and Flux, `keywords` for `nova-2*` and older. One helper shared by the batch and
+streaming adapters so the two nova-3 rows still differ only in how the audio arrives
+(M-11a's rule).
+**Acceptance:** WHEN `keywordBoosts` is set THEN a nova-3 request SHALL carry one
+`keyterm` per term and no `keywords`; a nova-2 request SHALL carry `keywords` and no
+`keyterm`; AND WHEN it is empty THEN neither parameter SHALL appear.
+**Verify:** unit test on the URL builder for the three cases; `pnpm run typecheck:libs`.
+**Must not:** send a list longer than 100 terms (truncate and record `boostsTruncated:
+true` on the input, as M-19 said); touch Flux; make a call.
+
+---
+
+### M-19b — A bulk carries the assistant's boosts
+
+**Status:** `blocked` — until Tune mode (PRD v7 Part F, "Not yet stepped" Part E)
+has produced a keyterm list for an assistant that has none. Read live 2026-09-08: the 14
+largest assistants (124 of 176 calls) carry 0 keyterms, so `boosts: production` would
+carry an empty list for the whole property-management corpus today. Also depends on
+M-11d for the streaming rows it names.
+**PR:** one.
+**Depends on:** M-19a, M-11d, M-5, and a list to carry.
+**Files, Change, Acceptance, Verify, Must not:** as M-19's block above, minus the Deepgram
+parameter fix that M-19a took: `boosts: "production" | "none"` on the bulk (default
+`none`), the executor reads the assistant's config once per assistant and passes the
+terms per vendor, `boostsSha256` on the manifest, `boostsApplied` / `boostsTruncated` on
+the cell. Live run only with a "go spend".
 
 ---
 
@@ -3901,6 +3964,265 @@ SHALL show the chip on that provider only.
 **Verify:** unit test on the chip rule with three synthetic canary points; render test.
 Launching the canary is a "go spend" each time.
 **Must not:** launch anything on its own; alert on non-canary bulks.
+
+---
+
+## Part R — One verdict the corpus can carry (`docs/PRD-v7-decide.md`)
+
+Written 2026-09-08 from a research pass over the live system (PRD v7 §0 has the
+numbers, §2 the three findings). Order agreed the same day: R-1 → R-3 → R-4 → M-11d →
+M-17 → R-6 → R-7 → M-20 → M-19a → R-5 → M-12 → R-2 → M-19b / M-21. Every step here
+spends nothing unless its **Must not** or its **Blocked on Abhishek** line says otherwise.
+
+### R-1 — The verdict's denominator belongs to the call, not the provider
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/verdict.ts` (the `words` per cell, built near the
+`verdictCells` map), `artifacts/api-server/src/lib/run-executor.ts` (the T-19
+`peerFlagsPer100Words` block, "Word basis = this provider's own normalised transcript"),
+`lib/scoring/src/verdict.test.ts`, `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`,
+`docs/scoring-policy.md` (one paragraph naming the denominator).
+**Today:** every cell's `words` is that provider's own `normalizeTranscript` word count,
+while its peer flags were computed on `canonicalTranscript`, which folds fillers out. On
+bulk `42769f26` (the only customer-channel bulk) ElevenLabs and AssemblyAI carry
+identical peer flags on all 17 calls — 4 flagged each — and ElevenLabs is named winner by
+4.2 % because it wrote 1,047 words to AssemblyAI's 1,003, 61 filler tokens to 37. The
+tool's own WER rule (`docs/PRD.md` FR-S1) divides by the *reference* length for exactly
+this reason; the flag rate did not.
+**Change:** one number per call: the **median `normalizeTranscript` word count over that
+call's `ok` cells in the scope being ranked** (the bulk's runs for a bulk verdict, the run
+for an ad-hoc run). Every cell of the call carries that number as its `words`, in both
+files. `lib/scoring/src/verdict.ts` does not change: `pooledRate`, the paired bootstrap
+and the sentence already take `{ flags, words }` per cell. Considered and not chosen: the
+alignment's `positionCount` from `computeCrossProviderDisagreement` — more principled,
+but it needs a new score column and a backfill, and the median cannot be moved by one
+verbose provider either.
+**Acceptance:** WHEN two providers carry identical peer flags on every call they share
+and one is 10 % wordier THEN the headline verdict SHALL be `too_close` (or a tie in the
+rates), never `winner`; AND WHEN the live verdict for bulk `42769f26` is read after deploy
+THEN it SHALL no longer name ElevenLabs over AssemblyAI.
+**Verify:** a unit case in `lib/scoring/src/verdict.test.ts` with exactly that shape (two
+providers, same flags per call, one wordier — under the old inputs it must produce a
+winner, under the new ones it must not; both halves in the test); an integration case
+seeding two providers that differ only in word count; then
+`curl -s localhost:8177/api/benchmark/bulks/42769f26-4d4a-4be0-bf04-c7b69f6b4b8f/verdicts | jq '.groups[0].verdict | {decision, winnerProviderId, rates: [.rates[] | {providerId, totalFlags, totalWords}]}'`
+— the verdict is computed on read, so it changes on deploy with no recompute. The stored
+`peer_flags_per_100_words` column on `benchmark_rankings` follows on the next bulk (no
+recompute route exists — O-36); say so in the PR.
+**Must not:** change what a flag is or where it is computed; touch the bootstrap; add a
+column; change the composite weights.
+
+---
+
+### R-2 — One quantity ranks both surfaces
+
+**Status:** `blocked` — on Abhishek's answer to PRD v7 open question 1 (flagged-call rate,
+recommended, or flags per 100 words on R-1's shared denominator). The step below is
+written for the recommended answer; if he picks the other, the Change paragraph swaps
+`1 − cleanCallRate` for the R-1 rate and the rest stands.
+**PR:** one.
+**Depends on:** R-1.
+**Files:** `lib/scoring/src/hybrid.ts` (`hybridCompositeScore`'s flag component),
+`artifacts/api-server/src/lib/run-executor.ts` (`providerAggregates`, the composite input
+and the `recommendation` sentence), `lib/scoring/src/verdict.ts` (the rate the sentence
+names), `artifacts/api-server/src/lib/proxy-agreement-aggregate.ts` (M-18's ordering —
+it must read the same quantity or it certifies a ranking nobody sees), `lib/scoring/src/hybrid.test.ts`,
+`artifacts/api-server/src/lib/proxy-agreement-aggregate.test.ts`,
+`artifacts/api-server/src/routes/__integration__/rankings.int.test.ts`.
+**Today:** the assistant cards rank on `flagBadness` (per-cell `peerFlagCount +
+severityRank`, averaged) with 15 % cost, and on the customer bulk every provider ties so
+price decides — Cartesia rank 1 in 12 of 13 groups. The org banner ranks on flags per
+100 own words — ElevenLabs. Same 17 calls, same page, two winners, neither for accuracy.
+**Change:** the flag component of the composite and the banner's rate become the same
+quantity: **flagged-call rate** = calls on which the provider carried at least one peer
+flag ÷ calls scored (`1 − cleanCallRate`, already computed by T-19). `flagBadness` becomes
+the first tiebreak, cost the last. The banner sentence names it in words a reader can
+repeat ("flagged on 4 of 17 calls"); the paired bootstrap runs on per-call 0/1
+differences over shared calls, same code path. M-18's proxy agreement ranks by the same
+per-call quantity (mean over the provider's cells of `peerFlagCount > 0 ? 1 : 0`, then
+`flagBadness` as tiebreak) so the human-checked comparison is against the order shown.
+**Acceptance:** WHEN bulk `42769f26` is rendered THEN the banner's order and every card's
+order SHALL agree on rank 1 for the org group; AND WHEN two providers have the same
+flagged-call rate THEN `flagBadness` SHALL order them before cost does.
+**Verify:** unit cases on the composite (rate first, badness second, cost third — three
+providers built so each rule decides one pair); the proxy-agreement aggregate tests
+updated to the new quantity with the discriminating cases kept; the rankings integration
+case asserts card and banner agree.
+**Must not:** change the 85 / 15 weights; drop `flagBadness` (severity still carries
+information); leave M-18 on the old quantity.
+
+---
+
+### R-3 — Production against the pack is the headline sentence
+
+**PR:** one.
+**Depends on:** nothing (R-1 first is better, not required — this line does not use the
+rate).
+**Files:** `artifacts/stt-benchmark/src/components/verdict-headline.tsx` (the banner and
+`ProductionDisagreementLine`), `artifacts/api-server/src/lib/verdict-artefact.ts` (the
+exported HTML, same order), `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+`artifacts/api-server/src/lib/verdict-artefact.test.ts`,
+`artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts` (asserts
+the artefact copy end-to-end and must change with it, not after it).
+**Today:** M-8a computes `productionDisagreement` per org group and it reads a real
+number on the customer bulk — Flux, live on the same 17 calls, `rate` 0.0657; the best
+candidate (AssemblyAI) 0.0261. It renders as a secondary line under the least-disagreement
+sentence, and the verdict's `vsProductionPct` is null because production has no cells.
+**Change:** when `productionDisagreement` is non-null, the first sentence of the banner
+and of the artefact is production against the pack, in these units: *"Production
+(Deepgram Flux) disagreed with the other transcripts on 6.6 of every 100 words on these
+17 calls; the best candidate on the same recordings, AssemblyAI, 2.6."* The
+least-disagreement sentence follows it. One caveat stays attached, every render:
+production was a live stream during the call, the candidates ran on the recording
+afterwards. When the figure is null, nothing moves. Run visual-and-research for the copy
+first and put the evidence note in this block.
+**Acceptance:** WHEN a bulk carries `productionDisagreement` THEN the banner's first
+sentence and the artefact's first paragraph SHALL name the production model, its rate and
+the best candidate's rate, with the caveat; WHEN it is null THEN both SHALL be byte-for-byte
+what they are today.
+**Verify:** render tests for both branches; the artefact test; the riskiest-endpoints
+integration case updated in the same PR; then the live artefact for `42769f26` read with
+`curl -s localhost:8177/api/benchmark/bulks/42769f26-4d4a-4be0-bf04-c7b69f6b4b8f/verdict.html | head -c 1200`.
+**Must not:** rank production; count it as a candidate; name it a winner or a loser;
+drop the stream-versus-recording caveat.
+
+---
+
+### R-4 — The assistant card stops claiming a decision
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/run-executor.ts` (`confidenceNoteFor` and the
+`recommendation` sentence in the ranking aggregation), `artifacts/api-server/src/lib/ranking-recommendation.ts`
+and `artifacts/api-server/src/lib/ranking-recommendation.test.ts`,
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` (the card), `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+`artifacts/api-server/src/routes/__integration__/rankings.int.test.ts`.
+**Today:** 31 assistants over 176 calls; 0 of 29 all-time assistant groups reach the
+≥ 12 bar, so every card reads "Leading candidate for this assistant's calls … Confidence:
+low … Do not treat as decision-grade." — a recommendation and its retraction in one
+sentence, 29 times. The org verdict already carries the evidence rules
+(`PROVISIONAL_EVIDENCE_CALLS = 20`, `MIN_SHARED_CALLS_FOR_VERDICT = 5`).
+**Change:** the card's sentence becomes description, not decision: *"On this assistant's
+N calls: fewest flags <provider>, cheapest <provider>. The decision for <org> is made
+above, on <M> calls."* The words "Leading candidate" and "decision-grade" leave the card.
+The evidence-count sentence lives once, on the org verdict. The grouping key of
+`benchmark_rankings`, the columns, and the CSV do not change. Run visual-and-research for
+the copy first and put the evidence note in this block.
+**Acceptance:** WHEN any assistant group is rendered THEN its card SHALL NOT contain
+"Leading candidate" and SHALL name the org verdict as where the decision is; AND the org
+banner SHALL carry the evidence count exactly once.
+**Verify:** render test; the recommendation unit tests; a grep of the UI package and the
+artefact for "Leading candidate" finds only test names and comments.
+**Must not:** remove the cards; hide any column; change what `benchmark_rankings`
+groups by.
+
+---
+
+### R-5 — The judge reads the assistant's own prompt and vocabulary
+
+**PR:** one. **This step spends cents** (the judge-contract record and one judged bulk).
+**Depends on:** nothing.
+**Blocked on Abhishek:** the go-spend (PRD v7 open question 4).
+**Files:** `artifacts/api-server/src/lib/vapi.ts` (`fetchVapiAssistantTranscriber` — read
+two more fields off the same GET), `artifacts/api-server/src/lib/assistant-transcriber.ts`
+(the in-memory cache carries them), `artifacts/api-server/src/lib/agent-verify.ts` (pass
+the context per call), `artifacts/api-server/src/lib/agent.ts` (`judgeCandidates`
+signature), `artifacts/api-server/baml_src/judge.baml` (the inputs; drop the hardcoded
+domain sentence), `artifacts/api-server/src/lib/judge-contract.ts` (prompt hash —
+`pnpm run judge:contract:record`), `artifacts/api-server/src/lib/judge-contract.test.ts`,
+`docs/provider-data-samples.md` (field names of the assistant object).
+**Today:** the judge receives `originalTranscript`, `flaggedSpans`, `candidates`, and a
+system prompt that says every call is "truck-parts service desks, apartment leasing,
+trucking dispatch". The assistant object is fetched (T-97) and only `transcriber` is
+typed; the system prompt (`model.messages`, role `system`) and the `keyterm` list are on
+the same response, unread. Read 2026-09-08: the 14 largest assistants carry 0 keyterms,
+so today the vocabulary half is empty and the prompt half is the whole gain.
+**Change:** read one real assistant object first and record the **field names** (never
+the prompt text) in `docs/provider-data-samples.md`; then `fetchVapiAssistantTranscriber`
+also returns `systemPrompt: string | null` and `keyterms: string[]`. `judgeCandidates`
+takes an `assistant` context — name, system prompt, keyterms — and `judge.baml` renders
+it in the user turn ahead of the transcript; rule 5 becomes "judge from this assistant's
+own context". Cache in memory as T-97 does. Record judge prompt tokens per call on one
+bulk before and after.
+**Acceptance:** WHEN a call is judged THEN the prompt SHALL contain that assistant's
+system prompt and keyterms and SHALL NOT contain the retired domain sentence; AND WHEN the
+assistant lookup fails (`no_calls`, `no_account`, a Vapi error) THEN the judge SHALL run
+with an empty context and the scan row SHALL say so, never fail.
+**Verify:** `judge-contract.test.ts` against the recorded contract; a unit case for the
+empty-context path; then one judged bulk with the token delta quoted in the PR — if judge
+cost per call more than doubles, stop and report instead of merging.
+**Must not:** store the prompt or keyterms in the database; log them (T-36's redaction
+flag does not cover a new field); send them to any vendor but the judge; change the
+pick from a typed enum; run the contract record or the bulk without the go-spend.
+
+---
+
+### R-6 — Conventions never show as differences in the comparison unless asked
+
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `lib/scoring/src/index.ts` (`WordDiffOp` gains `convention: boolean`),
+`artifacts/api-server/src/lib/call-comparison.ts` (`diffAgainstReference` marks it, using
+`sameOnceCanonical` from `lib/scoring/src/equivalence.ts`), `lib/api-spec/openapi.yaml`
+(the op schema, regenerated through orval), `artifacts/stt-benchmark/src/components/word-diff-view.tsx`
+and `artifacts/stt-benchmark/src/components/transcript-side-by-side.tsx` (hide by default,
+count, toggle), `artifacts/stt-benchmark/src/pages/__render__/calls.test.tsx`,
+`artifacts/api-server/src/routes/__integration__/call-comparison.int.test.ts`,
+`docs/scoring-policy.md` (one line: the diff view hides conventions; WER does not).
+**Today:** the diff runs on `normalizeTranscript` tokens, so "1-bedroom" / "1 bedroom",
+"gonna" / "going to" and a stray "um" render as substitutions, deletions and insertions.
+`lib/scoring/src/equivalence.ts` line 23 says this was deliberate: the flags fold
+conventions out, the diff shows them. Abhishek, 2026-09-08: he does not want them shown.
+**Change:** each non-`ok` op whose `ref` and `hyp` are equal under `sameOnceCanonical`
+(a `sub`), or whose lone side folds to nothing (an inserted or deleted disfluency) is
+marked `convention: true`. The view renders those as agreement by default, shows a count
+("12 convention differences hidden") and a toggle "show conventions" that renders them
+exactly as today. `wordsDiffer` and `werVsReference` keep counting them — WER is WER
+(`docs/scoring-policy.md`) and a person writing a gold needs the raw diff. Run
+visual-and-research first (the pattern is a code review's "hide whitespace changes") and
+put the evidence note in this block.
+**Acceptance:** WHEN a hypothesis differs from its reference only by conventions THEN the
+default view SHALL show zero highlighted words and the hidden count; WHEN the toggle is
+on THEN the view SHALL match today's byte for byte; AND `werVsReference` SHALL be
+unchanged in both.
+**Verify:** a unit case on `diffAgainstReference` with the T-101 pairs ("1 bedroom" /
+"1-bedroom", "going to" / "gonna", "" / "um", and "4" / "forty" which must NOT be a
+convention); the render test for both toggle states; the comparison integration case
+asserts `convention` on the wire.
+**Must not:** rewrite a provider's words on screen; change WER; change what raises a
+flag; hide a real substitution ("forty" / "4" stays a difference — `equivalence.ts` says
+so and the flags agree).
+
+---
+
+### R-7 — Which calls need checking: count the seeds before building a monitor
+
+**PR:** one. Spends nothing: read-only over the dev database, no provider, no LLM.
+**Depends on:** nothing.
+**Files:** new file artifacts/api-server/src/mine-triage-signals.ts (plain: not written
+yet; same shape and same door as `artifacts/api-server/src/mine-confirmed-entities.ts`),
+`docs/PRD-v7-decide.md` (Part E — the table and the decision go back in).
+**Today:** stored per call and read by nothing for this purpose: `source_success_evaluation`
+(118 true / 23 false / 35 null — Vapi's LLM verdict on goal completion, not on the
+transcript), `prod_assistant_interruptions`, `prod_transcriber_latency_ms`, `prod_tool_calls`,
+`source_ended_reason`. 239 flagged and 6 clean scans say which calls the free hybrid pass
+flagged; take the latest scan per call. Abhishek's ask (2026-09-08) is a path that checks
+only the calls that need it; PRD v7 Part E says its trigger must be an implicit signal,
+not an LLM read of one transcript.
+**Change:** for each signal (success false; interruptions ≥ 1; transcriber latency above
+the corpus median; ended reason not in the customer-ended set; tool calls = 0) print the
+2×2 against "latest scan flagged": calls selected, flagged among them, precision and
+recall, and the base rate. Counts only — never a transcript, never a name. Write the
+table into PRD v7 Part E with the decision: a signal that beats the base rate by a stated
+margin is a seed for a monitor path; none does, the path is not built on this corpus,
+and the script stays (it is permanent and free — re-run when the corpus grows).
+**Acceptance:** WHEN the script runs THEN it SHALL print one 2×2 per signal and the base
+rate, and nothing that identifies a caller; AND PRD v7 Part E SHALL carry the table and a
+build / don't-build sentence before this step is marked done.
+**Verify:** run it; paste the table into the PRD and the PR; `pnpm run typecheck`.
+**Must not:** call a provider or an LLM; print transcript text; write to the database;
+build the monitor — this step only decides whether to.
 
 ---
 
@@ -4283,7 +4605,8 @@ described but not grilled, so they stay here with the questions that block them.
 | D1 | Completion-time estimate | Is a rough estimate ("about 20 minutes") enough, or does it need to be a live countdown on the running card? |
 | D2 | Cartesia ingest rate | Costs a handful of real transcription calls to measure. Approve the spend? |
 | D3 | Fixed-cause failures stop reading as open | Should the 15 stale cells be retried once to clear them, or just relabelled? Retrying costs provider money. |
-| E | Tune mode and the tuning report | The largest item. Needs a full grill: which client first, which provider, and what a person does with the report once they have it. |
+| E | Tune mode and the tuning report | The largest item. Needs a full grill: which client first, which provider, and what a person does with the report once they have it. **New inputs 2026-09-08 (PRD v7 Part F):** the target is Flux (`keyterm`, up to 100 terms, `Configure` mid-stream); 14 of 14 largest assistants have 0 keyterms, so v5 E4's keep / add / replace is moot and the mode is greenfield; first subject Land And Apartment (assistants with 39, 18, 15 calls); seed vocabulary = words-to-watch + `artifacts/api-server/src/mine-reading-pairs.ts`. |
+| v7 E | A monitor path: check only the calls that need it | Not before R-7 has counted the seeds. If no stored production signal beats the base rate for "the hybrid pass flagged this call", there is nothing to trigger on and the path is not built on this corpus. Never feeds rankings. |
 | F | Write a transcriber back to Vapi | Dev accounts only, or production too? |
 | v6 E4 | Vendor data-handling record in `docs/data-governance.md` §4 (six vendors already sent audio; every checkbox unticked) | Who signs the DPAs — Ellavox as processor for the client's callers? A legal answer the tool can only record. |
 | v6 F2 | Deepgram keyterm cap test on the Rush assistant (120 terms sent; Deepgram caps at 100 / 500 tokens) | Three paid Deepgram calls — pre-approved as cents, or a "go spend" each time? |
