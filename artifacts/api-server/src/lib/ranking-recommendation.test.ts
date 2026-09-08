@@ -1,61 +1,96 @@
 import { describe, expect, it } from "vitest";
 import { rank1Recommendation, runnerUpRecommendation } from "./ranking-recommendation";
 
-const p = (flagBadness: number | null, costPerMinute: number | null) => ({
+const p = (name: string, flagBadness: number | null, costPerMinute: number | null) => ({
+  name,
   flagBadness,
   costPerMinute,
 });
 
-const GROUP = "this assistant's calls";
+const SCOPE = "this assistant's 7 calls";
 
 describe("rank1Recommendation", () => {
-  it("claims fewest flags only when rank 1 is strictly the cleanest", () => {
-    const s = rank1Recommendation([p(0.5, 0.006), p(1.5, 0.002), p(2, 0.01)], GROUP);
-    expect(s).toBe(
-      "Leading candidate for this assistant's calls -- fewest/least-severe hybrid flags among ready providers.",
+  it("opens with the group's own call count and makes no pick", () => {
+    // R-4: the whole point. Every one of these sentences used to open
+    // "Leading candidate for this assistant's calls" and close "Do not
+    // treat as decision-grade" -- a pick and its retraction, on all 29
+    // live assistant groups, 0 of which reach the >=12-call bar.
+    const s = rank1Recommendation([p("Deepgram", 0.5, 0.006), p("Cartesia", 1.5, 0.002)], SCOPE);
+    expect(s).toBe("On this assistant's 7 calls: fewest disagreements Deepgram, cheapest Cartesia.");
+  });
+
+  it("names no leader and no decision in any branch", () => {
+    for (const s of [
+      rank1Recommendation([p("A", 0.5, 0.006), p("B", 1.5, 0.002)], SCOPE),
+      rank1Recommendation([p("A", 0, 0.002), p("B", 0, 0.002)], SCOPE),
+      rank1Recommendation([p("A", 1, null), p("B", 1, 0.006)], SCOPE),
+      rank1Recommendation([p("A", 0, 0.004)], SCOPE),
+      rank1Recommendation([p("A", null, 0.004)], SCOPE),
+    ]) {
+      expect(s).not.toContain("Leading candidate");
+      expect(s).not.toContain("decision-grade");
+      expect(s).not.toContain("Confidence");
+      expect(s).not.toContain("candidate");
+    }
+  });
+
+  it("names the cleanest only when it is strictly the cleanest", () => {
+    const s = rank1Recommendation(
+      [p("Deepgram", 0.5, 0.006), p("Cartesia", 1.5, 0.002), p("OpenAI", 2, 0.01)],
+      SCOPE,
     );
+    expect(s).toContain("fewest disagreements Deepgram");
   });
 
-  it("never claims fewest flags when rank 1 only tied for fewest", () => {
-    // The live shape on 2026-09-07: 59 of 62 groups had rank 1 tied for
-    // fewest, 33 of them with every provider tied. This is the sentence
-    // that was false on 61 of 62 groups.
-    const s = rank1Recommendation([p(0, 0.0022), p(0, 0.0043), p(0, 0.0102)], GROUP);
-    expect(s).not.toContain("fewest");
-    expect(s).toBe(
-      "Leading candidate for this assistant's calls -- tied on hybrid flags with 2 other providers and the cheapest of the tied. Price decided this order, not accuracy.",
+  it("names nobody when every provider is tied on disagreements", () => {
+    // The live shape on 2026-09-07: 33 of 62 groups had every provider
+    // tied. "Fewest" was false on all of them.
+    const s = rank1Recommendation(
+      [p("Cartesia", 0, 0.0022), p("Deepgram", 0, 0.0043), p("OpenAI", 0, 0.0102)],
+      SCOPE,
     );
+    expect(s).toBe(
+      "On this assistant's 7 calls: every provider raised the same disagreements, cheapest Cartesia.",
+    );
+    expect(s).not.toContain("fewest disagreements Cartesia");
   });
 
-  it("says so when rank 1 won despite raising more flags than a rival", () => {
-    // deepgram-nova-3 at 4.5 flags / $0.0043 ranked above cartesia at
-    // 4.0 flags / $0.0022 in 2 live groups.
-    const s = rank1Recommendation([p(4.5, 0.0043), p(4.0, 0.0022), p(4.5, 0.006)], GROUP);
-    expect(s).not.toContain("fewest");
-    expect(s).toContain("1 other provider raised fewer or less-severe hybrid flags");
-    expect(s).toContain("this is not an accuracy win");
-  });
-
-  it("calls the order arbitrary when flags and price both tie", () => {
-    const s = rank1Recommendation([p(2, 0.004), p(2, 0.004)], GROUP);
-    expect(s).toContain("this order is arbitrary");
-    expect(s).toContain("Do not read rank 1 as a pick");
-    expect(s).not.toContain("Leading candidate");
+  it("counts a partial tie rather than naming one of the tied", () => {
+    const s = rank1Recommendation(
+      [p("Cartesia", 0, 0.0022), p("Deepgram", 0, 0.0043), p("OpenAI", 2, 0.0102)],
+      SCOPE,
+    );
+    expect(s).toContain("2 providers tied for fewest disagreements");
+    expect(s).not.toContain("fewest disagreements Cartesia");
   });
 
   it("treats an unknown price as unknown, not as the cheapest", () => {
     // hybridCompositeScore scores a null costPerMinute as the best possible
     // cost component. The sentence must not inherit that -- nobody knows
-    // what this provider costs, so nothing can be said to have decided it.
-    const s = rank1Recommendation([p(1, null), p(1, 0.006)], GROUP);
-    expect(s).toContain("this order is arbitrary");
+    // what that provider costs.
+    const s = rank1Recommendation([p("Alpha", 1, null), p("Bravo", 2, 0.006)], SCOPE);
+    expect(s).toContain("no price on file for every provider");
     expect(s).not.toContain("cheapest");
   });
 
+  it("names nobody as cheapest when every price is the same", () => {
+    const s = rank1Recommendation([p("Alpha", 0, 0.004), p("Bravo", 1, 0.004)], SCOPE);
+    expect(s).toContain("every provider costs the same per minute");
+    expect(s).not.toContain("cheapest Alpha");
+  });
+
+  it("counts a partial price tie rather than naming one of the tied", () => {
+    const s = rank1Recommendation(
+      [p("Alpha", 0, 0.004), p("Bravo", 1, 0.004), p("Charlie", 2, 0.009)],
+      SCOPE,
+    );
+    expect(s).toContain("2 providers tied on price");
+  });
+
   it("does not make a comparison claim about a group of one", () => {
-    const s = rank1Recommendation([p(0, 0.004)], GROUP);
+    const s = rank1Recommendation([p("Alpha", 0, 0.004)], SCOPE);
     expect(s).toBe(
-      "Only candidate for this assistant's calls -- one provider ran, so this is not a comparison.",
+      "On this assistant's 7 calls: only Alpha produced a transcript to compare, so nothing here is a comparison.",
     );
     expect(s).not.toContain("fewest");
   });
@@ -63,48 +98,70 @@ describe("rank1Recommendation", () => {
   it("ignores providers with no flag evidence when judging the tie", () => {
     // A provider whose every cell failed has a null composite, sorts last,
     // and gets its own sentence. It is not a rival that ties or beats.
-    const s = rank1Recommendation([p(0, 0.004), p(null, 0.002)], GROUP);
-    expect(s).toContain("one provider ran");
+    const s = rank1Recommendation([p("Alpha", 0, 0.004), p("Ghost", null, 0.002)], SCOPE);
+    expect(s).toContain("only Alpha produced a transcript to compare");
+  });
+
+  it("says so when the group has no disagreement numbers at all", () => {
+    const s = rank1Recommendation([p("Ghost", null, 0.002)], SCOPE);
+    expect(s).toBe("On this assistant's 7 calls: no disagreement numbers yet.");
   });
 
   it("names the no-assistant group with the phrase it is handed", () => {
-    const s = rank1Recommendation([p(0, 0.004), p(1, 0.006)], "calls with no assistant on file");
-    expect(s).toContain("calls with no assistant on file");
+    const s = rank1Recommendation(
+      [p("Alpha", 0, 0.004), p("Bravo", 1, 0.006)],
+      "3 calls with no assistant on file",
+    );
+    expect(s).toBe(
+      "On 3 calls with no assistant on file: fewest disagreements Alpha, cheapest Alpha.",
+    );
   });
 });
 
 describe("runnerUpRecommendation", () => {
-  it("does not claim more flags when the runner-up is tied on flags", () => {
+  it("does not claim more disagreements when the runner-up is tied", () => {
     // cartesia-ink-whisper, cleanest and cheapest, was labelled "more or
     // more-severe flags" on every one of the 33 all-tied live groups.
-    const s = runnerUpRecommendation(p(0, 0.0022), p(0, 0.0043));
+    const s = runnerUpRecommendation(p("A", 0, 0.0022), p("B", 0, 0.0043));
     expect(s).not.toContain("more or more-severe");
-    expect(s).toContain("Tied with rank 1 on hybrid flags");
+    expect(s).toContain("Tied with rank 1 on disagreements");
   });
 
   it("says the runner-up lost on price when it is actually cleaner", () => {
-    const s = runnerUpRecommendation(p(4.0, 0.0022), p(4.5, 0.0043));
+    const s = runnerUpRecommendation(p("A", 4.0, 0.0022), p("B", 4.5, 0.0043));
     expect(s).toContain("Ranked below rank 1 on price, not on accuracy");
-    expect(s).toContain("fewer or less-severe hybrid flags than rank 1");
+    expect(s).toContain("fewer or less-severe disagreements than rank 1");
   });
 
-  it("keeps the flag claim when the runner-up really is flaggier", () => {
-    const s = runnerUpRecommendation(p(3, 0.002), p(1, 0.006));
-    expect(s).toContain("Behind rank 1 on hybrid flags");
+  it("keeps the claim when the runner-up really is noisier", () => {
+    const s = runnerUpRecommendation(p("A", 3, 0.002), p("B", 1, 0.006));
+    expect(s).toContain("Behind rank 1 on disagreements");
   });
 
   it("no longer blames confidence spans, which T-2 removed from the composite", () => {
     for (const s of [
-      runnerUpRecommendation(p(3, 0.002), p(1, 0.006)),
-      runnerUpRecommendation(p(0, 0.002), p(0, 0.006)),
-      runnerUpRecommendation(p(0, 0.002), p(1, 0.006)),
+      runnerUpRecommendation(p("A", 3, 0.002), p("B", 1, 0.006)),
+      runnerUpRecommendation(p("A", 0, 0.002), p("B", 0, 0.006)),
+      runnerUpRecommendation(p("A", 0, 0.002), p("B", 1, 0.006)),
     ]) {
       expect(s).not.toContain("confidence");
     }
   });
 
-  it("calls a flag-and-price tie arbitrary rather than a loss", () => {
-    const s = runnerUpRecommendation(p(2, 0.004), p(2, 0.004));
+  it("calls a disagreement-and-price tie arbitrary rather than a loss", () => {
+    const s = runnerUpRecommendation(p("A", 2, 0.004), p("B", 2, 0.004));
     expect(s).toContain("this order is arbitrary");
+  });
+
+  it("carries no confidence note and no decision claim", () => {
+    for (const s of [
+      runnerUpRecommendation(p("A", 3, 0.002), p("B", 1, 0.006)),
+      runnerUpRecommendation(p("A", null, 0.002), p("B", 1, 0.006)),
+      runnerUpRecommendation(p("A", 2, 0.004), p("B", 2, 0.004)),
+    ]) {
+      expect(s).not.toContain("decision-grade");
+      expect(s).not.toContain("Confidence");
+      expect(s).not.toContain("hybrid flags");
+    }
   });
 });

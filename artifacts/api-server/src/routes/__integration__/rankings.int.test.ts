@@ -96,7 +96,7 @@ describe("GET /api/benchmark/rankings", () => {
 // groups for as long as it did. computeRankingsForRun only reads rows and
 // writes rankings; it calls no provider and spends nothing.
 describe("computeRankingsForRun -- the stored recommendation sentence", () => {
-  it("does not claim rank 1 had the fewest flags when the group tied on flags", async () => {
+  it("does not claim rank 1 had the fewest disagreements when the group tied", async () => {
     const asst = `fx-asst-tie-${fx.suffix}`;
     const run = await fx.run({ purpose: "batch" });
     const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
@@ -131,15 +131,26 @@ describe("computeRankingsForRun -- the stored recommendation sentence", () => {
 
     expect(rows.map((r) => r.providerId)).toEqual([cheap.id, dear.id]);
     expect(rows[0].recommendation).not.toContain("fewest");
-    expect(rows[0].recommendation).toContain("tied on hybrid flags with 1 other provider");
-    expect(rows[0].recommendation).toContain("Price decided this order, not accuracy");
+    expect(rows[0].recommendation).toContain("On this assistant's 1 call:");
+    expect(rows[0].recommendation).toContain("every provider raised the same disagreements");
+    expect(rows[0].recommendation).toContain(`cheapest ${cheap.name}`);
     // The runner-up carried the same false claim, and carried it on the
     // cheapest, equally-clean provider in 33 live groups.
     expect(rows[1].recommendation).not.toContain("more or more-severe");
-    expect(rows[1].recommendation).toContain("Tied with rank 1 on hybrid flags");
+    expect(rows[1].recommendation).toContain("Tied with rank 1 on disagreements");
+
+    // R-4: what the aggregation stops storing. Every row used to end
+    // "Confidence: low -- only N scored call(s) ... Do not treat as
+    // decision-grade", and rank 1 used to open "Leading candidate".
+    for (const r of rows) {
+      expect(r.recommendation).not.toContain("Leading candidate");
+      expect(r.recommendation).not.toContain("decision-grade");
+      expect(r.recommendation).not.toContain("Confidence: low");
+      expect(r.recommendation).not.toContain("hybrid flags");
+    }
   });
 
-  it("keeps the fewest-flags sentence when rank 1 really is the cleanest", async () => {
+  it("names the cleanest provider when rank 1 really is the cleanest", async () => {
     const asst = `fx-asst-clean-${fx.suffix}`;
     const run = await fx.run({ purpose: "batch" });
     const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
@@ -169,8 +180,14 @@ describe("computeRankingsForRun -- the stored recommendation sentence", () => {
     await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
 
     expect(rows[0].providerId).toBe(clean.id);
-    expect(rows[0].recommendation).toContain("fewest/least-severe hybrid flags");
-    expect(rows[1].recommendation).toContain("Behind rank 1 on hybrid flags");
+    expect(rows[0].recommendation).toBe(
+      `On this assistant's 1 call: fewest disagreements ${clean.name}, every provider costs the same per minute.`,
+    );
+    expect(rows[1].recommendation).toContain("Behind rank 1 on disagreements");
+    for (const r of rows) {
+      expect(r.recommendation).not.toContain("Leading candidate");
+      expect(r.recommendation).not.toContain("decision-grade");
+    }
   });
 });
 

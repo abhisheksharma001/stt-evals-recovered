@@ -1375,7 +1375,6 @@ function aggregateRankingRows(
         // so a cell with one side null makes the sum differ from this.
         flagBadness,
         composite,
-        sampleSize: rows.length,
       };
     });
 
@@ -1383,18 +1382,18 @@ function aggregateRankingRows(
 
     if (providerAggregates.length === 0) continue; // nothing scored ok for this group yet
 
-    // Per-PROVIDER confidence note (threshold review 2026-08-25): the old
-    // note keyed only on rank 1's sample size with a <10 cutoff, so (a) a
-    // runner-up with 2 scored cells shipped with no caveat while rank 1 had
-    // 20, and (b) 10- and 11-call groups passed as "decision-grade" even
-    // though the PRD's Full-Benchmark bar is >=12 calls per group
-    // (docs/PRD.md AC-FULL-1 -- written against verticals, applied per
-    // assistant-group now for the same reason: too few samples is too few
-    // samples regardless of what the group is called).
-    const confidenceNoteFor = (sampleSize: number): string =>
-      sampleSize < 12
-        ? `Confidence: low -- only ${sampleSize} scored call(s) for this provider in this group (decision bar is >=12, PRD AC-FULL-1). Do not treat as decision-grade.`
-        : `Based on ${sampleSize} scored call(s) for this provider in this group.`;
+    // R-4 (2026-09-09): the per-provider confidence note used to be appended
+    // to every one of these sentences ("Confidence: low -- only N scored
+    // call(s) ... Do not treat as decision-grade"). It fired on every row of
+    // every group, because 0 of 29 assistant groups reach the >=12 bar and
+    // none will for months (31 assistants over 176 calls, read live). A
+    // sentence that names a leader and then retracts it says two things at
+    // once, so the card no longer claims a decision at all and the note has
+    // nothing left to retract. The bar itself is unchanged and still
+    // enforced where the decision is actually made -- the org verdict
+    // (PROVISIONAL_EVIDENCE_CALLS, MIN_SHARED_CALLS_FOR_VERDICT). The
+    // evidence size the note used to carry is now in the sentence's own
+    // opening clause, as the group's scored-call count.
 
     // M-10c: the sentence has to look at the whole group, not just this
     // row, because "fewest" and "cheapest" are claims about the others.
@@ -1405,8 +1404,17 @@ function aggregateRankingRows(
     // market-standard recommendation, and redundant with the assistant name
     // already shown above it. Dropped entirely rather than reformatted;
     // vertical stays available in the CSV export for anyone who needs it.
-    const groupPhrase = assistantId ? "this assistant's calls" : "calls with no assistant on file";
+    // T-1: real evidence size behind this group -- distinct providers'
+    // sampleSize can differ within a group, so this is the group's own
+    // scored-call count (rowsForGroup, deduped by call), not any one
+    // provider's sampleSize. R-4 reads it here as well as on the row,
+    // because the sentence opens with it.
+    const callsScored = new Set(rowsForGroup.map((r) => r.result.callId)).size;
+    const scopePhrase = assistantId
+      ? `this assistant's ${callsScored} call${callsScored === 1 ? "" : "s"}`
+      : `${callsScored} call${callsScored === 1 ? "" : "s"} with no assistant on file`;
     const recommendationInputs = providerAggregates.map((a) => ({
+      name: a.providerName,
       flagBadness: a.flagBadness,
       costPerMinute: a.costPerMinute,
     }));
@@ -1441,17 +1449,13 @@ function aggregateRankingRows(
         avgPeerFlagSeverityScore: agg.avgPeerFlagSeverityScore,
         peerFlagsPer100Words: agg.peerFlagsPer100Words,
         cleanCallRate: agg.cleanCallRate,
-        // T-1: real evidence size behind this row -- distinct providers'
-        // sampleSize can differ within a group, so this is the group's own
-        // scored-call count (rowsForGroup, deduped by call), not any one
-        // provider's sampleSize.
-        callsScored: new Set(rowsForGroup.map((r) => r.result.callId)).size,
+        callsScored,
         recommendation:
           agg.composite === null
             ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
             : index === 0
-              ? `${rank1Recommendation(recommendationInputs, groupPhrase)} ${confidenceNoteFor(agg.sampleSize)}`
-              : `${runnerUpRecommendation(recommendationInputs[index]!, recommendationInputs[0]!)} ${confidenceNoteFor(agg.sampleSize)}`,
+              ? rank1Recommendation(recommendationInputs, scopePhrase)
+              : runnerUpRecommendation(recommendationInputs[index]!, recommendationInputs[0]!),
       })),
     );
   }

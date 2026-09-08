@@ -991,13 +991,41 @@ export default function Rankings() {
                             listPrices={listPrices}
                             gv={gv}
                           />
+                          {/* R-4: the card describes its own calls and points
+                              at the decision instead of making one. "Why this
+                              order:" was the old label, from when the sentence
+                              opened "Leading candidate" and closed "Do not
+                              treat as decision-grade" -- a pick and its
+                              retraction, on all 29 assistant groups, none of
+                              which reaches the 12-call bar. */}
                           {winner?.recommendation && (
-                            <div className="p-4 bg-muted/30 border-t flex gap-3 text-sm">
+                            <div className="p-4 bg-muted/30 border-t flex gap-3 text-sm" data-testid="assistant-card-summary">
                               <ArrowUpRight className="w-5 h-5 text-primary shrink-0" />
-                              <p className="text-foreground">
-                                <span className="font-semibold mr-1">Why this order:</span>
-                                {winner.recommendation}
-                              </p>
+                              <div className="space-y-1">
+                                <p className="text-foreground">
+                                  <span className="font-semibold mr-1">What the calls showed:</span>
+                                  {winner.recommendation}
+                                </p>
+                                {/* The decision is the org's, made on all its
+                                    assistants' calls together. In All-time
+                                    combined there is no verdict on the page at
+                                    all, so the card says where one is found
+                                    rather than pointing at nothing. */}
+                                <p className="text-xs text-muted-foreground" data-testid="assistant-card-decision-pointer">
+                                  {viewMode === "bulk" ? (
+                                    <>
+                                      The decision for {org.label ?? "calls with no org label"} is made above
+                                      {org.verdict ? `, on ${org.verdict.verdict.evidenceCalls} call${org.verdict.verdict.evidenceCalls === 1 ? "" : "s"}` : ""}.
+                                      {" "}One assistant alone has too few calls to decide.
+                                    </>
+                                  ) : (
+                                    <>
+                                      No decision is made here. Decisions are made one bulk at a time, on all of{" "}
+                                      {org.label ?? "the org"}'s calls together -- switch to One bulk above.
+                                    </>
+                                  )}
+                                </p>
+                              </div>
                             </div>
                           )}
                           <ProductionBaselineNote assistantId={ranks[0]?.assistantId ?? null} ranks={ranks} gv={gv} />
