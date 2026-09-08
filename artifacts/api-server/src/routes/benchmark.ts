@@ -27,6 +27,7 @@ import { getProviderAdapter, listProviderAdapters, providerIdForModel, vendorOf,
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantSignals } from "../lib/assistant-signals";
+import { proxyAgreement } from "../lib/proxy-agreement";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
 import { listOpenAiJudgeModels, OpenAiModelsError, PINNED_AGENT_MODELS } from "../lib/openai-models";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
@@ -62,6 +63,7 @@ import {
   GetWordsToWatchResponse,
   GetAssistantSignalsQueryParams,
   GetAssistantSignalsResponse,
+  GetProxyAgreementResponse,
   ListBenchmarkCallsResponse,
   ListBenchmarkProvidersResponse,
   ListBenchmarkRankingsQueryParams,
@@ -539,6 +541,14 @@ router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
     return;
   }
   respondJson(res, GetCallDisagreementResponse, await callDisagreement(query.data.bulkId ?? null));
+});
+
+// M-18: the only check on file that the disagreement ranking tracks a human
+// transcript. No parameters -- it is all-time over every labelled call, not
+// per bulk: the labelled set is 2 calls today and slicing it further would
+// leave nothing to measure.
+router.get("/benchmark/proxy-agreement", async (_req, res): Promise<void> => {
+  respondJson(res, GetProxyAgreementResponse, await proxyAgreement());
 });
 
 // T-87: which words keep splitting the providers, per bulk / assistant.

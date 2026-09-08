@@ -247,6 +247,57 @@ const baseRoutes: StubRoutes = {
 }
 
 describe("Results", () => {
+  // M-18: the agreement figure appended to M-9's legend. Three branches,
+  // because the interesting one is the branch that refuses to print a number.
+  const agreement = (labelledCalls: number, n: number, top1: number | null, tau: number | null) => ({
+    labelledCalls,
+    n,
+    top1Agreement: top1,
+    kendallTau: tau,
+  })
+
+  it("says nothing about human transcripts when nobody has written one", async () => {
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(0, 0, null, null) })
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    // M-9's line already says the ranking is not scored against a human
+    // transcript. "0 of 20" underneath it is that sentence twice.
+    expect(screen.getAllByTestId("relative-not-accuracy").length).toBe(1)
+    expect(screen.queryByTestId("proxy-agreement")).toBeNull()
+  })
+
+  it("reports how far along the check is, and no percentage, below 20 calls", async () => {
+    // The live corpus while this was built: 2 labelled calls, tau-b 0.017 --
+    // no relationship. The step as written would have printed "agreed 50% of
+    // the time" off that. The floor is M-20's, on this same labelled set.
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(2, 2, 0.5, 0.017) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("proxy-agreement")
+    expect(line.textContent).toContain("Not yet checked against human transcripts")
+    expect(line.textContent).toContain("2 of 20 calls")
+    expect(line.textContent).not.toContain("%")
+    expect(line.textContent).not.toContain("50")
+    // The whole-order figure is still available to anyone who wants it.
+    expect(line.getAttribute("title")).toContain("0.02")
+  })
+
+  it("prints the agreement percentage once the labelled set reaches the floor", async () => {
+    // 24 calls carry a gold; 21 of them could be ranked two ways. The
+    // sentence counts the ones that were actually measured, not the ones
+    // that were labelled -- and the tooltip says why the two differ.
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(24, 21, 0.7142857, 0.63) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("proxy-agreement")
+    expect(line.textContent).toContain("On the 21 calls a person did check")
+    expect(line.textContent).toContain("71% of the time")
+    expect(line.textContent).not.toContain("Not yet checked")
+    expect(line.getAttribute("title")).toContain("24 call(s) carry a human transcript")
+    expect(line.getAttribute("title")).toContain("0.63")
+  })
+
   // S-7: one hairline where identity ends and measurement begins. The break
   // test showed nothing on this page was looked at, so marking every metric
   // column -- the spreadsheet-grid mistake -- passed unnoticed.

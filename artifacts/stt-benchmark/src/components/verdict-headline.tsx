@@ -2,6 +2,7 @@ import React from "react"
 import {
   useGetBulkVerdicts,
   getGetBulkVerdictsQueryKey,
+  useGetProxyAgreement,
   type BulkVerdicts,
   type HeadlineVerdict,
 } from "@workspace/api-client-react"
@@ -132,6 +133,53 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
   return { tone: "too_few_calls", leadName: null, sentence: `Nothing decided yet: ${counts.too_few_calls} of ${groups.length} group${groups.length === 1 ? "" : "s"} need more calls before one can be named.`, counts, totalCalls, groups: groups.length }
 }
 
+/**
+ * M-18 (PRD-v6 D4): the sentence the M-9 legend has been waiting for -- how
+ * often the order this page shows matches the order a human transcript
+ * produces, on the calls somebody actually transcribed.
+ *
+ * The floor is 20 calls, and it is NOT this step's invention: M-20 sets the
+ * same floor on the same labelled set for the judge's scorecard. M-18 as
+ * written said render whenever n > 0, and the two steps would then have
+ * contradicted each other on one page. Read off the live corpus while
+ * building this, n = 2 and tau-b = 0.017 -- no relationship at all, which
+ * "agreed 50% of the time" would have reported as a coin-flip result rather
+ * than as nothing. Below the floor the reader is told how far along the
+ * check is instead of being given a number that is noise.
+ *
+ * Nothing renders at all when no call carries a human gold: M-9's line
+ * already says the ranking is not scored against one, and a "0 of 20" under
+ * it would just be that sentence again with a number on it.
+ *
+ * top-1 agreement is the figure on screen because it is the one a reader can
+ * act on -- did the check pick the same provider. tau-b, which reads the
+ * whole order rather than its head, rides in the tooltip.
+ */
+function ProxyAgreementLine() {
+  const { data } = useGetProxyAgreement()
+  if (!data || data.labelledCalls === 0) return null
+
+  const detail =
+    `${data.labelledCalls} call(s) carry a human transcript; ${data.n} of them had two or more providers ` +
+    `scored both ways and an order that was not entirely tied. ` +
+    (data.kendallTau === null
+      ? "Kendall tau-b: not measured."
+      : `Mean Kendall tau-b ${data.kendallTau.toFixed(2)} (-1 opposite, 0 unrelated, 1 identical), which reads the whole order rather than just its head.`)
+
+  return (
+    <p className="text-xs text-muted-foreground" title={detail} data-testid="proxy-agreement">
+      {data.n >= 20 && data.top1Agreement !== null ? (
+        <>
+          On the {data.n} calls a person did check, this order picked the same provider as the
+          human-checked order {Math.round(data.top1Agreement * 100)}% of the time.
+        </>
+      ) : (
+        <>Not yet checked against human transcripts -- {data.n} of 20 calls.</>
+      )}
+    </p>
+  )
+}
+
 export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; groupLabels: Record<string, string> }) {
   const { data, isLoading, isError } = useBulkVerdicts(bulkId)
 
@@ -237,6 +285,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
           Relative: how often each provider disagreed with the others on the same audio. Not a measured accuracy --
           nothing here is scored against a human-checked transcript.
         </p>
+        <ProxyAgreementLine />
       </CardContent>
     </Card>
   )

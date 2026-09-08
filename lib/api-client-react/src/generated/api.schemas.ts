@@ -1497,6 +1497,23 @@ export interface CallDisagreement {
   calls: CallDisagreementCallsItem[];
 }
 
+export interface ProxyAgreement {
+  /** Calls whose gold transcript is non-empty and differs from the draft. */
+  labelledCalls: number;
+  /** Of those, the calls that carried two rankable orderings and so contributed to the figures. */
+  n: number;
+  /**
+     * Fraction of contributing calls where some provider was best on both orderings. Null when n is 0.
+     * @nullable
+     */
+  top1Agreement: number | null;
+  /**
+     * Mean Kendall tau-b over the contributing calls, -1 to 1. Null when n is 0.
+     * @nullable
+     */
+  kendallTau: number | null;
+}
+
 export type BulkVerdictsProvidersItem = {
   id: string;
   name: string;
