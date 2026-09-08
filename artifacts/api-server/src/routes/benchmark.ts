@@ -1336,7 +1336,16 @@ router.get("/benchmark/providers/models", async (_req, res): Promise<void> => {
               source: m.source,
               verifiedAt: m.verifiedAt,
               note: m.note ?? null,
-              providerId,
+              // S-4: report the row that is actually enabled, not the id we
+              // would have synthesised for it. When `enabledAs` took the
+              // `legacyDefault` path above, the synthesised id names a row
+              // that does not exist -- three of them in the live response
+              // (assemblyai-universal-3-5-pro, elevenlabs-scribe-v2,
+              // gladia-solaria-1, all pointing at rows called
+              // assemblyai-universal, elevenlabs-scribe, gladia-solaria).
+              // When the model is NOT enabled the synthesised id is right:
+              // it is the id the enable call will create.
+              providerId: enabledAs ?? providerId,
               enabled: enabledAs !== null,
               rowStatus: enabledAs ? (rowById.get(enabledAs) ?? null) : null,
             };
