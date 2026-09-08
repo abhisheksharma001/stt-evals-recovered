@@ -3889,6 +3889,26 @@ cards below the list.
 
 ### S-2 — Say what the catalog is and what the cards are
 
+**Status:** `done` 2026-09-08 (PR #115, `11ecdae`), deployed
+`7f015e116814 -> 11ecdae6954f`. Verified live on the Vite server at :5173.
+
+**Learned: placement was the whole step, not the wording.** The vendor's model
+list is a `<details>` and is collapsed on first render, so a caption written
+*inside* it satisfies every word of this step and fails its Acceptance
+("without hovering, clicking, or expanding anything"). The caption sits above
+the `<details>`, and the render test asserts `closest("details")` is null for
+both captions and that neither is hiding in a `title` attribute — two of the
+break-test mutations are exactly those two wrong homes, and both are caught.
+
+**Evidence note:** `visual-and-research` run. Mobbin —
+[Qatalog](https://mobbin.com/screens/bf24e755-2a66-4aa1-b64b-ad156bbd0641),
+[Height](https://mobbin.com/screens/25de2e30-f93f-473e-9f0a-149f89a2f08b) and
+[Better Stack](https://mobbin.com/screens/c59d087d-5a8b-4e4c-9627-b82462672ad5)
+all split one list into named groups (enabled above available; Better Stack
+labels the second one literally "Catalog"). That confirms the two-group split
+this step describes, so the captions shipped as written. Lenny's: **no evidence
+found** on labelling a catalogue against what is configured.
+
 **PR:** one.
 **Depends on:** nothing (independent of S-1).
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
@@ -3938,6 +3958,25 @@ the card, or something on another page — say which screen.
 
 ### S-4 — Report a provider id that exists
 
+**Status:** `done` 2026-09-08 (PR #115, `11ecdae`), deployed `7f015e116814 -> 11ecdae6954f`. Shipped with S-2 and S-4/S-5 as one branch, one commit each.
+
+**Live check after deploy:** dangling ids **3 → 0** across 9 enabled models.
+
+**Learned: the break test found that "the id exists" is not the claim worth
+making.** The first integration case asserted only that every enabled model's
+`providerId` appears in `GET /benchmark/providers` — so a mutation reporting
+the *adapter's own row* for every enabled model passed, because a sibling row
+of the same vendor exists too. That is the same lie this step exists to stop,
+aimed at a different vendor, and S-5 would have printed it.
+
+Closing it needed a **seed**, not just a sharper assertion: every row already
+in the test database is either the adapter's own id or a model with no row of
+its own, so `adapter.providerId` and the synthesised id are the same string
+and swapping them is invisible. Gladia's adapter row is `gladia-solaria` and
+the synthesised id for its other catalogued model is `gladia-solaria-3`; with
+that row seeded the two finally differ. **A test can only see a difference the
+fixtures actually contain.**
+
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/routes/benchmark.ts` (the `providers/models` handler,
@@ -3971,6 +4010,24 @@ restore the unconditional synthesised id and watch exactly that test fail.
 ---
 
 ### S-5 — Name a provider the vendor's list API does not return
+
+**Status:** `done` 2026-09-08 (PR #115, `11ecdae`), deployed `7f015e116814 -> 11ecdae6954f`. Shipped with S-2 and S-4/S-5 as one branch, one commit each.
+
+**Live check after deploy** — exactly one vendor shows the line, which is what
+the Acceptance asks for and was **not** true before S-4 landed in the same
+branch:
+
+| vendor | line |
+| --- | --- |
+| Deepgram | `flux-general-en` |
+| AssemblyAI, Cartesia, ElevenLabs, Gladia, OpenAI | none |
+| Speechmatics | silent — no catalogue vendor at all |
+
+**Learned: a step that reads another step's output inherits its bugs.** This
+one was written as "depends on nothing much" and would have shipped three
+false lines, because the ids it compares against were the ids S-4 was fixing.
+Grilling it against the live API rather than the register text is what caught
+that; the dependency is now written down above.
 
 **PR:** one.
 **Depends on:** **S-4, added 2026-09-08 — this line used to read "S-1 is not required;
