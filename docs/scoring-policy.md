@@ -29,6 +29,30 @@ provider wrote `gonna` and another wrote `going to`, because that is a real
 difference you may want to see. It just never **raises a flag** or fills a
 "words to watch" row, because it is not a mistake.
 
+## The rate's denominator — the call's words, not the provider's
+
+**R-1, 2026-09-08.** The headline number is *peer flags per 100 words*. Its
+numerator comes off the **comparison form**, which folds fillers and
+conventions away; its denominator used to be that provider's own
+**scoring-form** word count, which keeps them. So a provider that wrote more
+filler divided the same flags by a bigger number and read cleaner for words
+nobody scored it on. Live on bulk `42769f26`: ElevenLabs and AssemblyAI carried
+identical peer flags on all 17 calls, and ElevenLabs was named winner by 4 %
+for writing 1,047 words to 1,003 — 61 filler tokens to 37.
+
+The rule now: **one word basis per call, shared by every provider measured on
+it** — the median of the scoring-form word counts of that call's `ok` cells in
+the scope being ranked, rounded to a whole word (`callWordBasis` in
+`lib/scoring/src/verdict.ts`). The median, not the mean, so one runaway cell
+cannot move it. Every surface that divides by words reads it: the org verdict
+(`artifacts/api-server/src/lib/verdict.ts`), the stored ranking rate
+(`artifacts/api-server/src/lib/run-executor.ts`) and the cross-bulk trend
+(`artifacts/api-server/src/lib/trend.ts`). This is the same rule WER has always
+followed — FR-S1 divides by the reference length, not by what the provider
+wrote. Ranking rows written before this date carry the old basis; there is no
+recompute route, so a bulk's stored rate changes on its next execution. The
+verdict is computed on read and changed immediately.
+
 ## The scoring form, rule by rule
 
 Applied in this order by `normalizeTranscript()`:

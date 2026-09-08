@@ -1230,7 +1230,7 @@ export const ListBenchmarkRankingsResponseItem = zod.object({
   "avgFlagSeverityScore": zod.number().nullable().describe('severityRank() averaged across cells: 0=none .. 3=high. Same confidence-inclusive caveat as avgFlagCount.'),
   "avgPeerFlagCount": zod.number().nullable().describe('Confidence-EXCLUDED flag count (cross-provider disagreement + entity mismatches only) -- comparable fairly across every provider regardless of whether it reports confidence. This, not avgFlagCount, is what the composite Rank actually sorts by.'),
   "avgPeerFlagSeverityScore": zod.number().nullable().describe('severityRank() of avgPeerFlagCount\'s flags, averaged: 0=none .. 3=high.'),
-  "peerFlagsPer100Words": zod.number().nullable().describe('Peer-only flags per 100 words this provider transcribed in the group. Same basis as the composite; comparable across call lengths.'),
+  "peerFlagsPer100Words": zod.number().nullable().describe('Peer-only flags per 100 words of the group\'s calls. R-1: the words are the CALL\'s -- the median of what the providers on it wrote, shared by all of them -- not this provider\'s own count. Same basis as the composite; comparable across providers and call lengths.'),
   "cleanCallRate": zod.number().nullable().describe('Share (0..1) of this provider\'s scored calls in the group that carried zero peer flags.')
 }),
   "recommendation": zod.string()
@@ -1855,7 +1855,7 @@ export const GetBulkVerdictsResponse = zod.object({
   "totalWords": zod.number()
 })),
   "sentence": zod.string()
-}).describe('T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.')
+}).describe('T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. R-1: the words are the call\'s -- one basis shared by every provider on it, so a wordier provider does not buy a lower rate. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.')
 }))
 })
 

@@ -625,7 +625,7 @@ export interface Score {
      */
   avgPeerFlagSeverityScore: number | null;
   /**
-     * Peer-only flags per 100 words this provider transcribed in the group. Same basis as the composite; comparable across call lengths.
+     * Peer-only flags per 100 words of the group's calls. R-1: the words are the CALL's -- the median of what the providers on it wrote, shared by all of them -- not this provider's own count. Same basis as the composite; comparable across providers and call lengths.
      * @nullable
      */
   peerFlagsPer100Words: number | null;
@@ -1581,7 +1581,7 @@ export type HeadlineVerdictRatesItem = {
 };
 
 /**
- * T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.
+ * T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. R-1: the words are the call's -- one basis shared by every provider on it, so a wordier provider does not buy a lower rate. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.
  */
 export interface HeadlineVerdict {
   decision: HeadlineVerdictDecision;

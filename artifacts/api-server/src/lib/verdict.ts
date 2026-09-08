@@ -19,6 +19,7 @@ import {
   db,
 } from "@workspace/db";
 import {
+  callWordBasis,
   computeCrossProviderDisagreement,
   computeVerdict,
   normalizeTranscript,
@@ -263,6 +264,17 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
     .filter((s) => extractProviderConfidenceWords(s.providerId, s.rawOutput) !== null)
     .map((s) => s.providerId);
 
+  // R-1: the word basis for each call, one number every provider on that
+  // call is measured against. Computed over the whole bulk's on-channel
+  // cells; a call belongs to exactly one org group, so scoping it per group
+  // would give the same numbers.
+  const wordBasis = callWordBasis(
+    cellsOnChannel.map((c) => ({
+      callId: c.callId,
+      words: normalizeTranscript(c.transcript ?? "").split(" ").filter(Boolean).length,
+    })),
+  );
+
   const providerNames = Object.fromEntries(providers.map((p) => [p.id, p.name]));
   const clientKeyOf = (c: { sourceAccountLabel: string | null }) => c.sourceAccountLabel?.trim() || NO_CLIENT_KEY;
   const groupKeys = new Set(calls.map(clientKeyOf));
@@ -301,7 +313,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
         callId: c.callId,
         providerId: c.providerId,
         peerFlagCount: c.peerFlagCount,
-        words: normalizeTranscript(c.transcript ?? "").split(" ").filter(Boolean).length,
+        words: wordBasis.get(c.callId) ?? 0,
       }));
 
     groups.push({

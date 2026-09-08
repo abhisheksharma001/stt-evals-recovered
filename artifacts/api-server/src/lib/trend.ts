@@ -14,7 +14,7 @@ import {
   benchmarkScoresTable,
   db,
 } from "@workspace/db";
-import { normalizeTranscript, type TrendBulk, type TrendCell } from "@workspace/scoring";
+import { callWordBasis, normalizeTranscript, type TrendBulk, type TrendCell } from "@workspace/scoring";
 
 export type BenchmarkTrend = { bulks: TrendBulk[]; cells: TrendCell[] };
 
@@ -88,6 +88,21 @@ export async function benchmarkTrend(): Promise<BenchmarkTrend> {
   ]);
   const callById = new Map(calls.map((c) => [c.id, c]));
   const providerNameById = new Map(providers.map((p) => [p.id, p.name]));
+  // R-1: the same word basis the rankings and the verdict divide by -- one
+  // number per call, shared by every provider on it. Keyed per BULK as well
+  // as per call: a call re-run in a later bulk is a separate point on the
+  // strip, and its basis is the providers that ran it THERE.
+  const wordBasis = callWordBasis(
+    rows.flatMap((r) => {
+      const bulkId = bulkIdByRun.get(r.runId);
+      return bulkId
+        ? [{
+            callId: `${bulkId}|${r.callId}`,
+            words: normalizeTranscript(r.transcript ?? "").split(" ").filter(Boolean).length,
+          }]
+        : [];
+    }),
+  );
 
   const cells = new Map<string, TrendCell>();
   for (const r of scored) {
@@ -113,7 +128,7 @@ export async function benchmarkTrend(): Promise<BenchmarkTrend> {
       } satisfies TrendCell);
     const flags = r.peerFlagCount ?? 0;
     cell.peerFlags += flags;
-    cell.words += normalizeTranscript(r.transcript ?? "").split(" ").filter(Boolean).length;
+    cell.words += wordBasis.get(`${bulkId}|${r.callId}`) ?? 0;
     cell.callsScored += 1;
     if (flags === 0) cell.cleanCalls += 1;
     cells.set(key, cell);

@@ -14,6 +14,7 @@ import {
   type BenchmarkProviderRow,
 } from "@workspace/db";
 import {
+  callWordBasis,
   score,
   scoreEntities,
   SCORING_VERSION,
@@ -1199,6 +1200,17 @@ function aggregateRankingRows(
     audioSource === undefined
       ? results
       : results.filter((r) => (r.result.audioSource ?? "mono") === audioSource);
+  // R-1: one word basis per call, shared by every provider on it, over the
+  // scope being ranked (this run for an ad-hoc run, the bulk's runs for a
+  // bulk). A provider used to be measured against its own word count, which
+  // handed the wordier of two providers with identical flags a lower rate --
+  // see callWordBasis in @workspace/scoring for the live proof.
+  const wordBasis = callWordBasis(
+    onChannel.map((r) => ({
+      callId: r.result.callId,
+      words: normalizeTranscript(r.result.hypothesisTranscript ?? "").split(" ").filter(Boolean).length,
+    })),
+  );
   // 2026-08-27, per Abhishek: group by real assistant instead of vertical --
   // null (no sourceAssistantId, i.e. a manually-added call) buckets into a
   // single "Other" group rather than being dropped. `NO_ASSISTANT_KEY` is a
@@ -1317,14 +1329,13 @@ function aggregateRankingRows(
 
       // T-19: rates. Only cells that actually carry a peer flag count take
       // part (a cell scored before hybrid flagging has null there and
-      // must not read as a clean call). Word basis = this provider's own
-      // normalised transcript, the same tokenisation the flags came from.
+      // must not read as a clean call). R-1: word basis = the CALL's, from
+      // wordBasis above -- every provider on a call divides by the same
+      // number, so the rate answers "how often did this provider disagree"
+      // and not "how many words did it type".
       const flaggedCells = rows.filter((r) => r.score.peerFlagCount !== null);
       const totalPeerFlags = flaggedCells.reduce((sum, r) => sum + (r.score.peerFlagCount ?? 0), 0);
-      const totalWords = flaggedCells.reduce(
-        (sum, r) => sum + normalizeTranscript(r.result.hypothesisTranscript ?? "").split(" ").filter(Boolean).length,
-        0,
-      );
+      const totalWords = flaggedCells.reduce((sum, r) => sum + (wordBasis.get(r.result.callId) ?? 0), 0);
       const peerFlagsPer100Words = totalWords > 0 ? (totalPeerFlags / totalWords) * 100 : null;
       const cleanCallRate = flaggedCells.length
         ? flaggedCells.filter((r) => r.score.peerFlagCount === 0).length / flaggedCells.length

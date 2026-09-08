@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapNoiseFloor, computeVerdict, pooledRate, type VerdictCell } from "./verdict";
+import { bootstrapNoiseFloor, callWordBasis, computeVerdict, pooledRate, type VerdictCell } from "./verdict";
 
 function cellsFor(providerId: string, flags: number[], words = 100): VerdictCell[] {
   return flags.map((f, i) => ({ callId: `c${i}`, providerId, peerFlagCount: f, words }));
@@ -11,6 +11,31 @@ describe("pooledRate", () => {
   });
   it("is null with no words", () => {
     expect(pooledRate([{ flags: 0, words: 0 }])).toBeNull();
+  });
+});
+
+describe("callWordBasis", () => {
+  it("gives every provider on a call the same number: the median of what they wrote", () => {
+    const basis = callWordBasis([
+      { callId: "c1", words: 100 },
+      { callId: "c1", words: 110 },
+      { callId: "c1", words: 300 },
+      { callId: "c2", words: 40 },
+    ]);
+    // 110, not the 170 a mean would hand back after one runaway cell.
+    expect(basis.get("c1")).toBe(110);
+    expect(basis.get("c2")).toBe(40);
+  });
+
+  it("takes the midpoint of an even count, rounded to a whole word", () => {
+    // The live pair: AssemblyAI 1,003 words, ElevenLabs 1,047.
+    expect(callWordBasis([{ callId: "c", words: 1003 }, { callId: "c", words: 1047 }]).get("c")).toBe(1025);
+    // A half word rounds up, so the basis is always a whole word.
+    expect(callWordBasis([{ callId: "c", words: 1 }, { callId: "c", words: 2 }]).get("c")).toBe(2);
+  });
+
+  it("has no entry for a call it never saw", () => {
+    expect(callWordBasis([]).get("c")).toBeUndefined();
   });
 });
 
@@ -138,6 +163,38 @@ describe("computeVerdict", () => {
     expect(v.decision).toBe("insufficient");
     expect(v.rates.map((r) => r.providerId)).toEqual(["a"]);
     expect(v.evidenceCalls).toBe(3);
+  });
+
+  // R-1 (2026-09-08): live on bulk 42769f26, ElevenLabs and AssemblyAI
+  // carried identical peer flags on all 17 calls and ElevenLabs was named
+  // winner for writing 4% more words -- filler the flags were never scored
+  // on, because flags come off canonicalTranscript and the denominator did
+  // not. Both halves are held here: under the old inputs (each provider's
+  // own word count) the wordier one MUST win, under the shared basis it
+  // must not, or this test is not proving what it claims.
+  it("names no winner when the only difference between two providers is verbosity", () => {
+    const flags = [0, 1, 2, 0, 3, 1, 0, 2];
+    const leanWords = [80, 120, 200, 60, 300, 140, 90, 160];
+    const ownWords: VerdictCell[] = flags.flatMap((f, i) => [
+      { callId: `c${i}`, providerId: "lean", peerFlagCount: f, words: leanWords[i]! },
+      { callId: `c${i}`, providerId: "wordy", peerFlagCount: f, words: leanWords[i]! * 1.1 },
+    ]);
+    const names = { lean: "Lean", wordy: "Wordy" };
+
+    const before = computeVerdict(ownWords, { providerNames: names });
+    expect(before.decision).toBe("winner");
+    expect(before.winnerProviderId).toBe("wordy");
+
+    const basis = callWordBasis(ownWords.map((c) => ({ callId: c.callId, words: c.words })));
+    const after = computeVerdict(
+      ownWords.map((c) => ({ ...c, words: basis.get(c.callId)! })),
+      { providerNames: names },
+    );
+    expect(after.decision).toBe("too_close");
+    expect(after.winnerProviderId).toBeNull();
+    const [lean, wordy] = after.rates;
+    expect(lean!.totalWords).toBe(wordy!.totalWords);
+    expect(lean!.flagsPer100Words).toBe(wordy!.flagsPer100Words);
   });
 
   it("counts confidence-reporting providers for the comparability note", () => {
