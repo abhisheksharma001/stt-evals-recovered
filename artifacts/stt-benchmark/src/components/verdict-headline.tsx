@@ -154,6 +154,11 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
  * top-1 agreement is the figure on screen because it is the one a reader can
  * act on -- did the check pick the same provider. tau-b, which reads the
  * whole order rather than its head, rides in the tooltip.
+ *
+ * Both counts appear in the sentence on purpose. n is what could be measured;
+ * labelledCalls is what a person actually sat and transcribed. Printing only
+ * n against the words "a person checked" would credit them with less work
+ * than they did, every time a labelled call turned out unrankable.
  */
 function ProxyAgreementLine() {
   const { data } = useGetProxyAgreement()
@@ -170,11 +175,11 @@ function ProxyAgreementLine() {
     <p className="text-xs text-muted-foreground" title={detail} data-testid="proxy-agreement">
       {data.n >= 20 && data.top1Agreement !== null ? (
         <>
-          On the {data.n} calls a person did check, this order picked the same provider as the
-          human-checked order {Math.round(data.top1Agreement * 100)}% of the time.
+          On {data.n} of the {data.labelledCalls} calls a person has transcribed, this order picked the
+          same provider as the human-checked order {Math.round(data.top1Agreement * 100)}% of the time.
         </>
       ) : (
-        <>Not yet checked against human transcripts -- {data.n} of 20 calls.</>
+        <>Not enough human-checked calls to measure this yet -- {data.n} of 20.</>
       )}
     </p>
   )

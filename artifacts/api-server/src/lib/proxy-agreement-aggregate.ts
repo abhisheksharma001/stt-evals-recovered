@@ -41,11 +41,11 @@ const flagBadness = (row: ProxyAgreementRow): number | null =>
  * is what run-executor's providerAggregates already does for every number on
  * the Results page, so the ranking compared here is the ranking shown there.
  *
- * A call is DROPPED, not counted as agreement, when:
- *   - fewer than two providers carry both a WER and a flag reading, or
- *   - either ordering is a single tie group (kendallTauB returns null).
- * Both mean the call distinguishes nothing, and "absent is not zero": a call
- * that measured nothing must not be reported as a call that agreed.
+ * A call is DROPPED, not counted as agreement, whenever kendallTauB answers
+ * null -- either ordering is a single tie group, or fewer than two providers
+ * carry both a WER and a flag reading so there are no pairs to order. Both
+ * mean the call distinguishes nothing, and "absent is not zero": a call that
+ * measured nothing must not be reported as a call that agreed.
  */
 export function aggregateProxyAgreement(rows: readonly ProxyAgreementRow[]): ProxyAgreementFigures {
   const byCall = new Map<string, Map<string, ProxyAgreementRow[]>>();
@@ -72,7 +72,10 @@ export function aggregateProxyAgreement(rows: readonly ProxyAgreementRow[]): Pro
       wers.push(wer);
       badnesses.push(badness);
     }
-    if (wers.length < 2) continue;
+    // One rule, not two. A call with fewer than two rankable providers has
+    // no pairs at all, so kendallTauB's denominator is zero and it already
+    // answers null -- an explicit length check here was redundant, and the
+    // break test proved it by mutating it with no observable effect.
     const tau = kendallTauB(wers, badnesses);
     if (tau === null) continue;
     n += 1;

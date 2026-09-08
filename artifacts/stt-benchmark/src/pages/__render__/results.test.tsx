@@ -275,8 +275,8 @@ describe("Results", () => {
     renderPage(<Results />, { path: "/results" })
 
     const line = await screen.findByTestId("proxy-agreement")
-    expect(line.textContent).toContain("Not yet checked against human transcripts")
-    expect(line.textContent).toContain("2 of 20 calls")
+    expect(line.textContent).toContain("Not enough human-checked calls to measure this yet")
+    expect(line.textContent).toContain("2 of 20")
     expect(line.textContent).not.toContain("%")
     expect(line.textContent).not.toContain("50")
     // The whole-order figure is still available to anyone who wants it.
@@ -291,9 +291,12 @@ describe("Results", () => {
     renderPage(<Results />, { path: "/results" })
 
     const line = await screen.findByTestId("proxy-agreement")
-    expect(line.textContent).toContain("On the 21 calls a person did check")
+    // Both counts, because they differ: 24 people-hours of transcription,
+    // 21 calls that could actually be ranked two ways. Naming only n beside
+    // "a person has transcribed" would credit less work than was done.
+    expect(line.textContent).toContain("On 21 of the 24 calls a person has transcribed")
     expect(line.textContent).toContain("71% of the time")
-    expect(line.textContent).not.toContain("Not yet checked")
+    expect(line.textContent).not.toContain("Not enough human-checked calls")
     expect(line.getAttribute("title")).toContain("24 call(s) carry a human transcript")
     expect(line.getAttribute("title")).toContain("0.63")
   })
