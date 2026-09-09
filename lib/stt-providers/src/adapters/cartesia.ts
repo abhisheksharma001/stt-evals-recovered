@@ -320,7 +320,35 @@ export const cartesiaAdapter: ProviderAdapter = {
         resolve();
       };
 
-      const ws = new WebSocket(url);
+      // This adapter's URL carries a live API key as `access_token` (see the
+      // note above the URLSearchParams), and a thrown error's message is
+      // written verbatim into benchmark_provider_call_results.error_message,
+      // which is persisted and rendered (run-executor.ts, the `if (!result)`
+      // branch). Measured on node 22.22.2: this constructor's DOMException
+      // never quotes the URL -- its message is a constant, it carries no
+      // `cause`, and `stack` is its only own property -- so nothing leaks
+      // today. That is a property of undici's implementation, not a promise
+      // it makes, and this is the one adapter of the three whose URL still
+      // holds a secret at all. Report a constant instead of whatever it says.
+      // Resolves directly rather than through finish(), which reads
+      // connectTimer and responseTimer -- `const`s declared below this line,
+      // so calling it here throws on the temporal dead zone. `settled = true`
+      // in the catch is therefore unobservable: every finish() call site sits
+      // inside a callback registered after this constructor, so none of them
+      // exists on the throw path. Kept anyway, and only because the two
+      // Deepgram adapters' identical guards set it -- three sockets that
+      // differ in a line this subtle is worse than one dead assignment.
+      // (R-11's break test found this: removing it changes nothing.)
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        settled = true;
+        connectError = "Cartesia WebSocket could not be opened.";
+        connectFailureClass = "unknown";
+        resolve();
+        return;
+      }
 
       const connectTimer = setTimeout(() => {
         connectError = connectError ?? "Cartesia WebSocket connect timed out.";
