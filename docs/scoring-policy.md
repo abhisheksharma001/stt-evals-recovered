@@ -24,10 +24,30 @@ a reviewer types can still matter in the two places named under "Known gaps".
 | **Scoring form** | `normalizeTranscript()` (`lib/scoring/src/index.ts`) | WER, the word-level diff, entity checks | No — only case, punctuation and digits |
 | **Comparison form** | `canonicalTranscript()` (`lib/scoring/src/equivalence.ts`) | hybrid flags, disagreement spans, words to watch | Yes — the conventions listed below |
 
-The split is deliberate (T-101). The word diff still *shows* you that one
-provider wrote `gonna` and another wrote `going to`, because that is a real
-difference you may want to see. It just never **raises a flag** or fills a
-"words to watch" row, because it is not a mistake.
+The split is deliberate (T-101). The word diff still *holds* the fact that one
+provider wrote `gonna` and another wrote `going to`, and WER still counts it,
+because that is a real difference you may want to see. It just never **raises a
+flag** or fills a "words to watch" row, because it is not a mistake.
+
+**R-6, 2026-09-09 — the comparison view hides them, the arithmetic does not.**
+Until this date the sentence above also described what was on screen: the diff
+view rendered every one of these as a substitution, a deletion or an insertion.
+Abhishek, 2026-09-08: he does not want them shown. `diffAgainstReference`
+(`artifacts/api-server/src/lib/call-comparison.ts`) now marks them —
+`markConventionOps` in `lib/scoring/src/equivalence.ts` — and the two comparison
+views render a marked difference as agreement, with a count and a "Show
+conventions (N)" toggle that puts today's view back exactly. **Nothing about the
+numbers moved:** `wordsDiffer`, `werVsReference`, `editCounts` and every score
+row still count these ops as differences, and the flags still do not. The mark
+is for the reader; the arithmetic never sees it.
+
+The mark is made per **run** of consecutive differing ops, not per op, because
+the two commonest conventions in the corpus span two ops each: `1 bedroom`
+against `1-bedroom` is two words against one, so the alignment writes a
+substitution *and* a deletion, and neither one on its own is equal to anything.
+Joined, the run reads `1 bedroom` against `1-bedroom`, one canonical form. A run
+that also holds a real error is not marked at all, so a mistake can never hide
+behind a convention standing next to it.
 
 ## The rate's denominator — the call's words, not the provider's
 

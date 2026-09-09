@@ -4455,18 +4455,26 @@ pick from a typed enum; run the contract record or the bulk without the go-spend
 `sameOnceCanonical` from `lib/scoring/src/equivalence.ts`), `lib/api-spec/openapi.yaml`
 (the op schema, regenerated through orval), `artifacts/stt-benchmark/src/components/word-diff-view.tsx`
 and `artifacts/stt-benchmark/src/components/transcript-side-by-side.tsx` (hide by default,
-count, toggle), `artifacts/stt-benchmark/src/pages/__render__/calls.test.tsx`,
+count, toggle), `artifacts/stt-benchmark/src/components/word-diff-view.test.tsx` (new --
+these are pure components with their own test file next to them, which is where this
+repo puts a component test; Corpus's page render test never reaches the diff),
 `artifacts/api-server/src/routes/__integration__/call-comparison.int.test.ts`,
-`docs/scoring-policy.md` (one line: the diff view hides conventions; WER does not).
+`docs/scoring-policy.md` (the diff view hides conventions; WER does not).
 **Today:** the diff runs on `normalizeTranscript` tokens, so "1-bedroom" / "1 bedroom",
 "gonna" / "going to" and a stray "um" render as substitutions, deletions and insertions.
 `lib/scoring/src/equivalence.ts` line 23 says this was deliberate: the flags fold
 conventions out, the diff shows them. Abhishek, 2026-09-08: he does not want them shown.
-**Change:** each non-`ok` op whose `ref` and `hyp` are equal under `sameOnceCanonical`
-(a `sub`), or whose lone side folds to nothing (an inserted or deleted disfluency) is
-marked `convention: true`. The view renders those as agreement by default, shows a count
-("12 convention differences hidden") and a toggle "show conventions" that renders them
-exactly as today. `wordsDiffer` and `werVsReference` keep counting them — WER is WER
+**Change:** each **run** of consecutive non-`ok` ops whose reference side and hypothesis
+side are equal under `sameOnceCanonical` is marked `convention: true`. *This sentence
+read "each non-`ok` op whose `ref` and `hyp` are equal under `sameOnceCanonical` (a
+`sub`), or whose lone side folds to nothing" until 2026-09-09; that rule marks nothing on
+the two commonest pairs in the T-101 mining. `1 bedroom` against `1-bedroom` is two words
+against one, so the alignment writes a `sub` plus a `del`, and neither op alone equals
+anything — `sub("1" -> "1-bedroom")` canonicalises to `1` against `1 bedroom`. Same for
+`going to` / `gonna`. Joined, the run's two sides are one canonical form. A run that also
+holds a real error is not marked at all, so an error can never hide behind a convention
+beside it — the rule errs towards showing.* The view renders marked ops as agreement by
+default, shows a count and a toggle that renders them exactly as today. `wordsDiffer` and `werVsReference` keep counting them — WER is WER
 (`docs/scoring-policy.md`) and a person writing a gold needs the raw diff. Run
 visual-and-research first (the pattern is a code review's "hide whitespace changes") and
 put the evidence note in this block.
@@ -4481,6 +4489,35 @@ asserts `convention` on the wire.
 **Must not:** rewrite a provider's words on screen; change WER; change what raises a
 flag; hide a real substitution ("forty" / "4" stays a difference — `equivalence.ts` says
 so and the flags agree).
+
+## Evidence — hiding convention differences in a comparison view
+**Pattern to use:** put the control in the diff's own header beside the view switch, name
+the count it is hiding, and keep the totals visible next to it — GitLab's commit diff
+carries "Show whitespace changes" inline with Inline / Side-by-side and states
+"Showing 1 changed file with 23 additions and 0 deletions" in the same bar; Devin's review
+puts "All 362 lines / 5 lines" next to each collapsed hunk, so the number hidden is always
+readable without expanding.  ← [GitLab commit diff](https://mobbin.com/screens/929d4521-5bcf-46c2-a38f-ecd3614ca40a),
+[Devin review](https://mobbin.com/screens/e48cb198-fd26-4a92-b17a-a988aa5cbef8)
+**Patterns to avoid:** hiding the control in a settings menu with no count on the surface —
+GitHub's Files changed header carries a filter box and a gear, and nothing there tells the
+reader that anything is being filtered out of the diff at all. Also avoid Linear's
+"Highlight changes" switch as the model: it turns *all* marking off, which is a different
+thing from separating real differences from conventions.  ← [GitHub Files changed](https://mobbin.com/screens/72783a50-4cc2-4e3d-83f9-048f9a2455cf),
+[Linear version history](https://mobbin.com/screens/6c14e085-9ff5-4e61-9a21-b04f1b0a3433)
+**What operators say:** no evidence found. Two searches of Lenny's archive
+(`diff|comparison|noise|signal|hide|filter|false positives`, then
+`evals|error analysis|look at your data|review interface`) returned nothing about diff or
+review-surface noise; the eval posts that did match are about which metrics to trust, not
+about what a review screen shows. Not stretched into a citation.
+**Changes to the plan:** the count moved into the same sentence as the difference count
+rather than sitting on its own line ("1 word differ from gold, out of 6. 3 more are the
+same words written differently, hidden."), and the toggle names its number —
+"Show conventions (3)" / "Hide conventions (3)" — so the reader never has to click to
+learn how much is behind it. The side-by-side's per-column header states its own hidden
+count beside its visible one, GitLab-style, instead of one figure for the whole grid.
+**No evidence found for:** a product that separates *formatting-only* differences from
+real ones in prose (rather than code) and says so on screen. The nearest is the whitespace
+rule in code review, which is what this step was modelled on.
 
 ---
 

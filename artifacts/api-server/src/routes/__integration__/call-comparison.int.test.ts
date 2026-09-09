@@ -63,8 +63,11 @@ beforeAll(async () => {
   });
   // M-10f: the batch cell measures only turnaround. Scored, ok, and still
   // no end-of-audio number -- there was no moment the audio ended.
+  // R-6: the trailing "um" is the whole point of this transcript now -- one
+  // insertion, and the ONLY difference from the draft, so a `convention`
+  // that fails to serialise leaves this cell reading as a real error.
   const batchResult = await fx.result(runId, callId, batchProviderId, {
-    hypothesisTranscript: "the quick brown fox jumps",
+    hypothesisTranscript: "the quick brown fox jumps um",
   });
   await fx.score(batchResult.id, { latencyFinalMs: 3_400 });
   await fx.result(runId, callId, failedProviderId, {
@@ -157,6 +160,28 @@ describe("GET /api/benchmark/calls/:callId/comparison", () => {
     // reason again -- nothing ran, not "a batch API had no end of audio".
     expect(byProvider.get(failedProviderId).latencyEndOfAudioMs).toBeNull();
     expect(byProvider.get(missingProviderId).latencyEndOfAudioMs).toBeNull();
+  });
+
+  // R-6: the mark is computed in diffAgainstReference and read by nothing
+  // but the browser, so the wire is the only place it can be proved. Both
+  // halves together: a filler marked, and a real word next to it NOT
+  // marked, because a test that only saw the true case would pass on a
+  // function that returned true for everything.
+  it("marks a difference that is only a convention, and leaves a real one unmarked", async () => {
+    const res = await request(server).get(`/api/benchmark/calls/${callId}/comparison`);
+    expect(res.status).toBe(200);
+    const byProvider = new Map<string, any>(res.body.rows.map((r: any) => [r.providerId, r]));
+
+    const batchDiff = byProvider.get(batchProviderId).diff;
+    const batchOps = batchDiff.wordDiff.filter((o: any) => o.op !== "ok");
+    expect(batchOps).toEqual([{ op: "ins", ref: null, hyp: "um", convention: true }]);
+    // And the count did not move: WER is WER, and the Differ / ref column
+    // still charges the provider for the filler it added.
+    expect(batchDiff.wordsDiffer).toBe(1);
+    expect(batchDiff.werVsReference).toBeCloseTo(0.2);
+
+    const okOps = byProvider.get(okProviderId).diff.wordDiff.filter((o: any) => o.op !== "ok");
+    expect(okOps).toEqual([{ op: "sub", ref: "jumps", hyp: "jumped" }]);
   });
 
   it("404s on an unknown call and refuses a malformed id with a sentence", async () => {

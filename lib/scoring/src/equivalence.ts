@@ -23,7 +23,7 @@
 // the words-to-watch list compare on. normalizeTranscript() (WER, the word
 // diff view) is deliberately left alone: the diff still shows "gonna" vs
 // "going to" as a difference, it just never raises a flag.
-import { normalizeTranscript, splitDigitRuns } from "./index";
+import { normalizeTranscript, splitDigitRuns, type WordDiffOp } from "./index";
 
 /** Dropped before comparing. Narrow: "yeah" / "okay" / "right" are answers. */
 const DISFLUENCIES = new Set(["um", "uh", "umm", "uhh", "hmm", "mm", "mhm", "ah", "er", "erm"]);
@@ -142,4 +142,45 @@ export function canonicalTranscript(value: string): string {
 export function sameOnceCanonical(texts: readonly string[]): boolean {
   const canon = new Set(texts.map(canonicalTranscript));
   return canon.size === 1;
+}
+
+/**
+ * R-6: which of a word alignment's differences are only a convention.
+ *
+ * Marked per RUN of consecutive non-"ok" ops, not per op, because the
+ * commonest conventions in the corpus span two ops. "1 bedroom" against
+ * "1-bedroom" is one word on one side and two on the other, so the
+ * alignment writes a sub plus a del, and neither op on its own is equal to
+ * anything: sub("1" -> "1-bedroom") canonicalises to "1" against
+ * "1 bedroom". Joined, the run's two sides are "1 bedroom" against
+ * "1-bedroom", which is one canonical form. Same for "going to" against
+ * "gonna" (17 and 2 occurrences in the T-101 mining above).
+ *
+ * A run is marked only when BOTH its sides fold to the same canonical form,
+ * so a run holding one real error is not marked at all and the error stays
+ * on screen. Errs towards showing, never towards hiding.
+ *
+ * Nothing here changes a count: WER, `editCounts` and the caller's
+ * `wordsDiffer` all still count these ops as differences (docs/scoring-policy.md).
+ * The mark is for the reader, not for the arithmetic.
+ */
+export function markConventionOps(ops: readonly WordDiffOp[]): WordDiffOp[] {
+  const out = ops.map((op) => ({ ...op }));
+  let start = 0;
+  while (start < out.length) {
+    if (out[start]!.op === "ok") {
+      start += 1;
+      continue;
+    }
+    let end = start;
+    while (end + 1 < out.length && out[end + 1]!.op !== "ok") end += 1;
+    const run = out.slice(start, end + 1);
+    const reference = run.map((op) => op.ref ?? "").join(" ");
+    const hypothesis = run.map((op) => op.hyp ?? "").join(" ");
+    if (sameOnceCanonical([reference, hypothesis])) {
+      for (const op of run) op.convention = true;
+    }
+    start = end + 1;
+  }
+  return out;
 }

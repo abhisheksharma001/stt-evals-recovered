@@ -21,7 +21,7 @@ import {
   benchmarkScoresTable,
   db,
 } from "@workspace/db";
-import { diffWords, normalizeTranscript } from "@workspace/scoring";
+import { diffWords, markConventionOps, normalizeTranscript } from "@workspace/scoring";
 import { GetCallComparisonResponse, type ZodInput } from "@workspace/api-zod";
 import { isFailureClass, isRetryableFailureClass, type FailureClass } from "@workspace/stt-providers";
 import { matchKnownFailure } from "./agent";
@@ -74,7 +74,12 @@ export function cellRetryable(status: string, failureClass: string | null | unde
 
 export function diffAgainstReference(reference: string, hypothesis: string): ComparisonDiff {
   const ref = words(stripSpeakerLabels(reference));
-  const ops = diffWords(ref, words(hypothesis));
+  // R-6: the alignment is unchanged; each difference that is only a
+  // convention ("1-bedroom" against "1 bedroom", a stray "um") is marked so
+  // the view can render it as agreement. wordsDiffer and werVsReference are
+  // computed AFTER the mark and still count every one of them -- WER is WER,
+  // and a person writing a gold needs the raw diff (docs/scoring-policy.md).
+  const ops = markConventionOps(diffWords(ref, words(hypothesis)));
   const wordsDiffer = ops.filter((o) => o.op !== "ok").length;
   return {
     wordDiff: ops,

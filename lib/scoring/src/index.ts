@@ -64,6 +64,13 @@ export type WordDiffOp = {
   op: "ok" | "sub" | "del" | "ins";
   ref: string | null;
   hyp: string | null;
+  /** R-6: set by markConventionOps() when this op is part of a difference
+   *  that is only a convention ("1-bedroom" against "1 bedroom", a stray
+   *  "um"). The alignment itself never sets it, so an op that has been
+   *  through diffWords() alone -- and every score row stored before R-6 --
+   *  carries undefined, which reads as "not decided", not "not a
+   *  convention". */
+  convention?: boolean;
 };
 
 export type EntityScoreResult = EntityReference & {
@@ -436,4 +443,4 @@ export * from "./verdict";
 export * from "./trend";
 
 // T-101: the comparison form (equivalences folded in). See equivalence.ts.
-export { canonicalTranscript, sameOnceCanonical } from "./equivalence";
+export { canonicalTranscript, sameOnceCanonical, markConventionOps } from "./equivalence";

@@ -13,4 +13,5 @@ export interface WordDiffOp {
   ref: string | null;
   /** @nullable */
   hyp: string | null;
+  convention?: boolean;
 }
