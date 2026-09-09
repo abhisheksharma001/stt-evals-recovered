@@ -7228,6 +7228,57 @@ as evidence any entry was read.
 
 ---
 
+### R-48 — A stalled poll stops holding the run open past its own budget — **done**
+
+Found by sampling `ox-alpha/bug-register-waves.md` rather than by reading it in order. Three
+of the six findings in its `poll.ts` section are stale — the *"fixed 120s ceiling
+triple-bills long calls"* complaint was answered by T-8's `scaledPollTimeoutMs`, which the
+adapters do call. The other three are live and say the same thing: the deadline is checked
+only **between** attempts.
+
+**Measured, not assumed:** `AbortSignal` and `AbortController` appear **zero times in all of
+`lib/stt-providers`**. Nothing bounded an individual poll GET. `pollUntil` read
+`Date.now()` after `await fn()` returned, so a stalled socket held the worker slot, the
+vendor concurrency slot and the run's advisory-lock client until undici's own default gave
+up — minutes past a budget of seconds. **This is the second candidate mechanism for O-116's
+three runs stuck at `running`**, alongside R-45's pool crash. Neither is confirmed as the
+cause of those three.
+
+Each attempt is now raced against what is left of the budget, and the sleep between
+attempts is clamped to it.
+
+**What it deliberately does not do: cancel the request.** There is no signal to hand the
+adapters' `fetch` calls, and adding one changes every adapter — including their submit
+legs, which is precisely the surface R-36 had to make safe after B-86. The socket is left
+to undici. What is freed on time is what the run is actually short of. A poll GET is a
+read: abandoning one bills nothing and loses nothing a later attempt could not read again.
+
+**The abandoned promise gets its own catch.** A rejection arriving after the race would
+otherwise be an unhandled rejection — the same shape of process death R-45 just fixed on
+the pool. There is a test for it.
+
+**One behaviour change, stated plainly.** The loop no longer sleeps a full interval past
+the deadline and issues one more request. Against a budget of 60s to 900s that grace was
+worth at most one interval, and T-8 already settled that a timeout is terminal.
+
+**Proved by breaking it.** Reverting to `await fn()` fails the stalled-poll test; the
+clamped-sleep test fails on elapsed time. stt-providers **122** (117 before), scoring 194,
+api-server unit 223, typecheck clean.
+
+**What this does not prove.** No test drives a real stalled socket — the tests hold a
+promise open, which is the same shape as far as `pollUntil` can tell but not the same as a
+hung TCP read. And nothing here touches `fetchAudioBytes` (B-38), which is still unbounded
+and needs a size and time budget that nobody has chosen yet.
+
+**Acceptance:** WHEN a poll attempt outlives the remaining budget THEN `pollUntil` SHALL
+throw `PollTimeoutError` without waiting for it; AND the abandoned attempt's later
+rejection SHALL not surface as an unhandled rejection.
+**Verify:** the five tests in `lib/stt-providers/src/poll-deadline.test.ts`, on real timers.
+**Must not:** pass an `AbortSignal` into a submit or upload leg; add a new timeout constant
+— the budget already exists; treat an abandoned poll as a billing event.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

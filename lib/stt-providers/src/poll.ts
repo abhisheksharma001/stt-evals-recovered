@@ -51,11 +51,52 @@ export async function pollUntil<T>(
 ): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const result = await fn();
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new PollTimeoutError(timeoutMs);
+    // R-48: bounded by what is left of the budget, not merely checked between
+    // attempts. `timeoutMs` used to be advisory: the deadline was only read
+    // after `fn()` resolved, so a poll GET that stalled held the worker slot,
+    // the vendor concurrency slot and the run's advisory-lock client until
+    // undici's own default gave up -- minutes past a budget of seconds. There
+    // is no AbortSignal anywhere in this package, so nothing else bounded it.
+    const result = await withinRemaining(fn(), remaining, timeoutMs);
     if (result !== null) return result;
-    if (Date.now() >= deadline) {
-      throw new PollTimeoutError(timeoutMs);
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const left = deadline - Date.now();
+    if (left <= 0) throw new PollTimeoutError(timeoutMs);
+    // Clamped: sleeping a full interval past the deadline is how the loop used
+    // to issue one more request after its budget was spent.
+    await new Promise((resolve) => setTimeout(resolve, Math.min(intervalMs, left)));
+  }
+}
+
+/** Resolves with `pending`'s value, or throws PollTimeoutError once `ms` has
+ *  passed -- whichever happens first.
+ *
+ *  This does NOT cancel the request behind `pending`: there is no AbortSignal
+ *  to hand it, and adding one changes every adapter's fetch call. The socket
+ *  is left to undici's own bound. What it frees on time is what the run is
+ *  actually short of -- the worker slot, the vendor slot and the pooled
+ *  client -- and a poll GET is a read, so abandoning one bills nothing and
+ *  loses nothing that a later attempt could not read again.
+ *
+ *  The abandoned promise gets a catch of its own: without one, a rejection
+ *  arriving after the race is an unhandled rejection, which is a different
+ *  way to kill the process (see R-45). */
+async function withinRemaining<T>(
+  pending: Promise<T | null>,
+  ms: number,
+  timeoutMs: number,
+): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new PollTimeoutError(timeoutMs)), ms);
+  });
+  try {
+    return await Promise.race([pending, expiry]);
+  } catch (err) {
+    if (err instanceof PollTimeoutError) pending.catch(() => {});
+    throw err;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
