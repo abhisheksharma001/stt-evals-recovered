@@ -8,7 +8,10 @@
 
 export interface ProviderUpdate {
   disabled?: boolean;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
   costPerMinute?: number;
   configNote?: string;
 }
