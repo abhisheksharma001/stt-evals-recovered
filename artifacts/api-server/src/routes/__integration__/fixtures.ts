@@ -10,6 +10,7 @@
 // paths it exercises. New read-route suites start here instead.
 import { eq, inArray } from "drizzle-orm";
 import {
+  agentMarksTable,
   auditLogTable,
   benchmarkAgentScansTable,
   benchmarkBulksTable,
@@ -223,6 +224,11 @@ export class Fixtures {
     if (this.rankingIds.length)
       await db.delete(benchmarkRankingsTable).where(inArray(benchmarkRankingsTable.id, this.rankingIds));
     if (this.auditIds.length) await db.delete(auditLogTable).where(inArray(auditLogTable.id, this.auditIds));
+    // U-1: marks are created only through their route, which stamps the
+    // `x-actor` this fixture sends as createdByLabel. They survive a call's
+    // delete on purpose (`onDelete: "set null"` -- a mark is about the agent,
+    // not the call), so nothing else here reaches them.
+    await db.delete(agentMarksTable).where(eq(agentMarksTable.createdByLabel, this.actor));
     // Bulk templates are created only through their route (T-177), which
     // stamps the `x-actor` this fixture sends as createdByLabel.
     await db.delete(bulkTemplatesTable).where(eq(bulkTemplatesTable.createdByLabel, this.actor));

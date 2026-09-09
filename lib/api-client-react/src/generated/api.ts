@@ -20,6 +20,9 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AgentMark,
+  AgentMarkCreate,
+  AgentMarkUpdate,
   AgentModelList,
   AgentScan,
   AgentScanDecision,
@@ -59,6 +62,7 @@ import type {
   GetClientVolumeParams,
   GetWordsToWatchParams,
   HealthStatus,
+  ListAgentMarksParams,
   ListAgentScansParams,
   ListAuditLogParams,
   ListBenchmarkCallsParams,
@@ -4600,5 +4604,303 @@ export const useRejectAgentScan = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getRejectAgentScanMutationOptions(options));
+    }
+
+export const getListAgentMarksUrl = (params?: ListAgentMarksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/agent-marks?${stringifiedParams}` : `/api/benchmark/agent-marks`
+}
+
+/**
+ * @summary U-1: the human marks made while reading results -- what to do, or what to change on the agent. A mark is a proposal only; nothing here has been sent to Vapi.
+ */
+export const listAgentMarks = async (params?: ListAgentMarksParams, options?: Parameters<typeof customFetch>[1]): Promise<AgentMark[]> => {
+
+  return customFetch<AgentMark[]>(getListAgentMarksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentMarksQueryKey = (params?: ListAgentMarksParams,) => {
+    return [
+    `/api/benchmark/agent-marks`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAgentMarksQueryOptions = <TData = Awaited<ReturnType<typeof listAgentMarks>>, TError = ErrorType<unknown>>(params?: ListAgentMarksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentMarks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentMarksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentMarks>>> = ({ signal }) => listAgentMarks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentMarks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentMarksQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentMarks>>>
+export type ListAgentMarksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary U-1: the human marks made while reading results -- what to do, or what to change on the agent. A mark is a proposal only; nothing here has been sent to Vapi.
+ */
+
+export function useListAgentMarks<TData = Awaited<ReturnType<typeof listAgentMarks>>, TError = ErrorType<unknown>>(
+ params?: ListAgentMarksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentMarks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentMarksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAgentMarkUrl = () => {
+
+
+
+
+  return `/api/benchmark/agent-marks`
+}
+
+/**
+ * @summary Record one mark. The note is always required; the typed action is optional (categories come from reading marks, not from forcing one at capture time).
+ */
+export const createAgentMark = async (agentMarkCreate: AgentMarkCreate, options?: Parameters<typeof customFetch>[1]): Promise<AgentMark> => {
+
+  return customFetch<AgentMark>(getCreateAgentMarkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(agentMarkCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateAgentMarkMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAgentMark>>, TError,{data: BodyType<AgentMarkCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAgentMark>>, TError,{data: BodyType<AgentMarkCreate>}, TContext> => {
+
+const mutationKey = ['createAgentMark'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAgentMark>>, {data: BodyType<AgentMarkCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAgentMark(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAgentMarkMutationResult = NonNullable<Awaited<ReturnType<typeof createAgentMark>>>
+    export type CreateAgentMarkMutationBody = BodyType<AgentMarkCreate>
+    export type CreateAgentMarkMutationError = ErrorType<void>
+
+    /**
+ * @summary Record one mark. The note is always required; the typed action is optional (categories come from reading marks, not from forcing one at capture time).
+ */
+export const useCreateAgentMark = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAgentMark>>, TError,{data: BodyType<AgentMarkCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAgentMark>>,
+        TError,
+        {data: BodyType<AgentMarkCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateAgentMarkMutationOptions(options));
+    }
+
+export const getUpdateAgentMarkUrl = (markId: string,) => {
+
+
+
+
+  return `/api/benchmark/agent-marks/${markId}`
+}
+
+/**
+ * @summary Edit a mark's note, action or status. Setting status to `applied` by hand is refused -- only U-3's apply may claim a mark was applied.
+ */
+export const updateAgentMark = async (markId: string,
+    agentMarkUpdate: AgentMarkUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AgentMark> => {
+
+  return customFetch<AgentMark>(getUpdateAgentMarkUrl(markId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(agentMarkUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateAgentMarkMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAgentMark>>, TError,{markId: string;data: BodyType<AgentMarkUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAgentMark>>, TError,{markId: string;data: BodyType<AgentMarkUpdate>}, TContext> => {
+
+const mutationKey = ['updateAgentMark'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAgentMark>>, {markId: string;data: BodyType<AgentMarkUpdate>}> = (props) => {
+          const {markId,data} = props ?? {};
+
+          return  updateAgentMark(markId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAgentMarkMutationResult = NonNullable<Awaited<ReturnType<typeof updateAgentMark>>>
+    export type UpdateAgentMarkMutationBody = BodyType<AgentMarkUpdate>
+    export type UpdateAgentMarkMutationError = ErrorType<void>
+
+    /**
+ * @summary Edit a mark's note, action or status. Setting status to `applied` by hand is refused -- only U-3's apply may claim a mark was applied.
+ */
+export const useUpdateAgentMark = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAgentMark>>, TError,{markId: string;data: BodyType<AgentMarkUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAgentMark>>,
+        TError,
+        {markId: string;data: BodyType<AgentMarkUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAgentMarkMutationOptions(options));
+    }
+
+export const getDeleteAgentMarkUrl = (markId: string,) => {
+
+
+
+
+  return `/api/benchmark/agent-marks/${markId}`
+}
+
+/**
+ * @summary Remove a mark outright. Dismissing (PATCH status=dismissed) is usually the better move -- it keeps the note readable.
+ */
+export const deleteAgentMark = async (markId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteAgentMarkUrl(markId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteAgentMarkMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgentMark>>, TError,{markId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAgentMark>>, TError,{markId: string}, TContext> => {
+
+const mutationKey = ['deleteAgentMark'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAgentMark>>, {markId: string}> = (props) => {
+          const {markId} = props ?? {};
+
+          return  deleteAgentMark(markId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAgentMarkMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAgentMark>>>
+
+    export type DeleteAgentMarkMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove a mark outright. Dismissing (PATCH status=dismissed) is usually the better move -- it keeps the note readable.
+ */
+export const useDeleteAgentMark = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAgentMark>>, TError,{markId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAgentMark>>,
+        TError,
+        {markId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteAgentMarkMutationOptions(options));
     }
 
