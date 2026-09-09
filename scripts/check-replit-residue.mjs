@@ -29,6 +29,14 @@ import { dirname, join } from "node:path";
 
 const KEPT = "@replit/vite-plugin-runtime-error-modal";
 
+/** This file, skipped by direction 1. The list of names that must not appear
+ *  has to be written down somewhere, and this is that somewhere -- so the
+ *  check matches itself on every line of REMOVED below. Caught by the break
+ *  tests and not before them: until the first commit the file was untracked,
+ *  `git ls-files` did not return it, and the scan was green for a reason
+ *  that had nothing to do with the tree being clean. */
+const SELF = "scripts/check-replit-residue.mjs";
+
 /** Every string R-16 took out. Each one is a package name, so a bare
  *  substring match is exact enough -- and `@replit/` alone is not on this
  *  list, because KEPT contains it. */
@@ -65,7 +73,7 @@ function codeLines(text) {
 
 // ---- direction 1: nothing removed came back -------------------------------
 for (const file of tracked()) {
-  if (file.endsWith(".md")) continue;
+  if (file.endsWith(".md") || file === SELF) continue;
   let text;
   try {
     text = readFileSync(file, "utf8");
