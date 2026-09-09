@@ -86,10 +86,17 @@ hypothesis length, precisely so that a wordier hypothesis cannot lower its own r
 flag rate (§2, finding 1) broke that rule.
 
 **On boosts for the production model.** Keyterm prompting is supported on nova-3 *and
-Flux*, up to 100 plain terms, one `keyterm` parameter per term, and on Flux the list can
-be updated mid-stream with a `Configure` message.
+Flux*, one `keyterm` parameter per term, and on Flux the list can be updated mid-stream
+with a `Configure` message. **Corrected 2026-09-09 (building M-19a):** this paragraph
+used to read "up to 100 plain terms". Deepgram's page states no maximum number of terms
+at all -- the documented limit is *"Key Terms are limited to 500 tokens per request;
+anything beyond that will return an error"*, with a recommendation to "focus on the most
+important 20-50 terms". A term budget and a token budget are not the same guard: 100
+short terms pass, 60 long ones may not. Keyterm prompting also covers **multilingual**
+nova-3, not only monolingual.
 ← [Deepgram, Keyterm Prompting](https://developers.deepgram.com/docs/keyterm), read
-2026-09-08. So Tune mode (Part F) has a real target on the production model.
+2026-09-08 and re-read 2026-09-09. So Tune mode (Part F) has a real target on the
+production model.
 
 **On sample size.** AA-AgentTalk benchmarks streaming STT on 469 voice-agent samples,
 about 250 minutes (v6 §1). This corpus holds 123 audio minutes of which about 29 % is the
@@ -309,7 +316,13 @@ terms, `Configure` mid-stream); the seed vocabulary is the existing words-to-wat
 and the reading-pairs miner (`artifacts/api-server/src/mine-reading-pairs.ts`); the first
 subject is the Land And Apartment account, whose assistants have 39, 18 and 15 calls.
 **F2 — M-19 splits.** The Deepgram parameter fix (`keywords` → `keyterm` for nova-3;
-Flux already sends `keyterm`) is a real bug with a unit test and no spend — M-19a, now.
+Flux already sends `keyterm`) is a real bug with a unit test and no spend — M-19a.
+**Shipped 2026-09-09 (PR #121).** Two things the plan here did not have right, both
+corrected where they were written: no boost had ever been *sent* (the executor has never
+set `keywordBoosts`), so this was a latent bug and not a repair of past results; and the
+"100 terms" cap this document and five others carried is not Deepgram's — the documented
+limit is 500 tokens per request. The token-budget guard therefore moves to M-19b, and F2's
+question becomes how many of Rush's 120 terms fit in 500 tokens.
 The boost plumbing on a bulk (M-19b) waits until Tune mode has produced a list for an
 assistant that has none, because until then `boosts: production` carries an empty list for
 124 of 176 calls. **F3 — write-back (v5 Part F)** stays parked behind F1 and open
@@ -359,6 +372,6 @@ M-13 and M-14 parked.
 | R-5 | D1 the judge reads the assistant's prompt and vocabulary | cents (go-spend) |
 | R-6 | D2 conventions hidden in the comparison view, toggle to show | none |
 | R-7 | E1 count the triage seeds (grill script) | none |
-| M-19a / M-19b | F2 the split of M-19 | none / later |
+| M-19a / M-19b | F2 the split of M-19 | **M-19a shipped 2026-09-09, PR #121** / M-19b later |
 | — | C2 twenty golds: a person's task, not a step | time |
 | — | F1 Tune mode: grill first, in "Not yet stepped" | — |

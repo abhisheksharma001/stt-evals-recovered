@@ -3892,12 +3892,18 @@ terms' SHA-256 (FR-P2, R6). Two bulks on the same calls are the paired experimen
 `keywords`); integration case on the manifest hash; `pnpm run typecheck`. Live run only
 with a "go spend".
 **Must not:** default to `production`; send a boost list longer than the vendor's cap
-(Deepgram: 100 terms / 500 tokens — truncate and record `boostsTruncated: true`).
+(Deepgram: **500 tokens per request across all keyterms**, an error beyond — truncate and
+record `boostsTruncated: true`. **Corrected 2026-09-09:** this read "100 terms / 500
+tokens"; the term count is not Deepgram's, so the guard M-19b writes has to count tokens,
+not terms).
 
 ---
 
 ### M-19a — Deepgram nova-3 gets `keyterm`; nova-2 keeps `keywords`
 
+**Status:** done 2026-09-09 (PR #121, `bc9a42b72625`), deployed `31a936b6d72e -> bc9a42b72625`,
+live bundle verified: `deepgramBoostParam` present at its definition and both call sites,
+`params.append("keywords"` gone.
 **PR:** one. Spends nothing.
 **Depends on:** nothing.
 **Files:** `lib/stt-providers/src/adapters/deepgram.ts` (batch), `lib/stt-providers/src/adapters/deepgram-streaming.ts`
@@ -3905,18 +3911,75 @@ with a "go spend".
 own test file if one exists by then), `docs/provider-matrix.md` (the boost parameter per
 row).
 **Today:** both files forward `input.keywordBoosts` as repeated `keywords` parameters —
-the nova-2 parameter. Nova-3 uses `keyterm`; every boost ever sent to a nova-3 row has
-had no effect, silently (backlog, 2026-09-07). `deepgram-flux.ts` already sends `keyterm`.
+the nova-2 parameter. Nova-3 uses `keyterm`. `deepgram-flux.ts` already sends `keyterm`.
+**Corrected 2026-09-09 (shipping this step):** this paragraph used to end "every boost
+ever sent to a nova-3 row has had no effect, silently (backlog, 2026-09-07)". **None was
+ever sent.** `artifacts/api-server/src/lib/run-executor.ts` line 800 passes `callId`,
+`audioBytes`, `diarize`, `model` and `audioDurationSeconds`; nothing in this repo has ever
+set `keywordBoosts` on any adapter. The bug was real and latent — no transcript this tool
+has produced was affected by it. The claim is corrected in the backlog entry that made it
+too.
 **Change:** the URL builder picks the parameter from the model: `keyterm` for `nova-3*`
 and Flux, `keywords` for `nova-2*` and older. One helper shared by the batch and
 streaming adapters so the two nova-3 rows still differ only in how the audio arrives
 (M-11a's rule).
 **Acceptance:** WHEN `keywordBoosts` is set THEN a nova-3 request SHALL carry one
 `keyterm` per term and no `keywords`; a nova-2 request SHALL carry `keywords` and no
-`keyterm`; AND WHEN it is empty THEN neither parameter SHALL appear.
+`keyterm`; AND WHEN it is empty THEN neither parameter SHALL appear. **Met**, on the
+helper, on the batch adapter's real request URL and on the streaming socket URL.
 **Verify:** unit test on the URL builder for the three cases; `pnpm run typecheck:libs`.
-**Must not:** send a list longer than 100 terms (truncate and record `boostsTruncated:
-true` on the input, as M-19 said); touch Flux; make a call.
+**Must not:** ~~send a list longer than 100 terms (truncate and record `boostsTruncated:
+true` on the input, as M-19 said)~~ — **withdrawn 2026-09-09, and deliberately not
+implemented**: the cap this clause names does not exist. Deepgram documents *"Key Terms
+are limited to 500 tokens per request; anything beyond that will return an error"* and
+recommends the most important 20–50 terms; no maximum *number* of terms appears anywhere
+on the page. A token budget is a different guard from a term count, and it belongs to the
+step that actually sends a list (M-19b / v6 F2), not to a parameter rename with no caller.
+Touch Flux; make a call. Both held: `deepgram-flux.ts` is untouched, nothing was spent.
+
+> **What shipped.** One exported helper, `deepgramBoostParam(model)` in `deepgram.ts`,
+> returning `"keyterm"` for `nova-3*` and `flux*` and `"keywords"` for everything older.
+> The batch adapter resolves its model once and asks the helper; `deepgram-streaming.ts`
+> imports the same helper rather than keeping a second copy. `docs/provider-matrix.md`
+> loses `keywords=term:boost` as *the* Deepgram boost parameter and gains the per-model
+> rule, the 500-token cap and the fact that `keyterm` has no weights at all — which also
+> answers its own open question 2.
+>
+> Break test: **13 mutations, all 13 caught, on two consecutive passes**, tree clean after
+> every restore. Six on the helper (always-keyterm, always-keywords, inverted branches,
+> nova-2 for nova-3, every-nova, Flux dropped), four on the batch adapter (hardcoding
+> either spelling, reading `input.model` instead of the resolved fallback, changing the
+> fallback itself) and three on the streaming adapter. Tests: 96 in `@workspace/stt-providers`
+> (was 89), 161 scoring, 157 api-server, root typecheck clean, four CI guards pass.
+
+**Correction to M-19a as it was written.** The Files list was right on all four entries —
+the second step in a row needing no Files correction. Two claims in the prose were not:
+the "every boost ever sent" line above, and the 100-term cap in the Must-not. The second
+one had spread: **the same wrong number was in six documents** — this block, M-19's own
+Must-not, the Part E "Not yet stepped" row, the v6 F2 row, `docs/PRD-v5-optimize.md`,
+`docs/PRD-v6-measure.md`, `docs/PRD-v7-decide.md` and the 2026-09-08 backlog entry — all
+of them tracing to one reading of one docs page on 2026-09-08. Every one is corrected in
+place, each saying what it used to read.
+
+**What it taught.**
+1. **A number read once and quoted onward is a number checked once.** Nothing here
+   re-derived the 100; it was copied forward eight times in one day because each new
+   document was written from the last one. The re-read cost one fetch.
+2. **A cap on the wrong unit is not a conservative cap.** Truncating at 100 terms neither
+   prevents the 500-token error nor is required by anything — it would silently drop terms
+   to satisfy a limit the vendor never set. M-19b now knows to count tokens.
+3. **"Silently wrong" and "wrong in production" are different claims.** The parameter was
+   wrong; the path was never fed. Saying the strong version in a backlog entry made the
+   fix sound like a repair of past results, which it is not.
+4. **The break test earns its keep on a helper.** Mutation I — reading `input.model`
+   instead of the resolved `model` — is the one a reviewer would not see: it is correct on
+   every row the catalog names a model for, and wrong only on the fallback. One test
+   asserting the fallback caught it.
+
+**Left for later.** The token-budget guard (M-19b / v6 F2, and F2's question is now "how
+many of Rush's 120 terms fit in 500 tokens", not "does term 101 fail"). The import-cycle
+guard never looking at `lib/` — logged in the backlog, found while adding this step's
+cross-adapter import.
 
 ---
 
@@ -4830,11 +4893,11 @@ described but not grilled, so they stay here with the questions that block them.
 | D1 | Completion-time estimate | Is a rough estimate ("about 20 minutes") enough, or does it need to be a live countdown on the running card? |
 | D2 | Cartesia ingest rate | Costs a handful of real transcription calls to measure. Approve the spend? |
 | D3 | Fixed-cause failures stop reading as open | Should the 15 stale cells be retried once to clear them, or just relabelled? Retrying costs provider money. |
-| E | Tune mode and the tuning report | The largest item. Needs a full grill: which client first, which provider, and what a person does with the report once they have it. **New inputs 2026-09-08 (PRD v7 Part F):** the target is Flux (`keyterm`, up to 100 terms, `Configure` mid-stream); 14 of 14 largest assistants have 0 keyterms, so v5 E4's keep / add / replace is moot and the mode is greenfield; first subject Land And Apartment (assistants with 39, 18, 15 calls); seed vocabulary = words-to-watch + `artifacts/api-server/src/mine-reading-pairs.ts`. |
+| E | Tune mode and the tuning report | The largest item. Needs a full grill: which client first, which provider, and what a person does with the report once they have it. **New inputs 2026-09-08 (PRD v7 Part F):** the target is Flux (`keyterm`, one parameter per term, `Configure` mid-stream; **corrected 2026-09-09** -- this said "up to 100 terms" and Deepgram documents no term count, only 500 tokens per request); 14 of 14 largest assistants have 0 keyterms, so v5 E4's keep / add / replace is moot and the mode is greenfield; first subject Land And Apartment (assistants with 39, 18, 15 calls); seed vocabulary = words-to-watch + `artifacts/api-server/src/mine-reading-pairs.ts`. |
 | v7 E | A monitor path: check only the calls that need it | Not before R-7 has counted the seeds. If no stored production signal beats the base rate for "the hybrid pass flagged this call", there is nothing to trigger on and the path is not built on this corpus. Never feeds rankings. |
 | F | Write a transcriber back to Vapi | Dev accounts only, or production too? |
 | v6 E4 | Vendor data-handling record in `docs/data-governance.md` §4 (six vendors already sent audio; every checkbox unticked) | Who signs the DPAs — Ellavox as processor for the client's callers? A legal answer the tool can only record. |
-| v6 F2 | Deepgram keyterm cap test on the Rush assistant (120 terms sent; Deepgram caps at 100 / 500 tokens) | Three paid Deepgram calls — pre-approved as cents, or a "go spend" each time? |
+| v6 F2 | Deepgram keyterm cap test on the Rush assistant (120 terms sent; Deepgram caps at **500 tokens per request**, error beyond -- **corrected 2026-09-09**, the "100 terms" this row used to carry is not in Deepgram's docs) | Three paid Deepgram calls — pre-approved as cents, or a "go spend" each time? |
 | v6 E1 | Backup destination | Local folder only, or also a cloud bucket / iCloud Drive? Local-only dies with the laptop. |
 | v6 E3 | Customer-word floor | 30 words as the default, or lower for the transfer-heavy Land And Apartment assistants (median 2 customer turns per call)? M-16 ships with 30 and the question stays open. |
 

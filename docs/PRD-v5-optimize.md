@@ -281,8 +281,9 @@ The mechanism, stated now so E2 is built to feed it:
 *Read live 2026-09-08 (PRD v7 §2, finding 3):* the 14 assistants with the most calls
 (124 of 176) have **no keyterms at all**, so for the main client this mode is greenfield
 and E4 below has nothing to keep, add to or replace yet. E stays the most valuable part
-on file; PRD v7 Part F carries the new inputs for its grill (Flux takes `keyterm`, up to
-100 terms, and can be reconfigured mid-stream).
+on file; PRD v7 Part F carries the new inputs for its grill (Flux takes `keyterm`, one
+parameter per term, and can be reconfigured mid-stream; **corrected 2026-09-09** -- this
+said "up to 100 terms", a cap Deepgram does not document, see M-19a).
 
 **V5-E4 — when a tuned config already exists.** Three explicit choices, never a
 silent merge: **Keep** (change nothing), **Add on top** (union of the existing

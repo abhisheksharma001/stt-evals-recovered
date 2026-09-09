@@ -1,3 +1,20 @@
+## Found 2026-09-09 (building M-19a): the import-cycle guard never looks at `lib/`
+
+`scripts/check-import-cycles.mjs` takes its root as an argument and defaults to
+`artifacts/api-server/src`, but both callers pass that path explicitly -- `package.json`
+(`check:cycles`) and `.github/workflows/ci.yml` line 58. So `lib/scoring`,
+`lib/stt-providers` and `lib/db` have never been cycle-checked, and they do import across
+files: `deepgram-streaming.ts` already imports two helpers from `cartesia.ts`, and M-19a
+added an import from `deepgram.ts` on top of it. Nothing is cyclic today -- `tsc --build`
+would fail differently if it were -- but the guard that is supposed to notice is pointed
+somewhere else.
+
+**Reproduce:** `node scripts/check-import-cycles.mjs lib/stt-providers/src` runs and
+passes; nothing in CI ever runs it.
+
+**Worth having:** one more line in the workflow, or a loop over the four roots. Small, and
+it earns its keep the first time a lib package grows a second cross-file helper.
+
 ## Found 2026-09-09 (building R-4): "N calls scored" is printed twice, and means two things
 Results prints the phrase in two places. The page-top bulk banner
 (`artifacts/stt-benchmark/src/components/verdict-headline.tsx` near line 303) says
@@ -88,8 +105,10 @@ so `boosts: production` (M-19) would carry an empty list for 124 of 176 calls, a
 E4's keep / add on top / replace has nothing to keep. M-19 is split: the parameter fix
 (`keywords` → `keyterm` for nova-3, a real silent bug) ships as M-19a; the plumbing
 waits for Tune mode to produce a list (M-19b). The good news inside it: Tune mode is
-greenfield for the whole main client, and Deepgram documents `keyterm` on Flux (up to
-100 terms, `Configure` mid-stream), so the production model can take what Tune finds.
+greenfield for the whole main client, and Deepgram documents `keyterm` on Flux
+(`Configure` mid-stream), so the production model can take what Tune finds. **Corrected
+2026-09-09:** the "up to 100 terms" this sentence carried is not in Deepgram's docs -- the
+documented limit is 500 tokens per request. See M-19a.
 
 **Reproduce:** the fourteen `assistantId`s from
 `select source_assistant_id, count(*) from benchmark_calls group by 1 order by 2 desc limit 14`,
@@ -288,9 +307,16 @@ is the class of thing M-10c had to fix on the rankings page.
 
 `deepgram.ts` and M-11a's `deepgram-streaming.ts` both forward `input.keywordBoosts` as
 repeated `keywords` parameters. Deepgram's keyword boosting for nova-3 is `keyterm`;
-`keywords` belongs to nova-2 and earlier. So every keyword boost the tool has ever sent
-to a nova-3 row has had no effect, silently -- and the benchmark's "keyword boosting"
-column on `benchmark_providers` says `true` for it.
+`keywords` belongs to nova-2 and earlier. So any keyword boost sent to a nova-3 row would
+have had no effect, silently -- and the benchmark's "keyword boosting" column on
+`benchmark_providers` says `true` for it.
+
+**Corrected and fixed 2026-09-09 (M-19a, PR #121).** This entry used to read "every
+keyword boost the tool has ever sent to a nova-3 row has had no effect". None was ever
+sent: `run-executor.ts` passes `callId`, `audioBytes`, `diarize`, `model` and
+`audioDurationSeconds`, and has never set `keywordBoosts` on any adapter. The bug was
+real and latent, not live -- no transcript this tool has produced was affected. Both
+adapters now pick the parameter from the model through one shared helper.
 
 M-11a mirrored the batch adapter deliberately, so that the two nova-3 rows differ only
 in how the audio arrives. Fixing one without the other would make the comparison a

@@ -400,9 +400,13 @@ are the paired experiment OD-8 asked for. **Check:** the manifest of a boosted b
 lists the terms' hash; the same call scored with and without boosts differs on Results
 and both rows say which they are.
 
-**F2 — the keyterm cap.** Deepgram accepts at most 100 keyterms / 500 tokens and
-recommends 20–50 ([docs](https://developers.deepgram.com/docs/keyterm)); Flux boosts
-differently. Rush sends 120. One test call with 120 terms, then 100, then 50, on the
+**F2 — the keyterm cap.** Deepgram documents **500 tokens per request across all
+keyterms, an error beyond**, and recommends the most important 20–50 terms
+([docs](https://developers.deepgram.com/docs/keyterm)); Flux boosts differently. Rush
+sends 120. **Corrected 2026-09-09 (building M-19a):** this line used to read "at most 100
+keyterms / 500 tokens". There is no documented cap on the *number* of terms; the 100 was
+never Deepgram's. So this test's question is not "does term 101 fail" but "how many of
+Rush's 120 terms fit in 500 tokens, and what does the request do when they do not". One test call with 120 terms, then 100, then 50, on the
 same audio, transcripts diffed. Report the finding on the Rush assistant's Setup line.
 Costs three transcriptions.
 
