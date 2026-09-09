@@ -177,6 +177,93 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.ellavox.stt-evals.bac
 launchctl bootout   gui/$(id -u)/ai.ellavox.stt-evals.backup   # bootstrap again to reload
 ```
 
+## The daily import (M-17) — written, NOT scheduled
+
+Vapi deletes a call's recording 14 days after the call. Six are already gone.
+`scripts/daily-import.sh` closes that hole: it previews the last day per
+configured account, keeps the calls that are not in the corpus and still have a
+recording, and imports them with `x-actor: scheduler`. It never launches a bulk
+and never calls a transcription provider — importing is a Vapi download and
+costs nothing.
+
+```bash
+bash scripts/daily-import.sh          # one day
+DAYS=2 bash scripts/daily-import.sh   # catch up after a missed night
+```
+
+**No launchd agent is installed.** The script was written to be held until Abhishek
+decided, and then ran by accident: a break-test mutation removed its `jq` guard and
+re-ran it with `jq` still on `PATH`, so it passed the guard and imported **200 calls at
+2026-09-09T06 UTC** (`benchmark_calls` 176 → 376, all `ready_to_run`, no provider
+results, audio cache 1.9 GB). Nothing has been deleted. Measured live 2026-09-09 before
+that happened: the Land And Apartment account produced **257
+calls in the last 24 hours, 252 of them importable**. The corpus is 176 calls
+in total. One night of this roughly doubles it; a month is on the order of
+7,500 calls and 7,500 cached recordings. That is a decision about disk, about
+what the benchmark corpus is *for*, and about audio retention — not a side
+effect of shipping a script. **Open item O-79 / O-90: Abhishek's call.**
+
+Two things the same measurement settled:
+
+- **The window is one day, not three.** `/benchmark/vapi/preview` takes no
+  cursor and caps at 500 calls per request. A 3-day window came back with
+  exactly 500 — truncated, with no way to ask for the rest. At 257 a day, one
+  day fits and three days cannot. If a day ever stops fitting, the script says
+  `WINDOW TRUNCATED`, names the account, and **exits non-zero**: a nightly job
+  that silently sees part of its window is the cliff it was written to prevent.
+- **Accounts are listed explicitly, with their vertical.** `vertical` is
+  required by the import contract and cannot be derived: the `default`
+  account's 22 calls carry three different verticals (trucking 8, rush 8,
+  property_management 6). Only `land-and-apartment: property_management` is
+  listed today. Adding one is a one-line edit to `ACCOUNTS` and a decision
+  somebody made on purpose.
+
+When it is scheduled, the plist goes beside the backup's — absolute paths, so
+it lives outside the repo at
+`~/Library/LaunchAgents/ai.ellavox.stt-evals.import.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.ellavox.stt-evals.import</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/abhisheksharma/gh-projects/stt-evals-recovered/scripts/daily-import.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/abhisheksharma/Library/Logs/stt-evals-import.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/abhisheksharma/Library/Logs/stt-evals-import.log</string>
+</dict>
+</plist>
+```
+
+03:00, an hour after the backup, so a night's import is always in the next
+morning's dump rather than half-written into the one running beside it. `PATH`
+includes `/opt/homebrew/bin` because this script needs `jq`, which a launchd
+agent's bare `PATH` would not find — the script checks for it and exits 1 with
+a named reason rather than failing halfway through a window.
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.ellavox.stt-evals.import.plist
+launchctl list | grep stt-evals-import
+tail ~/Library/Logs/stt-evals-import.log
+```
+
 ## When something is half-deployed
 
 - **Port still held after the kill**: the script waits 10 s then exits.

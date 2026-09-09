@@ -309,7 +309,11 @@ it "makes sense". That is the retired pass under a new name.
 `artifacts/api-server/src/mine-triage-signals.ts` (its 2×2 arithmetic in
 `artifacts/api-server/src/lib/triage-signals.ts`, unit-tested against synthetic cells so
 these numbers are provable without re-reading the corpus), run read-only against the dev
-database `stt_evals`. 176 calls, 315 scans, 124 with a latest scan. A scan that errored
+database `stt_evals`. 176 calls, 315 scans, 124 with a latest scan. **The corpus changed
+the same day** — an accidental run of M-17's importer added 200 unscored calls, taking it
+to 376 — so a re-run of the script will report different denominators. The table below is
+as of the 176-call corpus; the flag rate it turns on is unaffected, because the 200 new
+calls carry no scan. A scan that errored
 (5) or was rejected (1) is dropped from every population: it is not a verdict, and
 counting it as "not flagged" would invent one. A `null` column is dropped the same way —
 "not measured" is never "no".
