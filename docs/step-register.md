@@ -4670,6 +4670,83 @@ build the monitor — this step only decides whether to.
 
 ---
 
+### R-8 — The stored ranking rows are rewritten when the rule behind them changes
+
+**Status:** done 2026-09-09 (PR #126, `ba27068`). Nothing on the server changed — one
+script, and the rows it rewrote. **Abhishek's word, 2026-09-09: "do it" (O-84 / O-86).**
+**Learned:** (1) *a step can ship in code and be invisible on the page.* R-4 rewrote the
+sentence a ranking row carries; the column is written at rank time and no read path
+recomputes it, so for a full day all 29 rank-1 rows still served the retracted "Leading
+candidate ... Do not treat as decision-grade" copy R-4 had replaced. **A shipped change
+to stored copy is not shipped until the stored rows are rewritten.**
+(2) *a bulk-only pass was not enough, and only reading the page back caught it.* After
+the first apply, 28 of 29 were correct and one — the "Unassigned (no assistant ID
+captured at import)" group — still showed the old sentence. 45 of the 305 stored rows
+carry a null `bulkId`, written by `computeRankingsForRun` for the 17 standalone runs from
+before bulks existed, and the Results page's "latest per group" pick can surface them.
+Both writers are now driven.
+(3) *`computeRankingsForRun` deletes by run id, and a bulk's rows carry a representative
+run id that belongs to that bulk.* It is called only for runs whose own `bulkId` is null;
+calling it for a bulk's representative run would delete that bulk's freshly written rows.
+(4) *no break test, deliberately.* The script's only guard is `--apply`, and the mutation
+that removes it performs the write the guard exists to prevent — the exact shape of the
+M-17 accident. Its arithmetic is not new (18 cases in `ranking-recommendation.test.ts`,
+and both compute functions are the production path); what the step adds is the door, and
+the door was proved by the live rows.
+**Live result:** 145 rows, 29 rank-1, **0** still carrying the old sentence.
+`peerFlagsPer100Words` moved on 32 of 145 rows, with tied providers landing on one shared
+denominator (Cartesia 1.3514 → 1.2821, Deepgram 0.4255 → 0.4274, now equal) — which is
+what R-1 meant. The honest bulk's org verdict changed with it, from naming ElevenLabs a
+winner to **"Too close to call: AssemblyAI (0.4) and ElevenLabs (0.4) are inside the
+margin of error"** — the false winner the PRD v7 research found, now gone from the page.
+**PR:** one. Spends nothing: reads the database, calls no provider and no LLM.
+**Depends on:** R-1, R-4.
+**Files:** `artifacts/api-server/src/recompute-rankings.ts` (new).
+**Must not:** invent new ranking arithmetic; run without `--apply` being typed; touch a
+database other than the one it prints on its first line.
+
+---
+
+### R-9 — The Calls table says which calls a run has actually transcribed
+
+**Status:** done 2026-09-09 (PR #127, `d91ca2e`).
+**Learned:** (1) *`status` was never going to answer it.* Read live 2026-09-09: 376 calls
+in the corpus, **131** ever through a run, and **all 376** carrying `ready_to_run` —
+correctly, because an untouched import and a call five providers have transcribed really
+are both runnable. The split is a join, not a column, so it needed its own control; a new
+value in the Status select would have put a state there that no call holds.
+(2) *a failed cell counts as run.* The call went through a run and what came back is that
+run's answer. Reading this off scored `ok` cells — or off agent scans, which cover 124 of
+the 131 run calls live — puts seven calls that *were* run into the "never run" list,
+which is exactly the question the filter exists to answer.
+(3) *the break test found one dead guard.* Removing the `callIds.length === 0` early
+return changed nothing; checked against the driver, `inArray(col, [])` returns no rows
+rather than throwing, so the guard was unreachable-by-behaviour and was deleted with a
+comment saying why. 6 of the other 6 mutations were caught, re-run against the committed
+file.
+**Prompted by:** the 200 calls an accidental break-test run imported on 2026-09-09
+(O-91, kept on Abhishek's word) landing at the top of a newest-first table with nothing
+to show, hours before a demo. The accident exposed the gap; the daily importer (M-17, 252
+calls/day) would have made it permanent.
+**PR:** one. Spends nothing.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/calls.ts`,
+`artifacts/api-server/src/routes/benchmark.ts`, `lib/api-spec/openapi.yaml` (+ orval
+regen), `artifacts/stt-benchmark/src/pages/Corpus.tsx`,
+`artifacts/api-server/src/routes/__integration__/calls-list.int.test.ts`,
+`artifacts/stt-benchmark/src/pages/__render__/calls.test.tsx`.
+**Evidence (visual-and-research, 2026-09-09):** a derived cut stays separate from the
+record's own status field — Mobbin: [Airtable](https://mobbin.com/screens/094fb0f9-a0ce-4c53-abc4-a9a25c2a4644),
+[Twenty](https://mobbin.com/screens/c4089aab-6ec1-4507-b53f-19abd7dbf459),
+[Rox](https://mobbin.com/screens/6a5d9ce9-a20a-40cc-85cb-d07559009076); and
+[Workable](https://mobbin.com/screens/197b7105-f9d9-4c78-a67b-9f5ecc212190) /
+[Remote](https://mobbin.com/screens/4cbe7498-0064-49a8-a80c-692431aaaae3) put it above
+the table entirely. Counts ride in the option labels so the split reads before the filter
+is opened, and are computed over every call, not the filtered rows — a count that moved
+with the other filters could not be read as "how many exist".
+**Must not:** add the flag to a write response (it is a read-route decoration, absent not
+false, like the two cache flags); run one query per row; treat an absent flag as "run".
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
