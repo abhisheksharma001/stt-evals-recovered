@@ -7113,6 +7113,82 @@ listener attempt any repair — pg has already evicted the client.
 
 ---
 
+### R-46 — The twelve entries no disposition step ever named get read, and the two live ones get fixed — **done**
+
+R-45 found that R-35's *"all 100 entries carry a disposition"* was false. This reads the
+twelve, at HEAD, against source. **Nine were already gone. Three were live**, one of which
+R-45 had just fixed.
+
+| entry | disposition | the line that decides it |
+| --- | --- | --- |
+| B-2 Speechmatics posts `fetch_url`, provider dead on arrival | **fixed 2026-08-27** | `lib/stt-providers/src/adapters/speechmatics.ts:19` says so by name (FIX-2); the config built at `:65` has no `fetch_url` |
+| B-30 Review audio player hardcodes same-origin `/api` | **moot** | Review.tsx is deleted |
+| B-31 CSV formula injection, bare CR, no BOM | **fixed, all three** | `artifacts/stt-benchmark/src/pages/Rankings.tsx:176` guards the **raw** value, `:177` has CR in the escape class, `:202` prepends the BOM |
+| B-34 disabled provider still transcribes on re-execute | **fixed by R-13** | `artifacts/api-server/src/lib/run-executor.ts:405-412` reads `manuallyDisabled`, not the derived status |
+| B-37 assistant-ID / max-calls edits leave a stale preview "fresh" | **fixed** | `artifacts/stt-benchmark/src/pages/Import.tsx:391` and `:425`, both citing B-37 |
+| B-52 trailing slash renders 404 on every route | **fixed** | `artifacts/stt-benchmark/src/App.tsx:73` is the exact normalization the entry prescribed |
+| B-53 status dialog reopens with a stale prop | **fixed** | `artifacts/stt-benchmark/src/pages/Corpus.tsx:1009-1011`, a `useEffect` on `[open, call.status]` |
+| B-54 scientific-notation input corrupts `durationSeconds` | **fixed** | `artifacts/stt-benchmark/src/pages/Corpus.tsx:847-848` uses `Number` and `Number.isFinite` |
+| B-82 readiness sync resurrects a disabled provider | **live — fixed here, and narrower than written** | the update was a blind `WHERE id` off a stale snapshot. It was never a spend bug: R-13 made the executor read `manuallyDisabled`, so the harm is a switch that flips itself back on in Setup |
+| B-88 pg pool has no `error` listener | **live — fixed in R-45** | it was a **P0** and it had never been named in a disposition step |
+| B-89 deploy not gated on CI, prod mutex keyed by ref | **moot today, and blocked with B-3** | `.github/workflows/deploy-web.yml:30-31` is `workflow_dispatch` only since T-68, so the push half cannot happen; the ref-keyed mutex needs something hosted on Vercel to matter, and nothing is (O-114) |
+| B-91 scoring DP bomb, no input ceiling | **narrowed — not live as written** | measured below |
+| B-96 tied composites get nondeterministic ranks | **live — fixed here** | `run-executor.ts:1593` |
+
+**B-91 is what measuring beats reading, again.** The entry describes *"two full (n+1)x(m+1)
+matrices allocated sync"*. T-33 already rewrote that: distance is two `Int32Array` rows, and
+only the ops `Uint8Array` is full size. Then the inputs were measured rather than imagined.
+Live body limit, probed against the running API: **404 at 102,000 bytes, 413 at 105,000** —
+`express.json()`'s 100kb default, so gold via PATCH tops out near 16k words. The other side
+is not operator-supplied at all: across 649 stored hypotheses the longest is **260 words**,
+and the worst real pairing in the corpus is **186 x 260 = 0.05 MB**. The bomb needs both
+sides large and no route lets both be. It stays on the register as a bound worth keeping in
+mind if a route ever scores two request-supplied strings; it is not a P0 and nothing was
+written.
+
+**B-96 is the opposite: smaller-sounding than it is.** `providerAggregates.sort` compared
+composites and nothing else. `Array.prototype.sort` is stable, so a tie holds input order,
+and that order came from a SELECT with no `ORDER BY` — which PostgreSQL may change between
+two reads of unchanged data. Measured across the 275 stored ranking rows: **33 of 58 groups
+(57%) contain at least two providers with an identical quality vector, 94 rows in total.**
+More than half of every ranking ended in a tie whose winner nothing pinned. The comparator
+now lives in `artifacts/api-server/src/lib/ranking-order.ts` and breaks ties on
+`providerId`, the only stable unique key on the aggregate — `providerName` is
+operator-editable and can repeat. It does not claim either tied provider is better. It
+claims the answer stops moving on its own.
+
+**B-82 needed a seam to be provable.** The window is between the SELECT and the write,
+inside one process, and nothing outside can open it on purpose. `syncProviderReadiness`
+takes an optional `onBeforeUpdate` hook — unused in production, the same shape R-27 gave
+the executor — so the test flips `manuallyDisabled` inside the window deterministically
+instead of racing a sleep against it (O-27: the flake does not get papered over).
+
+**Proved by breaking it.** Two mutations on a committed tree: dropping the `providerId`
+tiebreak fails `artifacts/api-server/src/lib/ranking-order.test.ts`; dropping the
+`manuallyDisabled` precondition fails
+`artifacts/api-server/src/routes/__integration__/provider-readiness-race.int.test.ts` with
+the disabled provider reading `not_configured`. api-server unit **223** (218 before),
+integration **191** (189 before), typecheck clean, all six structural checks pass.
+
+**What this does not prove.** Nothing here re-ranks the 94 tied rows already stored; the
+tiebreak applies to rankings computed from now on. Nothing drives a real concurrent PATCH
+against a real GET either — the seam proves the guard, not the scheduler.
+
+**What was learned.** Nine of twelve were already fixed, which is the same 20%-harvest shape
+R-19 measured — but the three that were live included a **P0 that four triage passes had
+walked past**, because coverage was reported from the tranche just written rather than from
+a re-scan. The register needs a check that counts, not a claim that remembers.
+
+**Acceptance:** WHEN each of the twelve is read THEN it SHALL carry a disposition and the
+line that decides it; AND tied providers SHALL rank identically whichever order they arrive
+in; AND a status write derived from a row disabled since it was read SHALL be refused.
+**Verify:** the two break tests above; the B-91 and B-96 measurements re-runnable from the
+stored rows.
+**Must not:** re-rank stored rankings here; claim the seam proves the race; leave B-91 as a
+P0 without saying what was measured.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

@@ -170,7 +170,15 @@ async function ensureDefaultProviders(): Promise<void> {
 // adapter's API key env var is actually set, unless an operator has
 // manually disabled it (FR-P3). This keeps status truthful -- there is no
 // UI path that can claim "ready" without a real, working credential.
-export async function syncProviderReadiness(): Promise<void> {
+export async function syncProviderReadiness(opts?: {
+  /** R-46: a seam, for the same reason R-27 added one to the executor. The
+   *  window this function has to get wrong is between reading a provider row
+   *  and writing its derived status, and nothing outside the process can open
+   *  that window on purpose. A test hook that runs inside it is the only way
+   *  to prove the guard without a sleep and a coin flip. Never passed in
+   *  production; the parameter is optional and unused there. */
+  onBeforeUpdate?: (providerId: string) => Promise<void>;
+}): Promise<void> {
   const providers = await db.select().from(benchmarkProvidersTable);
   for (const provider of providers) {
     const adapter = getProviderAdapter(provider.id);
@@ -181,10 +189,31 @@ export async function syncProviderReadiness(): Promise<void> {
         ? "ready"
         : "not_configured";
     if (nextStatus !== provider.status) {
+      // R-46 (ox-alpha B-82): this is a read-modify-write. The row was read at
+      // the top of the function, and `nextStatus` was derived from that
+      // snapshot. A PATCH that lands in between -- setting manuallyDisabled --
+      // commits its own sync, and then this blind `WHERE id` would overwrite
+      // the result with a status computed from the pre-PATCH row, putting a
+      // provider the operator just switched off back to `ready`.
+      //
+      // Repeating the input in the WHERE makes the write conditional on the
+      // snapshot still being true: if manuallyDisabled moved, this matches no
+      // rows and does nothing, and the PATCH's own sync (:1434) has already
+      // written the right value.
+      //
+      // R-13 means this was never a spend bug -- runCell reads
+      // manuallyDisabled, not this derived status -- but the Setup page reads
+      // it, and a switch that flips itself back on is worth not shipping.
+      await opts?.onBeforeUpdate?.(provider.id);
       await db
         .update(benchmarkProvidersTable)
         .set({ status: nextStatus, updatedAt: new Date() })
-        .where(eq(benchmarkProvidersTable.id, provider.id));
+        .where(
+          and(
+            eq(benchmarkProvidersTable.id, provider.id),
+            eq(benchmarkProvidersTable.manuallyDisabled, provider.manuallyDisabled),
+          ),
+        );
     }
   }
 }

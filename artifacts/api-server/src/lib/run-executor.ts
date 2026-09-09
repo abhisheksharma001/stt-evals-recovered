@@ -36,6 +36,7 @@ import {
   vendorOfProviderId,
 } from "@workspace/stt-providers";
 import { logger } from "./logger";
+import { compareRankedProviders } from "./ranking-order";
 import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
 import { getOrCacheAudioBytes, readCellAudioSource, type CellAudio, type CellAudioSource } from "./audio-cache";
@@ -1586,7 +1587,10 @@ function aggregateRankingRows(
       };
     });
 
-    providerAggregates.sort((a, b) => (b.composite ?? -1) - (a.composite ?? -1));
+    // R-46 (ox-alpha B-96): ties are more than half of every ranking, and a
+    // stable sort would leave them in the order an ORDER-BY-less SELECT chose.
+    // See ranking-order.ts for the measurement.
+    providerAggregates.sort(compareRankedProviders);
 
     if (providerAggregates.length === 0) continue; // nothing scored ok for this group yet
 
