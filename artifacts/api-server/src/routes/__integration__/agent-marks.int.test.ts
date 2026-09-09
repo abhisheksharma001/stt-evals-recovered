@@ -82,6 +82,40 @@ describe("POST /api/benchmark/agent-marks", () => {
     expect(numerals.body).toMatchObject({ actionType: "numerals", actionValue: null });
   });
 
+  it("takes the assistant from the call when the body does not name one", async () => {
+    // U-1b: the comparison view holds the disputed span but not the
+    // assistant, so the server derives the basket key rather than trusting a
+    // client that cannot know it.
+    const assistantId = `asst-derived-${fx.suffix}`;
+    const call = await fx.call({ sourceAssistantId: assistantId });
+    const mark = await post({ callId: call.id, span: "Edison Hills", note: "street name, every time" });
+    expect(mark.status).toBe(201);
+    expect(mark.body.assistantId).toBe(assistantId);
+
+    const listed = await request(server).get("/api/benchmark/agent-marks").query({ assistantId });
+    expect(listed.body.map((m: { id: string }) => m.id)).toEqual([mark.body.id]);
+  });
+
+  it("leaves the assistant null when the call was imported without one", async () => {
+    const call = await fx.call({ sourceAssistantId: null });
+    const mark = await post({ callId: call.id, note: "no agent on file for this one" });
+    expect(mark.status).toBe(201);
+    expect(mark.body.assistantId).toBeNull();
+
+    const unassigned = await request(server)
+      .get("/api/benchmark/agent-marks")
+      .query({ assistantId: "__unassigned__" });
+    expect(unassigned.body.map((m: { id: string }) => m.id)).toContain(mark.body.id);
+  });
+
+  it("an explicitly sent assistantId wins over the call's own", async () => {
+    const call = await fx.call({ sourceAssistantId: `asst-on-call-${fx.suffix}` });
+    const chosen = `asst-chosen-${fx.suffix}`;
+    const mark = await post({ callId: call.id, assistantId: chosen, note: "filed elsewhere on purpose" });
+    expect(mark.status).toBe(201);
+    expect(mark.body.assistantId).toBe(chosen);
+  });
+
   it("refuses a callId that names no call", async () => {
     const res = await post({ note: "orphan", callId: "00000000-0000-4000-8000-000000000000" });
     expect(res.status).toBe(404);

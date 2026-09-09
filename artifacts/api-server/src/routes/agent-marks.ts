@@ -117,9 +117,16 @@ router.post("/benchmark/agent-marks", async (req, res): Promise<void> => {
     return;
   }
 
+  // U-1b: the basket key is derived here rather than sent, because the
+  // surface that captures a span-mark cannot know it. `CallComparison` (the
+  // per-call view holding the judge's disputed spans) carries no assistant
+  // id at all, so a client marking a span would have to guess -- and a mark
+  // filed under the wrong assistant is worse than one filed under none. An
+  // explicitly sent assistantId still wins; this only fills a gap.
+  let assistantId = body.assistantId ?? null;
   if (body.callId) {
     const [call] = await db
-      .select({ id: benchmarkCallsTable.id })
+      .select({ id: benchmarkCallsTable.id, sourceAssistantId: benchmarkCallsTable.sourceAssistantId })
       .from(benchmarkCallsTable)
       .where(eq(benchmarkCallsTable.id, body.callId))
       .limit(1);
@@ -127,13 +134,16 @@ router.post("/benchmark/agent-marks", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Benchmark call not found" });
       return;
     }
+    // Still null when the call was imported without one -- the "no assistant
+    // on file" bucket is a real answer, not a failure to look.
+    if (assistantId === null) assistantId = call.sourceAssistantId;
   }
 
   const actorLabel = actorFromRequest(req);
   const [mark] = await db
     .insert(agentMarksTable)
     .values({
-      assistantId: body.assistantId ?? null,
+      assistantId,
       callId: body.callId ?? null,
       span: body.span?.trim() || null,
       note,

@@ -18,6 +18,7 @@ import { formatMicrocents } from "@/lib/utils"
 import { apiBase } from "@/lib/api-base"
 import { useToast } from "@/hooks/use-toast"
 import { PlaybackSpeed } from "@/components/playback-speed"
+import { MarkButton } from "@/components/agent-mark"
 
 // ---------------------------------------------------------------------------
 // T-72 (PRD-v4-uiux E.4): the per-call provider comparison, one organism
@@ -166,7 +167,7 @@ export function ComparisonBody({ data }: { data: CallComparison }) {
               <span className="text-[10px] text-muted-foreground">-- a suggestion from the judge, not a verdict</span>
             </div>
             {oneLiner && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{oneLiner}</p>}
-            <JudgeKeyDifferences items={data.judge.keyDifferences} />
+            <JudgeKeyDifferences items={data.judge.keyDifferences} callId={data.callId} />
             {data.judge.reasoning && (
               <details className="mt-1.5 text-[11px] text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">Full reasoning</summary>
@@ -281,18 +282,25 @@ function JudgeConfidenceChip({ confidence }: { confidence: "high" | "medium" | "
   )
 }
 
-function JudgeKeyDifferences({ items }: { items: Array<{ span: string; alternatives: string; matters: string }> | null }) {
+// U-1b: each difference carries its own Mark control. This is the only
+// place in the product where a specific stretch of misheard speech is on
+// screen, so it is the only place a mark about that stretch can be made
+// without retyping it. The assistant is NOT passed: this view does not know
+// which agent the call belongs to, and the server derives it from the call
+// rather than letting a client guess.
+function JudgeKeyDifferences({ items, callId }: { items: Array<{ span: string; alternatives: string; matters: string }> | null; callId: string }) {
   if (!items) return null
   if (items.length === 0) return <p className="mt-1 text-[11px] text-muted-foreground">No meaning-changing differences -- the candidates differ in convention only.</p>
   return (
     <ul className="mt-1.5 space-y-1 text-[11px]" data-testid="judge-key-differences">
       {items.map((d, i) => (
-        <li key={i} className="flex gap-1.5">
+        <li key={i} className="flex flex-wrap items-start gap-1.5">
           <span className="shrink-0 text-muted-foreground">·</span>
-          <span>
+          <span className="min-w-0 flex-1">
             <span className="font-mono font-semibold text-foreground">“{d.span}”</span>
             <span className="text-muted-foreground"> vs {d.alternatives} — {d.matters}</span>
           </span>
+          <MarkButton callId={callId} span={d.span} />
         </li>
       ))}
     </ul>

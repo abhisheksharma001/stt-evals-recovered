@@ -6300,7 +6300,30 @@ diff, so the affordance in U-1 is this project's own.
 
 ### U-1 — A mark, captured where the problem is visible
 
-**Status:** not started
+**Status:** done 2026-09-09 (U-1a PR #143, U-1b PR #144)
+
+**What it taught:** the step named two capture surfaces and quietly assumed
+both could name the assistant a mark belongs to. Only one can. `CallComparison`
+-- the per-call view that holds the judge's disputed spans, the whole reason
+the comparison is a capture point at all -- carries no assistant id, and adding
+one to that contract would have put the basket key in the hands of the surface
+least able to be sure of it. The server derives it from the call instead, and
+an explicitly sent id still wins. A mark filed under the wrong agent is worse
+than one filed under none, and neither looks wrong on screen.
+
+Two smaller things worth keeping. The action pair has to be validated on the
+row the write ENDS UP with, not on the body: clearing `actionValue` on an
+existing keyterm mark is exactly as broken as creating one without it, and a
+PATCH body carrying only `{"actionValue": null}` says nothing about which kind
+of mark it is landing on. And the contract's `minLength: 1` is not a guard
+against an empty note -- it rejects `""` and accepts `"   "`, which is the one
+thing a notes-first feature must not store.
+
+The render suite could not have caught any of this on its own: `results.test.tsx`
+never asserts `unmatched` is empty, so the new marks query 500'd silently
+behind every existing assertion and every test still passed. The endpoint is in
+`baseRoutes` now and the scoping is asserted from `api.calls`, because one
+card's marks showing under another's looks perfectly correct on screen.
 
 **PR:** two — `U-1a` schema + contract + routes, `U-1b` the two capture
 affordances and the list. Spends nothing.

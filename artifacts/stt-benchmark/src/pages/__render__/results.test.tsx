@@ -14,8 +14,9 @@
 // Fixtures are typed as the generated response types -- typecheck is the
 // contract check.
 import { afterEach, describe, expect, it } from "vitest"
-import { cleanup, fireEvent, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type {
+  AgentMark,
   AppSettings,
   BenchmarkCall,
   Bulk,
@@ -250,6 +251,9 @@ const baseRoutes: StubRoutes = {
   "GET /api/benchmark/calls": calls,
   "GET /api/benchmark/bulks/bulk-1/verdicts": verdicts,
   "GET /api/benchmark/bulks/bulk-1": reply(404, { error: "not needed by these assertions" }),
+  // U-1b: every assistant card asks what has been marked on it. Empty by
+  // default so the other assertions here see the page they were written for.
+  "GET /api/benchmark/agent-marks": [],
 }
 
 describe("Results", () => {
@@ -467,6 +471,74 @@ describe("Results", () => {
     expect(document.body.textContent).not.toMatch(/winner/i)
     expect(document.body.textContent).not.toMatch(/\bwins\b/i)
     api.restore()
+  })
+
+  // U-1b: the Results card is one of the two places a mark can be made --
+  // the other is a disputed span inside a call's comparison.
+  it("offers to mark every assistant card, scoped to that assistant", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(0, 0, null, null) })
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    await waitFor(() => expect(screen.getAllByTestId("agent-marks-section").length).toBeGreaterThan(0))
+    expect(screen.getAllByTestId("mark-open").length).toBeGreaterThan(0)
+    expect(document.body.textContent).toContain("To do on this agent")
+
+    // The scoping is the part that can silently be wrong: one card's marks
+    // showing on another's looks perfectly fine on screen.
+    const asked = api.calls.filter((c) => c.startsWith("GET /api/benchmark/agent-marks"))
+    expect(asked.some((c) => c.includes("assistantId=asst-rush"))).toBe(true)
+    // The card with no assistant asks for the unassigned bucket rather than
+    // asking for everything.
+    expect(asked.some((c) => c.includes("assistantId=__unassigned__"))).toBe(true)
+    expect(asked.every((c) => c.includes("status=open"))).toBe(true)
+  })
+
+  it("counts what is marked by kind, in words, and never says nothing is sent has happened", async () => {
+    const marked = [
+      {
+        id: "m1",
+        assistantId: "asst-rush",
+        callId: null,
+        span: "Edison Hills",
+        note: "hears Addison",
+        actionType: "keyterm",
+        actionValue: "Edison Hills",
+        status: "open",
+        createdByLabel: "abhishek",
+        createdAt: "2026-09-09T00:00:00.000Z",
+        updatedAt: "2026-09-09T00:00:00.000Z",
+      },
+      {
+        id: "m2",
+        assistantId: "asst-rush",
+        callId: null,
+        span: null,
+        note: "digits come back as words",
+        actionType: "numerals",
+        actionValue: null,
+        status: "open",
+        createdByLabel: "abhishek",
+        createdAt: "2026-09-09T00:00:00.000Z",
+        updatedAt: "2026-09-09T00:00:00.000Z",
+      },
+    ] as unknown as AgentMark[]
+    stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/proxy-agreement": agreement(0, 0, null, null),
+      "GET /api/benchmark/agent-marks": marked,
+    })
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+
+    await waitFor(() => expect(screen.getAllByTestId("agent-marks-panel").length).toBeGreaterThan(0))
+    const text = document.body.textContent ?? ""
+    expect(text).toContain("Marked for this agent: 2")
+    expect(text).toContain("1 × teach the agent this word")
+    expect(text).toContain("1 × write numbers as digits, not words")
+    // A list of proposals must never read as work already done.
+    expect(text).toContain("nothing here has been sent to Vapi")
+    expect(text).not.toContain("keyterm")
   })
 
   it("a ranking row with no assistant gets a bucket that says why, never dropped", async () => {
