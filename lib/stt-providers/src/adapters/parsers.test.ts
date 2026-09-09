@@ -6,7 +6,7 @@ import {
   parseWavPcm,
   reduceCartesiaTranscript,
 } from "./cartesia";
-import { deepgramAdapter, parseDeepgramResponse } from "./deepgram";
+import { deepgramAdapter, deepgramBoostParam, parseDeepgramResponse } from "./deepgram";
 import {
   deepgramFluxAdapter,
   deepgramFluxDiarizationScore,
@@ -317,6 +317,100 @@ describe("endOfAudioLatencyMs", () => {
   });
 });
 
+// ---- M-19a: which parameter Deepgram's vocabulary boost takes ----
+//
+// The rule is the model's, not the endpoint's, so it is asserted three ways:
+// on the helper itself, on the batch adapter's real request URL, and on the
+// streaming socket's URL (in deepgramStreamSocketArgs below). The helper
+// being right does not prove either adapter calls it.
+
+describe("deepgramBoostParam (M-19a)", () => {
+  // https://developers.deepgram.com/docs/keyterm -- nova-3 monolingual AND
+  // multilingual, plus Flux.
+  it("gives keyterm to every nova-3 variant and to Flux", () => {
+    expect(deepgramBoostParam("nova-3")).toBe("keyterm");
+    expect(deepgramBoostParam("nova-3-general")).toBe("keyterm");
+    expect(deepgramBoostParam("nova-3-medical")).toBe("keyterm");
+    expect(deepgramBoostParam("nova-3-multilingual")).toBe("keyterm");
+    expect(deepgramBoostParam("flux-general-en")).toBe("keyterm");
+  });
+
+  // https://developers.deepgram.com/docs/keywords -- "Keywords is only
+  // available for use with Nova-2, Nova-1, Enhanced, and Base speech to text
+  // models." deepgram-nova is a live provider row in this repo, so it is a
+  // real case and not a hypothetical one.
+  it("leaves nova-2 and older on keywords, the only parameter they read", () => {
+    expect(deepgramBoostParam("nova-2")).toBe("keywords");
+    expect(deepgramBoostParam("nova-2-phonecall")).toBe("keywords");
+    expect(deepgramBoostParam("nova")).toBe("keywords");
+    expect(deepgramBoostParam("enhanced")).toBe("keywords");
+    expect(deepgramBoostParam("base")).toBe("keywords");
+  });
+});
+
+describe("deepgramAdapter boost parameter on the real request (M-19a)", () => {
+  /** Captures the URL the adapter actually fetches, then restores fetch. */
+  async function urlFetchedFor(input: {
+    model?: string;
+    keywordBoosts?: string[];
+  }): Promise<string> {
+    const seen: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalKey = process.env.DEEPGRAM_API_KEY;
+    (globalThis as unknown as { fetch: unknown }).fetch = async (url: string) => {
+      seen.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ results: { channels: [{ alternatives: [{ transcript: "hi" }] }] } }),
+      };
+    };
+    process.env.DEEPGRAM_API_KEY = "dg-boost-param-test";
+    try {
+      await deepgramAdapter.transcribe({
+        callId: "call-m19a",
+        audioBytes: Buffer.from([0, 1, 2, 3]),
+        ...input,
+      });
+    } finally {
+      (globalThis as unknown as { fetch: unknown }).fetch = originalFetch;
+      if (originalKey === undefined) delete process.env.DEEPGRAM_API_KEY;
+      else process.env.DEEPGRAM_API_KEY = originalKey;
+    }
+    expect(seen).toHaveLength(1);
+    return seen[0]!;
+  }
+
+  it("sends keyterm, once per term, on a nova-3 request", async () => {
+    const url = await urlFetchedFor({ model: "nova-3", keywordBoosts: ["Ellavox", "Vapi"] });
+    expect(url).toContain("keyterm=Ellavox");
+    expect(url).toContain("keyterm=Vapi");
+    expect(url).not.toContain("keywords=");
+  });
+
+  // The model the adapter falls back to when the catalog names none is
+  // nova-3, so the boost parameter has to follow that fallback and not the
+  // undefined input -- the mutation this test exists to catch.
+  it("follows the nova-3 fallback when no model is given", async () => {
+    const url = await urlFetchedFor({ keywordBoosts: ["Ellavox"] });
+    expect(url).toContain("model=nova-3");
+    expect(url).toContain("keyterm=Ellavox");
+    expect(url).not.toContain("keywords=");
+  });
+
+  it("sends keywords on a nova-2 request", async () => {
+    const url = await urlFetchedFor({ model: "nova-2", keywordBoosts: ["Ellavox"] });
+    expect(url).toContain("keywords=Ellavox");
+    expect(url).not.toContain("keyterm=");
+  });
+
+  it("sends neither parameter when there are no boosts", async () => {
+    const url = await urlFetchedFor({ model: "nova-3" });
+    expect(url).not.toContain("keyterm=");
+    expect(url).not.toContain("keywords=");
+  });
+});
+
 // ---- M-11a: Deepgram nova-3 over the streaming socket ----
 //
 // Same shape of coverage as the Cartesia block above and for the same
@@ -615,12 +709,28 @@ describe("deepgramStreamSocketArgs (M-11e)", () => {
     expect(url).toContain("interim_results=true");
   });
 
-  it("appends every keyword boost and still no credential", () => {
+  // M-19a: this row runs nova-3, so its boosts are keyterms. The assertion
+  // used to read keywords=, which is the nova-2 parameter and was silently
+  // ignored by the model this socket actually addresses.
+  it("appends every keyword boost as a keyterm and still no credential", () => {
     const key = "boost-secret";
     const { url } = deepgramStreamSocketArgs(key, { ...opts(), keywordBoosts: ["Ellavox", "Vapi"] });
-    expect(url).toContain("keywords=Ellavox");
-    expect(url).toContain("keywords=Vapi");
+    expect(url).toContain("keyterm=Ellavox");
+    expect(url).toContain("keyterm=Vapi");
+    expect(url).not.toContain("keywords=");
     expect(url).not.toContain(key);
+  });
+
+  // The socket is not hardwired to keyterm either: what decides is the model
+  // on the options, the same rule the batch adapter follows.
+  it("would spell the same boosts keywords on a nova-2 socket", () => {
+    const { url } = deepgramStreamSocketArgs("secret", {
+      ...opts(),
+      model: "nova-2",
+      keywordBoosts: ["Ellavox"],
+    });
+    expect(url).toContain("keywords=Ellavox");
+    expect(url).not.toContain("keyterm=");
   });
 });
 

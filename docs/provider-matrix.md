@@ -41,7 +41,7 @@
 | **Auth** | `Authorization: Token {DEEPGRAM_API_KEY}` |
 | **Audio formats supported** | MP3, WAV, FLAC, OGG, others — verify current list |
 | **Diarization parameter** | `diarize=true` (query param — verify) |
-| **Keyword boosting parameter** | `keywords=term:boost` (verify syntax and boost range) |
+| **Keyword boosting parameter** | Depends on the model, and the wrong one is silent. `keyterm` (one parameter per term, no weights) for `nova-3*` and Flux; `keywords=term:boost` for `nova-2` and older. Verified against [Keyterm Prompting](https://developers.deepgram.com/docs/keyterm) and [Keywords](https://developers.deepgram.com/docs/keywords), 2026-09-09 (M-19a). Cap is **500 tokens per request across all keyterms, an error beyond**; Deepgram recommends the most important 20-50 terms. No maximum *number* of terms is documented. |
 | **Max audio duration** | Verify — may vary by plan |
 | **Cost/minute** | **UNVERIFIED** — check `https://deepgram.com/pricing` at implementation time |
 | **Rate tier for benchmark** | Pay-as-you-go vs. committed — verify which applies |
@@ -49,7 +49,7 @@
 
 **Open configuration questions (must answer before P1-T4):**
 1. Does Nova-3 support multichannel stereo audio for diarization, or mono only?
-2. What is the maximum keyword boost weight, and does boosting affect WER on non-boosted words?
+2. ~~What is the maximum keyword boost weight~~ — answered 2026-09-09 (M-19a): on `nova-3` there is no weight. `keyterm` takes plain terms; a `term:0.15` suffix is not rejected, it is treated as part of the literal term. Weights exist only on `keywords`, i.e. only on `nova-2` and older. Still open: does boosting affect WER on non-boosted words?
 3. Is streaming available on all plan tiers, or only Enterprise?
 4. What is the format of word-level timestamps in the response JSON? (Confirm field names for latency instrumentation)
 
