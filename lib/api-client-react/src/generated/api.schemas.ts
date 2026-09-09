@@ -1231,6 +1231,52 @@ export interface AgentMark {
   updatedAt: string;
 }
 
+export type AgentMarkPreviewFieldField = typeof AgentMarkPreviewFieldField[keyof typeof AgentMarkPreviewFieldField];
+
+
+export const AgentMarkPreviewFieldField = {
+  keyterm: 'keyterm',
+  numerals: 'numerals',
+} as const;
+
+export interface AgentMarkPreviewField {
+  field: AgentMarkPreviewFieldField;
+  /** What the field is called on screen -- never the vendor's word for it. */
+  label: string;
+  current: string;
+  after: string;
+  added: string[];
+  /** Marked terms the assistant already carries. Listed, and absent from `added`, so applying cannot double a boost. */
+  alreadyPresent: string[];
+  /** True when applying would push the list past the vendor's cap. The preview says so rather than silently truncating. */
+  overLimit: boolean;
+  /** @nullable */
+  limit: number | null;
+  markIds: string[];
+}
+
+export type AgentMarkPreviewManualMarksItem = {
+  id: string;
+  note: string;
+  /** @nullable */
+  actionValue: string | null;
+};
+
+/**
+ * U-2. Computed from a live Vapi read that deliberately skips the 10-minute config cache -- this is what somebody reads immediately before asking for a change.
+ */
+export interface AgentMarkPreview {
+  assistantId: string;
+  assistantName: string;
+  accountLabel: string;
+  fetchedAt: string;
+  fields: AgentMarkPreviewField[];
+  /** Prompt marks -- words for a person to act on. Nothing applies these. */
+  manualMarks: AgentMarkPreviewManualMarksItem[];
+  /** Open marks carrying no action, so the screen can say the list is bigger than the change is. */
+  notesOnlyCount: number;
+}
+
 /**
  * @nullable
  */
@@ -1968,4 +2014,8 @@ export const ListAgentMarksStatus = {
   applied: 'applied',
   dismissed: 'dismissed',
 } as const;
+
+export type PreviewAgentMarksParams = {
+assistantId: string;
+};
 

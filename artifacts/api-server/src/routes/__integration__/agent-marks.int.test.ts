@@ -218,6 +218,35 @@ describe("DELETE /api/benchmark/agent-marks/:markId", () => {
   });
 });
 
+describe("GET /api/benchmark/agent-marks/preview", () => {
+  it("refuses an assistant no imported call carries, without reaching Vapi", async () => {
+    // The account behind an assistant is derived from its calls' org label,
+    // so with no calls there is nothing to look up and nothing to ask Vapi.
+    // This is the branch a test can exercise; the live read is not.
+    const res = await request(server)
+      .get("/api/benchmark/agent-marks/preview")
+      .query({ assistantId: `asst-nothing-${fx.suffix}` });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Vapi account is unknown/);
+  });
+
+  it("needs an assistantId at all", async () => {
+    const res = await request(server).get("/api/benchmark/agent-marks/preview");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/assistantId/);
+  });
+
+  it("`preview` is a path, never a mark id -- the literal route wins", async () => {
+    // PATCH and DELETE take a :markId in the same position. If the literal
+    // GET were registered after them the preview would still work, but a
+    // future GET on :markId would swallow it; asserting the 404 sentence
+    // here pins which handler answered.
+    const res = await request(server).get("/api/benchmark/agent-marks/preview").query({ assistantId: "preview" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Vapi account is unknown/);
+  });
+});
+
 describe("the FK", () => {
   it("a mark outlives the call it was made on, keeping its note", async () => {
     const call = await fx.call();

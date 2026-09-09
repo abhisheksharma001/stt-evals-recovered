@@ -342,6 +342,10 @@ export type VapiAssistantTranscriber = {
   fallback: { provider: string; model: string | null }[];
   /** Vocabulary boost words on the assistant (Deepgram `keyterm`). 0 when none. */
   keytermCount: number;
+  /** U-2: the words themselves, needed to say which of a mark's terms are
+   *  already there. Non-string entries are dropped -- `keyterm` is typed
+   *  `unknown` above because Vapi's schema does not promise a string array. */
+  keyterms: string[];
   numerals: boolean | null;
   language: string | null;
   fetchedAt: string;
@@ -369,17 +373,33 @@ export async function fetchVapiAssistantTranscriber(
     `/assistant/${encodeURIComponent(assistantId)}`,
     key,
   );
+  return assistantTranscriberFrom(raw, account.id, account.label);
+}
+
+/**
+ * The shape mapping, split out from the fetch above so it has a test seam.
+ * U-2 added `keyterms` here and a break test that emptied it changed no
+ * result -- every test built the shape directly and nothing exercised this
+ * mapping at all. Reading a field nobody proves you read is the same as not
+ * reading it.
+ */
+export function assistantTranscriberFrom(
+  raw: { id: string; name?: string; transcriber?: VapiTranscriberSpec },
+  accountId: string,
+  accountLabel: string,
+): VapiAssistantTranscriber {
   const t = raw.transcriber;
   const spec = (x: { provider?: string; model?: string } | undefined) =>
     x?.provider ? { provider: x.provider, model: x.model?.trim() || null } : null;
   return {
     assistantId: raw.id,
     name: raw.name?.trim() || raw.id,
-    accountId: account.id,
-    accountLabel: account.label,
+    accountId,
+    accountLabel,
     primary: spec(t),
     fallback: (t?.fallbackPlan?.transcribers ?? []).map(spec).filter((x): x is { provider: string; model: string | null } => x !== null),
     keytermCount: Array.isArray(t?.keyterm) ? t.keyterm.length : 0,
+    keyterms: Array.isArray(t?.keyterm) ? t.keyterm.filter((k): k is string => typeof k === "string") : [],
     numerals: typeof t?.numerals === "boolean" ? t.numerals : null,
     language: t?.language ?? null,
     fetchedAt: new Date().toISOString(),

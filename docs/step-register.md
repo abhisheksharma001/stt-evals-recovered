@@ -6398,7 +6398,46 @@ mark on an unassigned call an error — it is a real note.
 
 ### U-2 — What the change would actually do to the agent, before anything is sent
 
-**Status:** not started
+**Status:** done 2026-09-09 (PR #145)
+
+**What it taught:** the step asked for each preview row to be *selectable*,
+with the selection carried to U-3. Built that way it is a control that lies:
+in U-2 there is nothing to submit a selection to, so a checkbox would sit
+there recording an intent nothing reads. The selection moved to U-3, where it
+has a destination, and U-3's block now says so. The rows themselves are here,
+and so is the sentence that the apply does not exist yet -- an absent control
+with an explanation beats a present one with none.
+
+The other correction was the cache. `assistantTranscriberConfig` holds a
+config for ten minutes, which is right for the Results card and wrong for
+this: the preview is the thing somebody reads immediately before asking for a
+change, and a stale "current" column is exactly how you approve an edit to a
+value that is no longer there. The preview takes a `fresh` option and skips
+the cache; the read is free, and `fetchedAt` is in the response so the screen
+can say when it looked.
+
+**And the break test found the blind spot the step created.** Emptying
+`keyterms` in the Vapi read changed no test result at all: every test built
+`VapiAssistantTranscriber` by hand, so nothing exercised the mapping that
+produces it. The mapping is now its own exported function with its own tests
+(`artifacts/api-server/src/lib/vapi-assistant-transcriber.test.ts`), and the
+same mutation fails two of them. **A field nobody proves you read is a field
+you are not reading** -- and a new field added to a hand-built fixture shape
+is exactly where that hides.
+
+A second lesson, this one about the break test itself: `git checkout <file>`
+to undo a mutation silently reverts anything in that file that has not been
+committed. Doing it while the fix for the blind spot was still uncommitted
+deleted the fix, and the next run's "restored" line read 6 failures. Mutate
+and revert only against a committed tree.
+
+Two smaller things. `VapiAssistantTranscriber` carried `keytermCount` but not
+the words, so "already there, not added again" could not be computed at all --
+the terms are now read too, and the comparison folds case and whitespace,
+because "edison hills" and "Edison Hills" are one boost to Deepgram and two
+rows to a naive diff. And two people marking the same word is the normal case,
+not an error: the second one lands in `alreadyPresent`, so applying can never
+double a boost.
 
 **PR:** one. Spends nothing — Vapi **reads** only, which are free.
 **Depends on:** U-1.
@@ -6448,7 +6487,9 @@ the U-2 review screen.
 There is no POST, PATCH, PUT or DELETE anywhere in it.
 
 **Change:** `POST /benchmark/agent-marks/apply` takes an assistant id and the
-selected mark ids, **re-reads the assistant immediately before writing**,
+selected mark ids -- **the per-row selection U-2 was originally to carry lives
+here**, because this is the first screen where selecting something has
+somewhere to go -- **re-reads the assistant immediately before writing**,
 merges only the fields the marks touch into the object it just read, and
 PATCHes the whole thing back. On success it writes an `audit_log` row carrying
 the full before and after transcriber object, and flips those marks to

@@ -1285,6 +1285,30 @@ paths:
           description: Empty note, an actionValue on a numerals mark, or a keyterm/prompt mark with no actionValue
         "404":
           description: callId given but no such call
+  /benchmark/agent-marks/preview:
+    get:
+      operationId: previewAgentMarks
+      tags: [benchmark]
+      summary: "U-2: what the open marks would change on this assistant, computed from a live Vapi READ. Nothing is sent; the read is free."
+      parameters:
+        - name: assistantId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current value and the value after, per field the marks touch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMarkPreview"
+        "400":
+          description: The assistant's org label matches a Vapi account that is not configured
+        "404":
+          description: No imported call carries this assistant id, or its org label matches no configured Vapi account
+        "502":
+          description: Vapi could not be reached or refused the read
   /benchmark/agent-marks/{markId}:
     patch:
       operationId: updateAgentMark
@@ -2340,6 +2364,42 @@ components:
         createdByLabel: { type: ["string", "null"] }
         createdAt: { type: string }
         updatedAt: { type: string }
+    AgentMarkPreviewField:
+      type: object
+      required: [field, label, current, after, added, alreadyPresent, overLimit, limit, markIds]
+      properties:
+        field: { type: string, enum: [keyterm, numerals] }
+        label: { type: string, description: "What the field is called on screen -- never the vendor's word for it." }
+        current: { type: string }
+        after: { type: string }
+        added: { type: array, items: { type: string } }
+        alreadyPresent: { type: array, items: { type: string }, description: "Marked terms the assistant already carries. Listed, and absent from `added`, so applying cannot double a boost." }
+        overLimit: { type: boolean, description: "True when applying would push the list past the vendor's cap. The preview says so rather than silently truncating." }
+        limit: { type: ["integer", "null"] }
+        markIds: { type: array, items: { type: string } }
+    AgentMarkPreview:
+      type: object
+      description: "U-2. Computed from a live Vapi read that deliberately skips the 10-minute config cache -- this is what somebody reads immediately before asking for a change."
+      required: [assistantId, assistantName, accountLabel, fetchedAt, fields, manualMarks, notesOnlyCount]
+      properties:
+        assistantId: { type: string }
+        assistantName: { type: string }
+        accountLabel: { type: string }
+        fetchedAt: { type: string }
+        fields:
+          type: array
+          items: { $ref: "#/components/schemas/AgentMarkPreviewField" }
+        manualMarks:
+          type: array
+          description: "Prompt marks -- words for a person to act on. Nothing applies these."
+          items:
+            type: object
+            required: [id, note, actionValue]
+            properties:
+              id: { type: string }
+              note: { type: string }
+              actionValue: { type: ["string", "null"] }
+        notesOnlyCount: { type: integer, description: "Open marks carrying no action, so the screen can say the list is bigger than the change is." }
     AgentMarkCreate:
       type: object
       required: [note]
