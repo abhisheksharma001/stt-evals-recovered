@@ -4002,6 +4002,26 @@ the cell. Live run only with a "go spend".
 
 ### M-20 — The judge gets a scorecard only when it can be measured
 
+**Status:** done 2026-09-09 (PR #124, `cfd7009`), deployed with the batch below.
+Live today: 2 labelled calls, **1** measurable pick, so the card reads
+"Judge accuracy: not measured (1 of 20)" — the floor doing its job, not a bug.
+**Learned:** (1) *the one measurable call is a disagreement.* The judge picked openai
+(WER 0.436) when deepgram was lowest (0.365). One call proves nothing, which is exactly
+why the floor exists — but it is not the reassuring direction either.
+(2) *The candidate set is the whole measurement.* Scoring the judge against every
+provider that ever ran the call would mark it wrong for missing a candidate it was never
+shown; it is scored against the scored `ok` cells of its own scan run.
+(3) *A break test found a real defect, not a weak test.* Deleting the run filter from the
+query changed nothing, because `find()` returned whichever duplicate row came back first
+and the leak was never looked at. `aggregateJudgeAccuracy` now gives each provider one
+value per call, the mean of its cells — the rule `aggregateProxyAgreement` already
+followed for exactly this reason. Two other mutations exposed weak seeds: run-scoping
+needed a provider that never ran in the scan's run at all, and "latest picking scan"
+needed two picking scans at different times, because with one, newest and oldest are the
+same row.
+(4) *A third `scored.length < 2` guard was dead* — one element is uniformly equal to its
+own minimum, so the all-tied guard already dropped it. Deleted with the reason written
+down. That is twice in one day a break test found dead code rather than a bug.
 **PR:** one.
 **Depends on:** M-18 (the labelled set and its query).
 **Files:** `artifacts/api-server/src/lib/proxy-agreement.ts` (created by M-18),
