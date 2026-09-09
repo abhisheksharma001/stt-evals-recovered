@@ -1,4 +1,20 @@
 
+## Found 2026-09-10 (R-28): the Provider Name help text asks for something the API refuses
+
+`artifacts/stt-benchmark/src/pages/Providers.tsx` tells the operator the Provider Name
+field *"Must match a registered adapter id exactly (e.g. deepgram-nova-3,
+elevenlabs-scribe)."* The route joins that name to the Model ID to form the provider id,
+so following the instruction literally produced `deepgram-nova-3-nova-3-<hex>`. After
+R-28 the API refuses it with a 400 that explains the shape, which is better than a dead
+row but still means the field's own guidance is wrong.
+
+What it should say is that the field takes the **vendor** (Deepgram, AssemblyAI,
+ElevenLabs, OpenAI, Gladia, Speechmatics, Cartesia) and the model goes in Model ID.
+
+Left for its own step because it is UI copy, and the standing rule is that
+`visual-and-research` runs before UI copy and label work. Not urgent: the API now refuses
+the bad shape loudly, so the worst outcome is a confusing error rather than a dead row.
+
 ## Found 2026-09-10 (R-25): `rawOutput` is double-encoded, and 24 rows do not parse
 
 Measured while probing Cartesia results for B-21: of 186 `benchmark_provider_call_results`
