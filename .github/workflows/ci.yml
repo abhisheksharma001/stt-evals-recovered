@@ -89,6 +89,13 @@ jobs:
       - name: Check node engines
         run: node scripts/check-node-engines.mjs
 
+      # R-47: an ox-alpha bug-register entry that is named nowhere in the step
+      # register is an entry nobody has read. B-88 -- a live P0 that killed the
+      # API process on any dropped idle connection -- sat that way through four
+      # triage passes, while a step block claimed all 100 were dispositioned.
+      - name: Check bug-register coverage
+        run: node scripts/check-register-coverage.mjs
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)

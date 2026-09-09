@@ -7189,6 +7189,45 @@ P0 without saying what was measured.
 
 ---
 
+### R-47 — The register gets a check that counts instead of a claim that remembers — **done**
+
+R-35 reported that all 100 entries in `ox-alpha/bug-register.md` carried a disposition.
+R-45 measured it and found **ten had never been named in `docs/step-register.md` at all** —
+and one of the ten, B-88, was a live **P0** that killed the API process on any dropped idle
+connection. The claim was written from the tranche just finished rather than from a scan,
+and nothing in CI could tell the difference. Four triage passes and a green suite all
+reported healthy while that entry sat unread.
+
+`scripts/check-register-coverage.mjs` now fails CI when a `### B-<n>` heading in the
+register is named nowhere in the step register, printing the heading of each one.
+
+**It is deliberately the weakest rule with no false positives.** A stricter version was
+written first — the mention has to be the *first* `B-<n>` on its line, which would also
+catch an entry mentioned only inside another entry's row (B-91 and B-92 are in that shape).
+Run against the tree it flagged **11 entries that are correctly dispositioned** inside
+grouped prose such as *"**Moot — 7.** B-51, B-58, B-59 name Review.tsx and Agent.tsx, both
+deleted"*. A check that cries wolf is a check someone switches off, so that version was
+thrown away rather than tuned. What survives catches the failure that actually happened: an
+entry nobody wrote down anywhere.
+
+**Proved by breaking it, twice.** Run against `be0294b` — the commit before R-45 — it exits
+1 and names exactly the ten, B-88 among them, with no false positives. On a committed tree
+at HEAD, deleting B-88's mentions from the step register makes it fail and name B-88.
+
+**What it does not prove.** Being *named* is not being *dispositioned*: a passing check
+means every entry appears somewhere, not that each appearance decides anything. B-91 and
+B-96 were both named only inside another entry's row and this rule would have missed them —
+R-46 caught those by reading, and no rule here replaces the reading. It also says nothing
+about `ox-alpha/bug-register-waves.md`, whose 330 findings have no `B-<n>` identity at all.
+
+**Acceptance:** WHEN an entry exists in the register and is named nowhere in the step
+register THEN CI SHALL fail and print that entry's heading.
+**Verify:** exit 1 with the ten named at `be0294b`; exit 0 at HEAD.
+**Must not:** tighten this into the version that produced 11 false positives; treat a pass
+as evidence any entry was read.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
