@@ -1,3 +1,17 @@
+
+## Found 2026-09-10 (R-25): `rawOutput` is double-encoded, and 24 rows do not parse
+
+Measured while probing Cartesia results for B-21: of 186 `benchmark_provider_call_results`
+rows for Cartesia, **178 store `rawOutput` as a JSON string inside the jsonb column**
+rather than as an object, and **24 do not parse as JSON at all**. Anything reading that
+column has to `JSON.parse` a value the schema types as an object, and a reader that does
+not will silently see no fields — which is exactly what the first pass of the R-25 probe
+did, and it reported "no events recorded" for every row before the shape was checked.
+
+Worth: find the write site, store the object, and decide what to do about the 24. Not
+urgent — nothing in the product reads this column today; the cost is paid by whoever
+next tries to answer a question from it.
+
 ## Found 2026-09-09 (R-21): drizzle's `.set()` drops a key that is not a column, silently
 R-21's break test mutated the route to spread `body.data` -- including the request-only
 `confirmClearGold` flag -- straight into `db.update(...).set(...)`, expecting a failure.
