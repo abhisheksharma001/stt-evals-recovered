@@ -1057,7 +1057,20 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
       .values({
         label,
         vertical: parsed.data.vertical,
-        durationSeconds: Math.max(1, durationSecondsOf(call)),
+        // R-42 (ox-alpha B-98): was Math.max(1, ...). durationSecondsOf
+        // returns 0 when startedAt or endedAt is missing or the delta is not
+        // positive -- a crashed call. Flooring that to 1 made "we do not know
+        // how long this was" indistinguishable from "this was a one-second
+        // call", permanently and at import time, and it disagreed with the
+        // preview two routes up, which shows the true 0.
+        //
+        // Nothing divides BY duration (checked across artifacts and lib): the
+        // cost math multiplies and the bulk estimate sums, so 0 is safe in
+        // both. It is also safer in the one place duration steers behaviour --
+        // scaledPollTimeoutMs(0) gives the 120s default, while the fabricated
+        // scaledPollTimeoutMs(1) gave 60s. The floor was handing a call of
+        // unknown length a SHORTER timeout than "unknown" gets.
+        durationSeconds: durationSecondsOf(call),
         audioObjectPath: recordingUrl,
         // Vapi's transcript goes in draftTranscript, never goldTranscript
         // (GOLD-01): it is the reviewer's starting point, not the reference.
