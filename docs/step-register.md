@@ -5835,6 +5835,61 @@ means; touch the de-identification columns.
 
 ---
 
+### R-22 — The twelve P0/P1 findings R-19 proved live get fixed, one PR each
+
+**Status:** open. Campaign header; each row below ships as its own step and its own PR.
+**PR:** this one is docs only and spends nothing. The twelve that follow are code.
+**Depends on:** R-19, which read them and deliberately fixed none of them.
+**Files:** `docs/step-register.md`.
+
+**Today:** R-19 triaged the never-cited P0/P1 tranche and stopped there, on purpose --
+*"a triage that also fixes is a triage nobody can check."* That was right, and it left
+twelve confirmed defects sitting untouched. Meanwhile every check this repo owns is
+green: `pnpm run typecheck` clean, api-server 189 unit + 170 integration, UI 174,
+and all five structural checks pass. **A green suite is not a claim that the system is
+correct. It is a claim that the system does what its tests say, and none of these twelve
+has a test.** That gap is the whole content of this step.
+
+Each line below was re-read at HEAD `f026be0`, not inherited from R-19's table:
+
+| entry | what is wrong | verified at `f026be0` |
+|---|---|---|
+| B-5 | a presigned audio URL, query string and all, is interpolated into a thrown error that gets persisted as `errorMessage` | `lib/stt-providers/src/types.ts:147` |
+| B-12 | `writeAudit` is a bare `await db.insert`; an audit failure rejects the caller after the work committed | `artifacts/api-server/src/lib/audit.ts:21` |
+| B-21 | a Cartesia socket that closes non-1000 *after* finalize is sent returns `ok` with a truncated transcript | `lib/stt-providers/src/adapters/cartesia.ts:471` |
+| B-6 | `alreadyOk` is `status === "ok"` alone, not "has a score row", so an orphan ok row skips a cell forever | `artifacts/api-server/src/lib/run-executor.ts:377` |
+| B-7 | `runningRuns.add(runId)` happens before `pool.connect()`, which is outside the `try`; a connect rejection bricks the id until restart | `artifacts/api-server/src/lib/run-executor.ts:237-239` |
+| B-17 | the create form mints `${base}-${randomUUID().slice(0,6)}` against a registry that looks up by exact key | `artifacts/api-server/src/routes/benchmark.ts:1195` |
+| B-18 | the documented base URL already ends in `/api` and the client only strips trailing slashes | `.github/workflows/deploy-web.yml:13`, `lib/api-client-react/src/custom-fetch.ts:29` |
+| B-13 | an error on refetch swaps the whole list body out | `artifacts/stt-benchmark/src/pages/Corpus.tsx:441` |
+| B-19 | `normalizeEntity` does NFKC then `[^A-Z0-9]`, with no NFD -- `"CAFÉ"` normalises to `"CAF"` | `lib/scoring/src/core.ts:223-231` |
+| B-20 | entity match is a bare `includes()`, so `"CAT"` scores correct inside `"CATALOG"` | `lib/scoring/src/core.ts:349` |
+| B-4 | `app.use(cors())` with no origin list, which is what makes the `x-actor` header forgeable from any page | `artifacts/api-server/src/app.ts:29` |
+| B-3 | Vercel builds from the sub-package, whose `workspace:*` and `catalog:` specs only resolve from the repo root | `.github/workflows/deploy-web.yml:62` |
+
+**Order, and why.** The first eight change no measured number: they are wrong answers,
+leaks and stuck state, and each can be proved with a test that fails before the fix.
+**B-19 and B-20 are different in kind** -- both change entity accuracy on every call
+already scored, so each ships with the before/after counts printed from the real corpus
+in its own step, never as a silent recount. B-4 and B-3 land last because both change
+how the thing is reached rather than what it computes, and B-3 cannot be proved without
+a real deploy.
+
+**Correction to R-19.** That table's B-11 row read **"live, and wider than written."**
+It is no longer live: R-21 (PR #146) put the guard in at `artifacts/api-server/src/routes/benchmark.ts`,
+and a `{"goldTranscript":""}` against the one call that has gold now answers 409. The row
+was true when it was written and is recorded here rather than edited there.
+
+**Acceptance:** WHEN this step closes THEN each of the twelve SHALL be either fixed with
+a test that fails without the fix, or carry a written reason it was not.
+**Verify:** each row's file:line re-read before its own PR opens -- these were true at
+`f026be0` and the twelve PRs move each other's lines.
+**Must not:** fix more than one row per PR; fix an adjacent thing seen while in the file;
+change what B-19 or B-20 score without printing the before and after; treat this header
+as permission to skip the grill on any individual row.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
