@@ -16,6 +16,8 @@ let rushId: string;
 let archivedId: string;
 let truckingId: string;
 let measuredId: string;
+let ranOkId: string;
+let ranFailedId: string;
 
 // M-6: the cache flags are read off this directory, so proving them means
 // putting real files in it. Written under the seeded calls' own uuids and
@@ -37,6 +39,7 @@ async function listCalls(query: Record<string, string> = {}) {
     prodEndpointingLatencyMs: number | null;
     prodAssistantInterruptions: number | null;
     prodToolCalls: number | null;
+    benchmarked: boolean;
   }[];
 }
 
@@ -59,6 +62,19 @@ beforeAll(async () => {
       prodToolCalls: 0,
     })
   ).id;
+
+  // Two calls a run has touched, against the four above that nothing has.
+  // The second one's only cell FAILED, and it still counts as run: the call
+  // went through a run and what came back is that run's answer. Reading
+  // this off scored `ok` cells -- or off agent scans, which cover 124 of the
+  // 131 run calls live -- would call it untouched and hide it in the very
+  // filter a reader opens to ask "which calls did the results come from?".
+  const provider = await fx.provider();
+  const run = await fx.run();
+  ranOkId = (await fx.call({ vertical: "rush", status: "ready_to_run" })).id;
+  ranFailedId = (await fx.call({ vertical: "rush", status: "ready_to_run" })).id;
+  await fx.result(run.id, ranOkId, provider.id, { status: "ok" });
+  await fx.result(run.id, ranFailedId, provider.id, { status: "provider_timeout" });
 
   // Three states, on purpose: the rush call has both files (an M-6 import),
   // the archived one has only the mono mix (imported before M-6, or rescued
@@ -132,6 +148,25 @@ describe("GET /api/benchmark/calls", () => {
     // assertion in this file and fail this one.
     expect(monoOnly?.audioCached).toBe(true);
     expect(monoOnly?.customerAudioCached).toBe(false);
+  });
+
+  it("says whether a run has transcribed the call, counting a failed cell as run", async () => {
+    const rows = await listCalls();
+    // Every one of these is `ready_to_run`, which is why the flag has to
+    // exist at all: on the live corpus 2026-09-09 all 376 calls carried that
+    // status and 131 had been run, and nothing in the response separated
+    // them.
+    expect(rows.find((r) => r.id === ranOkId)?.status).toBe("ready_to_run");
+    expect(rows.find((r) => r.id === truckingId)?.status).toBe("ready_to_run");
+
+    expect(rows.find((r) => r.id === ranOkId)?.benchmarked).toBe(true);
+    // The one that separates "a run touched it" from "it scored": this call's
+    // only cell timed out.
+    expect(rows.find((r) => r.id === ranFailedId)?.benchmarked).toBe(true);
+    // And a call no run has ever named says false, not undefined -- the
+    // filter reads it as an answer.
+    expect(rows.find((r) => r.id === truckingId)?.benchmarked).toBe(false);
+    expect(rows.find((r) => r.id === measuredId)?.benchmarked).toBe(false);
   });
 
   it("carries production's own measurements, keeping a stored 0 apart from a null", async () => {

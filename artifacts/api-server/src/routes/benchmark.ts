@@ -138,7 +138,7 @@ import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
 import { drainWithConcurrency } from "../lib/concurrency";
 import { cacheCallSidecars, getOrCacheAudioBytes, audioCachePathFor, isAudioCached, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds } from "../lib/audio-cache";
-import { listBenchmarkCallRows } from "../lib/calls";
+import { listBenchmarkCallRows, listBenchmarkedCallIds } from "../lib/calls";
 import { readProductionSignals } from "../lib/production-signals";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
 import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
@@ -330,7 +330,17 @@ function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect
 // letter apart in meaning, and a swapped pair would be invisible.
 type CallCacheState = { audio: boolean; customerAudio: boolean };
 
-function serializeCall(call: BenchmarkCallRow, cache?: CallCacheState): ZodInput<typeof GetBenchmarkCallResponse> {
+/** Decorations the read routes compute and the write routes do not, so they
+ *  travel together and are absent (not false) on a write response. `cache` is
+ *  M-6's pair; `benchmarked` is whether any provider has transcribed the call,
+ *  which is a join, not a column. */
+type CallReadState = { cache?: CallCacheState; benchmarked?: boolean };
+
+function serializeCall(
+  call: BenchmarkCallRow,
+  read: CallReadState = {},
+): ZodInput<typeof GetBenchmarkCallResponse> {
+  const cache = read.cache;
   return {
     id: call.id,
     label: call.label,
@@ -365,6 +375,10 @@ function serializeCall(call: BenchmarkCallRow, cache?: CallCacheState): ZodInput
     // but no customer file can only be measured on audio that also contains
     // the assistant's own voice.
     customerAudioCached: cache?.customerAudio,
+    // Whether any provider has transcribed this call. Absent (not false) on
+    // write responses for the same reason as the two cache flags: only the
+    // read routes pay for the join that answers it.
+    benchmarked: read.benchmarked,
     // T-131: last audio-cache attempt (rescue/import), so the UI can name a
     // permanent source refusal instead of offering to save the unsaveable.
     audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
@@ -470,10 +484,20 @@ router.get("/benchmark/calls", async (req, res): Promise<void> => {
   // M-6: a second readdir of the same directory, for the same reason -- one
   // per response, not one stat per call.
   const customerCachedIds = await listCachedCustomerCallIds();
+  // One `select distinct` for the whole response, same rule as the two
+  // readdirs above: the Corpus filter needs to separate calls a run has
+  // touched from calls nothing has, and every call's status is
+  // `ready_to_run` either way.
+  const benchmarkedIds = await listBenchmarkedCallIds(calls.map((c) => c.id));
   respondJson(
     res,
     ListBenchmarkCallsResponse,
-    calls.map((c) => serializeCall(c, { audio: cachedIds.has(c.id), customerAudio: customerCachedIds.has(c.id) })),
+    calls.map((c) =>
+      serializeCall(c, {
+        cache: { audio: cachedIds.has(c.id), customerAudio: customerCachedIds.has(c.id) },
+        benchmarked: benchmarkedIds.has(c.id),
+      }),
+    ),
   );
 });
 
@@ -617,7 +641,10 @@ router.get("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   respondJson(
     res,
     GetBenchmarkCallResponse,
-    serializeCall(call, { audio: await isAudioCached(call.id), customerAudio: await isCustomerAudioCached(call.id) }),
+    serializeCall(call, {
+      cache: { audio: await isAudioCached(call.id), customerAudio: await isCustomerAudioCached(call.id) },
+      benchmarked: (await listBenchmarkedCallIds([call.id])).has(call.id),
+    }),
   );
 });
 

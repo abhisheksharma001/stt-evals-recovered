@@ -43,11 +43,11 @@ function call(over: Partial<BenchmarkCall> & Pick<BenchmarkCall, "id" | "label">
 const calls: BenchmarkCall[] = [
   // Cached, and far older than the window: bytes on disk mean Vapi's clock
   // stopped mattering. Mono only -- imported before M-6 saved channels.
-  call({ id: "call-saved", label: "A saved", audioCached: true, customerAudioCached: false, sourceStartedAt: daysAgo(60), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
+  call({ id: "call-saved", label: "A saved", benchmarked: true, audioCached: true, customerAudioCached: false, sourceStartedAt: daysAgo(60), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
   // Uncached and fresh: nothing to warn about yet.
   call({ id: "call-fresh", label: "B fresh", audioCached: false, sourceStartedAt: daysAgo(3), sourceAccountLabel: "Default", sourceAssistantId: "asst-1" }),
   // Uncached past day 14: gone for everyone, and a click cannot fix it.
-  call({ id: "call-gone", label: "C gone", audioCached: false, sourceStartedAt: daysAgo(20), sourceAccountLabel: "Land And Apartment", sourceAssistantId: "asst-2" }),
+  call({ id: "call-gone", label: "C gone", benchmarked: true, audioCached: false, sourceStartedAt: daysAgo(20), sourceAccountLabel: "Land And Apartment", sourceAssistantId: "asst-2" }),
   // Uncached at day 11: three days of warning left.
   call({ id: "call-expiring", label: "D expiring", audioCached: false, sourceStartedAt: daysAgo(11), sourceAccountLabel: "Land And Apartment", sourceAssistantId: "asst-2" }),
   // The server already tried and the source refused permanently.
@@ -149,6 +149,41 @@ describe("Calls", () => {
     expect(screen.getByText("D expiring")).toBeTruthy()
     // The unlabelled call is not swept in with everything else.
     expect(screen.queryByText("F manual")).toBeNull()
+  })
+
+  // Every fixture here is `ready_to_run`, which is the whole point: on the
+  // live corpus 2026-09-09 all 376 calls carried that status and only 131
+  // had ever been through a run, so the table opened on 200 rows imported
+  // that morning and nothing on the page separated them. The split is a
+  // join, not a column, and it has to be its own control -- folding it into
+  // the Status select would put a value there that no call actually holds.
+  it("separates calls a run has transcribed from calls nothing has, and both are ready_to_run", async () => {
+    stubApi(baseRoutes)
+    renderPage(<Corpus />, { path: "/corpus" })
+    fireEvent.click(await screen.findByText("Flat"))
+    await screen.findByText("A saved")
+
+    // Nothing is hidden until the reader asks.
+    expect(screen.getByText("A saved")).toBeTruthy()
+    expect(screen.getByText("B fresh")).toBeTruthy()
+
+    fireEvent.keyDown(screen.getByLabelText("Filter by whether a run has transcribed the call"), { key: "ArrowDown" })
+    // The counts are on the options, so the split reads before a choice is
+    // made: 2 of the 7 fixtures carry a provider result.
+    fireEvent.click(await screen.findByRole("option", { name: "Providers have run (2)" }))
+
+    await waitFor(() => expect(screen.queryByText("B fresh")).toBeNull())
+    expect(screen.getByText("A saved")).toBeTruthy()
+    expect(screen.getByText("C gone")).toBeTruthy()
+
+    fireEvent.keyDown(screen.getByLabelText("Filter by whether a run has transcribed the call"), { key: "ArrowDown" })
+    fireEvent.click(await screen.findByRole("option", { name: "Never run (5)" }))
+
+    // A call the API said nothing about is not quietly counted as run.
+    await waitFor(() => expect(screen.queryByText("A saved")).toBeNull())
+    expect(screen.getByText("B fresh")).toBeTruthy()
+    expect(screen.getByText("F manual")).toBeTruthy()
+    expect(screen.queryByText("C gone")).toBeNull()
   })
 
   // Closes three holes the break test found: nothing here proved the filter

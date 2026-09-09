@@ -1483,6 +1483,15 @@ components:
         # same reason. False means this call can only be measured on the mono
         # mix, where most of the words are the assistant's own voice.
         customerAudioCached: { type: "boolean" }
+        # Whether at least one provider has transcribed this call -- a join
+        # against benchmark_provider_call_results, not a column. Computed
+        # only by the read routes and absent (not false) on write responses,
+        # exactly like the two cache flags above. It exists because `status`
+        # cannot answer it: an imported call and a call five providers have
+        # already run are both `ready_to_run`, so with 376 calls in the
+        # corpus and 131 ever run, the Calls table had no way to show which
+        # rows the results came from.
+        benchmarked: { type: "boolean" }
         # T-131: outcome of the last audio-cache ATTEMPT (rescue or
         # import-time caching). "source_refused" = the source will never
         # hand this recording out again (Vapi retention 400 / unsigned

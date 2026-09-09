@@ -93,6 +93,12 @@ export default function Corpus() {
   // recognises), not by the internal `vertical` tag it replaced. "all"
   // or an account label, or NO_ORG for the calls that carry none.
   const [orgFilter, setOrgFilter] = React.useState("all")
+  // Whether a run has ever touched the call, which `status` cannot say: an
+  // untouched import and a call five providers have already transcribed are
+  // both `ready_to_run`. Read live 2026-09-09: 376 calls in the corpus, 131
+  // ever run, and the table opened on 200 rows imported that morning with
+  // nothing to show. "all" | "yes" | "no".
+  const [benchmarkedFilter, setBenchmarkedFilter] = React.useState("all")
   // T-74 (E.1): "what needs a human" is the page's first question. The
   // strip above the table answers it and its chips filter the table.
   // T-113: Results links here as ?hard=1 to open the table already filtered
@@ -165,10 +171,20 @@ export default function Corpus() {
         (c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) &&
         (statusFilter === "all" || c.status === statusFilter) &&
         (orgFilter === "all" || (c.sourceAccountLabel ?? NO_ORG) === orgFilter) &&
+        (benchmarkedFilter === "all" || (c.benchmarked === true) === (benchmarkedFilter === "yes")) &&
         (!hardCasesOnly || c.hardCases.length > 0)
       )
       .sort((a, b) => rank(b.id) - rank(a.id) || a.label.localeCompare(b.label))
-  }, [calls, searchText, statusFilter, orgFilter, hardCasesOnly, disagreementOf])
+  }, [calls, searchText, statusFilter, orgFilter, benchmarkedFilter, hardCasesOnly, disagreementOf])
+
+  // The counts ride in the option labels (Mobbin: Rox, Airtable) so the split
+  // is readable before the filter is opened. Over `calls`, not
+  // `filteredCalls`, for the same reason the org options are: a count that
+  // moved with the other filters could not be trusted as "how many exist".
+  const benchmarkedCounts = React.useMemo(() => {
+    const yes = (calls ?? []).filter((c) => c.benchmarked === true).length
+    return { yes, no: (calls ?? []).length - yes }
+  }, [calls])
 
   // S-6: account labels are not an enum -- they are whatever Vapi accounts
   // have been added -- so the options are read off the loaded calls rather
@@ -339,6 +355,16 @@ export default function Corpus() {
               {/* Without this the calls that carry no account label are
                   reachable by "all" and by nothing else. */}
               {orgOptions.unlabelled && <SelectItem value={NO_ORG}>Unlabelled org</SelectItem>}
+            </SelectContent>
+          </Select>
+          <Select value={benchmarkedFilter} onValueChange={setBenchmarkedFilter}>
+            <SelectTrigger aria-label="Filter by whether a run has transcribed the call" className="h-9 w-52">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Run or not</SelectItem>
+              <SelectItem value="yes">Providers have run ({benchmarkedCounts.yes})</SelectItem>
+              <SelectItem value="no">Never run ({benchmarkedCounts.no})</SelectItem>
             </SelectContent>
           </Select>
           <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
