@@ -5488,7 +5488,7 @@ package, and both leave the repo in a state R-16 argued against.
 
 ### R-19 — The ox-alpha bug register gets read, P0/P1 first
 
-**Status:** done 2026-09-09 (PR #NNN) for the P0/P1 tranche. The three later tranches are
+**Status:** done 2026-09-09 (PR #140) for the P0/P1 tranche. The three later tranches are
 named below and are not started. Closes the first quarter of memo O-100.
 **PR:** one, docs only. Spends nothing.
 **Depends on:** nothing.
