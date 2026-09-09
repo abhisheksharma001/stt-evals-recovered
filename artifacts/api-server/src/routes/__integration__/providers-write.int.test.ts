@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
-import { providerIdForModel } from "@workspace/stt-providers";
+import { getProviderAdapter, getProviderApiModel, providerIdForModel } from "@workspace/stt-providers";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
@@ -20,38 +20,87 @@ afterAll(async () => {
 });
 
 describe("POST /api/benchmark/providers", () => {
-  it("derives a readable id, stores the price, and lands not_configured", async () => {
+  // R-28 (ox-alpha B-17). This test used to send `name: "fx vendor <suffix>"`
+  // and assert the id ended in six random hex characters -- then said the
+  // quiet part in its own comment: "No adapter answers to this id, so it can
+  // never be 'ready' however it was asked for." It was pinning the defect.
+  // A row no adapter answers to fails every cell it is ever included in, and
+  // there is no delete. The route now refuses to write one.
+  it("mints the stable id for the vendor and model, with no random tail", async () => {
+    const model = `fxmodel-${fx.suffix}`;
     const res = await request(server)
       .post("/api/benchmark/providers")
       .set("x-actor", fx.actor)
       .send({
-        name: `fx vendor ${fx.suffix}`,
-        model: "Model One",
+        name: "Deepgram",
+        model,
         costPerMinute: 0.42,
         supportsDiarization: true,
         configNote: `note ${fx.suffix}`,
       });
     expect(res.status).toBe(201);
     fx.adoptProvider(res.body.id);
-    // The id is slugged from name + model with a short random tail, so two
-    // rows for the same vendor cannot collide.
-    expect(res.body.id).toMatch(new RegExp(`^fx-vendor-${fx.suffix}-model-one-[0-9a-f]{6}$`));
+
+    // The documented stable id, so enabling the same model twice finds the
+    // same row -- and, critically, so getProviderApiModel() strips the vendor
+    // prefix and is left with exactly the model that was asked for.
+    expect(res.body.id).toBe(providerIdForModel("deepgram", model));
+    expect(getProviderApiModel(res.body.id)).toBe(model);
+    expect(getProviderAdapter(res.body.id)).toBeDefined();
     expect(res.body).toMatchObject({
-      name: `fx vendor ${fx.suffix}`,
-      model: "Model One",
+      name: "Deepgram",
+      model,
       costPerMinute: 0.42,
       supportsDiarization: true,
       supportsStreaming: false,
-      // No adapter answers to this id, so it can never be "ready" however
-      // it was asked for.
-      status: "not_configured",
     });
+    // `status` is deliberately not asserted: FR-P3 re-derives it from adapter
+    // plus API-key presence on every write, so it depends on the environment
+    // the suite runs in, not on this route.
 
     const audit = await request(server)
       .get("/api/benchmark/audit-log")
       .query({ entityType: "provider", entityId: res.body.id });
     expect(audit.body).toHaveLength(1);
     expect(audit.body[0]).toMatchObject({ action: "create", actorLabel: fx.actor });
+  });
+
+  it("refuses a name that is not a vendor this build serves, and says which are", async () => {
+    const res = await request(server)
+      .post("/api/benchmark/providers")
+      .set("x-actor", fx.actor)
+      .send({ name: `fx vendor ${fx.suffix}`, model: "Model One", costPerMinute: 0.42 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("deepgram");
+    expect(res.body.error).toContain(`fx-vendor-${fx.suffix}`);
+  });
+
+  // The UI tells the operator to put a full adapter id in Provider Name.
+  // Following that instruction produced "deepgram-nova-3-nova-3-<hex>", whose
+  // derived model string is "nova-3-nova-3". Refused now rather than written.
+  it("refuses a full provider id in the name field", async () => {
+    const res = await request(server)
+      .post("/api/benchmark/providers")
+      .set("x-actor", fx.actor)
+      .send({ name: "deepgram-nova-3", model: "nova-3", costPerMinute: 0.42 });
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses a second row for the same vendor and model instead of minting another id", async () => {
+    const model = `fxdup-${fx.suffix}`;
+    const first = await request(server)
+      .post("/api/benchmark/providers")
+      .set("x-actor", fx.actor)
+      .send({ name: "Deepgram", model, costPerMinute: 0.42 });
+    expect(first.status).toBe(201);
+    fx.adoptProvider(first.body.id);
+
+    const second = await request(server)
+      .post("/api/benchmark/providers")
+      .set("x-actor", fx.actor)
+      .send({ name: "Deepgram", model, costPerMinute: 0.99 });
+    expect(second.status).toBe(409);
+    expect(second.body.error).toContain(first.body.id);
   });
 
   it("refuses a provider with no name and one with no price", async () => {

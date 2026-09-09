@@ -147,7 +147,7 @@ import { cachedVendorModels } from "../lib/model-list-cache";
 import { defaultProviders } from "../lib/default-providers";
 import { respondInvalid } from "../lib/validation-error";
 import { respondJson } from "../lib/respond";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
 
@@ -1181,6 +1181,15 @@ router.get("/benchmark/providers", async (_req, res): Promise<void> => {
   respondJson(res, ListBenchmarkProvidersResponse, providers.map(serializeProvider));
 });
 
+/** R-28: the same slugging providerIdForModel applies to a model, used on the
+ *  vendor half so "Deepgram" and "deepgram" name the same vendor. */
+function slugForProviderId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 router.post("/benchmark/providers", async (req, res): Promise<void> => {
   const parsed = CreateBenchmarkProviderBody.safeParse(req.body);
   if (!parsed.success) {
@@ -1188,11 +1197,43 @@ router.post("/benchmark/providers", async (req, res): Promise<void> => {
     return;
   }
 
-  const base = `${parsed.data.name}-${parsed.data.model}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const id = `${base}-${randomUUID().slice(0, 6)}`;
+  // R-28 (ox-alpha B-17): the id used to be `<name>-<model>-<6 random hex>`.
+  // Nothing resolves that. getProviderApiModel() strips the vendor prefix and
+  // sends whatever remains as the model string, so a row created here asked
+  // the vendor for "nova-3-a1b2c3" and every one of its cells failed -- while
+  // the row itself looked perfectly ordinary in Setup, and there is no delete.
+  //
+  // The id is now the documented stable one, providerIdForModel(vendor,
+  // apiModel), and the vendor half has to be a vendor this build actually
+  // serves. That is what makes the derived model string exactly the model the
+  // operator typed, instead of the model plus whatever else was in the name.
+  const vendor = slugForProviderId(parsed.data.name);
+  const knownVendors = [...new Set(listProviderAdapters().map(vendorOf))].sort();
+  if (!knownVendors.includes(vendor)) {
+    res.status(400).json({
+      error:
+        `Provider Name must be a vendor this build has an adapter for, not a full provider id. ` +
+        `Got "${parsed.data.name}" (read as "${vendor}"). Known vendors: ${knownVendors.join(", ")}. ` +
+        `The model goes in Model ID -- the two are joined to form the provider id.`,
+    });
+    return;
+  }
+
+  const id = providerIdForModel(vendor, parsed.data.model);
+  const [existing] = await db
+    .select({ id: benchmarkProvidersTable.id })
+    .from(benchmarkProvidersTable)
+    .where(eq(benchmarkProvidersTable.id, id))
+    .limit(1);
+  if (existing) {
+    // The random suffix used to hide this: the same vendor and model could be
+    // added over and over, each time as a separate row.
+    res.status(409).json({
+      error: `Provider "${id}" already exists. Edit that row instead of adding it again.`,
+    });
+    return;
+  }
+
   const [provider] = await db
     .insert(benchmarkProvidersTable)
     .values({

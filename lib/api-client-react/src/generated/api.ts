@@ -1852,7 +1852,7 @@ export const createBenchmarkProvider = async (providerInput: ProviderInput, opti
 
 
 
-export const getCreateBenchmarkProviderMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateBenchmarkProviderMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBenchmarkProvider>>, TError,{data: BodyType<ProviderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createBenchmarkProvider>>, TError,{data: BodyType<ProviderInput>}, TContext> => {
 
@@ -1881,12 +1881,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateBenchmarkProviderMutationResult = NonNullable<Awaited<ReturnType<typeof createBenchmarkProvider>>>
     export type CreateBenchmarkProviderMutationBody = BodyType<ProviderInput>
-    export type CreateBenchmarkProviderMutationError = ErrorType<unknown>
+    export type CreateBenchmarkProviderMutationError = ErrorType<void>
 
     /**
  * @summary Add or configure a transcription provider
  */
-export const useCreateBenchmarkProvider = <TError = ErrorType<unknown>,
+export const useCreateBenchmarkProvider = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBenchmarkProvider>>, TError,{data: BodyType<ProviderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createBenchmarkProvider>>,

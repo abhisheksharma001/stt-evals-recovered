@@ -6138,6 +6138,60 @@ test moves the connect back outside the `try`.
 
 ---
 
+### R-28 — The create form stops minting providers that can never run (B-17)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-22.
+**Files:** `artifacts/api-server/src/routes/benchmark.ts`, `lib/api-spec/openapi.yaml`,
+the generated clients, `artifacts/api-server/src/routes/__integration__/providers-write.int.test.ts`.
+
+**Today:** `POST /benchmark/providers` mints
+`` `${name}-${model}`.slug + "-" + randomUUID().slice(0,6) ``. Nothing resolves that id.
+`getProviderApiModel` strips the vendor prefix and sends **whatever remains** as the model
+string, so a row created here asks the vendor for `nova-3-a1b2c3`. Every cell of every run
+that includes it fails, the row looks entirely ordinary in Setup, and there is no delete.
+
+**Measured:** 12 provider rows on the dev database, **none** with a random tail — every
+live row came from the seed or catalog path. So B-17 has never actually fired. It is a
+loaded footgun on a form the UI exposes, not damage already done.
+
+**The UI's own help text is part of the bug.** The Provider Name field says
+*"Must match a registered adapter id exactly (e.g. deepgram-nova-3, elevenlabs-scribe)."*
+Follow that exactly — name `deepgram-nova-3`, model `nova-3` — and the route builds
+`deepgram-nova-3-nova-3-<hex>`, whose derived model string is `nova-3-nova-3`.
+**The form asks for something it cannot accept.**
+
+**Change:** the id becomes `providerIdForModel(vendor, model)` — the function already
+documented as *"stable, so enabling the same model twice finds the same row"* — and the
+vendor half must be a vendor this build has an adapter for. That pairing is what makes the
+derived model string exactly the model that was typed. Unknown vendor is **400**, naming
+the vendors that exist and what the name was read as; an existing row is **409** instead
+of a second id for the same thing.
+
+**A second test was pinning the defect.** The create test asserted the six random hex
+characters and then said the quiet part in its own comment: *"No adapter answers to this
+id, so it can never be 'ready' however it was asked for."* It described a dead row and
+called it the expected result. Rewritten to assert the stable id, that an adapter resolves
+it, and that `getProviderApiModel` returns the model that was sent. `status` is
+deliberately **not** asserted — FR-P3 re-derives it from adapter plus key presence, so it
+depends on the environment the suite runs in, not on this route.
+
+**Not fixed here: the UI help text**, which now describes something the API refuses. It is
+UI copy, and the standing rule is that `visual-and-research` runs before UI copy work.
+Logged in `docs/backlog/good-to-have.md` as its own step.
+
+**Acceptance:** WHEN a provider is created THEN its id SHALL resolve to a registered
+adapter AND `getProviderApiModel` SHALL return exactly the model that was sent; AND WHEN
+the name is not a known vendor THEN the row SHALL be refused with 400; AND WHEN the vendor
+and model already have a row THEN the request SHALL be refused with 409.
+**Verify:** `pnpm run typecheck`; `node scripts/check-api-routes.mjs`; api-server
+integration (175) and unit (198); UI (174).
+**Must not:** keep the random suffix as a fallback; accept a full provider id in the name
+field; assert `status` in the create test; change the UI copy in this step.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

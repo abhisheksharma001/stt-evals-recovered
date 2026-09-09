@@ -492,6 +492,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Provider"
+        # R-28: an id that resolves to no adapter can never run and cannot be
+        # deleted, so the row is refused rather than written.
+        "400":
+          description: Provider Name is not a vendor this build has an adapter for (R-28)
+        "409":
+          description: A provider already exists for this vendor and model (R-28)
   /benchmark/providers/models:
     get:
       operationId: listProviderModels
