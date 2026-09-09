@@ -6778,6 +6778,64 @@ covering B-24 or B-21, which are about the same file and remain live.
 
 ---
 
+### R-40 — A cell that was tried once stops claiming it was tried three times (B-71), and B-68 is split
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-35.
+**Files:** `artifacts/api-server/src/lib/run-executor.ts`,
+new file artifacts/api-server/src/lib/cell-failure-message.ts,
+new file artifacts/api-server/src/lib/cell-failure-message.test.ts.
+
+**Today (B-71):** the failed-cell message interpolated `CELL_MAX_ATTEMPTS`
+unconditionally. A cell that broke on its **first** attempt — a 401, or any outcome
+`isRetryableOutcome` calls terminal — was recorded as having failed *"after 3 attempt(s)"*.
+An operator reads that as *"we tried hard and it kept failing"* and goes hunting a flaky
+provider, when one call was refused once. **The number was never the attempts made; it was
+the ceiling.**
+
+**Change:** count the attempts and say that. Nothing parses this string — checked across
+`artifacts`, `lib` and `scripts` before rewording — so it is safe to say what happened.
+
+**Extracted to be testable.** `runCell` cannot be driven in the suite: that needs a `ready`
+provider, and a ready provider in a test spends real money. `cellFailureMessage` is a pure
+function for the same reason `cell-resumption.ts` is one. Its test also pins that the phrase
+`"safe to retry"` is never introduced here — that string is the contract `isRetryableOutcome`
+reads, and R-36 already found one way to reintroduce it by accident.
+
+**B-68 is split, not fixed.** The entry says the executor wipes caller-authored `run.notes`,
+and it does: `:860` sets `notes` to this attempt's lines. But the comment directly above
+records that prepending was **removed on purpose** on 2026-08-25, because a run retried N
+times accumulated N near-identical lines. So the two readings are both right and they
+conflict:
+
+- *the executor's view* — `notes` describes **this attempt's outcome**, and the history is in
+  `audit_log`;
+- *the caller's view* — `notes` is **what I wrote when I created this run**, and it vanished.
+
+**One column, two writers, and no rule saying which owns it.** That is the actual defect, and
+neither prepending (which restores the accumulation bug) nor leaving it (which keeps losing
+the caller's text) settles it. It wants a second column, or a decision that the caller's note
+belongs somewhere else. Recorded for Abhishek rather than guessed at — the same shape as
+R-24.
+
+**Acceptance:** WHEN a cell fails on its first attempt THEN the recorded message SHALL NOT
+mention an attempt count; AND WHEN it fails after N>1 THEN it SHALL name N.
+**Verify:** `pnpm run typecheck`; api-server unit (212) and integration (184); the break test
+removes the single-attempt guard (2 failed).
+
+**One mutation could not be caught, and it is worth naming.** Deleting
+`attemptsMade = attempt;` from the loop leaves the counter at 0, so the message never
+mentions attempts at all — and **all 212 tests still pass**. The helper is tested; the one
+line that feeds it lives inside `runCell`, which nothing can reach without a `ready`
+provider. That is the same limit the extraction exists because of, and it is not closed by
+this step. The consolation is only that the uncaught regression is the smaller one: never
+claiming an attempt count is a milder lie than always claiming the ceiling.
+**Must not:** fix B-68 in this step; introduce the phrase `safe to retry`; change which
+outcomes break the retry loop.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

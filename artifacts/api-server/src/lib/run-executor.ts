@@ -44,6 +44,7 @@ import { rank1Recommendation, runnerUpRecommendation } from "./ranking-recommend
 import { runAutoAgentVerificationForRun } from "./agent-verify";
 import { drainWithConcurrency, envInt } from "./concurrency";
 import { cellKey, isCellDone, staleResultIdsToClear } from "./cell-resumption";
+import { cellFailureMessage } from "./cell-failure-message";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
 // documented race (see the comment on the run.status check below) --
@@ -913,8 +914,14 @@ async function runCell(
   // --- Phase 1: provider transcription, with bounded retries. --------------
   let result: ProviderTranscribeResult | null = null;
   let lastTransient: { result?: ProviderTranscribeResult; error?: unknown } = {};
+  // R-40 (ox-alpha B-71): the attempts actually made, not the ceiling. A cell
+  // that broke on the first attempt -- a 401, or any non-retryable outcome --
+  // used to be recorded as having failed "after 3 attempt(s)", which is a
+  // sentence an operator reads as "we tried hard" when nothing was retried.
+  let attemptsMade = 0;
 
   for (let attempt = 1; attempt <= CELL_MAX_ATTEMPTS; attempt++) {
+    attemptsMade = attempt;
     try {
       const candidate = await adapter.transcribe({
         callId: call.id,
@@ -973,10 +980,11 @@ async function runCell(
         httpStatus: lastTransient.result?.httpStatus ?? null,
         hypothesisTranscript: null,
         rawOutput: lastTransient.result?.rawOutput ?? null,
-        errorMessage:
-          CELL_MAX_ATTEMPTS > 1 && (lastTransient.result || lastTransient.error)
-            ? `${message} (after ${CELL_MAX_ATTEMPTS} attempt(s))`
-            : message,
+        errorMessage: cellFailureMessage(
+          message,
+          attemptsMade,
+          Boolean(lastTransient.result || lastTransient.error),
+        ),
         // Whichever of the two produced this outcome already said what kind
         // of failure it was: an adapter result carries `failureClass`, a
         // thrown error carries it on the error object. Neither is re-read
