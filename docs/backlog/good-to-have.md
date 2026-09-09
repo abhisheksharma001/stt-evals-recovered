@@ -1,3 +1,20 @@
+## Found 2026-09-09 (building R-17): a test fixture whose two counts were equal hid a wrong-variable bug for a day — FIXED same day (R-17)
+
+R-14 shipped `needs 20 calls written out by a person; {data.n} exist`. The words name
+`labelledCalls`; `n` is the subset of labelled calls that could be ranked two ways, and
+the doc comment ten lines above that JSX already said so in as many words. The line
+printed the right digit because the live corpus had `labelledCalls == n == 2`.
+
+The render case could not have caught it: its fixture was `agreement(2, 2, …)`, so the
+two variables were interchangeable and the assertion `toContain("2 exist")` tested one of
+them twice. Reconstructing R-14's exact state as a break test — component printing `n`,
+fixture equalised, no singular case — leaves the suite **157/157 green on the bug**.
+
+Worth keeping as a rule: **a fixture that gives two different variables the same value is
+testing one variable twice.** When a sentence names one count and the code could plausibly
+read another, the fixture has to make them differ or the test proves nothing about which
+one was read. Cheap to check: grep a test's stub arguments for repeated literals.
+
 ## Found 2026-09-09: `pnpm run build` has been red on main, and CI cannot see it — FIXED same day (R-15)
 
 `artifacts/mockup-sandbox/vite.config.ts` still throws `PORT environment variable is
