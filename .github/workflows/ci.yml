@@ -75,6 +75,13 @@ jobs:
       - name: Check success responses go through respondJson
         run: node scripts/check-response-edge.mjs
 
+      # R-18: nothing R-16 removed is referenced again, and the one Replit
+      # package it deliberately KEPT is still wired. Both directions -- a
+      # one-directional scan passes the moment a later sweep deletes the
+      # exception R-16 argued for.
+      - name: Check Replit residue
+        run: node scripts/check-replit-residue.mjs
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)
