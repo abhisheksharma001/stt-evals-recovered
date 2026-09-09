@@ -157,13 +157,26 @@ describe("GET /api/benchmark/runs/:runId/results", () => {
     expect(batchRow.endOfAudio).toBeNull();
   });
 
-  it("an unknown run answers an empty list; a malformed id answers a sentence", async () => {
+  // R-38 (ox-alpha B-79): this test used to assert `200 []` for an unknown run
+  // and said so in its own title -- "an unknown run answers an empty list". It
+  // was describing the defect. `200 []` is byte-for-byte what a REAL run that
+  // has not produced a cell yet returns, so a caller polling a mistyped or
+  // deleted id waits forever on a response that says "not yet" when the truth
+  // is "never". Three answers, three statuses.
+  it("tells apart an unknown run, a malformed id, and a real run with no cells yet", async () => {
     const unknown = await request(server).get("/api/benchmark/runs/00000000-0000-4000-8000-000000000000/results");
-    expect(unknown.status).toBe(200);
-    expect(unknown.body).toEqual([]);
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toMatch(/not found/i);
 
     const malformed = await request(server).get("/api/benchmark/runs/not-a-uuid/results");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/runId/);
+
+    // The case the 404 must NOT swallow: a run that exists and has produced
+    // nothing yet is still 200 with an empty list.
+    const empty = await fx.run({ status: "queued", providerIds: [], callIds: [], callCount: 0 });
+    const none = await request(server).get(`/api/benchmark/runs/${empty.id}/results`);
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual([]);
   });
 });

@@ -6709,6 +6709,75 @@ provider price could reach; change `minimum`.
 
 ---
 
+### R-38 — "No results yet" and "no such run" stop being the same answer (B-79)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-35.
+**Files:** `artifacts/api-server/src/routes/benchmark.ts`, `lib/api-spec/openapi.yaml`,
+the generated clients,
+`artifacts/api-server/src/routes/__integration__/runs-and-results.int.test.ts`.
+
+**Today:** `GET /benchmark/runs/:runId/results` selects cells by `runId` with no existence
+check, so an unknown run answers **200 with an empty array** — byte-for-byte what a real run
+that has not produced a cell yet returns. A caller polling a mistyped or deleted id waits
+forever on a response that says *"not yet"* when the truth is *"never"*. The manifest route
+beside it (`:1686`) has always 404'd; the two now agree.
+
+**A fourth test was pinning the defect, and this one said so in its title.** It was called
+*"an unknown run answers an empty list"* and asserted `200 []`. Rewritten to assert all three
+answers — 404 for an unknown run, 400 for a malformed id, and **200 with an empty list for a
+real run that has produced nothing yet**, which is the case the 404 must not swallow and
+which nothing covered before.
+
+> **Running count.** That is four tests in this session that asserted a bug as expected
+> behaviour: the R-13 fixture's unscored `ok` row *("the realistic shape")*, the provider
+> create test's random suffix *("No adapter answers to this id")*, and now this one. **Each
+> was written by someone reading the code and describing what it did.** That is the failure
+> mode of writing tests after the fact rather than from the requirement — the test inherits
+> the implementation's opinion, and then defends it.
+
+**Acceptance:** WHEN the runId names no run THEN the response SHALL be 404; AND WHEN the run
+exists but has no cells THEN it SHALL be 200 with an empty array.
+**Verify:** `pnpm run typecheck`; `node scripts/check-api-routes.mjs`; api-server integration
+(184); the break test removes the existence check.
+**Must not:** 404 a real run that has produced nothing yet; change the 400 for a malformed id.
+
+---
+
+### R-39 — B-87 does not hold, and the reason is two lines the entry did not read
+
+**Status:** done 2026-09-10. Refutation, no code.
+**Depends on:** R-35.
+**Files:** none.
+
+R-35 recorded B-87 — *"immortal send interval when open lands after connect-timeout finish"* —
+as **live**, on the strength of `cartesia.ts:393`: the `open` handler creates `sendTimer`
+without checking `settled`. That reading is correct and the conclusion does not follow.
+
+**Both paths that set `settled` close the socket first.** The connect timeout
+(`cartesia.ts:353-362`) and the response timeout (`:364-375`) each call `ws.close()` and
+*then* `finish()`. This adapter uses Node's global `WebSocket` — there is no `ws` dependency
+in the package — and per the WHATWG semantics undici implements, `close()` on a **CONNECTING**
+socket fails the connection: the readyState goes to CLOSING and `open` does not fire
+afterwards. The window the entry describes is closed by the two lines above the one it cites.
+
+**Stated as a limit, not a proof.** I am reasoning from the specification and from reading
+undici's contract, **not** from an observed run. Forcing a handshake to complete in the same
+tick as a `close()` is not something I could stage cheaply, so what is established is that
+the path is unreachable *as written*, not that no implementation could ever leak.
+
+**No code was written, on purpose.** The one-line `if (settled) return` in the `open` handler
+would be free and would look prudent. It is also code for a path nothing can reach, which no
+test could cover — the same reason R-30 took out its redundant `\p{M}` strip. **An entry
+marked "verified" by an agent that read one line is not evidence; it is a hypothesis with
+good posture.** Refuting it is worth more than defending against it.
+
+**Must not:** add the guard without first demonstrating the race; treat this refutation as
+covering B-24 or B-21, which are about the same file and remain live.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

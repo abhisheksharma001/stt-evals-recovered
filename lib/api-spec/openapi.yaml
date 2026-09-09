@@ -709,6 +709,10 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProviderCallResult"
+        # R-38 (ox-alpha B-79): an unknown run answered 200 [], which is
+        # byte-for-byte what a real run with no cells yet returns.
+        "404":
+          description: No run with this id (R-38)
   /benchmark/results/{resultId}/analyze-failure:
     post:
       operationId: analyzeResultFailure

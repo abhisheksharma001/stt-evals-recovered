@@ -2666,7 +2666,7 @@ export const getListBenchmarkRunResultsQueryKey = (runId: string,) => {
     }
 
 
-export const getListBenchmarkRunResultsQueryOptions = <TData = Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError = ErrorType<unknown>>(runId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListBenchmarkRunResultsQueryOptions = <TData = Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError = ErrorType<void>>(runId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -2685,14 +2685,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListBenchmarkRunResultsQueryResult = NonNullable<Awaited<ReturnType<typeof listBenchmarkRunResults>>>
-export type ListBenchmarkRunResultsQueryError = ErrorType<unknown>
+export type ListBenchmarkRunResultsQueryError = ErrorType<void>
 
 
 /**
  * @summary Per-cell (provider x call) raw results and scores for a run (FR-E3, drill-down)
  */
 
-export function useListBenchmarkRunResults<TData = Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError = ErrorType<unknown>>(
+export function useListBenchmarkRunResults<TData = Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError = ErrorType<void>>(
  runId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBenchmarkRunResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
