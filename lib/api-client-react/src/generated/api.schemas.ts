@@ -247,6 +247,7 @@ export interface BenchmarkCall {
   sourceSuccessEvaluation?: string | null;
   audioCached?: boolean;
   customerAudioCached?: boolean;
+  benchmarked?: boolean;
   /** @nullable */
   audioCacheLastOutcome?: BenchmarkCallAudioCacheLastOutcome;
   /** @nullable */
