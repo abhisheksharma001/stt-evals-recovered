@@ -5344,7 +5344,8 @@ working out what this step would change on screen, which is the only reason it w
 at all — the two are equal on this corpus and stay equal after this step.
 **Acceptance:** WHEN the backfill has run THEN `GET /benchmark/proxy-agreement` SHALL
 report `labelledCalls: 1`, AND re-running the backfill SHALL clear nothing, AND running
-it against an edited gold SHALL exit non-zero without writing.
+it against an edited gold SHALL exit non-zero without writing. **All three verified live
+2026-09-09; the readings are in the block below.**
 **Verify:** dry run first and read what it names; `pnpm run typecheck`; the render cases
 in `results.test.tsx`, including a new one where `labelledCalls` and `n` differ (they
 never did on the live corpus, which is how R-14's swap survived review) and one on a
@@ -5358,10 +5359,31 @@ count for another and fixing a singular. The searches that would answer "how sho
 sentence read" have already been run and are cited where the sentence was written.
 
 > **What shipped.** One backfill script, one changed expression in
-> `ProxyAgreementLine`, two render cases. Live before: `labelledCalls 2, n 2,
-> top1Agreement 0.5, kendallTau 0.017, judgePicks 1`. The judge's one measured pick is on
+> `ProxyAgreementLine`, two render cases. The judge's one measured pick is on
 > `64d8f463`, the call that survives, so `judgePicks` is unaffected — and it is now
 > measured against a real transcript with nothing else averaged into it.
+>
+> **Measured live, 2026-09-09, before and after the `--apply`:**
+>
+> | | labelledCalls | n | top1Agreement | kendallTau | judgePicks |
+> |---|---|---|---|---|---|
+> | before | 2 | 2 | 0.5 | 0.017 | 1 |
+> | after | **1** | **1** | **1** | **0.632** | 1 |
+>
+> Verified alongside it: one gold left on file (`64d8f463`, 978 chars); one audit row
+> under `backfill-r17-clear-fragment-gold` whose `beforeState` carries the fragment and
+> whose `afterState.goldTranscript` is null; the eight `benchmark_scores` rows on
+> `3559ea45` still present; `status` still `ready_to_run`; a second `--apply` clears
+> nothing. The dev server on :5173 serves the new expression and no longer contains
+> `data.n} exist`.
+>
+> **The after-values are the argument for the floor, not against it.** Removing the bad
+> half of the labelled set moved top-1 agreement from 0.5 to **1.0** and tau-b from 0.017
+> to **0.632** — from "no relationship" to "strong relationship" — because one call
+> cannot disagree with itself. If `MEASURABLE_FLOOR` were 1, this page would now be
+> printing *"picked the same provider as the human-checked order 100% of the time"* off a
+> single call, and it would read as the best evidence the tool has ever had. Cleaning bad
+> data made the unguarded number **more** seductive, not less. Nobody lowers the floor.
 >
 > **What was learned.** *A number can be right and still be the wrong number.* The
 > below-floor line printed 2 and 2 was correct — `labelledCalls` was 2 and `n` was 2. The
