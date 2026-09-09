@@ -23,4 +23,11 @@ export const pool = new Pool({
 });
 export const db = drizzle(pool, { schema });
 
+// R-27: `pool.connect()` is overloaded (it also takes a callback and returns
+// void), so `Awaited<ReturnType<typeof pool.connect>>` widens to `void |
+// PoolClient` at the call site. `pg` is a dependency of this package and not
+// of its consumers, so the type is re-exported from here rather than imported
+// across the boundary.
+export type DbPoolClient = pg.PoolClient;
+
 export * from "./schema";

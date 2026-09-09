@@ -191,6 +191,43 @@ describe("executeBenchmarkRun and a manually disabled provider (R-13)", () => {
     expect(cells[0].hypothesisTranscript).not.toBe(`fx orphan ${fx.suffix}`);
     expect(cells[0].errorMessage).toContain("switched off in Setup");
   });
+
+  // R-27 (ox-alpha B-7). `pool.connect()` used to sit outside the try, after
+  // runningRuns.add(runId). A connect rejection -- pool exhausted, database
+  // briefly down -- therefore left the id in the Set for the life of the
+  // process: every later execute hit the "already running" branch and did
+  // nothing, and only a restart cleared it. A transient failure bricked the
+  // run in-process, permanently and silently.
+  //
+  // Safety note 4, alongside the three at the top of this file: `connect` is
+  // overridden only for the failing call, exactly as `audioResolver` is
+  // overridden throughout. The second call uses the real pool, and the
+  // provider is still a disabled Fixtures provider, so nothing is spent.
+  it("does not brick the run when acquiring the lock connection fails", async () => {
+    const call = await fx.call();
+    const provider = await fx.provider({ manuallyDisabled: true, status: "disabled" });
+    const run = await fx.run({
+      status: "queued",
+      providerIds: [provider.id],
+      callIds: [call.id],
+      callCount: 1,
+    });
+
+    await expect(
+      executeBenchmarkRun(run.id, fx.actor, {
+        audioResolver,
+        connect: () => Promise.reject(new Error("pool exhausted (R-27 probe)")),
+      }),
+    ).rejects.toThrow(/pool exhausted/);
+
+    // The run must still be executable. Without the fix this call returns
+    // early on the runningRuns guard and writes nothing at all.
+    await executeBenchmarkRun(run.id, fx.actor, { audioResolver });
+
+    const cells = await cellsOf(run.id);
+    expect(cells).toHaveLength(1);
+    expect(cells[0].errorMessage).toContain("switched off in Setup");
+  });
 });
 
 /** Notes are nullable; `String(null)` would quietly satisfy a `not.toContain`. */

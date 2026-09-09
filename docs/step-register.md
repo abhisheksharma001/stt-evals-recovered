@@ -6088,6 +6088,56 @@ what happens to a scored ok row.
 
 ---
 
+### R-27 — A transient connect failure stops bricking a run until restart (B-7)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-22.
+**Files:** `artifacts/api-server/src/lib/run-executor.ts`, `lib/db/src/index.ts`,
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+
+**Today:** `executeBenchmarkRun` does `runningRuns.add(runId)` and then
+`await pool.connect()` — **outside** the `try` whose `finally` is the only place that
+deletes from the Set. R-19 recorded B-7 as *narrowed* because the unlock, release and
+delete all moved into `finally`; the connect never did. So a pool exhaustion or a
+momentary database outage leaves the id in `runningRuns` **for the life of the process**.
+Every later execute for that run takes the "already running" branch at the top, logs a
+warning and does nothing. The run is bricked in-process by a transient failure, and the
+only cure is a restart.
+
+**Change:** the connect moves inside the same `try`, and `lockClient` becomes nullable so
+the `finally` can tell "never connected" from "connected". That is the whole fix — the
+cleanup was already correct, it simply did not cover the first await.
+
+**Testability, and why a seam was added rather than a mock.** `executeBenchmarkRun`
+already carries `opts.audioResolver`, which exists in its own words *"purely so
+tests/rehearsals can substitute a deterministic resolver"*. A test cannot make the real
+pool refuse a connection without breaking every other test sharing it, so `opts.connect`
+follows that exact precedent and production callers omit it. The test overrides it for
+the **failing call only**; the second call uses the real pool, and the provider stays a
+disabled Fixtures provider, so nothing is spent. That is recorded as safety note 4 in the
+file's header block.
+
+**One type had to move.** `pool.connect()` is overloaded — it also takes a callback and
+returns `void` — so `Awaited<ReturnType<typeof pool.connect>>` widens to
+`void | PoolClient` and will not typecheck. `pg` is a dependency of `lib/db` and not of
+its consumers, so `DbPoolClient` is re-exported from `lib/db/src/index.ts` rather than
+importing `pg` across the package boundary and relying on hoisting.
+
+**Not fixed here:** B-7's sibling, that the pool has no `connectionTimeoutMillis`, so
+`pool.connect()` can pend forever rather than reject. This step makes a **rejection**
+survivable; it does nothing about a hang. Separate change, separate step — and a wrong
+timeout value is its own outage.
+
+**Acceptance:** WHEN acquiring the lock connection rejects THEN the error SHALL propagate
+AND the run SHALL remain executable by a later call.
+**Verify:** `pnpm run typecheck`; api-server integration (172) and unit (198); the break
+test moves the connect back outside the `try`.
+**Must not:** swallow the connect error; add a connection timeout in this step; let
+`opts.connect` reach any production call site.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
