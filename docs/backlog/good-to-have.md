@@ -1,3 +1,83 @@
+## Found 2026-09-09: `pnpm run build` has been red on main, and CI cannot see it
+
+`artifacts/mockup-sandbox/vite.config.ts` still throws `PORT environment variable is
+required but was not provided.` before it loads -- the Replit-shaped hard requirement
+that `artifacts/stt-benchmark/vite.config.ts` softened to a `5173` default and never
+got copied across. So the repo-root `pnpm run build` exits 1 on a clean checkout of
+main.
+
+CI does not build that package: `.github/workflows/ci.yml` runs `pnpm run typecheck`
+then builds exactly two, `@workspace/stt-benchmark` and `@workspace/api-server` (lines
+113 and 116). The green check is therefore telling the truth about what it ran and
+nothing about the root script a person types.
+
+Verified by stashing an unrelated change and building main untouched -- the failure is
+pre-existing, not caused by the replit-config removal that found it. Two things worth
+separating when this is stepped: giving mockup-sandbox the same optional-PORT default,
+and deciding whether that package is still alive at all (nothing outside it references
+it, and it carries its own copy of the Replit vite plugins).
+
+## Found 2026-09-09: 80 of the 100 ox-alpha bug-register entries have never been read
+
+Counted, not estimated: `ox-alpha/bug-register.md` holds 100 entries (P0x3, P1x19,
+P2x27, P3x51). Grepping every tracked file outside `ox-alpha/` for `B-<n>` finds 20 of
+them cited anywhere -- B-1, B-2, B-14, B-15, B-16, B-30, B-31, B-34, B-37, B-52, B-53,
+B-54, B-81, B-82, B-88, B-89, B-91, B-92, B-96, B-100. The other **80 have never been
+cited in a doc, a comment, a test, or the register.**
+
+This is the measured version of what R-13 wrote down as a lesson ("a bug register
+nobody reads is not a bug register" -- B-34 sat found-and-unfixed for two weeks). The
+folder is not dead weight and must not be deleted: it is cited from live source
+(`artifacts/api-server/src/lib/run-executor.ts`, `lib/db/src/index.ts`,
+`artifacts/api-server/src/lib/vapi.ts`), from `docs/PRD.md`, and from
+`.github/workflows/deploy-web.yml`. It is an unmined seam, and the harvest rate is 20%.
+
+Sampling says the 80 are a mix, so triage is the step, not a fix: B-2 (Speechmatics
+posting `fetch_url` instead of `fetch_data`) was already fixed on 2026-08-27; B-1
+(unauthenticated API) is a documented accepted risk for a local single-operator tool
+(PRD-v2 OD-11, resolved a third time as "no auth needed right now"); B-34 was a real
+open bug that took two weeks to reach code.
+
+## Removed 2026-09-09: the dead Replit platform config -- and what was deliberately left
+
+The project moved off Replit on 2026-08-26 (web to Vercel, API to a long-running host;
+`docs/PRD-v2-bulk-scale.md` R10 and `ox-alpha/deployment.md`). Deploy today is
+`scripts/deploy-api.sh` on port 8177. Seven files describing the old platform were
+still tracked and had **zero consumers** -- no workflow, script, doc or source
+referenced any of them: `.replit`, `.replitignore`, `replit.md`, the three
+`artifacts/*/.replit-artifact/artifact.toml`, and `post-merge.sh` (removed from `scripts/`; whose only
+caller was `.replit`'s `[postMerge]` hook, and which `ox-alpha/bug-register-waves.md`
+had already flagged twice as broken -- it filtered on `db`, a name no package has, so
+it exited 0 without pushing anything).
+
+`replit.md` was the one with teeth. It was an agent-instruction file outside
+`check:doc-paths`' live-docs list, so its rot was never caught: it named port 5000 for
+an API that listens on 8177, and its "User preferences" section still said *"Stop at
+architecture and handoff documentation for this phase; do not autonomously build the
+full Vapi/provider integration"* -- an instruction the whole project has since
+disproved. Nothing unique died with it: the API-key rule lives in `.claude/CLAUDE.md`
+and `.claude/REQUIREMENTS.md`, the MCP-is-not-runtime rule in
+`docs/integration-strategy.md`, and every document it pointed at still exists.
+
+**Left in place on purpose, each its own step later:**
+
+1. `@replit/vite-plugin-runtime-error-modal` is imported unconditionally by both
+   `artifacts/stt-benchmark/vite.config.ts` and
+   `artifacts/mockup-sandbox/vite.config.ts`. It is a live, working dev overlay off
+   Replit -- removing it is a behaviour change, not a cleanup.
+2. `@replit/vite-plugin-cartographer` and `@replit/vite-plugin-dev-banner` are gated on
+   `process.env.REPL_ID !== undefined`, so they are provably dead here -- but they sit
+   in the same plugins array, the same `package.json` blocks and the same
+   `pnpm-workspace.yaml` catalog as the live one, so all three should go together or
+   not at all.
+3. `@replit/connectors-sdk` in the root `package.json` has zero imports anywhere in the
+   repo. Free to drop, but it moves `pnpm-lock.yaml`, so it belongs with the item above.
+4. `pnpm-workspace.yaml` still carries Replit-shaped `overrides` that delete every
+   non-linux esbuild binary ("replit uses linux-x64 only") and a
+   `minimumReleaseAgeExclude` that trusts `@replit/*` and `stripe-replit-sync`. Builds
+   pass on this darwin machine today, so this is wrong-headed rather than broken --
+   and any change to it moves the lockfile.
+
 ## Decided 2026-09-09 (Abhishek, "no by hand thing"): no human gold transcripts, ever
 
 PRD v7 C2 asked for 20 hand-written golds (~2 hours). The answer is no. Not a deferral --
