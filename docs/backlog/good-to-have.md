@@ -1,4 +1,18 @@
 
+## Found 2026-09-10 (R-32): B-13 -- a failed refetch throws away rows that are still good
+
+`artifacts/stt-benchmark/src/pages/Corpus.tsx:441` renders the error row whenever `isError`
+is true. react-query keeps `data` populated when a *background refetch* fails, so a
+still-good list is discarded and replaced by an error over a transient blip.
+
+The minimal fix is a trap: gating on `isError && !calls` keeps the rows and makes a failed
+refresh completely silent -- a loud wrong behaviour traded for a quiet one. The honest fix
+is rows plus a non-blocking "couldn't refresh" affordance, and that affordance is copy.
+
+Queued for the `visual-and-research` pass together with R-28's Provider Name help text.
+Not urgent: nothing is lost but the view, and the gold editor this entry originally worried
+about is gone.
+
 ## Found 2026-09-10 (R-28): the Provider Name help text asks for something the API refuses
 
 `artifacts/stt-benchmark/src/pages/Providers.tsx` tells the operator the Provider Name
