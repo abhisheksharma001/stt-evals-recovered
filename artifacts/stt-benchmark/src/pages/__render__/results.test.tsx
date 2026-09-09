@@ -255,11 +255,22 @@ const baseRoutes: StubRoutes = {
 describe("Results", () => {
   // M-18: the agreement figure appended to M-9's legend. Three branches,
   // because the interesting one is the branch that refuses to print a number.
-  const agreement = (labelledCalls: number, n: number, top1: number | null, tau: number | null) => ({
+  const agreement = (
+    labelledCalls: number,
+    n: number,
+    top1: number | null,
+    tau: number | null,
+    // M-20 rides on the same response and the same floor. Defaulted so the
+    // M-18 cases above read unchanged; the M-20 cases pass them.
+    judgePicks = 0,
+    judgeTop1Agreement: number | null = null,
+  ) => ({
     labelledCalls,
     n,
     top1Agreement: top1,
     kendallTau: tau,
+    judgePicks,
+    judgeTop1Agreement,
   })
 
   it("says nothing about human transcripts when nobody has written one", async () => {
@@ -305,6 +316,45 @@ describe("Results", () => {
     expect(line.textContent).not.toContain("Not enough human-checked calls")
     expect(line.getAttribute("title")).toContain("24 call(s) carry a human transcript")
     expect(line.getAttribute("title")).toContain("0.63")
+  })
+
+  // M-20: the judge's pick has been shown as a verdict input since T-108 and
+  // its accuracy has never been measured. Below the floor the card has to say
+  // so with a number and no percentage -- the failure this guards is a card
+  // that prints "100%" off one call.
+  it("refuses a judge-accuracy percentage below the floor, and says how far along it is", async () => {
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(2, 2, 0.5, 0.017, 1, 0) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("judge-accuracy")
+    expect(line.textContent).toContain("Judge accuracy: not measured (1 of 20).")
+    expect(line.textContent).not.toContain("%")
+  })
+
+  it("prints the judge-accuracy percentage once the measured set reaches the floor", async () => {
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(30, 28, 0.7, 0.63, 24, 0.625) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("judge-accuracy")
+    expect(line.textContent).toContain("on 24 calls a person has transcribed")
+    expect(line.textContent).toContain("63% of the time")
+    expect(line.textContent).not.toContain("not measured")
+  })
+
+  // The two lines share one floor and one response. This is the pair that
+  // must never disagree about whether the measurement exists.
+  it("shows both lines or neither, never one alone", async () => {
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(0, 0, null, null, 0, null) })
+    renderPage(<Results />, { path: "/results" })
+    await screen.findAllByText("Deepgram Nova-3")
+    expect(screen.queryByTestId("proxy-agreement")).toBeNull()
+    expect(screen.queryByTestId("judge-accuracy")).toBeNull()
+
+    cleanup()
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(2, 2, 0.5, 0.017, 1, 0) })
+    renderPage(<Results />, { path: "/results" })
+    expect(await screen.findByTestId("proxy-agreement")).toBeTruthy()
+    expect(await screen.findByTestId("judge-accuracy")).toBeTruthy()
   })
 
   // S-7: one hairline where identity ends and measurement begins. The break

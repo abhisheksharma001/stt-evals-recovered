@@ -2599,8 +2599,14 @@ components:
               providers: { type: number, description: "How many providers had a scored transcript for this call." }
     ProxyAgreement:
       type: object
-      required: [labelledCalls, n, top1Agreement, kendallTau]
+      required: [labelledCalls, n, top1Agreement, kendallTau, judgePicks, judgeTop1Agreement]
       properties:
+        # M-20. Same floor of 20 as the pair above, and the same rule: a call
+        # that could not be measured is dropped, never counted as agreement.
+        judgePicks: { type: integer, description: "Labelled calls where the judge made a pick that could be placed against the human transcript." }
+        judgeTop1Agreement:
+          type: ["number", "null"]
+          description: "Fraction of those calls where the judge picked a lowest-WER provider. Null when judgePicks is 0."
         labelledCalls: { type: integer, description: "Calls whose gold transcript is non-empty and differs from the draft." }
         n: { type: integer, description: "Of those, the calls that carried two rankable orderings and so contributed to the figures." }
         top1Agreement:

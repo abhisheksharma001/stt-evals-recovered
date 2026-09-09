@@ -7,6 +7,13 @@
  */
 
 export interface ProxyAgreement {
+  /** Labelled calls where the judge made a pick that could be placed against the human transcript. */
+  judgePicks: number;
+  /**
+     * Fraction of those calls where the judge picked a lowest-WER provider. Null when judgePicks is 0.
+     * @nullable
+     */
+  judgeTop1Agreement: number | null;
   /** Calls whose gold transcript is non-empty and differs from the draft. */
   labelledCalls: number;
   /** Of those, the calls that carried two rankable orderings and so contributed to the figures. */

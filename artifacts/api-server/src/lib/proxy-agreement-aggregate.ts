@@ -89,3 +89,85 @@ export function aggregateProxyAgreement(rows: readonly ProxyAgreementRow[]): Pro
     kendallTau: n === 0 ? null : tauTotal / n,
   };
 }
+
+/**
+ * M-20: one candidate the judge chose among, on a call a person transcribed.
+ * `pickedProviderId` is the same on every row of a call -- it is a property of
+ * the call's scan, carried here so the aggregate needs no second input.
+ */
+export type JudgePickRow = {
+  callId: string;
+  pickedProviderId: string;
+  providerId: string;
+  /** WER against the human transcript. Null = this candidate was never scored
+   *  against it, so it cannot be ordered and takes no part. */
+  wer: number | null;
+};
+
+export type JudgeAccuracyFigures = {
+  /** Calls that could actually be measured. Always <= the calls with a pick. */
+  n: number;
+  /** Share of those where the judge picked a lowest-WER provider. Null at n=0. */
+  top1Agreement: number | null;
+};
+
+/**
+ * Did the judge pick the provider a human transcript says was best?
+ *
+ * The candidate set is the providers the judge ACTUALLY chose among -- the
+ * scored cells of the scan's own run -- not every provider that ever ran this
+ * call. Marking the judge wrong for missing a provider it was never shown
+ * would measure the run's provider list, not the judge.
+ *
+ * A call is DROPPED, never counted as a disagreement, when: fewer than two
+ * candidates carry a WER (nothing to choose between); every candidate carries
+ * the same WER (the human transcript does not separate them, so there is no
+ * right answer to get wrong); or the picked provider itself has no WER (the
+ * pick cannot be placed in the ordering at all). Same rule M-18 follows --
+ * a call that measured nothing must not be reported as a call that agreed.
+ *
+ * Ties AT THE MINIMUM count as agreement: when two providers are equally best,
+ * picking either one is not an error.
+ */
+export function aggregateJudgeAccuracy(rows: readonly JudgePickRow[]): JudgeAccuracyFigures {
+  const byCall = new Map<string, JudgePickRow[]>();
+  for (const row of rows) byCall.set(row.callId, [...(byCall.get(row.callId) ?? []), row]);
+
+  let n = 0;
+  let agreed = 0;
+
+  for (const candidates of byCall.values()) {
+    // Every row of a call carries the same pick -- it is a property of the
+    // call's scan, not of the candidate.
+    const pickedProviderId = candidates[0]!.pickedProviderId;
+
+    // ONE value per provider, the mean of its cells: the same rule
+    // aggregateProxyAgreement follows above, and for the same reason. A
+    // provider can hold more than one scored cell on a call, and reading
+    // whichever row came back first would make the answer depend on row
+    // order. Found by a break test -- removing the run filter in the query
+    // let a second cell through and nothing moved, because the duplicate was
+    // simply never looked at.
+    const werByProvider = new Map<string, number[]>();
+    for (const candidate of candidates) {
+      if (candidate.wer === null) continue;
+      werByProvider.set(candidate.providerId, [...(werByProvider.get(candidate.providerId) ?? []), candidate.wer]);
+    }
+    const scored = [...werByProvider].map(([providerId, wers]) => ({ providerId, wer: mean(wers)! }));
+
+    // No length guard: Math.min of nothing is Infinity and `every` over an
+    // empty list is true, so a call with no scored candidate falls out here;
+    // and a call with exactly ONE is uniformly equal to its own minimum, so
+    // it falls out here too. A break test proved an explicit `< 2` check
+    // could be deleted without a single test moving.
+    const lowest = Math.min(...scored.map((candidate) => candidate.wer));
+    if (scored.every((candidate) => candidate.wer === lowest)) continue;
+
+    const picked = scored.find((candidate) => candidate.providerId === pickedProviderId);
+    if (!picked) continue;
+    n += 1;
+    if (picked.wer === lowest) agreed += 1;
+  }
+
+  return { n, top1Agreement: n === 0 ? null : agreed / n };
+}

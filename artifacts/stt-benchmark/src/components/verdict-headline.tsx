@@ -194,6 +194,11 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
  * n against the words "a person checked" would credit them with less work
  * than they did, every time a labelled call turned out unrankable.
  */
+/** M-18 and M-20 both need a person to have transcribed enough calls before a
+ *  percentage means anything, and they sit one under the other on the same
+ *  card. One constant, so they can never disagree about when to appear. */
+const MEASURABLE_FLOOR = 20
+
 function ProxyAgreementLine() {
   const { data } = useGetProxyAgreement()
   if (!data || data.labelledCalls === 0) return null
@@ -207,13 +212,48 @@ function ProxyAgreementLine() {
 
   return (
     <p className="text-xs text-muted-foreground" title={detail} data-testid="proxy-agreement">
-      {data.n >= 20 && data.top1Agreement !== null ? (
+      {data.n >= MEASURABLE_FLOOR && data.top1Agreement !== null ? (
         <>
           On {data.n} of the {data.labelledCalls} calls a person has transcribed, this order picked the
           same provider as the human-checked order {Math.round(data.top1Agreement * 100)}% of the time.
         </>
       ) : (
-        <>Not enough human-checked calls to measure this yet -- {data.n} of 20.</>
+        <>Not enough human-checked calls to measure this yet -- {data.n} of {MEASURABLE_FLOOR}.</>
+      )}
+    </p>
+  )
+}
+
+/**
+ * M-20: the judge's pick has been shown as a verdict input since T-108 and its
+ * accuracy has never been measured. This is the measurement, under the same
+ * floor and the same "absent is not zero" rule as the line above it.
+ *
+ * `judgePicks` is NOT the number of calls a person transcribed: a call counts
+ * only when the judge made a pick AND the candidates it chose among can be
+ * separated by the human transcript. A call where every candidate scored the
+ * same WER has no right answer to get wrong and is dropped rather than counted
+ * as agreement.
+ */
+function JudgeAccuracyLine() {
+  const { data } = useGetProxyAgreement()
+  if (!data || data.labelledCalls === 0) return null
+
+  const detail =
+    "The judge chose among the providers in its own scan run, and it is scored against those same providers' " +
+    "word error rate on the human transcript -- not against every provider that ever ran the call, which would " +
+    "mark it wrong for missing a candidate it was never shown. Calls where the transcript cannot separate the " +
+    "candidates are dropped, not counted as agreement."
+
+  return (
+    <p className="text-xs text-muted-foreground" title={detail} data-testid="judge-accuracy">
+      {data.judgePicks >= MEASURABLE_FLOOR && data.judgeTop1Agreement !== null ? (
+        <>
+          Judge accuracy: on {data.judgePicks} calls a person has transcribed, its pick was the
+          lowest-error provider {Math.round(data.judgeTop1Agreement * 100)}% of the time.
+        </>
+      ) : (
+        <>Judge accuracy: not measured ({data.judgePicks} of {MEASURABLE_FLOOR}).</>
       )}
     </p>
   )
@@ -342,6 +382,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
           nothing here is scored against a human-checked transcript.
         </p>
         <ProxyAgreementLine />
+        <JudgeAccuracyLine />
       </CardContent>
     </Card>
   )
