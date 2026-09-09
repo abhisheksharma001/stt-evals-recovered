@@ -3374,7 +3374,9 @@ post-M-11d candidate in `docs/backlog/good-to-have.md`.
 
 **PR:** one. **This is the step that spends money.**
 **Depends on:** M-11a, M-11b, M-11c.
-**Files:** `artifacts/api-server/src/routes/benchmark.ts` (`defaultProviders`),
+**Files:** `artifacts/api-server/src/lib/default-providers.ts` (the seed rows — moved
+there by R-12), `artifacts/api-server/src/lib/default-providers.test.ts` (the
+seeded-disabled assertion has to be relaxed in the same PR that enables a row),
 `docs/provider-data-samples.md`, `docs/step-register.md`.
 **Today:** the adapters exist and are unit-tested against recorded messages. Nothing has
 been sent to Deepgram over a socket, so the handshake, the finalize sequence, the real
@@ -3413,6 +3415,20 @@ hole, found while checking what the next step could be:
    the step has this problem. Fix when the step runs: create BOTH rows disabled first,
    stream to them while disabled, and let "enable" stay the thing that waits on the
    numbers. Creating a disabled row spends nothing.
+
+   **Corrected 2026-09-09 (R-12), and this fix was wrong.** The row half was right and
+   is now done: `deepgram-nova-3-streaming` is seeded `manuallyDisabled`, free. The
+   *ordering* half does not work. `syncProviderReadiness()` derives `status: "disabled"`
+   from `manuallyDisabled`, and `POST /benchmark/runs` pushes "provider credentials and
+   models must be configured" onto its `blockers` list for any provider whose status is
+   not `ready` — so **a disabled row cannot be streamed to at all**, and "stream to them
+   while disabled" describes a run that is created blocked and never executes. Enabling
+   has to happen BEFORE the first live call, which means the protection in this step's
+   **Must not** cannot be "don't enable". It is: enable, stream exactly one call, read
+   the numbers, and the thing that waits on Abhishek is whether the row **stays** enabled
+   and whether it joins any bulk template. Both rows go back to `manuallyDisabled` if the
+   call is not green, and the seed guard (`default-providers.test.ts`) fails the suite if
+   either is ever committed enabled.
 2. **Confirmed no Deepgram socket has ever been opened**, so the "still unproven" note on
    M-11a/M-11c/M-11e is exactly true rather than merely cautious:
    `select provider_id, count(*) from benchmark_provider_call_results where provider_id
@@ -4862,6 +4878,71 @@ Cartesia documents for a client that cannot set request headers, which the globa
 `WebSocket` cannot; report the caught error's own message or the url from the catch (that
 is the leak this closes, and mutations M3/M4 fail on it); call `finish()` from the catch;
 claim this fixed a live leak.
+
+---
+
+### R-12 — The streaming provider row exists, and the plan that was to keep it safe does not work
+
+**Status:** `done` — PR #130, sha `11f9cc8`. Spends nothing.
+**PR:** one.
+**Depends on:** M-11a (the adapter and its catalog entry).
+**Files:** `artifacts/api-server/src/lib/default-providers.ts` (new — the array moved out
+of `artifacts/api-server/src/routes/benchmark.ts`),
+`artifacts/api-server/src/lib/default-providers.test.ts` (new),
+`lib/stt-providers/src/registry.ts` (the comment that pointed at the old home).
+**Today (before):** `deepgram-nova-3-streaming` had an adapter and a `providerCatalog`
+entry from M-11a and no row in `benchmark_providers`. `getProviderAdapter()` resolves the
+id off the registry; `POST /benchmark/runs` validates the selection against the table. So
+the id looked resolvable everywhere except the one place that decides what can run, where
+a run naming it was created `blocked` with "one or more providers do not exist".
+**Change:** seed the row, `manuallyDisabled: true`. Move `defaultProviders` into its own
+module so the guard can be a unit test — importing `routes/benchmark.ts` pulls in
+`@workspace/db`, whose module body throws without `DATABASE_URL` and opens a pool, and
+`vitest.config.ts` says out loud that nothing under `src/` touching the database is a
+target there.
+**Acceptance:** WHEN an adapter is in `providerRegistry` THEN `defaultProviders` SHALL
+carry a row with the same id; AND the two Deepgram socket rows SHALL be seeded
+`manuallyDisabled`.
+**Verify:** `pnpm --filter @workspace/api-server test` (175); `pnpm run typecheck`;
+`pnpm run check:cycles`; break test 6 of 7 caught, 7 of 7 matching expectation.
+**Must not:** enable either socket row (that is M-11d and a go-spend); assert the
+placeholder price in a test; assert `providerCatalog` keys — `elevenlabs-scribe-v2` has
+no seed row on purpose, because T-104 rows are created on demand from the Setup page's
+model list.
+
+**Learned:**
+
+1. **The fix M-11d's own grill wrote does not work.** That grill (2026-09-08, item 1) said
+   to "create BOTH rows disabled first, stream to them while disabled, and let *enable*
+   stay the thing that waits on the numbers". `syncProviderReadiness()` derives
+   `status: "disabled"` from `manuallyDisabled`, and `POST /benchmark/runs` pushes
+   "provider credentials and models must be configured" onto its `blockers` list for any
+   provider whose status is not `ready`. **A disabled row cannot be streamed to at all.**
+   Enabling has to happen *before* the first live call, so the money protection cannot be
+   "don't enable" — it has to be "enable, make one call, then decide whether it stays
+   enabled". Corrected in M-11d's block above, where it was written.
+2. **Two sources of truth about what can be selected, and only one of them can be.** The
+   registry answers "does this id have an adapter"; the table answers "can a run name it".
+   For three weeks those disagreed and nothing said so, because nothing read both. The
+   guard reads both.
+3. **A break test found the one edit here that costs money.** Flipping `manuallyDisabled`
+   to `false` was a MISS on the first run — no test read it — and it is the single change
+   in this file that lets a never-opened socket into the next bulk. That is why there are
+   two assertions and not one. M-11e's lesson again, one file over: the mutation that
+   matters is the one nobody would think to write a test for.
+4. **A flagged placeholder beats a null.** `costPerMinute: 0.0077` is the only number in
+   the new entry that is not evidence — it is *Flux's* streaming rate (verified
+   2026-08-29), and no nova-3 streaming rate has been read here; nova-3's `$0.0043` is the
+   pre-recorded rate. Left null it would have been worse than wrong: `hybridCompositeScore`
+   scores a null cost as the cheapest possible (O-37), so an unpriced row outranks a priced
+   one the moment someone enables it. Carried and flagged, in the comment and in the
+   `configNote` the Setup card shows. M-11d reads the real rate.
+5. **The status line I have been quoting does not mean what I said it meant.**
+   `/api/healthz` `providersConfigured` lists adapters holding a key, not runnable rows —
+   which is exactly why this gap stayed invisible for three weeks: healthz has been naming
+   `deepgram-nova-3-streaming` all along. The UI already labels it honestly ("N
+   provider(s) have a key set"); the misreading was in my own reports, which quoted it as
+   "N providers configured". O-52, logged, not fixed here.
 
 ---
 
