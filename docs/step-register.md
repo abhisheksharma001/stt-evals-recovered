@@ -5234,7 +5234,7 @@ Abhishek's call, not a side effect of making a build script honest. Logged, not 
 
 ### R-16 — The dead Replit packages go; the one that still works stays
 
-**Status:** done 2026-09-09 (PR #REPLACEME).
+**Status:** done 2026-09-09 (PR #136).
 **PR:** one. Spends nothing.
 **Depends on:** R-15 — and not incidentally. Two of the three packages removed here live
 in `artifacts/stt-benchmark` and `artifacts/mockup-sandbox`, and until R-15 CI built
