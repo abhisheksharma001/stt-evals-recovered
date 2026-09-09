@@ -1234,6 +1234,102 @@ paths:
           description: Scan not found
         "409":
           description: Scan was already decided (approved or rejected)
+  /benchmark/agent-marks:
+    get:
+      operationId: listAgentMarks
+      tags: [benchmark]
+      summary: "U-1: the human marks made while reading results -- what to do, or what to change on the agent. A mark is a proposal only; nothing here has been sent to Vapi."
+      parameters:
+        - name: assistantId
+          in: query
+          description: Vapi assistant id. Pass the literal `__unassigned__` for marks made on calls that carry no assistant id at all.
+          schema:
+            type: string
+        - name: callId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, applied, dismissed]
+      responses:
+        "200":
+          description: Marks, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentMark"
+    post:
+      operationId: createAgentMark
+      tags: [benchmark]
+      summary: Record one mark. The note is always required; the typed action is optional (categories come from reading marks, not from forcing one at capture time).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentMarkCreate"
+      responses:
+        "201":
+          description: The stored mark
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMark"
+        "400":
+          description: Empty note, an actionValue on a numerals mark, or a keyterm/prompt mark with no actionValue
+        "404":
+          description: callId given but no such call
+  /benchmark/agent-marks/{markId}:
+    patch:
+      operationId: updateAgentMark
+      tags: [benchmark]
+      summary: Edit a mark's note, action or status. Setting status to `applied` by hand is refused -- only U-3's apply may claim a mark was applied.
+      parameters:
+        - name: markId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentMarkUpdate"
+      responses:
+        "200":
+          description: The updated mark
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMark"
+        "400":
+          description: Empty note, an actionValue on a numerals mark, or status set to applied
+        "404":
+          description: Mark not found
+    delete:
+      operationId: deleteAgentMark
+      tags: [benchmark]
+      summary: Remove a mark outright. Dismissing (PATCH status=dismissed) is usually the better move -- it keeps the note readable.
+      parameters:
+        - name: markId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Mark not found
 components:
   schemas:
     SpanReading:
@@ -2228,6 +2324,40 @@ components:
       required: [approverLabel]
       properties:
         approverLabel: { type: string }
+    AgentMark:
+      type: object
+      description: "U-1. A human note written where the problem was visible -- on a disputed span in the per-call comparison, or on an assistant's card on Results. A proposal, never an applied change: `status` only becomes `applied` through U-3's apply."
+      required: [id, assistantId, callId, span, note, actionType, actionValue, status, createdByLabel, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        assistantId: { type: ["string", "null"], description: "Null when the marked call carries no assistant id -- the Results page's own \"no assistant on file\" bucket. Such a mark is a real to-do that simply has no agent to apply it to." }
+        callId: { type: ["string", "null"], description: "Null when the mark was made from the assistant's card rather than a call, and also once a marked call is deleted -- the mark is about the agent and outlives the call." }
+        span: { type: ["string", "null"] }
+        note: { type: string }
+        actionType: { type: ["string", "null"], enum: [keyterm, numerals, prompt, null] }
+        actionValue: { type: ["string", "null"], description: "The term to boost, or the prompt change in words. Always null for numerals, which is a per-assistant boolean with no value to carry." }
+        status: { type: string, enum: [open, applied, dismissed] }
+        createdByLabel: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    AgentMarkCreate:
+      type: object
+      required: [note]
+      properties:
+        assistantId: { type: ["string", "null"] }
+        callId: { type: ["string", "null"], format: uuid }
+        span: { type: ["string", "null"] }
+        note: { type: string, minLength: 1 }
+        actionType: { type: ["string", "null"], enum: [keyterm, numerals, prompt, null] }
+        actionValue: { type: ["string", "null"] }
+        createdByLabel: { type: ["string", "null"] }
+    AgentMarkUpdate:
+      type: object
+      properties:
+        note: { type: string, minLength: 1 }
+        actionType: { type: ["string", "null"], enum: [keyterm, numerals, prompt, null] }
+        actionValue: { type: ["string", "null"] }
+        status: { type: string, enum: [open, dismissed], description: "`applied` is deliberately absent -- a mark may only be marked applied by the apply route that actually wrote to Vapi." }
     AuditLogEntry:
       type: object
       required: [id, entityType, entityId, actorLabel, action, occurredAt]

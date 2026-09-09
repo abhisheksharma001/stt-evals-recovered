@@ -2363,3 +2363,101 @@ export const RejectAgentScanResponse = zod.object({
 }).describe('2026-08-27 -- gold-free. No longer requires (or produces) a gold transcript; the hybrid pass compares candidates to each other. sourceLabel\/sourceTranscript are best-effort context (Vapi\'s own draft), not an analysis input anymore.')
 
 
+/**
+ * @summary U-1: the human marks made while reading results -- what to do, or what to change on the agent. A mark is a proposal only; nothing here has been sent to Vapi.
+ */
+export const ListAgentMarksQueryParams = zod.object({
+  "assistantId": zod.string().optional().describe('Vapi assistant id. Pass the literal `__unassigned__` for marks made on calls that carry no assistant id at all.'),
+  "callId": zod.string().uuid().optional(),
+  "status": zod.enum(['open', 'applied', 'dismissed']).optional()
+})
+
+export const ListAgentMarksResponseItem = zod.object({
+  "id": zod.string(),
+  "assistantId": zod.string().nullable().describe('Null when the marked call carries no assistant id -- the Results page\'s own \"no assistant on file\" bucket. Such a mark is a real to-do that simply has no agent to apply it to.'),
+  "callId": zod.string().nullable().describe('Null when the mark was made from the assistant\'s card rather than a call, and also once a marked call is deleted -- the mark is about the agent and outlives the call.'),
+  "span": zod.string().nullable(),
+  "note": zod.string(),
+  "actionType": zod.union([zod.literal('keyterm'),zod.literal('numerals'),zod.literal('prompt'),zod.literal(null)]).nullable(),
+  "actionValue": zod.string().nullable().describe('The term to boost, or the prompt change in words. Always null for numerals, which is a per-assistant boolean with no value to carry.'),
+  "status": zod.enum(['open', 'applied', 'dismissed']),
+  "createdByLabel": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}).describe('U-1. A human note written where the problem was visible -- on a disputed span in the per-call comparison, or on an assistant\'s card on Results. A proposal, never an applied change: `status` only becomes `applied` through U-3\'s apply.')
+export const ListAgentMarksResponse = zod.array(ListAgentMarksResponseItem)
+
+
+/**
+ * @summary Record one mark. The note is always required; the typed action is optional (categories come from reading marks, not from forcing one at capture time).
+ */
+
+
+
+export const CreateAgentMarkBody = zod.object({
+  "assistantId": zod.string().nullish(),
+  "callId": zod.string().uuid().nullish(),
+  "span": zod.string().nullish(),
+  "note": zod.string().min(1),
+  "actionType": zod.union([zod.literal('keyterm'),zod.literal('numerals'),zod.literal('prompt'),zod.literal(null)]).nullish(),
+  "actionValue": zod.string().nullish(),
+  "createdByLabel": zod.string().nullish()
+})
+
+export const CreateAgentMarkResponse = zod.object({
+  "id": zod.string(),
+  "assistantId": zod.string().nullable().describe('Null when the marked call carries no assistant id -- the Results page\'s own \"no assistant on file\" bucket. Such a mark is a real to-do that simply has no agent to apply it to.'),
+  "callId": zod.string().nullable().describe('Null when the mark was made from the assistant\'s card rather than a call, and also once a marked call is deleted -- the mark is about the agent and outlives the call.'),
+  "span": zod.string().nullable(),
+  "note": zod.string(),
+  "actionType": zod.union([zod.literal('keyterm'),zod.literal('numerals'),zod.literal('prompt'),zod.literal(null)]).nullable(),
+  "actionValue": zod.string().nullable().describe('The term to boost, or the prompt change in words. Always null for numerals, which is a per-assistant boolean with no value to carry.'),
+  "status": zod.enum(['open', 'applied', 'dismissed']),
+  "createdByLabel": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}).describe('U-1. A human note written where the problem was visible -- on a disputed span in the per-call comparison, or on an assistant\'s card on Results. A proposal, never an applied change: `status` only becomes `applied` through U-3\'s apply.')
+
+
+/**
+ * @summary Edit a mark's note, action or status. Setting status to `applied` by hand is refused -- only U-3's apply may claim a mark was applied.
+ */
+export const UpdateAgentMarkParams = zod.object({
+  "markId": zod.string().uuid()
+})
+
+
+
+
+export const UpdateAgentMarkBody = zod.object({
+  "note": zod.string().min(1).optional(),
+  "actionType": zod.union([zod.literal('keyterm'),zod.literal('numerals'),zod.literal('prompt'),zod.literal(null)]).nullish(),
+  "actionValue": zod.string().nullish(),
+  "status": zod.enum(['open', 'dismissed']).optional().describe('`applied` is deliberately absent -- a mark may only be marked applied by the apply route that actually wrote to Vapi.')
+})
+
+export const UpdateAgentMarkResponse = zod.object({
+  "id": zod.string(),
+  "assistantId": zod.string().nullable().describe('Null when the marked call carries no assistant id -- the Results page\'s own \"no assistant on file\" bucket. Such a mark is a real to-do that simply has no agent to apply it to.'),
+  "callId": zod.string().nullable().describe('Null when the mark was made from the assistant\'s card rather than a call, and also once a marked call is deleted -- the mark is about the agent and outlives the call.'),
+  "span": zod.string().nullable(),
+  "note": zod.string(),
+  "actionType": zod.union([zod.literal('keyterm'),zod.literal('numerals'),zod.literal('prompt'),zod.literal(null)]).nullable(),
+  "actionValue": zod.string().nullable().describe('The term to boost, or the prompt change in words. Always null for numerals, which is a per-assistant boolean with no value to carry.'),
+  "status": zod.enum(['open', 'applied', 'dismissed']),
+  "createdByLabel": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}).describe('U-1. A human note written where the problem was visible -- on a disputed span in the per-call comparison, or on an assistant\'s card on Results. A proposal, never an applied change: `status` only becomes `applied` through U-3\'s apply.')
+
+
+/**
+ * @summary Remove a mark outright. Dismissing (PATCH status=dismissed) is usually the better move -- it keeps the note readable.
+ */
+export const DeleteAgentMarkParams = zod.object({
+  "markId": zod.string().uuid()
+})
+
+export const DeleteAgentMarkResponse = zod.void()
+
+

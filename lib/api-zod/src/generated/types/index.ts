@@ -7,6 +7,14 @@
  */
 
 export * from './agentFlag';
+export * from './agentMark';
+export * from './agentMarkActionType';
+export * from './agentMarkCreate';
+export * from './agentMarkCreateActionType';
+export * from './agentMarkStatus';
+export * from './agentMarkUpdate';
+export * from './agentMarkUpdateActionType';
+export * from './agentMarkUpdateStatus';
 export * from './agentModelList';
 export * from './agentModelOption';
 export * from './agentScan';
@@ -124,6 +132,8 @@ export * from './hybridFlagSummaryFlagSeverity';
 export * from './hybridFlagSummaryLowConfidenceSpans';
 export * from './hybridFlagSummaryLowConfidenceSpansItem';
 export * from './judgeKeyDifference';
+export * from './listAgentMarksParams';
+export * from './listAgentMarksStatus';
 export * from './listAgentScansParams';
 export * from './listAuditLogParams';
 export * from './listBenchmarkCallsParams';

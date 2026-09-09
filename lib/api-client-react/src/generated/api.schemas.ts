@@ -1178,6 +1178,122 @@ export interface AgentScanDecision {
   approverLabel: string;
 }
 
+/**
+ * @nullable
+ */
+export type AgentMarkActionType = typeof AgentMarkActionType[keyof typeof AgentMarkActionType] | null;
+
+
+export const AgentMarkActionType = {
+  keyterm: 'keyterm',
+  numerals: 'numerals',
+  prompt: 'prompt',
+} as const;
+
+export type AgentMarkStatus = typeof AgentMarkStatus[keyof typeof AgentMarkStatus];
+
+
+export const AgentMarkStatus = {
+  open: 'open',
+  applied: 'applied',
+  dismissed: 'dismissed',
+} as const;
+
+/**
+ * U-1. A human note written where the problem was visible -- on a disputed span in the per-call comparison, or on an assistant's card on Results. A proposal, never an applied change: `status` only becomes `applied` through U-3's apply.
+ */
+export interface AgentMark {
+  id: string;
+  /**
+     * Null when the marked call carries no assistant id -- the Results page's own "no assistant on file" bucket. Such a mark is a real to-do that simply has no agent to apply it to.
+     * @nullable
+     */
+  assistantId: string | null;
+  /**
+     * Null when the mark was made from the assistant's card rather than a call, and also once a marked call is deleted -- the mark is about the agent and outlives the call.
+     * @nullable
+     */
+  callId: string | null;
+  /** @nullable */
+  span: string | null;
+  note: string;
+  /** @nullable */
+  actionType: AgentMarkActionType;
+  /**
+     * The term to boost, or the prompt change in words. Always null for numerals, which is a per-assistant boolean with no value to carry.
+     * @nullable
+     */
+  actionValue: string | null;
+  status: AgentMarkStatus;
+  /** @nullable */
+  createdByLabel: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type AgentMarkCreateActionType = typeof AgentMarkCreateActionType[keyof typeof AgentMarkCreateActionType] | null;
+
+
+export const AgentMarkCreateActionType = {
+  keyterm: 'keyterm',
+  numerals: 'numerals',
+  prompt: 'prompt',
+} as const;
+
+export interface AgentMarkCreate {
+  /** @nullable */
+  assistantId?: string | null;
+  /** @nullable */
+  callId?: string | null;
+  /** @nullable */
+  span?: string | null;
+  /** @minLength 1 */
+  note: string;
+  /** @nullable */
+  actionType?: AgentMarkCreateActionType;
+  /** @nullable */
+  actionValue?: string | null;
+  /** @nullable */
+  createdByLabel?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type AgentMarkUpdateActionType = typeof AgentMarkUpdateActionType[keyof typeof AgentMarkUpdateActionType] | null;
+
+
+export const AgentMarkUpdateActionType = {
+  keyterm: 'keyterm',
+  numerals: 'numerals',
+  prompt: 'prompt',
+} as const;
+
+/**
+ * `applied` is deliberately absent -- a mark may only be marked applied by the apply route that actually wrote to Vapi.
+ */
+export type AgentMarkUpdateStatus = typeof AgentMarkUpdateStatus[keyof typeof AgentMarkUpdateStatus];
+
+
+export const AgentMarkUpdateStatus = {
+  open: 'open',
+  dismissed: 'dismissed',
+} as const;
+
+export interface AgentMarkUpdate {
+  /** @minLength 1 */
+  note?: string;
+  /** @nullable */
+  actionType?: AgentMarkUpdateActionType;
+  /** @nullable */
+  actionValue?: string | null;
+  /** `applied` is deliberately absent -- a mark may only be marked applied by the apply route that actually wrote to Vapi. */
+  status?: AgentMarkUpdateStatus;
+}
+
 export interface AuditLogEntry {
   id: string;
   entityType: string;
@@ -1834,4 +1950,22 @@ status?: BulkStatus;
 export type ListAgentScansParams = {
 callId?: string;
 };
+
+export type ListAgentMarksParams = {
+/**
+ * Vapi assistant id. Pass the literal `__unassigned__` for marks made on calls that carry no assistant id at all.
+ */
+assistantId?: string;
+callId?: string;
+status?: ListAgentMarksStatus;
+};
+
+export type ListAgentMarksStatus = typeof ListAgentMarksStatus[keyof typeof ListAgentMarksStatus];
+
+
+export const ListAgentMarksStatus = {
+  open: 'open',
+  applied: 'applied',
+  dismissed: 'dismissed',
+} as const;
 
