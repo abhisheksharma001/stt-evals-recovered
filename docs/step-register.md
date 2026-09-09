@@ -6836,6 +6836,47 @@ outcomes break the retry loop.
 
 ---
 
+### R-41 — A version-gated node flag stops failing as "bad option" (B-67)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-34.
+**Files:** `artifacts/api-server/package.json`, `package.json`,
+new file scripts/check-node-engines.mjs, `.github/workflows/ci.yml`.
+
+**Today:** `artifacts/api-server`'s `start` runs `node --env-file-if-exists=.env`, a flag
+that landed in Node 22.9. **No package in this repo declares `engines`** — checked, not
+assumed: there is no `engines` field anywhere and no `.nvmrc`. So an older Node does not fail
+at install with a sentence; it boots and dies on `bad option: --env-file-if-exists`, which
+reads like a corrupt install rather than a version mismatch.
+
+**The tested range, measured:** CI runs Node **24** (`ci.yml:45`, and `deploy-web.yml:58`),
+this machine runs **22.22.2**. `>=22.9` is the floor the flag actually needs and it covers
+both.
+
+**Change:** declare `engines.node` on the api-server package and at the root — **and** add a
+check that keeps it true. Declaring a floor once is the kind of fix that rots silently: the
+next version-gated flag gets added to a script and nothing notices. `check-node-engines.mjs`
+scans every tracked `package.json` for scripts using a flag from a small table of
+version-gated node flags, and fails when the package declares no floor or one that is too
+low. Adding a newer flag without raising the floor now fails in CI instead of on somebody's
+machine.
+
+**Deliberately not `engine-strict=true`.** That would turn the warning into an install
+failure, which sounds stricter and is the wrong trade here: pnpm applies it to
+**dependencies' own** `engines` too, so one over-narrow transitive range breaks `pnpm
+install` for everybody — and I cannot test that failure mode from a machine that already
+satisfies every range. A repo-wide install policy is not a bug fix.
+
+**Acceptance:** WHEN a package script uses a version-gated node flag THEN that package SHALL
+declare an `engines.node` floor at least as high as the flag requires.
+**Verify:** `node scripts/check-node-engines.mjs`, wired into CI; the break test removes the
+`engines` field (fails) and sets it to `>=20.0` (fails).
+**Must not:** add `engine-strict`; declare a floor higher than the flag needs; add an
+`.nvmrc` that disagrees with what CI runs.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

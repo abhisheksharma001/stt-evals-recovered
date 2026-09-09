@@ -82,6 +82,13 @@ jobs:
       - name: Check Replit residue
         run: node scripts/check-replit-residue.mjs
 
+      # R-41: a script that uses a version-gated node flag must declare an
+      # engines floor at least that high. Without one, an older Node does not
+      # fail at install -- it boots and dies on "bad option", which reads like
+      # a corrupt install rather than a version mismatch.
+      - name: Check node engines
+        run: node scripts/check-node-engines.mjs
+
       # Offline by design: scoring edge cases + provider response-parser
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)

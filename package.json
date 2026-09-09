@@ -14,6 +14,9 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "engines": {
+    "node": ">=22.9"
+  },
   "devDependencies": {
     "@esbuild/darwin-arm64": "0.27.3",
     "@rollup/rollup-darwin-arm64": "4.62.3",
