@@ -251,11 +251,19 @@ M-18 and M-20 render against, so:
 2. **The judge's pick stays unverified for the life of the project.** M-20 shipped its
    scorecard specifically so the judge could not be trusted on assertion; with no growing
    labelled set the scorecard is now permanently "not measured (1 of 20)".
-3. **Two shipped lines now promise a measurement that is not coming.** `Not enough
+3. ~~**Two shipped lines now promise a measurement that is not coming.** `Not enough
    human-checked calls to measure this **yet** -- 2 of 20` and `Judge accuracy: not
    measured (1 of 20)` both read as a progress bar. They are not: the count is frozen.
    Fixing that wording is a register step (R-14), not a copy nit — the current wording
-   tells a reader to wait for something nobody is going to do.
+   tells a reader to wait for something nobody is going to do.~~ **Fixed 2026-09-09,
+   R-14.** Below the floor the two lines now read *"Not checked against human
+   transcripts. That check needs 20 calls written out by a person; 2 exist and no more
+   are being written. What the ranking on this page measures is how much the providers
+   disagreed with each other."* and *"Judge accuracy: not checked. Scoring its picks needs the same
+   human transcripts -- 1 of the 20 it would take, and none are coming. Its pick is shown
+   as one input to the ranking, never as a verified answer."* The counts stayed (they are
+   the evidence for the sentences); the floor, the above-floor branches and the M-9 legend
+   are untouched, so a labelled set that ever does appear starts measuring with no edit.
 4. **O-76 loses its first branch.** "Finish or clear the 137-character fragment" is now
    "clear it": finishing means transcribing by hand.
 

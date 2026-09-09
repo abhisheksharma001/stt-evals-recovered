@@ -178,8 +178,12 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
  * contradicted each other on one page. Read off the live corpus while
  * building this, n = 2 and tau-b = 0.017 -- no relationship at all, which
  * "agreed 50% of the time" would have reported as a coin-flip result rather
- * than as nothing. Below the floor the reader is told how far along the
- * check is instead of being given a number that is noise.
+ * than as nothing. Below the floor the reader is given no number.
+ *
+ * R-14 correction: that sentence used to end "the reader is told how far along
+ * the check is instead of being given a number that is noise". It is no longer
+ * how far along anything is -- see MEASURABLE_FLOOR below. The count stays on
+ * screen because it is the evidence for the sentence, not because it moves.
  *
  * Nothing renders at all when no call carries a human gold: M-9's line
  * already says the ranking is not scored against one, and a "0 of 20" under
@@ -196,7 +200,17 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
  */
 /** M-18 and M-20 both need a person to have transcribed enough calls before a
  *  percentage means anything, and they sit one under the other on the same
- *  card. One constant, so they can never disagree about when to appear. */
+ *  card. One constant, so they can never disagree about when to appear.
+ *
+ *  R-14: this floor is now unreachable, and that is a decision, not a gap.
+ *  Abhishek closed both roads to a labelled set on 2026-09-09 -- nobody will
+ *  hand-write the 20 transcripts, and no paid listening pass will produce them
+ *  automatically -- so the labelled set is frozen at 2 calls, 1 of them usable.
+ *  DO NOT "fix" the lines below by lowering this to 1 or 2 to make a percentage
+ *  appear: one call is exactly the noise M-18's grill already rejected (n = 2,
+ *  tau-b 0.017, no relationship, which "agreed 50% of the time" would have
+ *  reported as a result). The constant stays at 20 so that if a labelled set
+ *  ever does appear, both lines start measuring with no further edit. */
 const MEASURABLE_FLOOR = 20
 
 function ProxyAgreementLine() {
@@ -218,7 +232,11 @@ function ProxyAgreementLine() {
           same provider as the human-checked order {Math.round(data.top1Agreement * 100)}% of the time.
         </>
       ) : (
-        <>Not enough human-checked calls to measure this yet -- {data.n} of {MEASURABLE_FLOOR}.</>
+        <>
+          Not checked against human transcripts. That check needs {MEASURABLE_FLOOR} calls written out by a
+          person; {data.n} exist and no more are being written. What the ranking on this page measures is how
+          much the providers disagreed with each other.
+        </>
       )}
     </p>
   )
@@ -253,7 +271,11 @@ function JudgeAccuracyLine() {
           lowest-error provider {Math.round(data.judgeTop1Agreement * 100)}% of the time.
         </>
       ) : (
-        <>Judge accuracy: not measured ({data.judgePicks} of {MEASURABLE_FLOOR}).</>
+        <>
+          Judge accuracy: not checked. Scoring its picks needs the same human transcripts -- {data.judgePicks} of
+          the {MEASURABLE_FLOOR} it would take, and none are coming. Its pick is shown as one input to the
+          ranking, never as a verified answer.
+        </>
       )}
     </p>
   )
