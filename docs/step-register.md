@@ -6416,6 +6416,21 @@ value that is no longer there. The preview takes a `fresh` option and skips
 the cache; the read is free, and `fetchedAt` is in the response so the screen
 can say when it looked.
 
+**And the break test found the blind spot the step created.** Emptying
+`keyterms` in the Vapi read changed no test result at all: every test built
+`VapiAssistantTranscriber` by hand, so nothing exercised the mapping that
+produces it. The mapping is now its own exported function with its own tests
+(`artifacts/api-server/src/lib/vapi-assistant-transcriber.test.ts`), and the
+same mutation fails two of them. **A field nobody proves you read is a field
+you are not reading** -- and a new field added to a hand-built fixture shape
+is exactly where that hides.
+
+A second lesson, this one about the break test itself: `git checkout <file>`
+to undo a mutation silently reverts anything in that file that has not been
+committed. Doing it while the fix for the blind spot was still uncommitted
+deleted the fix, and the next run's "restored" line read 6 failures. Mutate
+and revert only against a committed tree.
+
 Two smaller things. `VapiAssistantTranscriber` carried `keytermCount` but not
 the words, so "already there, not added again" could not be computed at all --
 the terms are now read too, and the comparison folds case and whitespace,
