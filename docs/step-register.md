@@ -5443,8 +5443,21 @@ plugin does.
 any package R-16 removed is referenced in a non-comment line, OR the scope waiver
 returns, OR the kept plugin is unwired in either direction, THEN it SHALL exit 1 naming
 the file and line.
-**Verify:** `node scripts/check-replit-residue.mjs` on the committed tree; the break
-tests below; `pnpm run typecheck`.
+**Verify:** `node scripts/check-replit-residue.mjs` on the committed tree; `pnpm run
+typecheck`; six break tests against the committed tree, each restored with `git checkout
+--`, all three passes identical:
+
+| | mutation | result |
+|---|---|---|
+| A | blanket `@replit/*` waiver back | `SCOPE-WAIVER-BACK` + `stripe-replit-sync`, exit 1 |
+| B | cartographer import back in a vite config | `REMOVED-BUT-BACK` at the line, exit 1 |
+| C | `connectors-sdk` back in root `dependencies` | `REMOVED-BUT-BACK` at the line, exit 1 |
+| D | the kept plugin dropped from stt-benchmark's manifest | `KEPT-BUT-GONE` + `HALF-WIRED`, exit 1 |
+| E | the kept plugin dropped from the allowlist only | `KEPT-BUT-GONE`, exit 1 |
+| F | mockup-sandbox declares it, config stops importing it | `HALF-WIRED`, exit 1 |
+
+E and F are the ones a one-directional scan misses entirely: neither touches a removed
+package, and both leave the repo in a state R-16 argued against.
 **Must not:** remove the kept plugin; touch `pnpm-workspace.yaml`'s esbuild `overrides`
 (still its own step); make the check read `node_modules` or the network.
 
@@ -5461,6 +5474,15 @@ tests below; `pnpm run typecheck`.
 > assumptions hide; it was written in the PR that left one. **A guard reads code, so the
 > sentence telling a human to undo the guard is exactly what it cannot see.** Corrected
 > in the R-16 block above, where the claim was made.
+>
+> **And the check's own first green was a lie.** It exited 0 on the working tree before
+> the first commit, and exited 1 on six of six mutations *and* on the untouched tree
+> straight after committing. The forbidden names are written down in the check itself, so
+> direction 1 matched every entry against its own source — and `git ls-files` had not been
+> returning the file, because it was untracked. **A scan that walks tracked files cannot
+> be trusted until the thing it scans is committed**, which is the same reason the break
+> tests are run after the commit and not before it. Fixed with a named self-skip, not a
+> pattern: the file is excluded by path, so a re-introduction anywhere else still fails.
 
 ---
 
