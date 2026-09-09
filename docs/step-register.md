@@ -6308,6 +6308,57 @@ callers.
 
 ---
 
+### R-31 — The API stops telling every website it may read the corpus (B-4)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-22.
+**Files:** `artifacts/api-server/src/app.ts`,
+new file artifacts/api-server/src/lib/cors-origins.ts,
+new file artifacts/api-server/src/lib/cors-origins.test.ts,
+new file artifacts/api-server/src/routes/__integration__/cors.int.test.ts.
+
+**Today:** `artifacts/api-server/src/app.ts:29` is `app.use(cors())`, which answers every
+request with `Access-Control-Allow-Origin: *`.
+
+**What that actually allows, spelled out.** This API has **no auth at all** (B-1, still
+open), listens on localhost (M-3), and `GET /benchmark/calls` serves `goldTranscript`,
+`draftTranscript` and an audio redirect. With `*`, any page the operator happens to visit
+can run one `fetch("http://localhost:8177/api/benchmark/calls")`, read **every caller
+transcript**, and post it somewhere else. No click, no prompt, nothing on screen. Being
+bound to localhost does not help: the operator's own browser is on localhost.
+
+**Change:** an explicit allowlist — the vite dev and preview origins this repo actually
+serves the UI from, plus `WEB_ORIGINS` (comma-separated) for split hosting.
+
+**Three decisions inside it, each with a test:**
+
+- **A request with no `Origin` header is still allowed.** CORS is a browser rule. `curl`
+  and the deploy script's healthz check send no Origin, and a non-browser client sets
+  whatever Origin it likes — refusing them would break real callers while stopping no
+  attacker. Pretending otherwise would be security theatre.
+- **Exact comparison, never prefix or substring.** `https://stt.example.com.evil.test` and
+  `https://evil-stt.example.com` are refused, and so is a different port or scheme on an
+  allowed host. A substring check here would be **worse than none**, because it would read
+  as careful.
+- **Refusal omits the header rather than throwing.** Throwing becomes a 500, which reads as
+  "the server is broken" instead of "this origin may not read this". The browser blocks the
+  read either way.
+
+**This does not close B-1.** Nothing here authenticates anybody; it removes a wildcard that
+should never have been there. Said plainly in the file header so a later reader does not
+mistake this for auth.
+
+**Acceptance:** WHEN a request carries an Origin that is not allowlisted THEN the response
+SHALL carry no `Access-Control-Allow-Origin` header AND SHALL NOT be a 500; AND the header
+SHALL never be `*`; AND WHEN a request carries no Origin THEN it SHALL be answered normally.
+**Verify:** `pnpm run typecheck`; api-server unit (206) and integration (181), the latter
+asserting the real response headers through the app rather than the helper alone.
+**Must not:** allow by prefix or substring; refuse a request that has no Origin; throw from
+the origin callback; claim this fixes B-1.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
