@@ -342,6 +342,10 @@ export type VapiAssistantTranscriber = {
   fallback: { provider: string; model: string | null }[];
   /** Vocabulary boost words on the assistant (Deepgram `keyterm`). 0 when none. */
   keytermCount: number;
+  /** U-2: the words themselves, needed to say which of a mark's terms are
+   *  already there. Non-string entries are dropped -- `keyterm` is typed
+   *  `unknown` above because Vapi's schema does not promise a string array. */
+  keyterms: string[];
   numerals: boolean | null;
   language: string | null;
   fetchedAt: string;
@@ -380,6 +384,7 @@ export async function fetchVapiAssistantTranscriber(
     primary: spec(t),
     fallback: (t?.fallbackPlan?.transcribers ?? []).map(spec).filter((x): x is { provider: string; model: string | null } => x !== null),
     keytermCount: Array.isArray(t?.keyterm) ? t.keyterm.length : 0,
+    keyterms: Array.isArray(t?.keyterm) ? t.keyterm.filter((k): k is string => typeof k === "string") : [],
     numerals: typeof t?.numerals === "boolean" ? t.numerals : null,
     language: t?.language ?? null,
     fetchedAt: new Date().toISOString(),

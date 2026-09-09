@@ -20,11 +20,16 @@ import {
   DeleteAgentMarkParams,
   ListAgentMarksQueryParams,
   ListAgentMarksResponse,
+  PreviewAgentMarksQueryParams,
+  PreviewAgentMarksResponse,
   UpdateAgentMarkBody,
   UpdateAgentMarkParams,
   UpdateAgentMarkResponse,
 } from "@workspace/api-zod";
+import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
+import { buildMarkPreview } from "../lib/agent-mark-preview";
 import { actorFromRequest, writeAudit } from "../lib/audit";
+import { respondVapiError } from "../lib/vapi-error-response";
 import { respondInvalid } from "../lib/validation-error";
 import { respondJson } from "../lib/respond";
 import type { ZodInput } from "@workspace/api-zod";
@@ -162,6 +167,42 @@ router.post("/benchmark/agent-marks", async (req, res): Promise<void> => {
   });
 
   respondJson(res, CreateAgentMarkResponse, serializeMark(mark), 201);
+});
+
+// U-2: what the open marks WOULD change, read live from Vapi. A GET, and
+// only ever a GET -- this is the screen someone reads before deciding, and
+// the deciding is U-3's. Registered ahead of the :markId routes so the
+// literal path can never be read as an id.
+router.get("/benchmark/agent-marks/preview", async (req, res): Promise<void> => {
+  const parsed = PreviewAgentMarksQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    respondInvalid(res, parsed.error);
+    return;
+  }
+  const { assistantId } = parsed.data;
+
+  try {
+    // `fresh`: the 10-minute cache is right for the Results card and wrong
+    // here. A stale "current" column is how somebody approves an edit to a
+    // value that is no longer there.
+    const found = await assistantTranscriberConfig(assistantId, { fresh: true });
+    if (found.kind === "no_calls") {
+      res.status(404).json({ error: "No imported call carries this assistant id, so its Vapi account is unknown." });
+      return;
+    }
+    if (found.kind === "no_account") {
+      res.status(404).json({ error: `The calls for this assistant carry org label "${found.accountLabel ?? ""}", which matches no configured Vapi account.` });
+      return;
+    }
+    const marks = await db
+      .select()
+      .from(agentMarksTable)
+      .where(and(eq(agentMarksTable.assistantId, assistantId), eq(agentMarksTable.status, "open")))
+      .orderBy(desc(agentMarksTable.createdAt));
+    respondJson(res, PreviewAgentMarksResponse, buildMarkPreview(found.config, marks));
+  } catch (err) {
+    respondVapiError(res, err);
+  }
 });
 
 router.patch("/benchmark/agent-marks/:markId", async (req, res): Promise<void> => {

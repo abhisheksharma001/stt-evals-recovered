@@ -29,6 +29,7 @@ import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantSignals } from "../lib/assistant-signals";
 import { proxyAgreement } from "../lib/proxy-agreement";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
+import { respondVapiError } from "../lib/vapi-error-response";
 import { listOpenAiJudgeModels, OpenAiModelsError, PINNED_AGENT_MODELS } from "../lib/openai-models";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
 import { callDisagreement } from "../lib/call-disagreement";
@@ -814,20 +815,6 @@ async function findExistingVapiCall(
 }
 
 /** Maps a Vapi/network failure onto an HTTP status without leaking the key. */
-function respondVapiError(res: Response, err: unknown): void {
-  if (err instanceof VapiConfigError) {
-    res.status(400).json({ error: err.message });
-    return;
-  }
-  if (err instanceof VapiRequestError) {
-    res.status(502).json({ error: err.message, vapiStatus: err.httpStatus });
-    return;
-  }
-  res.status(502).json({
-    error: err instanceof Error ? err.message : "Vapi request failed.",
-  });
-}
-
 router.get("/benchmark/vapi/accounts", async (_req, res): Promise<void> => {
   respondJson(res, ListVapiAccountsResponse, listVapiAccounts());
 });

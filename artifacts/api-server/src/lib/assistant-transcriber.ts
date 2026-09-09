@@ -18,9 +18,19 @@ export type AssistantTranscriberLookup =
   | { kind: "no_calls" }
   | { kind: "no_account"; accountLabel: string | null };
 
-export async function assistantTranscriberConfig(assistantId: string): Promise<AssistantTranscriberLookup> {
+/**
+ * @param fresh U-2: skip the 10-minute cache. The Results card can happily
+ * show a config read minutes ago; a before -> after preview cannot -- it is
+ * the thing someone reads immediately before asking for a change, and a
+ * stale "current" column is how you approve an edit to a value that is no
+ * longer there. Costs one free Vapi read.
+ */
+export async function assistantTranscriberConfig(
+  assistantId: string,
+  { fresh = false }: { fresh?: boolean } = {},
+): Promise<AssistantTranscriberLookup> {
   const hit = cache.get(assistantId);
-  if (hit && Date.now() - hit.at < TTL_MS) return { kind: "ok", config: hit.value };
+  if (!fresh && hit && Date.now() - hit.at < TTL_MS) return { kind: "ok", config: hit.value };
 
   const calls = await db
     .select({ label: benchmarkCallsTable.sourceAccountLabel })

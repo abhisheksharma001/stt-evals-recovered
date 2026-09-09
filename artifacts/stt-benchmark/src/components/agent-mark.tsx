@@ -3,12 +3,14 @@ import { useQueryClient } from "@tanstack/react-query"
 import {
   useCreateAgentMark,
   useListAgentMarks,
+  usePreviewAgentMarks,
   useUpdateAgentMark,
   getListAgentMarksQueryKey,
+  getPreviewAgentMarksQueryKey,
   type AgentMark,
   type AgentMarkCreateActionType,
 } from "@workspace/api-client-react"
-import { Flag, X } from "lucide-react"
+import { ArrowRight, Flag, X } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
@@ -288,13 +290,111 @@ export function AgentMarksPanel({ assistantId }: { assistantId: string | null })
  *  marked. Renders whether or not the agent has a production baseline or a
  *  live Vapi config -- there is always something to write down. */
 export function AgentMarksSection({ assistantId }: { assistantId: string | null }) {
+  const [showPreview, setShowPreview] = React.useState(false)
   return (
     <div className="border-t border-border px-4 py-3" data-testid="agent-marks-section">
       <div className="flex flex-wrap items-start gap-2">
         <p className="text-xs font-medium text-foreground">To do on this agent</p>
         <MarkButton assistantId={assistantId} label="Mark something" />
+        {assistantId !== null && (
+          <button
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+            data-testid="mark-preview-toggle"
+          >
+            {showPreview ? "Hide what these would change" : "See what these would change"}
+          </button>
+        )}
       </div>
       <AgentMarksPanel assistantId={assistantId} />
+      {showPreview && assistantId !== null && <MarkPreview assistantId={assistantId} />}
+    </div>
+  )
+}
+
+/** U-2: the before -> after, computed from a live Vapi READ. It shows what
+ *  applying would do and stops there -- there is no apply here, and the panel
+ *  says so rather than leaving a control that would do nothing. */
+export function MarkPreview({ assistantId }: { assistantId: string }) {
+  const params = { assistantId }
+  const q = usePreviewAgentMarks(params, {
+    query: { queryKey: getPreviewAgentMarksQueryKey(params), retry: false, staleTime: 0, gcTime: 0 },
+  })
+
+  if (q.isLoading) {
+    return (
+      <p className="mt-2 text-[11px] text-muted-foreground" data-testid="mark-preview-loading">
+        Reading this agent's live settings…
+      </p>
+    )
+  }
+  if (q.isError || !q.data) {
+    return (
+      <p className="mt-2 text-[11px] text-destructive" data-testid="mark-preview-error">
+        Couldn't read this agent's live settings: {q.error instanceof Error ? q.error.message : "unknown error"}
+      </p>
+    )
+  }
+
+  const p = q.data
+  return (
+    <div className="mt-2 rounded-md border border-border bg-muted/20 p-2.5" data-testid="mark-preview">
+      <p className="text-[11px] text-muted-foreground">
+        Live from Vapi for <span className="font-medium text-foreground">{p.assistantName}</span>, read{" "}
+        {new Date(p.fetchedAt).toLocaleTimeString()}. Read only — this changed nothing.
+      </p>
+
+      {p.fields.length === 0 ? (
+        <p className="mt-1.5 text-[11px] text-foreground" data-testid="mark-preview-nothing">
+          Nothing here would change the agent's settings
+          {p.notesOnlyCount > 0 ? ` — ${p.notesOnlyCount} of the marks are notes with no action yet` : ""}.
+        </p>
+      ) : (
+        <ul className="mt-1.5 space-y-1.5" data-testid="mark-preview-fields">
+          {p.fields.map((f) => (
+            <li key={f.field} className="text-[11px]">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-medium text-foreground">{f.label}</span>
+                <span className="font-mono text-muted-foreground">{f.current}</span>
+                <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="font-mono font-semibold text-foreground">{f.after}</span>
+              </div>
+              {f.added.length > 0 && (
+                <p className="text-muted-foreground">Adds: {f.added.join(", ")}</p>
+              )}
+              {f.alreadyPresent.length > 0 && (
+                <p className="text-muted-foreground">Already there, so not added again: {f.alreadyPresent.join(", ")}</p>
+              )}
+              {f.overLimit && (
+                <p className="font-medium text-destructive" data-testid="mark-preview-over-limit">
+                  Over the {f.limit}-word limit. Applying this would be refused, not trimmed — drop some marks first.
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {p.manualMarks.length > 0 && (
+        <div className="mt-2">
+          <p className="text-[11px] font-medium text-foreground">
+            For a person to do ({p.manualMarks.length}) — nothing applies these
+          </p>
+          <ul className="mt-0.5 space-y-0.5">
+            {p.manualMarks.map((m) => (
+              <li key={m.id} className="text-[11px] text-muted-foreground">
+                · {m.note}
+                {m.actionValue ? `: ${m.actionValue}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        Applying is not built yet. When it is, it will re-read the agent first and ask before writing.
+      </p>
     </div>
   )
 }

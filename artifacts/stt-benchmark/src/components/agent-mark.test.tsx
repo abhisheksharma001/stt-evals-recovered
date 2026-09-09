@@ -10,13 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as React from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import type { AgentMark } from "@workspace/api-client-react"
+import type { AgentMark, AgentMarkPreview } from "@workspace/api-client-react"
 import { AgentMarksSection, MarkButton } from "./agent-mark"
 
 type Recorded = { method: string; path: string; body: unknown }
 
 let recorded: Recorded[] = []
 let listReply: AgentMark[] = []
+let previewReply: AgentMarkPreview | null = null
 let originalFetch: typeof globalThis.fetch
 
 function stub(): void {
@@ -27,6 +28,15 @@ function stub(): void {
     const method = (init?.method ?? "GET").toUpperCase()
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
     recorded.push({ method, path: url.pathname, body })
+    if (method === "GET" && url.pathname.endsWith("/preview")) {
+      if (previewReply === null) {
+        return new Response(JSON.stringify({ error: "no preview stubbed" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      return new Response(JSON.stringify(previewReply), { status: 200, headers: { "content-type": "application/json" } })
+    }
     if (method === "GET") {
       return new Response(JSON.stringify(listReply), { status: 200, headers: { "content-type": "application/json" } })
     }
@@ -61,6 +71,7 @@ const mark = (over: Partial<AgentMark>): AgentMark =>
 beforeEach(() => {
   recorded = []
   listReply = []
+  previewReply = null
   stub()
 })
 
@@ -160,5 +171,111 @@ describe("AgentMarksSection", () => {
     await waitFor(() => expect(screen.queryByTestId("mark-open")).toBeTruthy())
     expect(document.body.textContent).toContain("To do on this agent")
     expect(screen.queryByTestId("agent-marks-panel")).toBeNull()
+  })
+})
+
+describe("MarkPreview", () => {
+  const preview = (over: Partial<AgentMarkPreview> = {}): AgentMarkPreview =>
+    ({
+      assistantId: "asst-1",
+      assistantName: "Parkville leasing",
+      accountLabel: "Land And Apartment",
+      fetchedAt: "2026-09-09T12:00:00.000Z",
+      fields: [],
+      manualMarks: [],
+      notesOnlyCount: 0,
+      ...over,
+    }) as AgentMarkPreview
+
+  it("is not asked for until someone asks for it -- the read is free but not automatic", async () => {
+    previewReply = preview()
+    renderWithClient(<AgentMarksSection assistantId="asst-1" />)
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-toggle")).toBeTruthy())
+    expect(recorded.some((r) => r.path.endsWith("/preview"))).toBe(false)
+
+    fireEvent.click(screen.getByTestId("mark-preview-toggle"))
+    await waitFor(() => expect(screen.queryByTestId("mark-preview")).toBeTruthy())
+    expect(recorded.some((r) => r.path === "/api/benchmark/agent-marks/preview")).toBe(true)
+  })
+
+  it("shows each field as current -> after, and what it adds", async () => {
+    previewReply = preview({
+      fields: [
+        {
+          field: "keyterm",
+          label: "Words the agent is taught",
+          current: "2 words",
+          after: "3 words",
+          added: ["Parkville"],
+          alreadyPresent: ["Edison Hills"],
+          overLimit: false,
+          limit: 100,
+          markIds: ["m1", "m2"],
+        },
+        {
+          field: "numerals",
+          label: "Numbers written as digits",
+          current: "not set",
+          after: "on",
+          added: [],
+          alreadyPresent: [],
+          overLimit: false,
+          limit: null,
+          markIds: ["m3"],
+        },
+      ],
+    })
+    renderWithClient(<AgentMarksSection assistantId="asst-1" />)
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-toggle")).toBeTruthy())
+    fireEvent.click(screen.getByTestId("mark-preview-toggle"))
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-fields")).toBeTruthy())
+
+    const text = document.body.textContent ?? ""
+    expect(text).toContain("2 words")
+    expect(text).toContain("3 words")
+    expect(text).toContain("Adds: Parkville")
+    expect(text).toContain("Already there, so not added again: Edison Hills")
+    expect(text).toContain("not set")
+    // Read-only has to be said, not implied, on the screen that precedes a write.
+    expect(text).toContain("this changed nothing")
+    expect(text).toContain("Applying is not built yet")
+  })
+
+  it("says the cap would be passed, and never implies a silent trim", async () => {
+    previewReply = preview({
+      fields: [
+        {
+          field: "keyterm",
+          label: "Words the agent is taught",
+          current: "100 words",
+          after: "101 words",
+          added: ["one too many"],
+          alreadyPresent: [],
+          overLimit: true,
+          limit: 100,
+          markIds: ["m1"],
+        },
+      ],
+    })
+    renderWithClient(<AgentMarksSection assistantId="asst-1" />)
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-toggle")).toBeTruthy())
+    fireEvent.click(screen.getByTestId("mark-preview-toggle"))
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-over-limit")).toBeTruthy())
+    expect(document.body.textContent).toContain("refused, not trimmed")
+  })
+
+  it("says plainly when the marks would change no setting at all", async () => {
+    previewReply = preview({ notesOnlyCount: 3 })
+    renderWithClient(<AgentMarksSection assistantId="asst-1" />)
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-toggle")).toBeTruthy())
+    fireEvent.click(screen.getByTestId("mark-preview-toggle"))
+    await waitFor(() => expect(screen.queryByTestId("mark-preview-nothing")).toBeTruthy())
+    expect(document.body.textContent).toContain("3 of the marks are notes with no action yet")
+  })
+
+  it("offers no preview for a card with no assistant -- there is nothing live to read", async () => {
+    renderWithClient(<AgentMarksSection assistantId={null} />)
+    await waitFor(() => expect(screen.queryByTestId("mark-open")).toBeTruthy())
+    expect(screen.queryByTestId("mark-preview-toggle")).toBeNull()
   })
 })

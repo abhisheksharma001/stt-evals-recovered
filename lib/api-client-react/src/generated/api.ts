@@ -22,6 +22,7 @@ import type {
 import type {
   AgentMark,
   AgentMarkCreate,
+  AgentMarkPreview,
   AgentMarkUpdate,
   AgentModelList,
   AgentScan,
@@ -71,6 +72,7 @@ import type {
   ListDisagreementSpansParams,
   ListVapiAssistantsParams,
   PlanTask,
+  PreviewAgentMarksParams,
   Provider,
   ProviderCallResult,
   ProviderInput,
@@ -4760,6 +4762,90 @@ export const useCreateAgentMark = <TError = ErrorType<void>,
       > => {
       return useMutation(getCreateAgentMarkMutationOptions(options));
     }
+
+export const getPreviewAgentMarksUrl = (params: PreviewAgentMarksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/agent-marks/preview?${stringifiedParams}` : `/api/benchmark/agent-marks/preview`
+}
+
+/**
+ * @summary U-2: what the open marks would change on this assistant, computed from a live Vapi READ. Nothing is sent; the read is free.
+ */
+export const previewAgentMarks = async (params: PreviewAgentMarksParams, options?: Parameters<typeof customFetch>[1]): Promise<AgentMarkPreview> => {
+
+  return customFetch<AgentMarkPreview>(getPreviewAgentMarksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPreviewAgentMarksQueryKey = (params?: PreviewAgentMarksParams,) => {
+    return [
+    `/api/benchmark/agent-marks/preview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getPreviewAgentMarksQueryOptions = <TData = Awaited<ReturnType<typeof previewAgentMarks>>, TError = ErrorType<void>>(params: PreviewAgentMarksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewAgentMarks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPreviewAgentMarksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof previewAgentMarks>>> = ({ signal }) => previewAgentMarks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof previewAgentMarks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PreviewAgentMarksQueryResult = NonNullable<Awaited<ReturnType<typeof previewAgentMarks>>>
+export type PreviewAgentMarksQueryError = ErrorType<void>
+
+
+/**
+ * @summary U-2: what the open marks would change on this assistant, computed from a live Vapi READ. Nothing is sent; the read is free.
+ */
+
+export function usePreviewAgentMarks<TData = Awaited<ReturnType<typeof previewAgentMarks>>, TError = ErrorType<void>>(
+ params: PreviewAgentMarksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewAgentMarks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPreviewAgentMarksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getUpdateAgentMarkUrl = (markId: string,) => {
 

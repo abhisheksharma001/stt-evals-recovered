@@ -2420,6 +2420,38 @@ export const CreateAgentMarkResponse = zod.object({
 
 
 /**
+ * @summary U-2: what the open marks would change on this assistant, computed from a live Vapi READ. Nothing is sent; the read is free.
+ */
+export const PreviewAgentMarksQueryParams = zod.object({
+  "assistantId": zod.string()
+})
+
+export const PreviewAgentMarksResponse = zod.object({
+  "assistantId": zod.string(),
+  "assistantName": zod.string(),
+  "accountLabel": zod.string(),
+  "fetchedAt": zod.string(),
+  "fields": zod.array(zod.object({
+  "field": zod.enum(['keyterm', 'numerals']),
+  "label": zod.string().describe('What the field is called on screen -- never the vendor\'s word for it.'),
+  "current": zod.string(),
+  "after": zod.string(),
+  "added": zod.array(zod.string()),
+  "alreadyPresent": zod.array(zod.string()).describe('Marked terms the assistant already carries. Listed, and absent from `added`, so applying cannot double a boost.'),
+  "overLimit": zod.boolean().describe('True when applying would push the list past the vendor\'s cap. The preview says so rather than silently truncating.'),
+  "limit": zod.number().int().nullable(),
+  "markIds": zod.array(zod.string())
+})),
+  "manualMarks": zod.array(zod.object({
+  "id": zod.string(),
+  "note": zod.string(),
+  "actionValue": zod.string().nullable()
+})).describe('Prompt marks -- words for a person to act on. Nothing applies these.'),
+  "notesOnlyCount": zod.number().int().describe('Open marks carrying no action, so the screen can say the list is bigger than the change is.')
+}).describe('U-2. Computed from a live Vapi read that deliberately skips the 10-minute config cache -- this is what somebody reads immediately before asking for a change.')
+
+
+/**
  * @summary Edit a mark's note, action or status. Setting status to `applied` by hand is refused -- only U-3's apply may claim a mark was applied.
  */
 export const UpdateAgentMarkParams = zod.object({
