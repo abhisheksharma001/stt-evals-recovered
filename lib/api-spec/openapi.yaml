@@ -2104,6 +2104,12 @@ components:
         op: { type: string, enum: [ok, sub, del, ins] }
         ref: { type: ["string", "null"] }
         hyp: { type: ["string", "null"] }
+        # R-6. Optional, and absent means "not decided", not "not a
+        # convention": the stored score rows a run wrote before R-6 carry
+        # the raw alignment, and the comparison route is the only producer
+        # that marks. Never counted -- wordsDiffer and werVsReference
+        # include these ops (docs/scoring-policy.md).
+        convention: { type: boolean }
     AgentFlag:
       type: object
       required: [text, reason]

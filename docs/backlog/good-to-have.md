@@ -1,3 +1,28 @@
+## Found 2026-09-09 (shipping R-6): one screen now counts differences two ways
+
+R-6 hides conventions in the two diff *views*, and deliberately leaves `wordsDiffer`
+alone -- WER is WER. The side-by-side header was moved with the view, so its column reads
+"1 of 5 words differ - 3 conventions hidden". The **Rows** view above it was not: its
+"Differ / ref" column still prints `wordsDiffer/referenceWords` straight off the wire, so
+the same provider on the same call reads `4/5` in the table and "1 word differ ... 3 more
+are the same words written differently, hidden." in the row you expand under it. Both
+numbers are right and they add up, but nothing on screen says they are the same
+measurement counted twice.
+
+Not fixed here on purpose: the column is outside R-6's named files, and which number a
+*table* should carry is a decision, not a bug -- the table is the closest thing this page
+has to a ranking, and R-2 (blocked on Abhishek) is already the open question about
+ranking on one quantity. Worth folding into R-2 rather than answering twice.
+
+**Where:** the column is `artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`
+(the `Differ / ref` header and the `${diff.wordsDiffer}/${diff.referenceWords}` cell); the
+expanded row is `WordDiffView`.
+
+**Also, for the entry below:** `lib/scoring` has carried an import cycle the whole time --
+`index.ts` re-exports `./equivalence` while `equivalence.ts` imports `normalizeTranscript`
+from `./index`. Harmless (nothing is used at module top level) and R-6 added only a
+type-only import to it, but it is a live example of what the guard cannot see.
+
 ## Found 2026-09-09 (building M-19a): the import-cycle guard never looks at `lib/`
 
 `scripts/check-import-cycles.mjs` takes its root as an argument and defaults to

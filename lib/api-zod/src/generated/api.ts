@@ -465,7 +465,8 @@ export const GetCallComparisonResponse = zod.object({
   "wordDiff": zod.array(zod.object({
   "op": zod.enum(['ok', 'sub', 'del', 'ins']),
   "ref": zod.string().nullable(),
-  "hyp": zod.string().nullable()
+  "hyp": zod.string().nullable(),
+  "convention": zod.boolean().optional()
 })),
   "referenceWords": zod.number(),
   "wordsDiffer": zod.number(),
@@ -502,7 +503,8 @@ export const GetCallComparisonResponse = zod.object({
   "wordDiff": zod.array(zod.object({
   "op": zod.enum(['ok', 'sub', 'del', 'ins']),
   "ref": zod.string().nullable(),
-  "hyp": zod.string().nullable()
+  "hyp": zod.string().nullable(),
+  "convention": zod.boolean().optional()
 })),
   "referenceWords": zod.number(),
   "wordsDiffer": zod.number(),
@@ -565,7 +567,8 @@ export const GetBulkCallComparisonResponse = zod.object({
   "wordDiff": zod.array(zod.object({
   "op": zod.enum(['ok', 'sub', 'del', 'ins']),
   "ref": zod.string().nullable(),
-  "hyp": zod.string().nullable()
+  "hyp": zod.string().nullable(),
+  "convention": zod.boolean().optional()
 })),
   "referenceWords": zod.number(),
   "wordsDiffer": zod.number(),
@@ -602,7 +605,8 @@ export const GetBulkCallComparisonResponse = zod.object({
   "wordDiff": zod.array(zod.object({
   "op": zod.enum(['ok', 'sub', 'del', 'ins']),
   "ref": zod.string().nullable(),
-  "hyp": zod.string().nullable()
+  "hyp": zod.string().nullable(),
+  "convention": zod.boolean().optional()
 })),
   "referenceWords": zod.number(),
   "wordsDiffer": zod.number(),
@@ -1141,7 +1145,8 @@ export const ListBenchmarkRunResultsResponseItem = zod.object({
   "wordDiff": zod.array(zod.object({
   "op": zod.enum(['ok', 'sub', 'del', 'ins']),
   "ref": zod.string().nullable(),
-  "hyp": zod.string().nullable()
+  "hyp": zod.string().nullable(),
+  "convention": zod.boolean().optional()
 })).optional(),
   "flagCount": zod.number().nullish().describe('2026-08-27: gold-free hybrid flag count for this cell (cross-provider disagreement + confidence + entity mismatches).'),
   "flagSeverity": zod.union([zod.literal('none'),zod.literal('low'),zod.literal('medium'),zod.literal('high'),zod.literal(null)]).nullish(),

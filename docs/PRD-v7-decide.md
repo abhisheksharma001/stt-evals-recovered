@@ -259,8 +259,12 @@ prompt tokens rose by the length of the assistant's prompt and no more.
 **D2 — conventions never show as differences unless asked.** Abhishek, 2026-09-08. The
 diff in `artifacts/api-server/src/lib/call-comparison.ts` runs on `normalizeTranscript`
 tokens, so "1-bedroom" / "1 bedroom" and "gonna" / "going to" render as substitutions.
-Each non-`ok` op whose two sides are equal under `sameOnceCanonical` is marked
-`convention: true` (one boolean on `WordDiffOp`, through `lib/api-spec/openapi.yaml`);
+Each **run** of consecutive non-`ok` ops whose two sides are equal under
+`sameOnceCanonical` is marked `convention: true` (one boolean on `WordDiffOp`, through
+`lib/api-spec/openapi.yaml`) — this sentence read "each non-`ok` op" until 2026-09-09,
+which marks nothing on the two commonest pairs in the corpus, because `1 bedroom`
+against `1-bedroom` aligns as a substitution plus a deletion and neither op alone is
+equal to anything (R-6);
 the view hides those by default — rendered as agreement, with a count "12 convention
 differences hidden" and a toggle "show conventions" that renders them as today. WER and
 `wordsDiffer` keep counting them: WER is WER (`docs/scoring-policy.md`), and a person

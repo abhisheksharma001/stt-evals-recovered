@@ -11,7 +11,12 @@ import * as React from "react"
 // summary line calls the reference -- "gold" only when the caller knows
 // the reference IS a gold transcript; the Vapi draft must never be
 // described as gold (project standing rule).
-export type WordDiffOp = { op: string; ref: string | null; hyp: string | null }
+// R-6: `convention` marks a difference that is only a convention --
+// "1-bedroom" against "1 bedroom", "gonna" against "going to", a stray
+// "um". Optional, and absent means "not decided": the stored score rows
+// Runs reads carry the raw alignment, so that page sees none of these and
+// renders exactly as it always has.
+export type WordDiffOp = { op: string; ref: string | null; hyp: string | null; convention?: boolean }
 
 /** T-109: a run of words the provider itself reported low confidence on
  *  (hybrid signal 2 -- AssemblyAI, Deepgram, Gladia report per-word
@@ -60,8 +65,14 @@ export function WordDiffView({
   referenceLabel?: string
   lowConfidence?: LowConfidenceSpan[]
 }) {
+  // R-6: conventions read as agreement until the reader asks for them.
+  // Per view, not per app: this is how one reader wants to read one diff,
+  // not a setting about the data.
+  const [showConventions, setShowConventions] = React.useState(false)
   if (!wordDiff.length) return <p className="text-xs text-muted-foreground">No diff available.</p>
-  const errorCount = wordDiff.filter(w => w.op !== "ok").length
+  const conventions = wordDiff.filter(w => w.op !== "ok" && w.convention).length
+  const hiding = conventions > 0 && !showConventions
+  const errorCount = wordDiff.filter(w => w.op !== "ok" && !(hiding && w.convention)).length
   const marks = lowConfidenceOpIndexes(wordDiff, lowConfidence)
   const unsureWords = marks.size
   // Dotted underline, not a colour: the provider's own doubt is a different
@@ -79,13 +90,34 @@ export function WordDiffView({
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
         {errorCount} word{errorCount === 1 ? '' : 's'} differ from {referenceLabel}, out of {wordDiff.length}.
+        {hiding && <> {conventions} more {conventions === 1 ? 'is' : 'are'} the same word{conventions === 1 ? '' : 's'} written differently, hidden.</>}
         {unsureWords > 0 && <> {unsureWords} word{unsureWords === 1 ? '' : 's'} the provider itself was unsure of (dotted underline).</>}
+        {conventions > 0 && (
+          <>
+            {" "}
+            <button
+              type="button"
+              onClick={() => setShowConventions(v => !v)}
+              className="font-medium underline underline-offset-4 hover:text-foreground"
+              title="The same words written differently: 1-bedroom against 1 bedroom, gonna against going to, a stray um. These never raise a flag, and they are still counted in WER and in the Differ / ref column (docs/scoring-policy.md)."
+            >
+              {hiding ? `Show conventions (${conventions})` : `Hide conventions (${conventions})`}
+            </button>
+          </>
+        )}
       </p>
       <p className="text-sm leading-7 font-mono">
         {wordDiff.map((w, i) => {
           const span = marks.get(i)
           if (w.op === "ok") {
             return unsure(i, span, <span className="text-muted-foreground">{w.ref} </span>)
+          }
+          // R-6: a hidden convention reads as agreement, rendered as the
+          // words the PROVIDER wrote -- never the reference's spelling,
+          // which would put words on screen this provider never said. A
+          // filler it left out (`del`) has nothing of its own to show.
+          if (hiding && w.convention) {
+            return w.hyp == null ? null : unsure(i, span, <span className="text-muted-foreground">{w.hyp} </span>)
           }
           if (w.op === "sub") {
             return unsure(i, span, (

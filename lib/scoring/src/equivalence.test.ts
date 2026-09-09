@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { canonicalTranscript, sameOnceCanonical } from "./equivalence";
+import { canonicalTranscript, markConventionOps, sameOnceCanonical } from "./equivalence";
+import { diffWords, normalizeTranscript, type WordDiffOp } from "./index";
 
 // Every pair here is a real one from the corpus (2026-08-30 mining run) or
 // one Abhishek named. Left column: what one provider wrote; right: another.
@@ -57,5 +58,67 @@ describe("canonicalTranscript (T-101)", () => {
     expect(canonicalTranscript(c)).toBe(c);
     expect(canonicalTranscript("um uh")).toBe("");
     expect(canonicalTranscript("")).toBe("");
+  });
+});
+
+// R-6: the same list again, but through the word alignment the comparison
+// view actually renders. The register's first wording marked ops one at a
+// time; that misses the two commonest pairs in the mining above, because
+// "1 bedroom" against "1-bedroom" is one word on one side and two on the
+// other, so it arrives as a sub AND a del and neither op alone equals
+// anything. markConventionOps marks runs for that reason.
+const words = (text: string): string[] => normalizeTranscript(text).split(" ").filter(Boolean);
+const marked = (reference: string, hypothesis: string): WordDiffOp[] =>
+  markConventionOps(diffWords(words(reference), words(hypothesis)));
+const differences = (ops: WordDiffOp[]) => ops.filter((op) => op.op !== "ok");
+
+describe("markConventionOps (R-6)", () => {
+  it.each([
+    ["a 1 bedroom unit", "a 1-bedroom unit"],
+    ["a one-bedroom unit", "a 1 bedroom unit"],
+    ["i'm going to call", "i'm gonna call"],
+    ["that is okay", "that is ok"],
+    ["all right then", "alright then"],
+    ["call me back", "call um me back"],
+    ["call um me back", "call me back"],
+    ["saint louis office", "st louis office"],
+  ])("%s / %s -- every difference is a convention", (reference, hypothesis) => {
+    const ops = marked(reference, hypothesis);
+    const diffs = differences(ops);
+    expect(diffs.length).toBeGreaterThan(0);
+    for (const op of diffs) expect(op.convention).toBe(true);
+    // Never on an "ok" op: an agreement was never a "difference that is
+    // only a convention", and a view that hides on this flag alone would
+    // otherwise be handed nothing to render.
+    for (const op of ops.filter((o) => o.op === "ok")) expect(op.convention).toBeUndefined();
+  });
+
+  it.each([
+    ["unit 4", "unit forty"],
+    ["the apartment", "the apartments"],
+    ["the lessee", "the lissy"],
+  ])("%s / %s -- a real difference stays a difference", (reference, hypothesis) => {
+    const diffs = differences(marked(reference, hypothesis));
+    expect(diffs.length).toBeGreaterThan(0);
+    for (const op of diffs) expect(op.convention).toBeUndefined();
+  });
+
+  it("hides nothing in a run that also holds a real error", () => {
+    // The hyphen convention and a genuine plural land in ONE run of
+    // consecutive non-ok ops. Marking the run would hide the plural behind
+    // the hyphen, so the run is not marked at all -- err towards showing.
+    const diffs = differences(marked("a 1 bedroom apartment", "a 1-bedroom apartments"));
+    expect(diffs.length).toBeGreaterThan(0);
+    for (const op of diffs) expect(op.convention).toBeUndefined();
+  });
+
+  it("changes no count and no word, only the mark", () => {
+    const raw = diffWords(words("a 1 bedroom unit"), words("a 1-bedroom unit"));
+    const ops = markConventionOps(raw);
+    expect(ops.map((o) => [o.op, o.ref, o.hyp])).toEqual(raw.map((o) => [o.op, o.ref, o.hyp]));
+    expect(differences(ops).length).toBe(differences(raw).length);
+    // And the input is untouched -- the caller's array is still the raw
+    // alignment, so nothing upstream of the mark can be changed by it.
+    for (const op of raw) expect(op.convention).toBeUndefined();
   });
 });
