@@ -1,3 +1,13 @@
+## Found 2026-09-09 (writing Part U): nothing checks the register's own formatting
+`docs/step-register.md` follows a convention every block obeys -- each `### ` block and
+each `## Part` heading sits after a `---` with a blank line either side -- and the only
+thing enforcing it is whoever is editing at the time. CI runs check-doc-paths over the
+register (which does catch a backticked path that does not exist -- proved this session:
+re-backticking one planned path printed one `MISSING` line and exited 1), but no check
+looks at the structure. A one-screen scripts/check-register-shape.mjs would assert the
+separator rule and that every `### ` block carries a `**Status:**` line; 82 blocks in,
+the cost of finding a malformed one by eye is already higher than writing it.
+
 ## Found 2026-09-09 (R-20, measuring O-104 option b): this corpus argues for `numerals`, not keyterms
 Mined the 110 calls that carry three or more `ok` transcripts for vocabulary the providers
 actually split on. After folding conventions and near-variants, 155 tokens are disputed in
