@@ -5163,6 +5163,18 @@ project's own; nothing was borrowed for it.
 > "below the floor the reader is told how far along the check is". It is not how far
 > along anything is any more; the comment now says so and points at the floor constant
 > for why.
+>
+> **Corrected 2026-09-09 by R-17, in two places.** (1) The M-18 string quoted above read
+> `; 2 exist and no more are being written`, and the 2 was `data.n`. The words say
+> "calls written out by a person", which is `labelledCalls`; `n` is the subset of those
+> that could be ranked two ways. They were equal on this corpus, so the shipped line
+> printed the right digit for the wrong reason, and the doc comment ten lines above it in
+> the same file already forbade exactly this ("Printing only n against the words 'a
+> person checked' would credit them with less work than they did"). The below-floor
+> branch now reads `labelledCalls`, pluralised. (2) The "frozen at 2 calls, 1 of them
+> usable" reading in `MEASURABLE_FLOOR`'s comment is now "frozen at 1 call" — R-17
+> cleared the unusable one. The M-20 string is unchanged: `judgePicks` is the right
+> number for the words beside it, and the pick it counts is on the call that survives.
 
 ---
 
@@ -5296,6 +5308,74 @@ its own step with that verification named.
 > a sentence about "our own packages" that stopped being true the day this repo left
 > Replit. Inherited configuration keeps its original author's assumptions, and a comment
 > is where they hide.
+
+---
+
+### R-17 — The fragment gold goes, and the count beside "written out by a person" is the right one
+
+**Status:** done 2026-09-09 (PR #137).
+**PR:** one. Spends nothing.
+**Depends on:** R-14 (which decided the labelled set is frozen, and so retired the
+"finish it" branch this row used to have). Closes memo O-76.
+**Files:** `artifacts/api-server/src/backfill-r17-clear-fragment-gold.ts` (new),
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+**Today:** two calls carry a human gold, and one of them is not a transcript. Call
+`3559ea45`'s gold is **25 words against a 111-word draft** on a 51-second call — about
+the first eleven seconds, ending mid-conversation on a question mark. Whoever was typing
+stopped. Scoring against it does not measure accuracy: every word a provider correctly
+heard after the fragment ends counts as an insertion, so its eight scored cells run
+**WER 0.400 to 3.560** and rank providers by how much MORE than the fragment they
+transcribed. That is half the entire labelled set, so M-18's proxy-agreement figure is
+half computed on a quantity that is upside down. The other call (`64d8f463`) is the real
+thing — 186 gold words against a 157-word draft, *longer* than the draft, which is what a
+human transcript of a machine's output looks like.
+**Change:** clear it. A one-off backfill in M-1's shape — dry run by default, idempotent,
+one audit row carrying the fragment in `beforeState` so it is restorable, and `status`
+left at `ready_to_run` because a call with no gold is the normal case here. The guard is
+the gold's **SHA-256**, not its length: if anybody has written to the field since
+2026-09-09 the script exits non-zero rather than deleting work it has not read. Existing
+`benchmark_scores` rows are left alone, exactly as M-1 left them — they are history and
+each run's manifest records the gold it saw; `proxy_agreement` filters on the live gold
+at query time, so the call leaves the measurement the moment this runs.
+**And the number the UI prints beside it.** See the correction appended to R-14 above:
+the below-floor sentence printed `n` where its own words say `labelledCalls`. Found while
+working out what this step would change on screen, which is the only reason it was found
+at all — the two are equal on this corpus and stay equal after this step.
+**Acceptance:** WHEN the backfill has run THEN `GET /benchmark/proxy-agreement` SHALL
+report `labelledCalls: 1`, AND re-running the backfill SHALL clear nothing, AND running
+it against an edited gold SHALL exit non-zero without writing.
+**Verify:** dry run first and read what it names; `pnpm run typecheck`; the render cases
+in `results.test.tsx`, including a new one where `labelledCalls` and `n` differ (they
+never did on the live corpus, which is how R-14's swap survived review) and one on a
+single labelled call, which is the state the live page is in after this.
+**Must not:** delete the row, the audio, or the scores; touch `status`; clear the gold on
+`64d8f463`; lower `MEASURABLE_FLOOR` because the count went down.
+
+**On `visual-and-research`:** not re-run. This is not new copy — it is a correction to the
+copy R-14 already researched (its evidence note is in the R-14 block above), swapping one
+count for another and fixing a singular. The searches that would answer "how should this
+sentence read" have already been run and are cited where the sentence was written.
+
+> **What shipped.** One backfill script, one changed expression in
+> `ProxyAgreementLine`, two render cases. Live before: `labelledCalls 2, n 2,
+> top1Agreement 0.5, kendallTau 0.017, judgePicks 1`. The judge's one measured pick is on
+> `64d8f463`, the call that survives, so `judgePicks` is unaffected — and it is now
+> measured against a real transcript with nothing else averaged into it.
+>
+> **What was learned.** *A number can be right and still be the wrong number.* The
+> below-floor line printed 2 and 2 was correct — `labelledCalls` was 2 and `n` was 2. The
+> defect was invisible because the corpus made the two variables interchangeable, and it
+> would have surfaced as a quiet under-count on the first day they diverged, in a
+> sentence about how much work a person did. A rule written in a comment three lines
+> above the code it governs is not enforcement: **the only reason this was caught is that
+> the test now feeds the two counts different values.** Equal fixtures test one variable
+> twice.
+>
+> **And a smaller one.** Clearing a bad reference is not deleting evidence. The audit row
+> holds the fragment, the scores stay, the manifests still name the gold each run saw.
+> What changes is which numbers the tool is willing to average — and half a labelled set
+> is a much bigger share of a measurement than it sounds like when the set is two.
 
 ---
 

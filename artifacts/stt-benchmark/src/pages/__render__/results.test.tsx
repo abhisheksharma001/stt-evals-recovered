@@ -290,16 +290,23 @@ describe("Results", () => {
   // (2026-09-09), so the sentence now says the check is not being run, why, and
   // what the order IS measured on. The count survives as evidence, not progress.
   it("says the check is not being run, and no percentage, below 20 calls", async () => {
-    // The live corpus while this was built: 2 labelled calls, tau-b 0.017 --
-    // no relationship. The step as written would have printed "agreed 50% of
+    // The corpus R-14 was built on: 2 labelled calls, tau-b 0.017 -- no
+    // relationship. The step as written would have printed "agreed 50% of
     // the time" off that. The floor is M-20's, on this same labelled set.
-    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(2, 2, 0.5, 0.017) })
+    //
+    // R-17: labelledCalls and n differ here on purpose. They were equal on the
+    // live corpus, which is why R-14 could print n beside the words "written
+    // out by a person" and look right. 3 people transcribed, 2 rankable: the
+    // sentence has to say 3.
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(3, 2, 0.5, 0.017) })
     renderPage(<Results />, { path: "/results" })
 
     const line = await screen.findByTestId("proxy-agreement")
     expect(line.textContent).toContain("Not checked against human transcripts.")
     expect(line.textContent).toContain("needs 20 calls written out by a person")
-    expect(line.textContent).toContain("2 exist and no more are being written")
+    expect(line.textContent).toContain("3 exist and no more are being written")
+    // The count that is NOT what a person transcribed must not stand there.
+    expect(line.textContent).not.toContain("2 exist")
     // What the reader is looking at instead. Without this the sentence says
     // only what is missing and the ranking is left unexplained.
     expect(line.textContent).toContain("the ranking on this page measures is how much the providers disagreed")
@@ -310,6 +317,20 @@ describe("Results", () => {
     expect(line.textContent).not.toContain("50")
     // The whole-order figure is still available to anyone who wants it.
     expect(line.getAttribute("title")).toContain("0.02")
+  })
+
+  // R-17 cleared the fragment gold, so the live corpus is one labelled call
+  // and this branch is the one a reader actually sees. "1 exist" is what the
+  // sentence said before this case existed.
+  it("says 'exists', not 'exist', on a single labelled call", async () => {
+    stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(1, 1, 1, null) })
+    renderPage(<Results />, { path: "/results" })
+
+    const line = await screen.findByTestId("proxy-agreement")
+    expect(line.textContent).toContain("1 exists and no more are being written")
+    expect(line.textContent).not.toContain("1 exist ")
+    // One call at 100% is precisely the number the floor exists to withhold.
+    expect(line.textContent).not.toContain("%")
   })
 
   it("prints the agreement percentage once the labelled set reaches the floor", async () => {

@@ -27,7 +27,7 @@ Not from memory. Every row was queried against the API on `:8177`, the dev datab
 |---|---|
 | Calls | **176** — 160 property management, 8 rush, 8 trucking; **31 distinct assistants** |
 | Production transcriber on those calls | Deepgram Flux **130**, nova-3 19, nova-2 5, unknown 22 — **154 of 176 run Deepgram** |
-| Calls with a human gold | 2, one of them a 137-character fragment (O-76) |
+| Calls with a human gold | **1** — was 2 until R-17 cleared the 137-character fragment on `3559ea45` (25 gold words against a 111-word draft; O-76 closed 2026-09-09) |
 | Bulks | 3, all complete. `340400b2` (2026-08-28, 280 cells) and `f5324fd4` (2026-09-04, 270 cells) ran on the **mono** mix v6 disowned. `42769f26` (2026-09-08, 17 calls × 5 providers = 85 cells) is the **only bulk on the customer channel** — the only honest evidence on file |
 | Customer words per call on that bulk | median 45, min 25, max 140 |
 | Streaming cells, ever | **0**. Flux — production on 130 calls — cannot be run by this tool (M-11d waits on a 2-cent go-spend) |
@@ -257,7 +257,7 @@ M-18 and M-20 render against, so:
    Fixing that wording is a register step (R-14), not a copy nit — the current wording
    tells a reader to wait for something nobody is going to do.~~ **Fixed 2026-09-09,
    R-14.** Below the floor the two lines now read *"Not checked against human
-   transcripts. That check needs 20 calls written out by a person; 2 exist and no more
+   transcripts. That check needs 20 calls written out by a person; 1 exists and no more
    are being written. What the ranking on this page measures is how much the providers
    disagreed with each other."* and *"Judge accuracy: not checked. Scoring its picks needs the same
    human transcripts -- 1 of the 20 it would take, and none are coming. Its pick is shown
@@ -265,7 +265,11 @@ M-18 and M-20 render against, so:
    the evidence for the sentences); the floor, the above-floor branches and the M-9 legend
    are untouched, so a labelled set that ever does appear starts measuring with no edit.
 4. **O-76 loses its first branch.** "Finish or clear the 137-character fragment" is now
-   "clear it": finishing means transcribing by hand.
+   "clear it": finishing means transcribing by hand. **Done 2026-09-09, R-17** — cleared,
+   with the fragment kept in the audit trail. The labelled set is 1 call, and the
+   sentence in item 3 now says so. Two numbers in this section were written when it was
+   2 and are corrected above; the "honest count is 1" line below was right all along and
+   is now also the literal count.
 
 **The only remaining way to get a reference without a person** is to pay a model that
 listens to the audio itself (a multimodal transcription pass, independent of the five

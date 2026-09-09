@@ -197,6 +197,15 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
  * labelledCalls is what a person actually sat and transcribed. Printing only
  * n against the words "a person checked" would credit them with less work
  * than they did, every time a labelled call turned out unrankable.
+ *
+ * R-17 correction to R-14. The rule in the paragraph above was stated here and
+ * then broken three lines down: the below-floor sentence R-14 wrote read
+ * "needs 20 calls written out by a person; {n} exist", which is n standing
+ * where the words say labelledCalls. It printed the right digit only because
+ * n and labelledCalls happened to be equal on this corpus, and it would have
+ * under-reported a person's work the first time a labelled call turned out
+ * unrankable -- the exact failure the paragraph above forbids. The below-floor
+ * branch now prints labelledCalls, like the above-floor branch always did.
  */
 /** M-18 and M-20 both need a person to have transcribed enough calls before a
  *  percentage means anything, and they sit one under the other on the same
@@ -205,8 +214,16 @@ export function summarizeBulkVerdicts(data: BulkVerdicts): {
  *  R-14: this floor is now unreachable, and that is a decision, not a gap.
  *  Abhishek closed both roads to a labelled set on 2026-09-09 -- nobody will
  *  hand-write the 20 transcripts, and no paid listening pass will produce them
- *  automatically -- so the labelled set is frozen at 2 calls, 1 of them usable.
- *  DO NOT "fix" the lines below by lowering this to 1 or 2 to make a percentage
+ *  automatically -- so the labelled set is frozen where it stands.
+ *
+ *  R-17 correction: R-14 wrote "frozen at 2 calls, 1 of them usable", and then
+ *  R-17 cleared the unusable one -- call 3559ea45's gold was 25 words against a
+ *  111-word draft, so its WER ranked providers by how much MORE than the
+ *  fragment they transcribed. The set is frozen at 1 call, all of it usable.
+ *  The grill numbers quoted below were measured across both calls and are kept
+ *  as they were read; they are why the floor exists, not a live reading.
+ *
+ *  DO NOT "fix" the lines below by lowering this to 1 to make a percentage
  *  appear: one call is exactly the noise M-18's grill already rejected (n = 2,
  *  tau-b 0.017, no relationship, which "agreed 50% of the time" would have
  *  reported as a result). The constant stays at 20 so that if a labelled set
@@ -234,8 +251,8 @@ function ProxyAgreementLine() {
       ) : (
         <>
           Not checked against human transcripts. That check needs {MEASURABLE_FLOOR} calls written out by a
-          person; {data.n} exist and no more are being written. What the ranking on this page measures is how
-          much the providers disagreed with each other.
+          person; {data.labelledCalls === 1 ? "1 exists" : `${data.labelledCalls} exist`} and no more are being
+          written. What the ranking on this page measures is how much the providers disagreed with each other.
         </>
       )}
     </p>
