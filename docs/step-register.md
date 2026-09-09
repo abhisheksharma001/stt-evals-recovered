@@ -6239,6 +6239,75 @@ is proved is the contract the code enforces.
 
 ---
 
+### R-30 — An accent stops deleting the letter under it (B-19), and B-20 is refused
+
+**Status:** open.
+**PR:** one. Spends nothing. **Changes no number on today's corpus, and that is measured
+below rather than hoped for.**
+**Depends on:** R-22.
+**Files:** `lib/scoring/src/core.ts`,
+new file lib/scoring/src/normalize-entity-diacritics.test.ts.
+
+**Today:** `normalizeEntity` does NFKC, upper-cases, then strips `[^A-Z0-9]`. NFKC keeps
+an accented letter as **one precomposed codepoint**, so the strip removes the whole
+character rather than just the accent: `"CAFÉ"` becomes `"CAF"`, `"MÜLLER"` becomes
+`"MLLER"`.
+
+**The damage is on the hypothesis side, not the entity side.** Both go through the same
+function, so an entity `"Muller"` normalises to `"MULLER"` while a provider that
+transcribed the name *correctly* as `"Müller"` normalises to `"MLLER"` — which does not
+contain it. **A right answer scored wrong.** Reading the entry as "diacritics are stripped
+from entities" understates it; the entity list is the half that happens to be clean.
+
+**Measured before and after, on the real corpus:**
+
+```
+entity references in the corpus: 25   with non-ASCII: 0   normalisation changed: 0
+scored cells:                   769   hypotheses with non-ASCII: 61
+entity checks:                  120
+correct before: 101   correct after: 101
+became correct: 0   became wrong: 0   cells affected: 0
+```
+
+**Zero rankings move.** The 61 non-ASCII hypotheses are real, but none of them belongs to
+a call that carries entity references, so nothing is being mis-scored *today*. This is a
+correctness fix against the next accented name in the corpus, not a recount of the last
+one — which is exactly the claim R-22 said this pair had to make with numbers attached.
+
+**Change:** `NFD` after upper-casing, and nothing else. An explicit `\p{M}` strip was
+written first and taken out again — the existing `[^A-Z0-9]` strip already removes the
+combining mark NFD splits off, so the extra line was genuinely redundant. **The break test
+is what proved it:** removing `\p{M}` failed nothing, because the two versions are
+indistinguishable. A line no test can reach is a line that will drift, so it went.
+
+A value with no Latin form at all — a non-Latin script, an emoji — still normalises to
+`""`, exactly as before, and `scoreEntities` still guards that with `normalized.length > 0`
+so it can never match anything.
+
+**B-20 is refused, and here is why.** B-20 asks for a word-boundary on the entity match
+(`"CAT"` should not count inside `"CATALOG"`). But `entitySeparators` is stripped **before**
+the alphanumeric filter, so a normalised hypothesis is a single space-less run by
+construction — there are no boundaries left to respect. That is not an oversight: it is the
+entire purpose of the function, pinned by its own test, *"matches across separators, which
+is the whole reason for normalizeEntity"*, so that `"A-1-2-3"` matches `"A123"`. Adding a
+boundary check to the normalised string cannot work, and adding one against the original
+text is a different function with a different contract. **A boundary rule and
+separator-insensitivity cannot both hold at this layer.** Recorded here rather than
+half-built; if the false-positive rate matters it needs its own step and its own measurement
+of how often a short entity is a substring of a longer real word.
+
+**Acceptance:** WHEN an entity or a hypothesis contains an accented Latin letter THEN the
+accent SHALL be folded to its base letter AND the letter SHALL survive; AND WHEN a value has
+no Latin form THEN it SHALL normalise to `""` and never count as a match.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/scoring test` (183); the
+before/after probe above, re-run; the break test removes `NFD` (5 failed) and drops the
+`normalized.length > 0` guard (1 failed).
+**Must not:** add a word boundary to the entity match; change what a non-Latin value
+normalises to; alter `normalizeTranscript`, which is a different function with its own
+callers.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

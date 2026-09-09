@@ -221,13 +221,35 @@ export function normalizeTranscript(value: string): string {
 }
 
 export function normalizeEntity(value: string): string {
-  return value
-    .normalize("NFKC")
-    .replace(quoteFold, "'")
-    .replace(dashFold, "-")
-    .toLocaleUpperCase("en-US")
-    .replace(entitySeparators, "")
-    .replace(/[^A-Z0-9]/g, "");
+  return (
+    value
+      .normalize("NFKC")
+      .replace(quoteFold, "'")
+      .replace(dashFold, "-")
+      .toLocaleUpperCase("en-US")
+      // R-30 (ox-alpha B-19): fold an accent onto its base letter instead of
+      // deleting the letter with it. Without this, NFKC keeps "E" as one
+      // precomposed codepoint and the [^A-Z0-9] strip below removes the whole
+      // character, so an accented word loses a letter: "CAFE" (accented)
+      // normalised to "CAF". Entities and hypotheses both go through here, so
+      // the damage shows up on the hypothesis side -- a provider that
+      // transcribes an accented word correctly produces a normalised form that
+      // no longer contains the ASCII entity, and a right answer is scored
+      // wrong.
+      //
+      // NFD splits the accent off into a separate combining mark, and the
+      // [^A-Z0-9] strip below then removes that mark on its own -- so NFD
+      // alone is the whole fix. An explicit \p{M} strip was written here
+      // first and taken out again: it is genuinely redundant, no test can
+      // tell the two versions apart, and a line no test can reach is a line
+      // that will drift.
+      .normalize("NFD")
+      .replace(entitySeparators, "")
+      // Anything with no A-Z0-9 form at all -- a non-Latin script, an emoji --
+      // still normalises to "", exactly as before. scoreEntities guards that
+      // with `normalized.length > 0`, so it is never a match against anything.
+      .replace(/[^A-Z0-9]/g, "")
+  );
 }
 
 // T-33: the one CPU-bound routine in the system. Every hybrid flag, span,
