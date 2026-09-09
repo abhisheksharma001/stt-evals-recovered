@@ -28,11 +28,14 @@
 minimumReleaseAge: 1440
 
 minimumReleaseAgeExclude:
-  # Exclude @replit scoped packages from the minimum release age check.
-  # These are published by Replit and trusted — the supply-chain attack vector
-  # this setting guards against does not apply to our own packages.
-  - '@replit/*'
-  - stripe-replit-sync
+  # R-16: this used to read `@replit/*` plus `stripe-replit-sync`, with the
+  # justification "these are our own packages". They are not ours -- this file
+  # was written on Replit, for Replit, and the sentence came with it. A blanket
+  # scope exemption is a standing hole: it waives the 1-day quarantine for any
+  # package a third party ever publishes under that scope, including ones this
+  # repo does not depend on. `stripe-replit-sync` is not a dependency of
+  # anything here at all. Narrowed to the single package actually installed.
+  - '@replit/vite-plugin-runtime-error-modal'
 
 packages:
   - artifacts/*
@@ -41,8 +44,6 @@ packages:
   - scripts
 
 catalog:
-  '@replit/vite-plugin-cartographer': ^0.5.21
-  '@replit/vite-plugin-dev-banner': ^0.1.1
   '@replit/vite-plugin-runtime-error-modal': ^0.0.6
   '@tailwindcss/vite': ^4.1.14
   '@tanstack/react-query': ^5.90.21
