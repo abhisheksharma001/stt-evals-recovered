@@ -4,6 +4,7 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
   type ProviderModelOption,
+  submitLegThrewResult,
 } from "../types";
 import { classifyProviderHttpStatus } from "../failure-class";
 
@@ -68,11 +69,19 @@ export const openAiAdapter: ProviderAdapter = {
     form.append("model", input.model ?? MODEL);
     form.append("response_format", "json");
 
-    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-    });
+    // R-36 (ox-alpha B-86): this request IS the billable work -- OpenAI's
+    // transcription endpoint is synchronous. A throw here used to escape
+    // transcribe() and be re-attempted, paying for the same audio twice.
+    let res: Response;
+    try {
+      res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+    } catch (err) {
+      return submitLegThrewResult({ vendorLabel: "OpenAI", submittedAt, err });
+    }
 
     const rawOutput = (await res.json().catch(() => null)) as OpenAiResponse | null;
     const finalAt = new Date().toISOString();
