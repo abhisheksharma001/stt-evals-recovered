@@ -3,6 +3,7 @@
 export * from "./hybrid";
 export * from "./rank-agreement";
 export * from "./core";
+export * from "./parse-score-input";
 export * from "./spans";
 export * from "./provider-correlation";
 export * from "./verdict";

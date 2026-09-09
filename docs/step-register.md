@@ -6920,6 +6920,68 @@ change and wants a worktree; change what `durationSecondsOf` returns.
 
 ---
 
+### R-43 — The scoring CLI stops exploding somewhere else (B-63)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-34.
+**Files:** `scripts/src/stt-score.ts`,
+new file lib/scoring/src/parse-score-input.ts,
+new file lib/scoring/src/parse-score-input.test.ts,
+`lib/scoring/src/index.ts`.
+
+**Today:** `stt-score.ts` did `JSON.parse(raw) as ScoreInput | ScoreInput[]` — a blind cast
+covering **two** failures at once. A file that is not JSON, and a row missing a field, both
+surfaced as a `TypeError` from inside `score()` that named neither the file, nor the row, nor
+the field. The person running it has a JSON file in front of them and no way to find the one
+bad row in four hundred.
+
+**Change:** parse and validate, reporting **every** bad row rather than the first — someone
+fixing a generated file wants the list, not one round trip per row. Verified by running the
+CLI, not only by unit test:
+
+```
+bad.json: 2 problem(s) in 2 row(s):
+  - row 1: "vertical" must be one of rush, property_management, trucking, got "aviation"
+  - row 1: missing "entities" (use [] when there are none)
+
+notjson.json: not valid JSON -- Expected property name or '}' in JSON at position 1
+```
+
+**Hand-written, not zod, and that is a decision not an omission.** `lib/scoring` has no zod
+dependency. It is the pure, hot path every flag, span and WER goes through (T-33), and adding
+a runtime validation library to it to improve a **CLI error message** is the wrong trade. The
+check is deliberately shallow: it establishes the shape `score()` relies on and says where a
+bad row is, which is the entire complaint.
+
+**Found while verifying, and deliberately not fixed here.** Running the CLI on a real pair
+showed `wer: 1` for gold `"load twelve"` against hypothesis `"load 12"`. Traced rather than
+assumed:
+
+```
+normalizeTranscript("load twelve") -> "load twelve"
+normalizeTranscript("load 12")     -> "load 1 2"
+```
+
+`SPOKEN_DIGIT_WORD` maps `zero`…`nine` only. It exists for **digit-by-digit spelling** —
+`"five five five"` → `"5 5 5"` for a phone or RO number — and a cardinal like `"twelve"` is
+not in it by design. So the two normalise to different token counts and the row scores as a
+total miss. **That is a scoring-policy question, not a defect in this CLI**, it touches
+`docs/scoring-policy.md` and the 20% WER weight in the composite, and it lines up with the
+digit-word disputes already measured across the corpus. Logged to
+`docs/backlog/good-to-have.md`; fixing it inside a CLI-validation PR would have been a
+drive-by change to how every provider is ranked.
+
+**Acceptance:** WHEN the input file is not JSON, or any row lacks a field `score()` needs,
+THEN the CLI SHALL fail naming the file and every bad row; AND what survives the gate SHALL
+be scoreable without throwing.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/scoring test` (194); the CLI run
+above.
+**Must not:** add zod to `lib/scoring`; change what `score()` computes; touch number-word
+normalisation in this step.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
