@@ -10,8 +10,15 @@
 #   VERCEL_ORG_ID      -- the Vercel org/team id
 #   VERCEL_PROJECT_ID  -- the Vercel project id for this web app
 # Optional repository variable:
-#   VITE_API_BASE_URL  -- e.g. https://stt-api.example.com/api ; falls back to
-#                         relative /api (same-origin) when unset.
+#   VITE_API_BASE_URL  -- the API ORIGIN, with no path: e.g.
+#                         https://stt-api.example.com  (NOT .../api).
+#                         R-29/B-18: every generated operation path already
+#                         begins with /api, because orval bakes the spec's
+#                         `servers: [{url: /api}]` into each one. A value
+#                         ending in /api makes every request /api/api/... and
+#                         404. Falls back to relative /api (same-origin) when
+#                         unset, which is what the vite dev/preview proxies
+#                         serve.
 
 name: Deploy web (Vercel)
 
