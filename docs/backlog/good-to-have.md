@@ -1,4 +1,4 @@
-## Found 2026-09-09: `pnpm run build` has been red on main, and CI cannot see it
+## Found 2026-09-09: `pnpm run build` has been red on main, and CI cannot see it — FIXED same day (R-15)
 
 `artifacts/mockup-sandbox/vite.config.ts` still throws `PORT environment variable is
 required but was not provided.` before it loads -- the Replit-shaped hard requirement
@@ -16,6 +16,15 @@ pre-existing, not caused by the replit-config removal that found it. Two things 
 separating when this is stepped: giving mockup-sandbox the same optional-PORT default,
 and deciding whether that package is still alive at all (nothing outside it references
 it, and it carries its own copy of the Replit vite plugins).
+
+**Fixed 2026-09-09 as R-15.** CI now runs `pnpm -r --if-present run build` instead of
+naming two packages, and `mockup-sandbox`'s config takes `PORT` (default 5174) and
+`BASE_PATH` (default `/`) optionally, with the invalid-`PORT` error kept. The second
+question above is deliberately still open: measured while fixing this,
+`artifacts/mockup-sandbox/src/.generated/mockup-components.ts` exports an **empty** module
+map and there is no `src/components/mockups/` directory, so the package is a preview
+harness with nothing to preview. Deleting it is 68 tracked files and a lockfile move, and
+it is Abhishek's call.
 
 ## Found 2026-09-09: 80 of the 100 ox-alpha bug-register entries have never been read
 

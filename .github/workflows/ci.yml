@@ -109,8 +109,11 @@ jobs:
       - name: Route tests (api-server, throwaway database)
         run: pnpm --filter @workspace/api-server run test:integration
 
-      - name: Build web app
-        run: pnpm --filter @workspace/stt-benchmark run build
-
-      - name: Build API server bundle
-        run: pnpm --filter @workspace/api-server run build
+      # R-15: every package with a build script, not two by name. Naming them
+      # meant a package that could not build at all still passed CI -- which is
+      # exactly what happened: mockup-sandbox's vite config threw on a missing
+      # PORT for weeks while this job stayed green, because the job never asked
+      # it to build. This is the same command the repo-root `build` script runs
+      # after its typecheck, and the typecheck already ran above.
+      - name: Build every package
+        run: pnpm -r --if-present run build

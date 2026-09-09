@@ -5166,6 +5166,72 @@ project's own; nothing was borrowed for it.
 
 ---
 
+### R-15 — The root build goes green, and CI builds every package
+
+**Status:** done 2026-09-09 (PR #135).
+**PR:** one. Spends nothing.
+**Depends on:** nothing.
+**Files:** `artifacts/mockup-sandbox/vite.config.ts`, `.github/workflows/ci.yml`.
+**Today:** `pnpm run build` at the repo root exits 1 on a clean checkout of main.
+`artifacts/mockup-sandbox/vite.config.ts` throws `PORT environment variable is required
+but was not provided.` while its config is still loading -- the Replit-shaped hard
+requirement that `artifacts/stt-benchmark/vite.config.ts` softened to a `5173` default
+and which was never copied across. It throws the same way for `BASE_PATH`. Neither is a
+dev-server-only concern: a `vite build` loads the same config file, so the package cannot
+be built at all without two environment variables that no script in this repo sets.
+
+CI is green anyway, because it does not run the root script: `.github/workflows/ci.yml`
+builds exactly two named packages, `@workspace/stt-benchmark` and `@workspace/api-server`.
+The check is telling the truth about what it ran and nothing about the command a person
+types. That gap is the actual defect -- the broken config is only what fell through it.
+
+**Change:** two, in that order of importance.
+1. CI builds **every** package with a `build` script (`pnpm -r --if-present run build`)
+   instead of two by name, so a package that cannot build can never again pass.
+2. `mockup-sandbox`'s config takes the same shape as `stt-benchmark`'s: `PORT` optional
+   with a laptop default, `BASE_PATH` optional defaulting to `/`, an invalid `PORT` still
+   a hard error. Ports differ (5174, not 5173) so the two dev servers can run at once.
+
+**Acceptance:** WHEN `pnpm -r --if-present run build` runs on a clean checkout with no
+`PORT` and no `BASE_PATH` in the environment THEN every workspace package SHALL build;
+AND WHEN `PORT` is set to a non-numeric or non-positive value THEN the config SHALL still
+throw.
+**Verify:** `pnpm run typecheck`; the root build green with the environment cleared;
+break test = restore the hard `throw` and watch the recursive build exit 1.
+**Must not:** delete `mockup-sandbox` (a separate decision, see below); change
+`stt-benchmark`'s port or base path; drop the invalid-PORT guard; touch the Replit vite
+plugins (O-101's step -- but note this step is what makes that one verifiable, because
+after it CI actually builds the packages those plugins are in).
+
+**Not decided here: whether `mockup-sandbox` is alive.** Measured while building this --
+`artifacts/mockup-sandbox/src/.generated/mockup-components.ts` exports an **empty** module
+map, there is no `src/components/mockups/` directory for its plugin to scan, and its build
+transforms 30 modules. It is a preview harness with nothing to preview, and nothing outside
+the package references it. Deleting it is 68 tracked files and a lockfile move, and it is
+Abhishek's call, not a side effect of making a build script honest. Logged, not done.
+
+> **What shipped.** Nine lines of config and one CI step. `mockup-sandbox`'s two
+> `throw`s became a `5174` default and `?? "/"`, copied from `stt-benchmark`'s wording so
+> the next reader sees one pattern rather than two; the invalid-`PORT` guard survived
+> unchanged. CI's two named build steps became one `pnpm -r --if-present run build`.
+>
+> **What was learned.** *A green check is a claim about the command it ran, not about the
+> command a person types.* The build was red on main for weeks and every PR in that window
+> passed, honestly: the job built two packages and both of them built. Nothing was lying.
+> The defect was that the job's coverage was written as a list, and a list only stays
+> right if somebody edits it when the repo changes -- which is the same failure mode as
+> `replit.md` sitting outside `check-doc-paths`' `LIVE_DOCS` (PR #133) and as
+> `post-merge.sh` filtering on a package name that did not exist. Three instances in two
+> days of the same shape: **a check that enumerates its subjects will drift; a check that
+> derives them cannot.** `pnpm -r` derives. Prefer the recursive form over the named form
+> anywhere the named form would need maintenance to stay honest.
+>
+> **What this unblocks.** O-101 (finish the Replit removal) was waiting on exactly this:
+> the three `@replit` vite plugins live in the two packages CI now actually builds, so
+> removing them is verifiable rather than hopeful.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
