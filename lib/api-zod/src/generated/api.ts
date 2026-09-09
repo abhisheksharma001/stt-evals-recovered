@@ -384,6 +384,7 @@ export const UpdateBenchmarkCallBody = zod.object({
   "label": zod.string().min(updateBenchmarkCallBodyLabelMin).optional(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']).optional(),
   "goldTranscript": zod.string().optional(),
+  "confirmClearGold": zod.boolean().optional(),
   "entityNotes": zod.string().optional(),
   "entityReferences": zod.array(zod.object({
   "type": zod.enum(['ro_number', 'unit_number', 'vin', 'phone_number', 'name', 'address', 'load_number', 'city']),

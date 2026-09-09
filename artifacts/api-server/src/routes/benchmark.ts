@@ -592,10 +592,31 @@ router.patch("/benchmark/calls/:callId", async (req, res): Promise<void> => {
   // its columns remain so historical attestations stay readable, but nothing
   // depends on them.
 
+  // R-21: the labelled set is one call, and until now `{"goldTranscript":""}`
+  // was an ordinary accepted request that emptied it. Gate on the state the
+  // request would leave behind, not on the literal sent -- "   " erases the
+  // gold exactly as thoroughly as "" does. Replacing a gold with a different
+  // real gold is untouched; only going to nothing needs saying out loud.
+  const { confirmClearGold, ...fields } = body.data;
+  if (
+    fields.goldTranscript !== undefined &&
+    (current.goldTranscript ?? "").trim() !== "" &&
+    fields.goldTranscript.trim() === "" &&
+    confirmClearGold !== true
+  ) {
+    res.status(409).json({
+      error:
+        "This call has a gold transcript, and this request would leave it empty. " +
+        "Gold is hand-written and this route has no undo -- the old text survives only in audit_log. " +
+        "Send confirmClearGold: true if that is what you mean.",
+    });
+    return;
+  }
+
   const [call] = await db
     .update(benchmarkCallsTable)
     .set({
-      ...body.data,
+      ...fields,
       updatedAt: new Date(),
     })
     .where(eq(benchmarkCallsTable.id, params.data.callId))

@@ -1009,7 +1009,7 @@ export const updateBenchmarkCall = async (callId: string,
 
 
 
-export const getUpdateBenchmarkCallMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateBenchmarkCallMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBenchmarkCall>>, TError,{callId: string;data: BodyType<BenchmarkCallUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateBenchmarkCall>>, TError,{callId: string;data: BodyType<BenchmarkCallUpdate>}, TContext> => {
 
@@ -1038,12 +1038,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateBenchmarkCallMutationResult = NonNullable<Awaited<ReturnType<typeof updateBenchmarkCall>>>
     export type UpdateBenchmarkCallMutationBody = BodyType<BenchmarkCallUpdate>
-    export type UpdateBenchmarkCallMutationError = ErrorType<unknown>
+    export type UpdateBenchmarkCallMutationError = ErrorType<void>
 
     /**
  * @summary Update gold-reference readiness and benchmark call metadata
  */
-export const useUpdateBenchmarkCall = <TError = ErrorType<unknown>,
+export const useUpdateBenchmarkCall = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBenchmarkCall>>, TError,{callId: string;data: BodyType<BenchmarkCallUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateBenchmarkCall>>,
