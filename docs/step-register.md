@@ -5892,7 +5892,8 @@ as permission to skip the grill on any individual row.
 
 ### R-23 — A presigned recording URL stops being persisted into an error row (B-5)
 
-**Status:** open. First of R-22's twelve.
+**Status:** done 2026-09-10 (PR #148). First of R-22's twelve. Deployed: healthz
+`commitSha dfbaff3dd399`.
 **PR:** one. Spends nothing; changes no measured number.
 **Depends on:** R-22.
 **Files:** `lib/stt-providers/src/types.ts`, new file lib/stt-providers/src/redact-url.test.ts.
@@ -5938,6 +5939,100 @@ already runs (`.github/workflows/ci.yml:91`); the break test restores the raw
 **Must not:** redact the host or path, which are what make the failure diagnosable;
 change the failure class or the retry decision, both of which read `httpStatus`, not the
 sentence; touch any other error message while in this file.
+
+---
+
+### R-24 — B-12's proper fix is a transaction, not a wrapper, so it is split not shipped
+
+**Status:** blocked — needs Abhishek to pick between two answers that are not equivalent.
+**PR:** none yet. The grill is the deliverable.
+**Depends on:** R-22.
+**Files:** none changed.
+
+**Today:** `writeAudit` is a bare `await db.insert` (`artifacts/api-server/src/lib/audit.ts:21`),
+called from **30 sites**. Every route has the same shape: the mutation commits via
+`.returning()`, *then* the audit is written, *then* the response is sent. If the audit
+insert throws, `jsonErrorHandler` turns it into a 500 — so **the work happened and the
+caller is told it did not.** Exactly one call site guards it: `auditOrLog` in
+`lib/agent-verify.ts:32` (T-37).
+
+**Why the obvious fix is wrong.** T-37's wrapper swallows and logs, on the stated ground
+that *"an audit row is a record OF the scan, not the scan."* True there. **Not true
+everywhere.** For the PATCH that clears a gold transcript, the audit row is the only
+place the old gold text survives — R-21 shipped an error message that says so in as many
+words. Wrapping all 30 sites in `auditOrLog` would silently convert R-21's guarantee into
+a best-effort one, and the diff would look like defensive hygiene.
+
+**The two answers.**
+
+1. **Swallow and log**, T-37's pattern, at all 30 sites. One small PR. Cost: an audit row
+   can be lost with only a log line to show for it, and for the gold route that is the
+   permanent loss of the old text. Weakens NFR-5.
+2. **Write the audit inside the mutation's transaction.** Either both land or neither
+   does, the response never lies, and no audit is ever lost. This is the correct answer
+   and it is **not a micro-PR** — it is 30 call sites, most of which are not in a
+   transaction today. Under the standing rule it wants a worktree.
+
+**Recommendation: (2), staged** — start with the routes where the audit row is the only
+copy of something (gold clear first), leave the rest until that shape is proven.
+Nothing here is fixed until that call is made, because either choice is easy to write and
+only one of them is right.
+
+**Must not:** wrap all 30 sites "for now"; treat the 500-after-commit as the whole bug,
+when the lost audit row is the half that cannot be retried.
+
+---
+
+### R-25 — B-21 is real, and both the register's fix and the vendor's docs would get it wrong
+
+**Status:** open — the fix is known and grounded; shipping it changes 16 existing rows,
+so it needs a go on what happens to them.
+**PR:** none yet.
+**Depends on:** R-22.
+**Files:** none changed. Measurement only.
+
+**Today:** the Cartesia close handler only records an error when `!finalizeSent`
+(`lib/stt-providers/src/adapters/cartesia.ts:471`). After finalize, a truncated session
+falls through to `ok` with whatever partial text arrived. The adapter's own header comment
+(`:21-26`) says the finalize/close handshake was *"reasonable given the docs, not confirmed
+live."*
+
+**It is now confirmed live, and it overturns two proposed fixes.** Read from the 186
+Cartesia rows on the dev database — message types and counts only, no transcript text:
+
+```
+rows: 186 | rawOutput stored as a JSON string: 178 | unparsable: 24
+message types: transcript 2950, flush_done 145
+wsCloseCode: 1000 on all 162 rows that recorded one
+ok rows: 161 | ok without flush_done: 16 | rows with "done": 0
+```
+
+- **B-21's own stated fix — check the close code — would catch nothing.** Every row that
+  recorded a code recorded `1000`. Truncation here is not visible at the socket layer.
+- **The vendor docs' terminal marker would break every run.** Cartesia acks `finalize`
+  with `flush_done` and `close` with `done`. `flush_done` arrives for real, 145 times.
+  **`done` never arrives at all** — the adapter sends `close` and hangs up before the ack
+  can land. Gating on `done`, which is what the documentation reads like it wants, would
+  fail 100% of Cartesia runs.
+- **The correct gate is `flush_done`, and the bug is real: 16 of 161 `ok` rows — 9.9% —
+  never received it.** Those are truncated transcripts sitting in the corpus scored as
+  good ones.
+
+**The open question, which is Abhishek's:** the fix flips those 16 from `ok` to failed.
+Do they get re-run (Cartesia spend, needs a go-spend), left as-is with the old rows
+untouched and only new runs held to the rule, or marked without re-running?
+
+**Also found, unrelated to B-21 and not fixed here:** `rawOutput` is persisted as a JSON
+**string** inside a jsonb column on 178 of 186 rows — double-encoded — and 24 rows do not
+parse at all. Logged to `docs/backlog/good-to-have.md`, not fixed in this step.
+
+> **What was learned.** *Measuring beat both authorities.* The bug register named a fix
+> that catches none of it, and the vendor's own documentation named a marker that would
+> have failed every run — and either would have looked careful in a diff. The only thing
+> that told the truth was 186 rows of what the server actually sent.
+
+**Must not:** gate on `done`; gate on the close code; change those 16 rows without a
+decision on re-running them.
 
 ---
 
