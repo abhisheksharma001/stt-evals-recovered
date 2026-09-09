@@ -1,3 +1,27 @@
+## Found 2026-09-09 (building R-12): the money gate is proven for one status value, not the one that now guards a socket
+
+`POST /benchmark/runs` refuses any run whose selected providers are not `status:
+"ready"` -- and when nothing blocks, it fires `executeBenchmarkRun` immediately,
+fire-and-forget, which is real provider money. That gate is the only thing standing
+between "someone ticks `deepgram-nova-3-streaming` on the Runs page" and a live call to
+a Deepgram socket this repo has never opened.
+
+`run-create.int.test.ts` proves the gate end-to-end -- blocked run, named reason, frozen
+manifest, zero cells, executor never started -- but only for a provider that derives to
+`not_configured` (its fixture ids match no adapter, deliberately: "Never seed a 'ready'
+provider in this suite"). The status R-12 relies on is `disabled`, derived from
+`manuallyDisabled` with an adapter AND a key present. It is the same branch --
+`provider.status !== "ready"` is one expression -- so this is a coverage gap, not a bug.
+But it is a second status value reaching a money gate, and the suite reads only the first.
+
+Cheap fix: a second case in the same file with `manuallyDisabled: true` on a fixture
+provider, asserting the same blocked shape. The safety note at the top of that file
+already explains why the fixture must never be `ready`, and this case keeps that rule.
+
+**Reproduce:** `artifacts/api-server/src/routes/__integration__/run-create.int.test.ts`,
+first case; `artifacts/api-server/src/routes/benchmark.ts`, the `blockers` list and the
+`if (blockers.length === 0)` branch below it.
+
 ## Found 2026-09-09 (building R-11): the sibling guard's test would pass without the guard's point
 
 `parsers.test.ts`'s `deepgramStreamingAdapter socket wiring (M-11e)` case stubs
