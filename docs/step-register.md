@@ -6551,6 +6551,68 @@ disposition and the line that decides it, or SHALL be named as undecided with th
 
 ---
 
+### R-35 — The wave-2 tranche gets read, and O-100's first file is finished
+
+**Status:** done 2026-09-10. Fourth and last tranche of `ox-alpha/bug-register.md`.
+Closes memo O-100's first half.
+**PR:** one, docs only. Spends nothing. Fixes nothing.
+**Depends on:** R-33, R-34.
+**Files:** `docs/step-register.md`.
+
+**A correction to R-33 first.** R-33 reported **59** never-cited entries. The real number is
+**58**. My scan ran `range(1, 102)` against a register that ends at **B-100**, so `B-101`
+counted as "never cited" for the excellent reason that it does not exist. The P2 and P3
+counts are unaffected — the phantom sat in this tranche. Stated here rather than quietly
+edited into R-33, because a triage that corrects its own arithmetic silently is worth less
+than one that does not.
+
+The 10 real never-cited wave-2 entries, read against HEAD `a0536ac`:
+
+| entry | disposition | the line that decides it |
+|---|---|---|
+| B-84 executor never re-validates call eligibility | **live** | `run-executor.ts:326` — `.where(inArray(benchmarkCallsTable.id, run.callIds))`, no status filter, so a call archived after the run was created is still transcribed and still scored |
+| B-85 gold lost update | **moot in the UI, narrowed on the server** | `Review.tsx` is deleted, so the editor race is gone. The PATCH still has no version precondition — but R-21 now guards the one destructive case, emptying a gold |
+| B-86 adapter submit-leg throws escape the try | **live** | `assemblyai.ts:71` (upload) and `:91` (submit) are both outside the `try` that starts at `:140`, so a lost response becomes a generic Error, which `isRetryableError` treats as retryable — and the job is re-submitted **after it was billed** |
+| B-87 immortal send interval | **live** | `cartesia.ts:393` — the `open` handler creates `sendTimer` without checking `settled`. If the connect timeout already ran `finish()`, the later `close` hits `if (settled) return` at `:314` and the interval is never cleared |
+| B-90 `scanInFlight` blind exactly when needed | **moot** | `Agent.tsx` is deleted |
+| B-93 CSV formula guard bypassed on quoted fields | **fixed** | `Rankings.tsx:176` tests the **raw** value before quoting, and cites its own wave-2 twin B-91 in the comment |
+| B-94 re-executed run shows stale then inflated duration | **fixed** | `run-executor.ts:319` — `.set({ status: "running", completedAt: null })` |
+| B-95 `costPerMinute: Infinity` accepted end to end | **live** | `lib/api-zod/src/generated/api.ts:870` is `zod.number().min(...)`; zod's `number()` rejects NaN but **accepts Infinity**, and `min` cannot stop it |
+| B-97 executor trusts run arrays, silent shrink fakes success | **live** | same bare `inArray` at `:326`: ids that no longer resolve are dropped, and the run reports complete over fewer cells than it claims |
+| B-98 import fabricates a 1s duration | **live** | `benchmark.ts:1060` — `Math.max(1, durationSecondsOf(call))`, while the preview path at `:957` shows the true value |
+
+**Score: 6 live, 2 fixed, 2 moot.** The highest live-rate of any tranche — and not by
+accident. These were written by verifier agents against source rather than by hunters
+against a hunch, and they name mechanisms rather than symptoms. **The register's own
+provenance predicts its decay better than its priority label does.**
+
+**`ox-alpha/bug-register.md` is now fully read.** All 100 entries carry a disposition across
+R-19 (P0/P1), R-33 (P2), R-34 (P3) and this step.
+
+**The two sharpest things still unowned, both from this tranche:**
+
+- **B-86 re-submits a job that was already billed.** A lost response on the submit leg is
+  indistinguishable from a failure, and the retry path pays again. That is real money, on
+  three adapters.
+- **B-84/B-97 are the same line.** One bare `inArray` means a run neither re-checks whether
+  its calls are still eligible nor notices when some have vanished — and then reports
+  `complete`. R-26 tightened what "already done" means for a *cell*; this is the same class
+  of question one level up, about the run's inputs.
+
+**Acceptance:** WHEN a reader opens this block THEN every never-cited wave-2 entry SHALL
+carry a disposition and the line that decides it; AND the count reported in R-33 SHALL be
+corrected here.
+**Verify:** the R-19 citation scan with the correct upper bound (`B-100`); each file:line
+read at HEAD `a0536ac`.
+**Must not:** fix anything here; carry the phantom `B-101` forward.
+
+**What is left of O-100:** `ox-alpha/bug-register-waves.md` — **330 findings, cited by no
+live document at all.** That file is not a fourth tranche of this size; it is roughly three
+times everything read so far, and it deserves its own plan rather than a fifth step of this
+shape.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
