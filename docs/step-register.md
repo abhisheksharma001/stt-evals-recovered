@@ -6589,6 +6589,14 @@ provenance predicts its decay better than its priority label does.**
 **`ox-alpha/bug-register.md` is now fully read.** All 100 entries carry a disposition across
 R-19 (P0/P1), R-33 (P2), R-34 (P3) and this step.
 
+> **Corrected in R-45 (2026-09-10): that sentence is wrong, and it was wrong when it was
+> written.** Scanning the four disposition steps for `B-<n>` finds **12 entries named in
+> none of them** — B-2, B-30, B-31, B-34, B-37, B-52, B-53, B-54, B-82, B-88, B-89, B-96 —
+> and the true figure is lower still, because that scan counts a cross-reference inside
+> another entry's row as coverage. **B-88 was a P0**, and it was live: R-45 fixed it. The
+> claim was made by reading the tranche I had just written rather than by re-scanning the
+> register, which is the same mistake R-19 wrote down about the register itself.
+
 **The two sharpest things still unowned, both from this tranche:**
 
 - **B-86 re-submits a job that was already billed.** A lost response on the submit leg is
@@ -7046,6 +7054,62 @@ protection rests on the filter being read, not on a test.
 archived call a provider's reason; refuse a call for any status other than `archived` —
 `ready_to_run` with no gold is the normal import path and R-19 already refused that gate
 once.
+
+---
+
+### R-45 — An idle database connection dying stops killing the API (B-88) — **done**
+
+`pg.Pool` extends `EventEmitter`, and pg-pool's idle handler calls
+`pool.emit("error", err, client)` when a pooled connection dies while nobody is holding it:
+a failover, a load balancer closing an idle socket, an RST. Node throws an emitted `error`
+that has no listener. There were **zero** `pool.on("error", ...)` registrations anywhere in
+the repo, and nothing in this process installs an `uncaughtException` handler — so one
+dropped idle socket exited the API, and every run in flight stayed at `running`, already
+paid for, with nothing written down about why.
+
+**This is the likely mechanism behind O-116.** Three `benchmark_runs` have sat `running`
+since 2026-09-09T19:15Z. That is what this crash looks like from the outside, and it is
+the first candidate cause found for them that does not require guessing.
+
+`lib/db/src/index.ts` now attaches a listener that logs and does nothing else, because
+there is nothing to repair: pg has already removed the dead client from the pool by the
+time it fires. Only `err.message` and `err.code` are logged — the second argument pg
+passes is the dead client, and its `connectionParameters` carry the database password.
+`console.error` rather than the api-server pino logger: the dependency runs the other way
+(api-server imports `@workspace/db`), and giving `lib/db` its own pino would stand up a
+second transport for one line.
+
+**Why the test is an integration test.** The defect is in the *exported pool object*, and
+that object only exists when `DATABASE_URL` is set. A unit test would have to build its
+own pool, and would then pass regardless of what the real one does.
+`artifacts/api-server/src/routes/__integration__/pool-error.int.test.ts` asserts three
+things about the real pool: it has an `error` listener; emitting the event pg-pool emits
+does not throw; and the log line carries the message and code while carrying neither the
+host nor the password off the dead client.
+
+**Proved by breaking it.** Deleting the listener from a committed tree failed all three,
+and the middle one failed with the crash itself: *"expected [Function] to not throw an
+error but 'Error: Connection terminated unexpect…' was thrown"*. Integration 189 passed
+(186 before this step); api-server unit 218; typecheck clean.
+
+**What it does not prove.** No test here drives a real failover. It pins the listener and
+what the listener does with the event pg hands it; it does not pin that pg emits on the
+socket conditions the entry names — that is read out of pg-pool's `makeIdleListener`, not
+measured.
+
+**What was learned.** The waves file is not a lower-value tranche of the curated register:
+its first P0 read was a live process-killing defect that the curated register had already
+recorded as B-88 and that four tranches of triage had walked past. The reason is
+bookkeeping, not judgement — B-88 was never named in any disposition step, and my report
+that all 100 were dispositioned was produced from the tranche I had just written instead
+of from a re-scan.
+
+**Acceptance:** WHEN an idle pooled client errors THEN the process SHALL survive it AND
+SHALL log the message and code; AND the log SHALL contain no field from the client object.
+**Verify:** the three assertions above at HEAD, and each one failing with the listener
+removed.
+**Must not:** log the client argument or the error object; add pino to `lib/db`; make the
+listener attempt any repair — pg has already evicted the client.
 
 ---
 
