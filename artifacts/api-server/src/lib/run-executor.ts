@@ -10,6 +10,7 @@ import {
   benchmarkScoresTable,
   db,
   pool,
+  type DbPoolClient,
   type BenchmarkCallRow,
   type BenchmarkProviderRow,
 } from "@workspace/db";
@@ -229,17 +230,32 @@ function isRetryableError(err: unknown): boolean {
 export async function executeBenchmarkRun(
   runId: string,
   actorLabel: string,
-  opts: { audioResolver?: (call: BenchmarkCallRow) => Promise<Buffer> } = {},
+  opts: {
+    audioResolver?: (call: BenchmarkCallRow) => Promise<Buffer>;
+    /** R-27: same reason `audioResolver` exists -- a test cannot make the
+     *  real pool refuse a connection without breaking every other test that
+     *  shares it. Production callers omit it. */
+    connect?: () => Promise<DbPoolClient>;
+  } = {},
 ): Promise<void> {
+  const connect = opts.connect ?? (() => pool.connect());
   if (runningRuns.has(runId)) {
     logger.warn({ runId }, "executeBenchmarkRun called while already running for this runId -- ignored");
     return;
   }
   runningRuns.add(runId);
 
-  const lockClient = await pool.connect();
+  // R-27 (ox-alpha B-7): `pool.connect()` used to sit outside the try, so a
+  // connect rejection -- pool exhausted, database briefly down -- left runId
+  // in `runningRuns` for the life of the process. Every later execute for
+  // that run hit the "already running" branch above and did nothing, with no
+  // way back except a restart. The run was bricked in-process by a transient
+  // failure. Pulling the connect inside the same try/finally that already
+  // owns the cleanup is enough; the finally is the only place that deletes.
+  let lockClient: DbPoolClient | null = null;
   let acquired = false;
   try {
+    lockClient = await connect();
     const res = await lockClient.query<{ locked: boolean }>(
       "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
       [runId],
@@ -251,10 +267,10 @@ export async function executeBenchmarkRun(
     }
     await executeBenchmarkRunInner(runId, actorLabel, opts.audioResolver);
   } finally {
-    if (acquired) {
+    if (acquired && lockClient) {
       await lockClient.query("SELECT pg_advisory_unlock(hashtext($1))", [runId]);
     }
-    lockClient.release();
+    lockClient?.release();
     runningRuns.delete(runId);
   }
 }
