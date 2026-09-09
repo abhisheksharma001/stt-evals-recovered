@@ -5168,7 +5168,7 @@ project's own; nothing was borrowed for it.
 
 ### R-15 — The root build goes green, and CI builds every package
 
-**Status:** done 2026-09-09 (PR #REPLACEME).
+**Status:** done 2026-09-09 (PR #135).
 **PR:** one. Spends nothing.
 **Depends on:** nothing.
 **Files:** `artifacts/mockup-sandbox/vite.config.ts`, `.github/workflows/ci.yml`.
