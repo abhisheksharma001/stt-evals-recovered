@@ -6192,6 +6192,53 @@ field; assert `status` in the create test; change the UI copy in this step.
 
 ---
 
+### R-29 — The documented API base URL stops being one that cannot work (B-18)
+
+**Status:** open.
+**PR:** one. Spends nothing. No API change.
+**Depends on:** R-22.
+**Files:** `.github/workflows/deploy-web.yml`, `artifacts/stt-benchmark/src/lib/api-base.ts`,
+`artifacts/stt-benchmark/src/main.tsx`,
+new file artifacts/stt-benchmark/src/lib/api-base.test.ts.
+
+**Today:** `.github/workflows/deploy-web.yml:13` documents
+`VITE_API_BASE_URL -- e.g. https://stt-api.example.com/api`. Every generated operation
+path **already** starts with `/api` — orval bakes the spec's `servers: [{url: /api}]` into
+each one, confirmed by reading the generated client, not assumed. So the documented value
+makes every request `https://host/api/api/benchmark/...` and every one of them 404s.
+`custom-fetch.ts:29` strips trailing slashes and nothing else, so nothing catches it.
+
+**The code already knew.** `main.tsx` says *"point every generated API call at the API
+**origin**"*. The workflow beside it documents an origin plus a path. Two files, one
+contract, and only one of them right — which is exactly the shape that survives review,
+because each reads fine alone.
+
+**Change:** correct the workflow comment, and add `checkApiBaseUrl`, which reports the
+mistake once at bootstrap instead of leaving it to be inferred from N failed requests.
+
+**The trailing `/api` is deliberately NOT stripped.** Stripping would silently rewrite a
+value the operator chose, and from inside the browser there is no way to tell a typo apart
+from an API genuinely mounted under a path. Reporting is honest; rewriting is a guess that
+looks like a fix. The value is passed to `setBaseUrl` exactly as given.
+
+**And the check is not "contains /api".** A host that merely has `api` in its name, or a
+real sub-path that is not `/api`, is none of this function's business — both are pinned by
+tests so a later tightening cannot quietly break a valid deploy.
+
+**Acceptance:** WHEN `VITE_API_BASE_URL` ends in `/api` THEN the app SHALL report why at
+bootstrap AND SHALL still use the value as given; AND WHEN it is unset or blank THEN
+nothing SHALL be reported, because same-origin is a supported deploy.
+**Verify:** `pnpm run typecheck`; UI suite (181); the break test makes the check accept the
+documented value.
+**Must not:** strip or rewrite the base URL; report on a host that merely contains `api`;
+throw at bootstrap, which would replace a broken API with a blank page.
+
+**Not verifiable here:** nothing is hosted on Vercel today (T-68 made that workflow
+manual-only and no `VERCEL_*` secrets exist), so the fix cannot be proved by a deploy. What
+is proved is the contract the code enforces.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

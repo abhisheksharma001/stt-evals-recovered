@@ -4,6 +4,7 @@ import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { setBaseUrl, setActorLabel } from '@workspace/api-client-react';
 import { actor } from '@/lib/actor';
+import { checkApiBaseUrl } from '@/lib/api-base';
 
 import './index.css';
 
@@ -12,6 +13,11 @@ import './index.css';
 // the generated client keeps its relative `/api` default, which is correct
 // for same-origin setups (Replit router, vite dev proxy, vite preview proxy).
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+// R-29 (ox-alpha B-18): said once, loudly, rather than left as N 404s.
+const apiBaseUrlProblem = checkApiBaseUrl(apiBaseUrl);
+if (apiBaseUrlProblem) {
+  console.error(apiBaseUrlProblem);
+}
 if (apiBaseUrl) {
   setBaseUrl(apiBaseUrl);
 }
