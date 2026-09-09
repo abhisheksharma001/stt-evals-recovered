@@ -20,12 +20,15 @@ What that decides, rather than what it postpones:
 4. **O-76 collapses to one branch.** "Finish or clear the fragment" -- finishing is by
    hand, so: clear it.
 
-The one automatic substitute, written down so it is not rediscovered as a new idea: pay a
-model that listens to the audio (a multimodal pass, independent of the five text
-hypotheses being compared) and use its output as the reference. Automatic, cost not yet
-measured, and **not a gold** -- a sixth opinion with better ears. Any number against it must be labelled
-as that, never as WER-against-truth. Needs Abhishek's word and a go-spend; not proposed
-as a step.
+The one automatic substitute was put to him the same day and declined: pay a model that
+listens to the audio (a multimodal pass, independent of the five text hypotheses being
+compared) and use its output as the reference -- automatic, cost never measured, and
+**not a gold**, a sixth opinion with better ears. Abhishek: **disagreement only,
+permanently.**
+
+Both roads to a reference are therefore closed, deliberately. This is the design now, not
+a gap waiting to be filled: **a disagreement ranking with nothing to be accurate
+against.** Written here so it is not rediscovered later as a new idea.
 
 ## Found 2026-09-09 (grilling the next step, after R-12): the disabled switch guarded one door out of four
 
