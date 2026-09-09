@@ -42,6 +42,7 @@ import { computeHybridFlagsForRun } from "./hybrid-flagging";
 import { rank1Recommendation, runnerUpRecommendation } from "./ranking-recommendation";
 import { runAutoAgentVerificationForRun } from "./agent-verify";
 import { drainWithConcurrency, envInt } from "./concurrency";
+import { cellKey, isCellDone, staleResultIdsToClear } from "./cell-resumption";
 
 // In-process re-entrancy guard: found live 2026-08-25 by reproducing the
 // documented race (see the comment on the run.status check below) --
@@ -302,7 +303,7 @@ async function executeBenchmarkRunInner(
     .set({ status: "running", completedAt: null })
     .where(eq(benchmarkRunsTable.id, runId));
 
-  const [calls, selectedProviders, existingResults] = await Promise.all([
+  const [calls, selectedProviders, existingResults, scoreRows] = await Promise.all([
     db
       .select()
       .from(benchmarkCallsTable)
@@ -315,7 +316,23 @@ async function executeBenchmarkRunInner(
       .select()
       .from(benchmarkProviderCallResultsTable)
       .where(eq(benchmarkProviderCallResultsTable.runId, runId)),
+    // R-26 (ox-alpha B-6): which of this run's result rows actually own a
+    // score. `alreadyOk` below used to mean "status is ok", and the whole
+    // resumability argument rests on ok meaning scored -- the stale-row
+    // comment further down says so outright ("only 'ok' rows have scores").
+    // T-27's replaceOk closes that gap for a scoring crash this process
+    // catches; a hard kill between the result insert and the score insert
+    // leaves an ok row with no score, and nothing reopens it.
+    db
+      .select({ resultId: benchmarkScoresTable.resultId })
+      .from(benchmarkScoresTable)
+      .innerJoin(
+        benchmarkProviderCallResultsTable,
+        eq(benchmarkScoresTable.resultId, benchmarkProviderCallResultsTable.id),
+      )
+      .where(eq(benchmarkProviderCallResultsTable.runId, runId)),
   ]);
+  const scoredResultIds = new Set(scoreRows.map((r) => r.resultId));
 
   // R-13 (ox-alpha B-34, found 2026-08-25, unfixed until now): a provider
   // switched off in Setup is never transcribed to, on ANY path into this
@@ -374,10 +391,13 @@ async function executeBenchmarkRunInner(
     runRequiresCustomer = runPrefersCustomer;
   }
 
+  // R-26: "already done" means scored, not merely ok. An ok row with no
+  // score was paid for and never reached the rankings, and under the old
+  // condition it was skipped on every retry forever.
   const alreadyOk = new Set(
     existingResults
-      .filter((r) => r.status === "ok")
-      .map((r) => `${r.providerId}::${r.callId}`),
+      .filter((r) => isCellDone(r, scoredResultIds))
+      .map((r) => cellKey(r.providerId, r.callId)),
   );
 
   // T-43: a cell whose last attempt failed for a reason a re-run cannot
@@ -443,9 +463,19 @@ async function executeBenchmarkRunInner(
   // that the cell was ever tried and why -- the failure would vanish from
   // /results and from the bulk's failure breakdown instead of staying
   // visible. So those rows are excluded here and left exactly as they are.
-  const staleResultIds = existingResults
-    .filter((r) => r.status !== "ok" && !permanentlyFailed.has(`${r.providerId}::${r.callId}`))
-    .map((r) => r.id);
+  //
+  // R-26: an "ok" row that owns no score is cleared here too. The paragraph
+  // above assumes only ok rows have scores; the unscored ok row is the case
+  // that breaks the assumption, and deleting it cannot orphan a score
+  // precisely because it has none. Clearing it rather than overwriting it
+  // matters: upsertResult's default `setWhere: ne(status, "ok")` would
+  // otherwise refuse the update, so the cell would be sent to a paid
+  // provider and its answer thrown away.
+  const staleResultIds = staleResultIdsToClear(
+    existingResults,
+    scoredResultIds,
+    permanentlyFailed,
+  );
   if (staleResultIds.length > 0) {
     await db
       .delete(benchmarkProviderCallResultsTable)

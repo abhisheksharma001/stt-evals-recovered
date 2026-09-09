@@ -133,10 +133,16 @@ describe("executeBenchmarkRun and a manually disabled provider (R-13)", () => {
     });
     // The realistic shape: this provider ran and produced evidence, and was
     // switched off afterwards. Re-executing the run must not rewrite history.
-    await fx.result(run.id, call.id, provider.id, {
+    //
+    // R-26: the score row is part of that shape, not decoration. "Already
+    // succeeded" means ok AND scored -- an ok row with no score was paid for
+    // and never reached a ranking, and the companion test below covers it.
+    // This fixture asserted the old, weaker meaning by omission.
+    const kept = await fx.result(run.id, call.id, provider.id, {
       status: "ok",
       hypothesisTranscript: `fx kept ${fx.suffix}`,
     });
+    await fx.score(kept.id);
 
     await executeBenchmarkRun(run.id, fx.actor, { audioResolver });
 
@@ -149,6 +155,41 @@ describe("executeBenchmarkRun and a manually disabled provider (R-13)", () => {
     // "ok" row) but still counts, so the note would name a cell that in fact
     // succeeded. Caught only by this assertion.
     expect(after_notes(await runRow(run.id))).not.toContain("never sent");
+  });
+
+  // R-26 (ox-alpha B-6). A hard kill between the result insert and the score
+  // insert leaves an "ok" row that owns no score. It was billed and it is in
+  // no ranking. Under the old `status === "ok"` condition it was skipped on
+  // every retry forever; nothing in the product could reach it again.
+  //
+  // The provider here is disabled, so the re-attempt costs nothing (R-13) --
+  // what is being asserted is that the cell is treated as live at all.
+  it("reopens an ok cell that owns no score, instead of skipping it forever", async () => {
+    const call = await fx.call();
+    const provider = await fx.provider({ manuallyDisabled: true, status: "disabled" });
+    const run = await fx.run({
+      status: "queued",
+      providerIds: [provider.id],
+      callIds: [call.id],
+      callCount: 1,
+    });
+    await fx.result(run.id, call.id, provider.id, {
+      status: "ok",
+      hypothesisTranscript: `fx orphan ${fx.suffix}`,
+    });
+    // Deliberately no fx.score() -- that is the whole condition.
+
+    await executeBenchmarkRun(run.id, fx.actor, { audioResolver });
+
+    const cells = await cellsOf(run.id);
+    expect(cells).toHaveLength(1);
+    // Cleared and re-attempted. Leaving the ok row in place would be worse
+    // than useless: upsertResult's default setWhere refuses to overwrite an
+    // "ok" row, so a live provider would have been paid and its answer
+    // dropped on the floor.
+    expect(cells[0].status).toBe("failed");
+    expect(cells[0].hypothesisTranscript).not.toBe(`fx orphan ${fx.suffix}`);
+    expect(cells[0].errorMessage).toContain("switched off in Setup");
   });
 });
 

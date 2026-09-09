@@ -6036,6 +6036,58 @@ decision on re-running them.
 
 ---
 
+### R-26 — A cell that was paid for but never scored stops being invisible (B-6)
+
+**Status:** open.
+**PR:** one. Spends nothing today, and provably so.
+**Depends on:** R-22.
+**Files:** `artifacts/api-server/src/lib/run-executor.ts`,
+new file artifacts/api-server/src/lib/cell-resumption.ts,
+new file artifacts/api-server/src/lib/cell-resumption.test.ts,
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+
+**Today:** `alreadyOk` is built from `status === "ok"` alone. The resumability argument
+rests on ok meaning **scored** — the stale-row comment a few lines below says so outright:
+*"only 'ok' rows have scores, and 'ok' rows are never in this set."* T-27's `replaceOk`
+keeps that true whenever this process catches a scoring failure. A hard kill between the
+result insert and the score insert does not go through that catch: the cell is left `ok`
+with no score, billed, absent from every ranking, and skipped by every later retry.
+
+**Measured before touching a spend path.** Across the dev database: **876 result rows,
+769 of them `ok`, and exactly 0 with no score row.** T-27 holds. So this is a latent
+crash window, not an active defect, and the change is a provable no-op on today's data —
+which is what makes it safe to make in the one function that spends money.
+
+**The trap in the obvious version.** Tightening `alreadyOk` alone would be *worse than
+the bug*. `upsertResult` defaults to `setWhere: ne(status, "ok")`, so a surviving ok row
+refuses the update: the cell would be sent to a paid provider and its answer thrown away.
+The fix therefore also puts the unscored ok row into the **stale set that is cleared
+before re-attempting**, which cannot orphan a score precisely because there is none.
+The existing test at `run-executor-disabled.int.test.ts:147-151` already documented this
+exact upsert behaviour — it was known, and nothing connected it to `alreadyOk`.
+
+**Testability.** The executor cannot be driven in the suite: that needs a `ready`
+provider, and a ready provider in a test spends real money. So both decisions moved into
+`cell-resumption.ts` as pure functions and are unit-tested there. The integration test
+uses a **disabled** provider, so the re-attempt is free and what is asserted is only that
+the cell is treated as live at all.
+
+**And an existing fixture was asserting the weaker meaning by omission.** The R-13 test
+"leaves a cell that already succeeded alone" seeded an `ok` row with **no score row** and
+called it *"the realistic shape"*. It was not: the score row is part of that shape. The
+fixture now writes one, and a companion test covers the case it had been standing in for.
+
+**Acceptance:** WHEN a result row is `ok` and owns no `benchmark_scores` row THEN the
+executor SHALL treat its cell as live AND SHALL clear the row before re-attempting; AND
+WHEN the row is `ok` and scored THEN it SHALL be skipped and left untouched.
+**Verify:** `pnpm run typecheck`; api-server unit (198) and integration (171); the break
+test restores `status === "ok"` in each of the two decisions separately.
+**Must not:** overwrite the unscored ok row instead of clearing it; clear a
+permanently-failed row (T-43 — its row is the only record the cell was tried); change
+what happens to a scored ok row.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
