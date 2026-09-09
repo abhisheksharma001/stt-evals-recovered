@@ -5412,7 +5412,7 @@ sentence read" have already been run and are cited where the sentence was writte
 
 ### R-18 — R-16's two-directional scan becomes a check anybody can run
 
-**Status:** done 2026-09-09 (PR #NNN).
+**Status:** done 2026-09-09 (PR #139).
 **PR:** one. Spends nothing. Closes memo O-102.
 **Depends on:** R-16, which is the reasoning this check enforces.
 **Files:** `scripts/check-replit-residue.mjs` (new), `package.json`,
