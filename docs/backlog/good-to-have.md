@@ -1,3 +1,26 @@
+## Found 2026-09-09 (R-19, triaging ox-alpha): the second bug file nobody has opened
+`ox-alpha/bug-register-waves.md` holds **330** `[P0..P3]` findings and is cited by no
+live doc at all — four times the file everyone has been calling "the bug register".
+Memo O-100 said "80 unread entries"; measured, the pile is 80 in `bug-register.md` plus
+330 here, so roughly **410**. Nothing is claimed about their quality: they have not been
+read. Recording the count so the next estimate starts from the real number.
+
+**Reproduce:** `grep -c "^\[P[0-3]\]" ox-alpha/bug-register-waves.md`, and the citation
+scan in the R-19 register block.
+
+## Found 2026-09-09 (R-19): three P1 bugs went moot because the code they name was deleted
+B-9 (in-flight scan overwrites a human decision) died with `POST /agent/scans` when the
+Agent page was folded into bulk. B-10's gold half died when approve stopped touching
+`benchmark_calls` at all (`routes/agent.ts:153-156`). B-8's compliance impact died when
+the two-approver de-ID gate was removed by decision (`routes/benchmark.ts:589-591`).
+
+Kept here rather than crossed out, because in two of the three the **mechanism** outlived
+the impact: B-8's blind `where(eq(id))` updates and locale `toLowerCase` are still on the
+attest route, and B-10's approve/reject TOCTOU is still on the scan row. If either route
+ever decides something again, the bug is waiting where it always was. **Mark a finding
+moot by its mechanism, never by its blast radius** — the blast radius is the half that
+changes when a product decision changes.
+
 ## Found 2026-09-09 (building R-17): a test fixture whose two counts were equal hid a wrong-variable bug for a day — FIXED same day (R-17)
 
 R-14 shipped `needs 20 calls written out by a person; {data.n} exist`. The words name
