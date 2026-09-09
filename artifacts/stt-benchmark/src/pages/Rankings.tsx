@@ -37,6 +37,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderCorrelationCard } from "@/components/provider-correlation-card"
 import { BulkVerdictBanner, GroupVerdictHeadline, ProductionDisagreementLine, findGroupVerdict, useBulkVerdicts } from "@/components/verdict-headline"
 import { WordsToWatch } from "@/components/words-to-watch"
+import { AgentMarksSection } from "@/components/agent-mark"
 import { AssistantSignals } from "@/components/assistant-signals"
 import { apiBase } from "@/lib/api-base"
 import { ClientMonthlyCostLine, GroupVolumeLine, MonthlyCostCell, fmtUsd, monthlyCost, useGroupVolume, useListPrices, type GroupVolume } from "@/components/monthly-cost"
@@ -1043,6 +1044,10 @@ export default function Rankings() {
                             callLabels={callLabels}
                             compact
                           />
+                          {/* U-1b: what a person marked while reading this
+                              card or its calls. A list of proposals -- nothing
+                              here has been sent to Vapi. */}
+                          <AgentMarksSection assistantId={ranks[0]?.assistantId ?? null} />
                           <PerCallComparisonLinks assistantId={ranks[0]?.assistantId ?? null} bulkId={viewMode === "bulk" ? selectedBulkId : null} />
                         </CardContent>
                       </Card>

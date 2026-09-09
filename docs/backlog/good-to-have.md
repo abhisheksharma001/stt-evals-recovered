@@ -1,3 +1,14 @@
+## Found 2026-09-09 (U-1b): the page render tests never assert nothing went unstubbed
+`stubApi` in artifacts/stt-benchmark/src/pages/__render__/harness.tsx builds an `unmatched`
+list precisely so a page quietly depending on an endpoint nobody planned for shows up as a
+failure -- and its own doc comment says "a page test should assert this stays empty". No
+page test asserts it. Counted 2026-09-09: `unmatched` appears zero times in
+`results.test.tsx`, and U-1b's new marks query 500'd behind all 34 of its assertions
+without one of them noticing. One line in each page suite
+(`expect(api.unmatched).toEqual([])`) closes it; the reason it is a backlog entry and not
+part of U-1b is that turning it on will very likely fail several existing suites at once,
+and each of those is its own question about what the page is really asking for.
+
 ## Found 2026-09-09 (writing Part U): nothing checks the register's own formatting
 `docs/step-register.md` follows a convention every block obeys -- each `### ` block and
 each `## Part` heading sits after a `---` with a blank line either side -- and the only

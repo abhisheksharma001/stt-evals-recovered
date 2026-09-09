@@ -6,6 +6,8 @@
 // M-10a removed from Results, and how its section header kept promising
 // "Lower is better on every number in this table" while Speed sat in it.
 import { afterEach, describe, expect, it } from "vitest"
+import * as React from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen } from "@testing-library/react"
 import type { CallComparison, ComparisonRow } from "@workspace/api-client-react"
 import { ComparisonBody } from "./provider-comparison-section"
@@ -145,5 +147,53 @@ describe("ComparisonBody copy", () => {
     // Disagreements, unsure words and cost genuinely are lower-is-better.
     // The fix must not sweep away true statements to satisfy a grep.
     expect(titles.filter((t) => /lower is better/i.test(t)).length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// U-1b: the judge's disputed spans are the only place in the product where a
+// specific stretch of misheard speech is on screen, so each one carries its
+// own Mark control. The judge is null in the fixture above (these tests are
+// about the table), so this block builds its own.
+describe("ComparisonBody marks", () => {
+  const judged = {
+    ...data,
+    judge: {
+      scanId: "scan-1",
+      status: "flagged",
+      pickProviderId: "cartesia-ink-whisper",
+      reasoning: "one reads better",
+      confidence: "medium",
+      keyDifferences: [
+        { span: "Edison Hills", alternatives: "Addison Hills", matters: "it is the property name" },
+        { span: "four one three", alternatives: "4 1 3", matters: "it is the unit" },
+      ],
+      createdAt: "2026-09-09T00:00:00.000Z",
+    },
+  } as unknown as CallComparison
+
+  function renderJudged() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <ComparisonBody data={judged} />
+      </QueryClientProvider>,
+    )
+  }
+
+  it("puts a mark control on every difference, not one for the whole call", () => {
+    renderJudged()
+    expect(screen.getAllByTestId("mark-open").length).toBe(2)
+  })
+
+  it("the form it opens is about the span that was clicked", async () => {
+    renderJudged()
+    const { fireEvent } = await import("@testing-library/react")
+    fireEvent.click(screen.getAllByTestId("mark-open")[1])
+    const form = screen.getByTestId("mark-form")
+    expect(form.textContent).toContain("four one three")
+    expect(form.textContent).not.toContain("Edison Hills")
+    // The comparison does not know the assistant, so the form must not
+    // pretend to: it says plainly that nothing has left the box.
+    expect(form.textContent).toContain("Nothing is sent to Vapi.")
   })
 })
