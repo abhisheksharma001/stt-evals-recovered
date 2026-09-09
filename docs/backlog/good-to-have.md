@@ -68,7 +68,13 @@ disproved. Nothing unique died with it: the API-key rule lives in `.claude/CLAUD
 and `.claude/REQUIREMENTS.md`, the MCP-is-not-runtime rule in
 `docs/integration-strategy.md`, and every document it pointed at still exists.
 
-**Left in place on purpose, each its own step later:**
+**Left in place on purpose, each its own step later.** Items 2 and 3 were removed on
+2026-09-09 as R-16, along with the `@replit/*` blanket entry in item 4's
+`minimumReleaseAgeExclude`; item 1 was **kept on purpose** after reading its source (its
+`apply()` is `serve`-only, it forwards `window.onerror` to the dev server's terminal, and
+that works off Replit), and item 4's esbuild `overrides` block is still open because
+proving a change to it needs a clean reinstall on two platforms. Original text follows.
+
 
 1. `@replit/vite-plugin-runtime-error-modal` is imported unconditionally by both
    `artifacts/stt-benchmark/vite.config.ts` and

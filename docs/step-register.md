@@ -5232,6 +5232,73 @@ Abhishek's call, not a side effect of making a build script honest. Logged, not 
 
 ---
 
+### R-16 — The dead Replit packages go; the one that still works stays
+
+**Status:** done 2026-09-09 (PR #136).
+**PR:** one. Spends nothing.
+**Depends on:** R-15 — and not incidentally. Two of the three packages removed here live
+in `artifacts/stt-benchmark` and `artifacts/mockup-sandbox`, and until R-15 CI built
+neither of those from the recursive form. Removing them before R-15 would have been
+hopeful; after it, a broken removal fails the build job.
+**Files:** `artifacts/stt-benchmark/vite.config.ts`,
+`artifacts/mockup-sandbox/vite.config.ts`, both packages' `package.json`, the root
+`package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`.
+**Today:** PR #133 removed the seven Replit *platform* files and deliberately left four
+things behind, each with a reason. Three of them are now settled.
+
+**Change:**
+1. `@replit/vite-plugin-cartographer` and `@replit/vite-plugin-dev-banner` are gated on
+   `process.env.REPL_ID !== undefined`, which is unset everywhere this project runs, so
+   they have never executed here. Gone from both configs, both `package.json`s and the
+   catalog.
+2. `@replit/connectors-sdk` was the only entry in the root `dependencies` block and has
+   zero imports anywhere in the repo. The block goes with it.
+3. `minimumReleaseAgeExclude` waived the 1-day supply-chain quarantine for the whole
+   `@replit/*` scope plus `stripe-replit-sync`, with the comment *"these are our own
+   packages"*. They are not ours — that sentence was written on Replit, for Replit, and
+   came along with the file. `stripe-replit-sync` is not a dependency of anything here.
+   Narrowed to the single package actually installed.
+
+**Deliberately kept: `@replit/vite-plugin-runtime-error-modal`.** Read its source rather
+than its name. Its `apply()` is `env.command === "serve" && !config.ssr` — it is a
+dev-server plugin that never touches a production bundle — and what it does is hook
+`window.onerror`, forward the error over Vite's HMR channel so it prints in the dev
+server's terminal, and show an overlay. That works off Replit and is worth having for an
+operator who is not reading a browser console. The one Replit-shaped line in it,
+`window.parent.postMessage(...)` to an embedding frame, is a no-op with no parent frame
+and is wrapped in its own `try/catch`. Removing a working dev tool because of the scope
+in its name is not a cleanup. One line in each config if that call is ever reversed.
+
+**Acceptance:** WHEN the workspace is installed from the committed lockfile THEN no
+`@replit` package except `vite-plugin-runtime-error-modal` SHALL be present; AND
+`pnpm -r --if-present run build` SHALL exit 0.
+**Verify:** `pnpm run typecheck`; all four unit suites; the recursive build; CI (which
+after R-15 builds the two packages these plugins were in).
+**Must not:** remove the runtime-error-modal plugin; touch `pnpm-workspace.yaml`'s
+esbuild `overrides` block.
+
+**Still open, deliberately: the esbuild `overrides`.** `pnpm-workspace.yaml` still
+deletes every non-linux esbuild binary under the comment *"replit uses linux-x64 only"*.
+It has been survivable only because the root `devDependencies` pins
+`@esbuild/darwin-arm64` by hand to put back one of the binaries the overrides removed —
+a workaround for a setting, both of which would go together. Proving that change means a
+clean `node_modules` reinstall on two platforms, which is not this PR's shape. Left as
+its own step with that verification named.
+
+> **What was learned.** *Read the package, not the name.* Three of these four were dead
+> by inspection — a gate on an env var nobody sets, an import nobody wrote, an allowlist
+> for a package nobody depends on. The fourth had the same name, the same scope, the same
+> vendor, and was doing real work. A sweep by prefix would have removed it with the
+> others and called that finishing the job.
+>
+> **And a real one found on the way.** The supply-chain allowlist did not just name a
+> package, it waived the quarantine for an entire third-party scope, and justified it with
+> a sentence about "our own packages" that stopped being true the day this repo left
+> Replit. Inherited configuration keeps its original author's assumptions, and a comment
+> is where they hide.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
