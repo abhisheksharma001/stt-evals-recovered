@@ -5837,7 +5837,7 @@ means; touch the de-identification columns.
 
 ### R-22 — The twelve P0/P1 findings R-19 proved live get fixed, one PR each
 
-**Status:** open. Campaign header; each row below ships as its own step and its own PR.
+**Status:** done 2026-09-10 (R-32). Campaign header; each row below ships as its own step and its own PR.
 **PR:** this one is docs only and spends nothing. The twelve that follow are code.
 **Depends on:** R-19, which read them and deliberately fixed none of them.
 **Files:** `docs/step-register.md`.
@@ -6038,7 +6038,7 @@ decision on re-running them.
 
 ### R-26 — A cell that was paid for but never scored stops being invisible (B-6)
 
-**Status:** open.
+**Status:** done 2026-09-10 (PR #150).
 **PR:** one. Spends nothing today, and provably so.
 **Depends on:** R-22.
 **Files:** `artifacts/api-server/src/lib/run-executor.ts`,
@@ -6090,7 +6090,7 @@ what happens to a scored ok row.
 
 ### R-27 — A transient connect failure stops bricking a run until restart (B-7)
 
-**Status:** open.
+**Status:** done 2026-09-10 (PR #151). Deployed: healthz `commitSha 63569b4cf0b0`.
 **PR:** one. Spends nothing.
 **Depends on:** R-22.
 **Files:** `artifacts/api-server/src/lib/run-executor.ts`, `lib/db/src/index.ts`,
@@ -6140,7 +6140,7 @@ test moves the connect back outside the `try`.
 
 ### R-28 — The create form stops minting providers that can never run (B-17)
 
-**Status:** open.
+**Status:** done 2026-09-10 (PR #152). Deployed: healthz `commitSha 994df29a2795`.
 **PR:** one. Spends nothing.
 **Depends on:** R-22.
 **Files:** `artifacts/api-server/src/routes/benchmark.ts`, `lib/api-spec/openapi.yaml`,
@@ -6194,7 +6194,7 @@ field; assert `status` in the create test; change the UI copy in this step.
 
 ### R-29 — The documented API base URL stops being one that cannot work (B-18)
 
-**Status:** open.
+**Status:** done 2026-09-10 (PR #153). No deploy: nothing is hosted on Vercel (T-68).
 **PR:** one. Spends nothing. No API change.
 **Depends on:** R-22.
 **Files:** `.github/workflows/deploy-web.yml`, `artifacts/stt-benchmark/src/lib/api-base.ts`,
@@ -6241,7 +6241,7 @@ is proved is the contract the code enforces.
 
 ### R-30 — An accent stops deleting the letter under it (B-19), and B-20 is refused
 
-**Status:** open.
+**Status:** done 2026-09-10 (PR #154).
 **PR:** one. Spends nothing. **Changes no number on today's corpus, and that is measured
 below rather than hoped for.**
 **Depends on:** R-22.
@@ -6310,7 +6310,7 @@ callers.
 
 ### R-31 — The API stops telling every website it may read the corpus (B-4)
 
-**Status:** open.
+**Status:** done 2026-09-10 (PR #155). Deployed and verified live: `commitSha 4e539e0d983d`.
 **PR:** one. Spends nothing.
 **Depends on:** R-22.
 **Files:** `artifacts/api-server/src/app.ts`,
@@ -6356,6 +6356,56 @@ SHALL never be `*`; AND WHEN a request carries no Origin THEN it SHALL be answer
 asserting the real response headers through the app rather than the helper alone.
 **Must not:** allow by prefix or substring; refuse a request that has no Origin; throw from
 the origin callback; claim this fixes B-1.
+
+---
+
+### R-32 — The last two of R-22's twelve get a written reason instead of a fix
+
+**Status:** done 2026-09-10. Closes R-22.
+**PR:** one, docs only.
+**Depends on:** R-22 … R-31.
+**Files:** `docs/step-register.md`, `docs/backlog/good-to-have.md`.
+
+R-22 said each of the twelve would be *"either fixed with a test that fails without the
+fix, or carry a written reason it was not."* Seven were fixed (R-23, R-26 … R-31), one was
+refused on the merits (B-20, in R-30), two are blocked on a decision (B-12 in R-24, B-21 in
+R-25). These are the last two, and neither is a fix I can honestly make today.
+
+**B-13 — `Corpus.tsx:441` swaps the whole list body out on a refetch error.** Real: react-query
+keeps `data` when a background refetch fails, so a still-good list is thrown away and replaced
+by an error row over a transient blip. **The minimal fix is a trap.** Gating on
+`isError && !calls` keeps the rows — and makes a failed refresh completely silent, which
+trades a loud wrong behaviour for a quiet one. The honest fix is rows-plus-a-non-blocking
+"couldn't refresh" affordance, and that affordance is **copy**. The standing rule is that
+`visual-and-research` runs before UI copy and label work, so this waits for that pass rather
+than being half-built now. It is queued there with R-28's Provider Name help text, which is
+the other copy debt this campaign turned up.
+
+**B-3 — Vercel builds from the sub-package.** Confirmed structurally, not by running it:
+`.github/workflows/deploy-web.yml:62` runs `vercel deploy` with
+`working-directory: artifacts/stt-benchmark`, so only that directory is uploaded, and its
+`package.json` resolves 19 dependencies through `catalog:` and `workspace:*` — specs that
+only exist in the repo root's `pnpm-workspace.yaml`. The remote build cannot install.
+
+**It cannot be fixed and proved today, and fixing it unproved is the worse option.** T-68
+made that workflow manual-only *because* no `VERCEL_*` secrets exist and nothing is hosted
+on Vercel. The fix — deploy from the repo root with a `rootDirectory`, or build in CI and
+push with `--prebuilt` — is a real change to a pipeline that has never run once. Changing an
+untested deploy path on reasoning alone is how you get a second bug that looks like a fix.
+It waits for someone to actually want Vercel hosting.
+
+> **What the campaign taught.** *Three of the twelve were being held in place by their own
+> tests.* The R-13 fixture seeded an `ok` result row with no score row and called it
+> *"the realistic shape"*; the provider-create test asserted six random hex characters and
+> then said, in its own comment, *"No adapter answers to this id, so it can never be
+> 'ready'."* A test that describes the defect in prose is the hardest kind to see, because
+> every reviewer reads the comment as the specification.
+>
+> **And measuring beat the authorities twice.** For B-21 the bug register named a fix that
+> catches none of it and the vendor's own documentation named a marker that would have
+> failed every run. For B-19 the entry pointed at entities, where nothing was wrong; the
+> damage was on the hypothesis side. **Both would have looked careful in a diff.** The only
+> thing that told the truth was the rows.
 
 ---
 
