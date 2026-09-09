@@ -1759,6 +1759,21 @@ router.get("/benchmark/runs/:runId/results", async (req, res): Promise<void> => 
     return;
   }
 
+  // R-38 (ox-alpha B-79): without this, an unknown runId answered 200 with an
+  // empty array -- byte-for-byte what a real run that has not produced a cell
+  // yet returns. A caller polling a mistyped or deleted id waits forever on a
+  // response that says "not yet" when the truth is "never". The manifest route
+  // beside this one has always 404'd; these two now agree.
+  const [run] = await db
+    .select({ id: benchmarkRunsTable.id })
+    .from(benchmarkRunsTable)
+    .where(eq(benchmarkRunsTable.id, params.data.runId))
+    .limit(1);
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+
   const rows = await db
     .select({ result: benchmarkProviderCallResultsTable, score: benchmarkScoresTable })
     .from(benchmarkProviderCallResultsTable)
