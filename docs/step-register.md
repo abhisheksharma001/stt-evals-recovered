@@ -6409,6 +6409,77 @@ It waits for someone to actually want Vercel hosting.
 
 ---
 
+### R-33 — The P2 tranche gets read, and half of it is already gone
+
+**Status:** done 2026-09-10. Second of O-100's four tranches (R-19 was the first).
+**PR:** one, docs only. Spends nothing. **Fixes nothing** — same rule as R-19: a triage
+that also fixes is a triage nobody can check.
+**Depends on:** R-19.
+**Files:** `docs/step-register.md`, `docs/backlog/good-to-have.md`.
+
+**The citation scan, re-run.** R-19 measured 80 of the 100 entries never cited. After the
+R-22 campaign it is **59**, and the P2 range `B-23 … B-49` holds **21** of them. Each read
+against HEAD `1a1dfd4`:
+
+| entry | disposition | the line that decides it |
+|---|---|---|
+| B-24 Cartesia transport failures get no retries | **live** | `run-executor.ts:206` — a null `httpStatus` is retryable only if the provider's own message contains "safe to retry", which Cartesia writes on a premature close but **not** on a connect error |
+| B-25 pagination depends on undocumented `order=asc` | **moot** | no `order` param is sent at all; `vapi.ts:458-461` paginates on a `createdAtLe` watermark |
+| B-26 dashboard latest-run polluted by scan runs | **narrowed** | `benchmark.ts:303-310` still has no `purpose` filter — but nothing writes a non-batch purpose any more, and the newest five non-archived runs are all `batch`. 10 historical `agent_scan` rows survive |
+| B-27 queue dialog toasts a blocked run as started | **moot** | that dialog is gone from `Runs.tsx`; the surviving "Run started" toast at `:211` is the execute/retry path |
+| B-28 `save()` always sends `gold_in_review` | **moot** | `Review.tsx` is deleted |
+| B-29 play/pause icon desyncs | **moot** | `Review.tsx` is deleted |
+| B-32 dashboard never invalidated | **fixed** | `Runs.tsx:210,240` invalidate the dashboard beside the runs list |
+| B-33 duplicate import ids 500 the batch | **fixed** | `benchmark.ts:1000,1015` carry a `skipped_duplicate` outcome; `:165` is `onConflictDoNothing()` |
+| B-35 self-confirm guard is dead code | **moot** | `sourceTranscriberProvider` no longer appears in `routes/agent.ts` |
+| B-36 concurrent scans double-bill | **moot** | `Agent.tsx` is deleted and the scan route is retired |
+| B-38 `fetchAudioBytes` has no timeout, no size cap | **live** | `lib/stt-providers/src/types.ts:165` — bare `fetch`, then an unbounded `arrayBuffer()` |
+| B-39 judge calls lack timeouts | **narrowed** | `agent.ts:328` records that the raw fetch path was replaced; only `analyzeFailure` still uses one (`:109`) |
+| B-40 session advisory lock under a transaction pooler | **live, narrowed** | `run-executor.ts:260` is still `pg_try_advisory_lock`, and `lib/db/src/index.ts` still blesses pooled connection strings — one instance on localhost today |
+| B-41 no secondary indexes | **narrowed** | four unique indexes exist now, not one; `results(run_id)` is served as a prefix of `benchmark_provider_call_results_cell_key`. **`scores(result_id)` is still absent** |
+| B-42 `PGPOOL_MAX` ≤0 hangs the API | **fixed** | `lib/db/src/index.ts:22` — `Math.max(2, …)` (B-92) clamps it |
+| B-43 "Cost/Min" stores per-call dollars | **narrowed** | T-61 at `run-executor.ts:1374-1379` documents the semantics and `costMicrocents` carries the exact value; the mislabeled column survives for compatibility |
+| B-44 standalone `-` and `'` survive as word tokens | **live** | `lib/scoring/src/core.ts:105` keeps both, and no filter drops a token matching `^[-']+$` |
+| B-45 a strict enum turns one bad row into a 500 | **live, unreachable through the product** | `Vertical` is exactly `[rush, property_management, trucking]`; only a direct DB write can produce a fourth |
+| B-46 a plain `audioObjectPath` can never play or score | **live** | `vapi.ts:547-558` returns null unless the filename matches `VAPI_CALL_ID_IN_FILENAME`, so a stored ordinary URL raises *"no audio was ever imported"* |
+| B-47 Cartesia timing constants fail long recordings | **half fixed** | the fixed 120s cap became a scaled timeout (T-8-style, `cartesia.ts:30-45`); the **6400-byte / 190 ms pacing still assumes 16 kHz 16-bit** regardless of the decoded WAV |
+| B-48 attest swaps the reviewed call | **moot** | `Review.tsx` is deleted |
+
+**Score: 5 live, 5 narrowed, 1 half fixed, 3 fixed, 7 moot.**
+
+**The shape of this tranche is different from R-19's, and the difference is the finding.**
+R-19's P0/P1 slice came back two-thirds still true. Here **a third of the entries describe
+code that no longer exists** — `Review.tsx`, `Agent.tsx` and `POST /agent/scans` between them
+account for six of the seven moots. Severity did not decay; **the surface did.** A register
+entry is a claim about a file, and deleting the file settles it in a way no amount of
+re-reading a diff can.
+
+**Found while triaging, not in the register at all.** Three runs on the dev database have sat
+`running` since 2026-09-09T19:15Z. Nothing finishes them and nothing reports them, and the
+dashboard's "latest run" reads the newest non-archived row — so the Overview has been showing
+a run in flight for a day. Logged in `docs/backlog/good-to-have.md`; it is the symptom the
+wave-2 file predicts under "unguarded finalize writes zombie runs", which makes it evidence
+rather than a claim.
+
+**Sharpest live one: B-38.** `fetchAudioBytes` has no timeout and no size cap, and a hung
+fetch pins a worker slot, a provider semaphore, the advisory lock and the `runningRuns` guard
+until the process restarts — which is exactly the state those three runs are in. **R-23
+edited that function today and deliberately did not touch it**: a different bug, and widening
+a security fix into a resource fix is how one PR stops being reviewable.
+
+**Acceptance:** WHEN a reader opens this block THEN every never-cited P2 entry SHALL carry a
+disposition and the file:line that decides it.
+**Verify:** the citation scan from R-19, re-run (59 never cited, 21 in this range); each
+file:line above read at HEAD `1a1dfd4`.
+**Must not:** fix anything here; mark an entry moot because its impact shrank while its
+mechanism survives (B-26, B-40 and B-45 are all recorded live-but-narrowed for that reason).
+
+**Not started: the two remaining tranches.** P3 (`B-50 … B-81`, 28 never cited) and wave 2
+(`B-83 … B-101`, 12 never cited), and then the **330** findings in
+`ox-alpha/bug-register-waves.md`, which no live doc cites at all.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

@@ -1,4 +1,21 @@
 
+## Found 2026-09-10 (R-33): three runs have been stuck `running` for a day
+
+Three `benchmark_runs` rows on the dev database have had status `running` since
+2026-09-09T19:15:19Z. Nothing finishes them, nothing reports them, and the Overview's
+"latest run" reads the newest non-archived row -- so the dashboard has been showing a run
+in flight for a day.
+
+This is the symptom `ox-alpha/bug-register-waves.md` predicts twice: a transient failure
+after the spend, with no guarded catch to mark the run failed, leaves it `running`
+forever. Finding them in the database makes it evidence rather than a claim.
+
+Two things worth separating before anyone fixes it: (a) the rows that are already stuck
+need a decision -- mark failed, or leave them as the record; (b) the executor needs a
+guarded finalize so the next one does not join them. B-38 (`fetchAudioBytes` has no
+timeout) is the most likely way in, since a hung fetch pins the worker slot, the provider
+semaphore and the advisory lock until the process restarts.
+
 ## Found 2026-09-10 (R-32): B-13 -- a failed refetch throws away rows that are still good
 
 `artifacts/stt-benchmark/src/pages/Corpus.tsx:441` renders the error row whenever `isError`
