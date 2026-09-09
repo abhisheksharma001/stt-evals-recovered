@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { jsonErrorHandler, jsonNotFoundHandler } from "./lib/error-handler";
+import { allowedOrigins, isOriginAllowed } from "./lib/cors-origins";
 
 const app: Express = express();
 
@@ -26,7 +27,24 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// R-31 (ox-alpha B-4): was `cors()`, i.e. Access-Control-Allow-Origin: *, on
+// an unauthenticated API that serves transcripts and audio. See
+// lib/cors-origins.ts for what that allowed and what this does not fix.
+const corsAllowed = allowedOrigins();
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isOriginAllowed(origin, corsAllowed)) {
+        callback(null, true);
+        return;
+      }
+      // Refuse by not setting the header, rather than by throwing: an error
+      // here becomes a 500, which reads as "the server is broken" instead of
+      // "this origin may not read this". The browser blocks it either way.
+      callback(null, false);
+    },
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
