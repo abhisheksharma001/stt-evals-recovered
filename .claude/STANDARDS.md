@@ -1,8 +1,10 @@
 # Standards — the bar this tool is judged against
 
 A checklist, not prose. ✅ = shipped and verified live. ⬜ = scoped, not built (real
-plan exists, usually in `docs/backlog/good-to-have.md`). Update this file's checkboxes
-as things actually ship — it should always reflect reality, not intent.
+plan exists, usually in `docs/backlog/good-to-have.md`). ✖ = decided against, and will
+not be built — the row stays so the gap is readable, never deleted to make the list look
+finished. Update this file's checkboxes as things actually ship — it should always
+reflect reality, not intent.
 
 ## Table stakes (any credible STT evaluation tool needs these)
 
@@ -10,7 +12,7 @@ as things actually ship — it should always reflect reality, not intent.
   sneaking in as "accuracy")
 - ⬜ The customer's audio, not the mixed recording — 71 % of scored words were the assistant's TTS voice until PRD v6 M-5
 - ⬜ The product the client runs (streaming), not the batch endpoint — PRD v6 M-11 … M-14
-- ⬜ Word Error Rate against a human-corrected gold transcript — **corrected 2026-09-04:** the 21 gold texts were Vapi's draft copied by a test script; no person has produced one. Gold is optional now (PRD v6); the bulk path is consensus-based and says so
+- ✖ Word Error Rate against a human-corrected gold transcript — **corrected 2026-09-04:** the 21 gold texts were Vapi's draft copied by a test script; no person has produced one. Gold is optional now (PRD v6); the bulk path is consensus-based and says so. **Closed 2026-09-09 (Abhishek, "no by hand thing"):** the 20 golds PRD v7 C2 asked for will not be written, so the labelled set is frozen at 2 calls and this row can never be ticked. Consequence, stated where the claim lives: **this tool measures disagreement between providers, not accuracy against what was said** — and two shipped lines on Results that read "not measured yet" are corrected by R-14 to stop implying otherwise
 - ✅ Multiple verticals, not one blended number
 - ✅ Cost and latency captured alongside accuracy, not accuracy alone
 - ✅ Raw provider output stored, not just the parsed transcript (so a scoring bug

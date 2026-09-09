@@ -1,3 +1,32 @@
+## Decided 2026-09-09 (Abhishek, "no by hand thing"): no human gold transcripts, ever
+
+PRD v7 C2 asked for 20 hand-written golds (~2 hours). The answer is no. Not a deferral --
+the question is closed, and the labelled set is frozen at what is in the database today:
+`64d8f463` (978 characters, real) and `3559ea45` (137 characters, the fragment O-76 is
+about). Effectively **one** usable labelled call.
+
+What that decides, rather than what it postpones:
+
+1. **The tool measures disagreement, never accuracy.** No surface may say or imply
+   otherwise. "Least disagreement" is honest; "most accurate" is not, and never becomes
+   available.
+2. **M-18 and M-20 are permanently dark.** Both shipped correctly and both sit under a
+   floor of 20 that nothing will ever lift. Their below-floor wording ("...to measure
+   this **yet**", "not measured (1 of 20)") reads as a progress bar over a frozen
+   counter -- R-14.
+3. **The judge's accuracy is unknown for the life of the project.** The one measurable
+   pick on file is a disagreement: it chose openai at WER 0.436 when deepgram was at
+   0.365. One call proves nothing; it is also all the evidence there will be.
+4. **O-76 collapses to one branch.** "Finish or clear the fragment" -- finishing is by
+   hand, so: clear it.
+
+The one automatic substitute, written down so it is not rediscovered as a new idea: pay a
+model that listens to the audio (a multimodal pass, independent of the five text
+hypotheses being compared) and use its output as the reference. Automatic, cost not yet
+measured, and **not a gold** -- a sixth opinion with better ears. Any number against it must be labelled
+as that, never as WER-against-truth. Needs Abhishek's word and a go-spend; not proposed
+as a step.
+
 ## Found 2026-09-09 (grilling the next step, after R-12): the disabled switch guarded one door out of four
 
 `POST /benchmark/runs` refuses to create a run naming a provider whose status is not

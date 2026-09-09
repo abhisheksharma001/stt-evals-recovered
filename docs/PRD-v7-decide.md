@@ -79,6 +79,10 @@ against a human-labelled set; 10–100 examples is the starting bar; sort by sco
 the best and the worst rather than putting a score on a dashboard.
 ← Hamel Husain & Shreya Shankar, ["Building eval systems that improve your AI product"](https://www.lennysnewsletter.com/p/building-eval-systems-that-improve-your-ai-product)
 (Lenny's Newsletter, 2025-09-09). M-18 and M-20 both sit dark until 20 golds exist (C2).
+**Corrected 2026-09-09:** "until" was wrong -- C2 was answered *no*, so both sit dark
+permanently. The bar in that quote is the bar this tool has decided not to clear; what it
+publishes is a disagreement ranking, and it has to say so rather than imply a pending
+human check.
 
 **On the denominator.** The tool's own rule for WER, `docs/PRD.md` FR-S1: *"substitutions
 + insertions + deletions / **reference** word count."* The reference length, never the
@@ -225,11 +229,44 @@ as written. Restated here because its value changed: calls per assistant only gr
 time, and the import is the only thing that grows them without a person. Needs one
 sentence from Abhishek: a `launchd` agent on his machine is acceptable.
 
-**C2 — twenty golds, by hand.** A person's task, not a step: transcribe 20 customer
-channels from audio in the gold editor (about two hours). M-18 (proxy agreement) and
-M-20 (judge scorecard) both render "not measured (N of 20)" until then; every claim that
-the disagreement ranking tracks a human is unproven until then. Finish or clear the
-137-character fragment on `3559ea45` first (O-76).
+**C2 — twenty golds, by hand. ANSWERED 2026-09-09, and the answer is no.** Abhishek:
+*"no by hand thing"*. The paragraph below is kept as written so the cost of the decision
+is readable, but it is not a plan any more.
+
+> ~~A person's task, not a step: transcribe 20 customer channels from audio in the gold
+> editor (about two hours). M-18 (proxy agreement) and M-20 (judge scorecard) both render
+> "not measured (N of 20)" until then; every claim that the disagreement ranking tracks a
+> human is unproven until then. Finish or clear the 137-character fragment on `3559ea45`
+> first (O-76).~~
+
+**What the answer costs, stated plainly rather than filed away.** The labelled set is
+**2 calls** and will stay 2 (`64d8f463` at 978 characters, `3559ea45` at 137 — and the
+second is the fragment O-76 is about, so the honest count is 1). Twenty is the floor both
+M-18 and M-20 render against, so:
+
+1. **This tool will never report accuracy. It reports disagreement.** Every provider's
+   number on every surface is "how far this provider sits from the other providers",
+   never "how far it sits from what was said". That is a real, defensible measurement —
+   it is not the same measurement, and nothing may call it accuracy.
+2. **The judge's pick stays unverified for the life of the project.** M-20 shipped its
+   scorecard specifically so the judge could not be trusted on assertion; with no growing
+   labelled set the scorecard is now permanently "not measured (1 of 20)".
+3. **Two shipped lines now promise a measurement that is not coming.** `Not enough
+   human-checked calls to measure this **yet** -- 2 of 20` and `Judge accuracy: not
+   measured (1 of 20)` both read as a progress bar. They are not: the count is frozen.
+   Fixing that wording is a register step (R-14), not a copy nit — the current wording
+   tells a reader to wait for something nobody is going to do.
+4. **O-76 loses its first branch.** "Finish or clear the 137-character fragment" is now
+   "clear it": finishing means transcribing by hand.
+
+**The only remaining way to get a reference without a person** is to pay a model that
+listens to the audio itself (a multimodal transcription pass, independent of the five
+text hypotheses being compared) and treat its output as the reference. It is automatic;
+its cost has not been measured here and must not be called cheap until it is. It is also
+**not a gold** — it is a sixth opinion with better ears, and any
+number computed against it must be labelled as such, never as WER-against-truth. Not
+proposed as a step here; it needs Abhishek's word and a go-spend, and it is written down
+so the option is not rediscovered later as if it were new.
 
 **C3 — two cents.** M-11d — the first Deepgram socket this repo has ever opened — costs
 about $0.02 and unblocks M-11b, M-12, M-19b, M-21 and the streaming half of M-19. It has
@@ -412,10 +449,14 @@ question O-2 (dev accounts only, or production too).
 3. **C3 — M-11d:** "go spend" for about $0.02.
 4. **D1 — R-5:** "go spend" for the judge-contract record plus one judged bulk (cents),
    after the token delta has been read.
-5. **C2:** will you transcribe 20 customer channels by hand, and when? Until then M-18
-   and M-20 measure nothing, and every "tracks a human" claim is unproven.
+5. ~~**C2:** will you transcribe 20 customer channels by hand, and when?~~ **Answered
+   2026-09-09: no.** See C2 for what that costs. Replacement question, open: do you want
+   a paid audio-listening model as an automatic reference instead, or does this tool
+   report disagreement only, permanently?
 6. Still open from v5/v6: O-1 (S-3), O-2 (write-back scope), O-8 (backup destination),
-   O-9 (who signs DPAs), O-10 (F2 keyterm cap), O-76 (the fragment gold).
+   O-9 (who signs DPAs), O-10 (F2 keyterm cap). **O-76 (the fragment gold) came off this
+   list on 2026-09-09:** with hand transcription ruled out its only remaining branch is
+   "clear it", which needs no decision from you and is mine to do.
 
 ## Proposed register rows
 
