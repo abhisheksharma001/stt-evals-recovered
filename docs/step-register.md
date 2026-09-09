@@ -5486,6 +5486,96 @@ package, and both leave the repo in a state R-16 argued against.
 
 ---
 
+### R-19 — The ox-alpha bug register gets read, P0/P1 first
+
+**Status:** done 2026-09-09 (PR #NNN) for the P0/P1 tranche. The three later tranches are
+named below and are not started. Closes the first quarter of memo O-100.
+**PR:** one, docs only. Spends nothing.
+**Depends on:** nothing.
+**Files:** `docs/step-register.md`, `docs/backlog/good-to-have.md`.
+**Today:** `ox-alpha/bug-register.md` holds 100 entries from a 100-agent hunt dated
+2026-08-25. A citation scan over every tracked `.md` outside `ox-alpha/` finds **exactly
+80 of the 100 have never been cited anywhere** — the number memo O-100 carried, now
+measured rather than remembered:
+
+```
+python3 - <<'EOF'
+import re, subprocess, collections
+docs = [d for d in subprocess.run(["git","ls-files","*.md"],capture_output=True,text=True)
+        .stdout.split() if not d.startswith("ox-alpha/")]
+cited = {n for n in range(1,101)
+         for d in docs if re.search(r"\bB-%d\b" % n, open(d).read())}
+print(len(cited), "cited;", sorted(set(range(1,101)) - cited))
+EOF
+```
+
+**And the count is wrong in the other direction.** `ox-alpha/bug-register-waves.md`, in
+the same directory, holds **330** more `[P0..P3]` findings and is cited by nothing at
+all. The unread pile is not 80 claims, it is roughly 410. O-100 named the smaller file
+because that is the one that was open at the time.
+
+**Change:** read the never-cited P0/P1 entries (17 of them: B-3 … B-22 minus B-14, B-15,
+B-16, which the backlog already carries) against today's source and give each a
+disposition with the line that decides it. Nothing is fixed here — a triage that also
+fixes is a triage nobody can check.
+
+| entry | disposition | the line that decides it |
+|---|---|---|
+| B-3 Vercel uploads only the sub-package | **live** | `.github/workflows/deploy-web.yml:62` still `working-directory: artifacts/stt-benchmark`; that package's `@workspace/*: workspace:*` and `catalog:` specs resolve only from the repo root |
+| B-4 bare CORS makes `x-actor` forgeable | **live** | `artifacts/api-server/src/app.ts:29` `app.use(cors())` |
+| B-5 presigned URL leaks via `errorMessage` | **live** | `lib/stt-providers/src/types.ts:147` interpolates the whole `${audioUrl}`, query string included, into the thrown Error |
+| B-6 orphan `ok` row skips an unscored cell | **narrowed** | T-43 added `permanentlyFailed`, but `run-executor.ts:377` still defines `alreadyOk` as `status === "ok"` alone, not "has a score row" |
+| B-7 `runningRuns` leak bricks re-entry | **narrowed** | unlock + `release()` + `delete()` are inside `finally` now (`run-executor.ts:252-258`) — but `pool.connect()` at `:238` is still **outside** the `try`, so a connect rejection still leaves the id in the Set until restart |
+| B-8 attest TOCTOU / Unicode defeats FR-C3 | **moot, with a residual** | the two-approver gate was removed by decision (`routes/benchmark.ts:589-591`); the blind `where(eq(id))` updates and the locale `toLowerCase` survive on a route that no longer gates anything |
+| B-9 in-flight scan overwrites human decisions | **moot** | `POST /agent/scans` is gone; the write happens inside `lib/agent-verify.ts` during a run, where no human click can race it |
+| B-10 approve corrupts gold provenance | **mostly moot** | `routes/agent.ts:153-156`: approve *"no longer touches benchmarkCallsTable at all"*. The approve/reject TOCTOU on the scan row itself survives — guard read, then `where(eq(id))` |
+| B-11 PATCH strips the gold invariant | **live, and wider than written** | the gate is not half-present, it is **gone**: `routes/benchmark.ts:594-600` applies `...body.data` with no status or gold check. `{"goldTranscript":""}` clears gold on any call |
+| B-12 audit failure poisons committed work | **live** | `lib/audit.ts:21` is still an unguarded `await db.insert`. Exactly one call site wraps it — `agent-verify.ts`'s `auditOrLog` (T-37) |
+| B-13 refetch failure eats unsaved edits | **live, reduced** | `Review.tsx` is gone; `Corpus.tsx:441` has the same unconditional `isError ?` swap, but there is no gold editor left to lose |
+| B-17 create form mints dead provider rows | **live** | `routes/benchmark.ts:1187` `const id = \`${base}-${randomUUID().slice(0, 6)}\`` against a registry that looks up by exact key |
+| B-18 documented base URL doubles `/api` | **live** | `deploy-web.yml:13` documents the value **with** `/api`; `lib/api-client-react/src/custom-fetch.ts:29` strips trailing slashes and nothing else |
+| B-19 diacritics stripped from entities | **live** | `lib/scoring/src/core.ts:223-231`: NFKC, upper, `[^A-Z0-9]` — no NFD, no `\p{M}`. `"CAFÉ"` normalises to `"CAF"` |
+| B-20 boundary-less entity substring match | **live** | `lib/scoring/src/core.ts:349` `normalizedHypothesis.includes(normalized)` |
+| B-21 Cartesia truncation returns `ok` | **live** | `lib/stt-providers/src/adapters/cartesia.ts:471` — the close handler still keys only on `!finalizeSent`, so a 1006 after finalize is not an error |
+| B-22 presigned URL frozen per run | **fixed** | T-7 (`run-executor.ts:516-526`): audio is warmed to a disk cache once per **call** and the bytes are read back per cell; the frozen per-run URL Map is gone |
+
+**Score: 10 live, 2 narrowed, 3 moot, 1 fixed, 1 live-but-reduced.** Two thirds of a
+two-week-old P0/P1 list is still true, which is the argument for reading the other 393.
+
+**The sharpest one is not the one that reads sharpest.** B-11 was written as "paid runs
+score against an emptied reference", and rankings no longer read gold, so the sentence
+looks obsolete. What it actually describes today is that **one unguarded PATCH can null
+the entire labelled set** — R-17 left exactly one human gold on file, so the corpus that
+the whole floor argument rests on is a single `{"goldTranscript":""}` away from zero,
+with an audit row and a 200.
+
+**Acceptance:** WHEN a reader opens this block THEN every never-cited P0/P1 entry SHALL
+carry a disposition and the file:line that decides it; AND no entry SHALL be marked
+fixed without one.
+**Verify:** the citation scan above, re-run; each file:line in the table read at HEAD
+`dec0770`.
+**Must not:** fix anything here; cite an entry without reading its code; mark an entry
+moot because its *impact* changed while its mechanism survives (B-8 and B-10 are recorded
+both ways for that reason).
+
+**Not started — the three remaining tranches.** Each is its own step of this shape:
+P2 (`B-23 … B-49`, 23 never cited), P3 (`B-50 … B-81`, 28 never cited), wave 2
+(`B-83 … B-99`, 12 never cited), and then `ox-alpha/bug-register-waves.md`'s 330.
+
+> **What was learned.** *An unread bug list decays into two lies at once.* Two thirds of
+> these are still exactly true, so treating the file as stale would have thrown away real
+> defects — and three of them describe code that no longer exists, so treating it as a
+> to-do list would have sent someone to fix a route that was deleted. Neither reading is
+> safe without opening the file, and the cost of opening it is one afternoon per tranche.
+>
+> **And the thing a triage is actually for.** B-11 would have been dismissed on its own
+> summary line: the reference it protects stopped deciding rankings a fortnight ago. Read
+> against today's corpus it is the most dangerous entry in the tranche, because the corpus
+> shrank to one call in the meantime. **A finding's severity is a function of the codebase
+> it lands in, and both keep moving.** Re-rank on read; never inherit the old priority.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
