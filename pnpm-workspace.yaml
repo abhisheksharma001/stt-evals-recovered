@@ -16,8 +16,11 @@
 # passed (e.g. an urgent security bugfix), you can add it to the
 # `minimumReleaseAgeExclude` allowlist below. Only consider doing this for
 # packages released by trusted organizations with an impeccable security
-# posture (e.g. Replit packsges, react from Meta, typescript from Microsoft). Even then,
-# remove the exclusion once the 1-day window has passed.
+# posture (e.g. react from Meta, typescript from Microsoft). Even then,
+# remove the exclusion once the 1-day window has passed. R-18: this line used
+# to open that list with "Replit packsges" -- the same "these are our own
+# packages" claim R-16 deleted from the allowlist below, left standing in the
+# comment that tells the next person what to add.
 #
 # Example:
 #   minimumReleaseAgeExclude:

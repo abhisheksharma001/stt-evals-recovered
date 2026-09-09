@@ -10,6 +10,7 @@
     "check:doc-paths": "bash scripts/check-doc-paths.sh",
     "check:api-routes": "node scripts/check-api-routes.mjs",
     "check:response-edge": "node scripts/check-response-edge.mjs",
+    "check:replit": "node scripts/check-replit-residue.mjs",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,

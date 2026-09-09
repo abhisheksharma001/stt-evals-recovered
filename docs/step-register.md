@@ -5308,6 +5308,15 @@ its own step with that verification named.
 > a sentence about "our own packages" that stopped being true the day this repo left
 > Replit. Inherited configuration keeps its original author's assumptions, and a comment
 > is where they hide.
+>
+> **Corrected 2026-09-09 by R-18.** That last sentence was right about this file and
+> wrong about this PR. R-16 deleted the "our own packages" justification from the
+> allowlist and left the same claim standing forty lines above it, in the header comment
+> that tells the next person which vendors are safe to add: *"trusted organizations with
+> an impeccable security posture (e.g. Replit packsges, react from Meta, typescript from
+> Microsoft)"*. The waiver was narrowed; the instruction to widen it again was not
+> touched. Fixed in R-18, in the same commit as the check that would have caught the
+> package but never the prose.
 
 ---
 
@@ -5398,6 +5407,60 @@ sentence read" have already been run and are cited where the sentence was writte
 > holds the fragment, the scores stay, the manifests still name the gold each run saw.
 > What changes is which numbers the tool is willing to average — and half a labelled set
 > is a much bigger share of a measurement than it sounds like when the set is two.
+
+---
+
+### R-18 — R-16's two-directional scan becomes a check anybody can run
+
+**Status:** done 2026-09-09 (PR #NNN).
+**PR:** one. Spends nothing. Closes memo O-102.
+**Depends on:** R-16, which is the reasoning this check enforces.
+**Files:** `scripts/check-replit-residue.mjs` (new), `package.json`,
+`.github/workflows/ci.yml`, `pnpm-workspace.yaml`.
+**Today:** R-16's evidence was a scan run once, by hand, quoted in PR #136's description
+and nowhere else. Its four break tests proved the scan works; nothing proves the tree
+still passes it. The interesting half is direction 2 — the package R-16 argued *for*.
+
+**Change:** the scan becomes `scripts/check-replit-residue.mjs`, wired as
+`pnpm run check:replit` and a CI step beside the other four checks. Two directions:
+
+1. **Nothing R-16 removed is referenced again**, and `minimumReleaseAgeExclude` has not
+   widened back to the `@replit/*` scope. Tracked non-doc files, whole-line comments
+   skipped — the false positive PR #133 hit, where prose documenting a removal counted
+   as a reference to it.
+2. **`@replit/vite-plugin-runtime-error-modal` is still wired**: declared in
+   `artifacts/stt-benchmark` and imported by its vite config, present in the catalog and
+   in the allowlist, and every *other* workspace package either declares and imports it
+   or does neither.
+
+`artifacts/stt-benchmark` is named as the anchor and `artifacts/mockup-sandbox` is not.
+Deriving the whole check from "whatever declares it" would pass an empty repo, so one
+package has to be named — and mockup-sandbox may not survive O-99, so it is covered by
+the both-or-neither rule instead. Deleting that package needs no edit here; deleting the
+plugin does.
+
+**Acceptance:** WHEN the committed tree is scanned THEN the check SHALL exit 0; AND WHEN
+any package R-16 removed is referenced in a non-comment line, OR the scope waiver
+returns, OR the kept plugin is unwired in either direction, THEN it SHALL exit 1 naming
+the file and line.
+**Verify:** `node scripts/check-replit-residue.mjs` on the committed tree; the break
+tests below; `pnpm run typecheck`.
+**Must not:** remove the kept plugin; touch `pnpm-workspace.yaml`'s esbuild `overrides`
+(still its own step); make the check read `node_modules` or the network.
+
+> **What was learned.** *A check that only looks one way certifies its own deletion.*
+> R-16's whole argument was that one of four same-named packages was doing real work, and
+> the cheapest way to lose that argument is a later sweep by prefix — which a
+> removed-things-stay-removed scan would grade as a pass. Direction 2 exists so the
+> exception has to be argued with again, not just deleted.
+>
+> **And a real one found on the way, in R-16's own file.** R-16 narrowed the waiver and
+> left the header comment above it still naming Replit as an example of a vendor with
+> "an impeccable security posture" — the instruction for how to widen it again, sitting
+> directly above the narrowed list. R-16's learning says a comment is where inherited
+> assumptions hide; it was written in the PR that left one. **A guard reads code, so the
+> sentence telling a human to undo the guard is exactly what it cannot see.** Corrected
+> in the R-16 block above, where the claim was made.
 
 ---
 
