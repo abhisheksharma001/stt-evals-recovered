@@ -1,10 +1,53 @@
+## Found 2026-09-09 (grilling the next step, after R-12): the disabled switch guarded one door out of four
+
+`POST /benchmark/runs` refuses to create a run naming a provider whose status is not
+`ready`. That is the whole of the enforcement, and it was being quoted -- by me, in R-12
+and in M-11d's correction -- as "a disabled row cannot be streamed to at all". It could:
+
+- `createBulkFromCriteria` (`artifacts/api-server/src/lib/bulks.ts`, the provider read
+  near line 619) selects only `{ id }` and checks that the ids EXIST. Nothing reads
+  `status` or `manuallyDisabled` anywhere in that 1,011-line module.
+- `launchBulk` (same file) inserts each shard run with `status: "queued"` directly and
+  hands it to `executeBenchmarkRun`.
+- `POST /benchmark/runs/:runId/execute` re-enters the executor on an existing run and
+  checks only that the run exists.
+- `runCell` gates on the adapter, never on the row.
+- The Bulks create dialog (`artifacts/stt-benchmark/src/pages/Bulks.tsx`, near line 483)
+  renders a live checkbox for every provider, disabled ones included, with a grey
+  `DISABLED` label beside the tick.
+
+So "tick the row marked DISABLED, press Create, press Launch" transcribed with it, for
+every call in the bulk. A `not_configured` provider survived that gap by accident and
+not by a gate -- no key, so the adapter throws before the network -- but a disabled row
+has its key present, which is the only reason `syncProviderReadiness` has to override it.
+Both Deepgram socket rows are in exactly that state.
+
+ox-alpha's 100-agent sweep found the narrow version of this on 2026-08-25 (B-34, "disabled
+provider still transcribes via run re-execute", confidence medium-high) and named the same
+fix; it sat unfixed for two weeks because nothing in the loop was reading that register.
+Its line numbers are dead now; the finding was not.
+
+**Fixed as R-13**, in `executeBenchmarkRun` rather than at any one door, because every
+door leads there. The doors themselves are still open: the bulk create dialog still offers
+the checkbox and `POST /benchmark/bulks` still accepts it, so the refusal is only visible
+after launch, as failed cells. Refusing at create time with a named reason is the better
+message and is its own step.
+
+**Reproduce (after R-13, this is what you now get instead):**
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+
 ## Found 2026-09-09 (building R-12): the money gate is proven for one status value, not the one that now guards a socket
 
 `POST /benchmark/runs` refuses any run whose selected providers are not `status:
 "ready"` -- and when nothing blocks, it fires `executeBenchmarkRun` immediately,
-fire-and-forget, which is real provider money. That gate is the only thing standing
+fire-and-forget, which is real provider money. That gate was the only thing standing
 between "someone ticks `deepgram-nova-3-streaming` on the Runs page" and a live call to
 a Deepgram socket this repo has never opened.
+
+**Corrected 2026-09-09 (R-13):** "on the Runs page" is load-bearing in that sentence and
+I did not know it when I wrote it. This gate never covered the Bulks page at all -- see
+the entry above. Since R-13 the executor refuses a disabled provider itself, so this
+coverage gap is now about a second gate rather than the only one.
 
 `run-create.int.test.ts` proves the gate end-to-end -- blocked run, named reason, frozen
 manifest, zero cells, executor never started -- but only for a provider that derives to

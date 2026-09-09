@@ -3421,8 +3421,10 @@ hole, found while checking what the next step could be:
    *ordering* half does not work. `syncProviderReadiness()` derives `status: "disabled"`
    from `manuallyDisabled`, and `POST /benchmark/runs` pushes "provider credentials and
    models must be configured" onto its `blockers` list for any provider whose status is
-   not `ready` — so **a disabled row cannot be streamed to at all**, and "stream to them
-   while disabled" describes a run that is created blocked and never executes. Enabling
+   not `ready` — so **a disabled row cannot be streamed to at all** (true only of that
+   one route when this was written; see R-13, which made it true of every path), and
+   "stream to them while disabled" describes a run that is created blocked and never
+   executes. Enabling
    has to happen BEFORE the first live call, which means the protection in this step's
    **Must not** cannot be "don't enable". It is: enable, stream exactly one call, read
    the numbers, and the thing that waits on Abhishek is whether the row **stays** enabled
@@ -4921,6 +4923,17 @@ model list.
    Enabling has to happen *before* the first live call, so the money protection cannot be
    "don't enable" — it has to be "enable, make one call, then decide whether it stays
    enabled". Corrected in M-11d's block above, where it was written.
+
+   **Corrected 2026-09-09 (R-13): the bolded sentence above was false when I wrote it.**
+   It was true of `POST /benchmark/runs` and of nothing else. `createBulkFromCriteria`
+   read the provider ids only to prove they exist, `launchBulk` inserted its shard runs
+   `queued` and executed them, `POST /runs/:runId/execute` checked only that the run
+   existed, and the Bulks dialog rendered a live checkbox on the disabled row — so a
+   disabled row *could* be streamed to, by the path that actually spends the money in
+   this tool. R-13 puts the refusal inside `executeBenchmarkRun`, which every one of those
+   doors leads to, and the sentence is true now for a reason rather than by luck. The
+   conclusion it was used for — enable before the first live call — is unchanged, and is
+   now enforced rather than assumed.
 2. **Two sources of truth about what can be selected, and only one of them can be.** The
    registry answers "does this id have an adapter"; the table answers "can a run name it".
    For three weeks those disagreed and nothing said so, because nothing read both. The
@@ -4943,6 +4956,83 @@ model list.
    `deepgram-nova-3-streaming` all along. The UI already labels it honestly ("N
    provider(s) have a key set"); the misreading was in my own reports, which quoted it as
    "N providers configured". O-52, logged, not fixed here.
+
+---
+
+### R-13 — The disabled switch guards every path into the executor, not one route
+
+**Status:** `done` — PR #PENDING, sha `PENDING`. Spends nothing.
+**PR:** one.
+**Depends on:** R-12 (which is what made the gap matter: two socket rows now sit disabled,
+adapter present, key present).
+**Files:** `artifacts/api-server/src/lib/run-executor.ts`,
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts` (new),
+`docs/backlog/good-to-have.md`.
+**Today (before):** `POST /benchmark/runs` refused to CREATE a run naming a provider whose
+status is not `ready`, and that was the entire enforcement of the Setup off-switch.
+`createBulkFromCriteria` (`lib/bulks.ts`) read the provider ids only to prove they exist —
+`status` and `manuallyDisabled` appear nowhere in that module; `launchBulk` inserted every
+shard run `status: "queued"` and handed it straight to `executeBenchmarkRun`;
+`POST /runs/:runId/execute` checked only that the run existed; `runCell` gated on the
+adapter, never on the row; and the Bulks create dialog rendered a live checkbox for every
+provider with a grey `DISABLED` label beside the tick. A `not_configured` provider was
+saved by an accident rather than a gate (no key, so its adapter throws before the network);
+a `disabled` row has its key present, which is the only reason `syncProviderReadiness` has
+to override it. ox-alpha B-34 found the narrow version on 2026-08-25 and named this fix.
+**Change:** split the executor's provider list on `manuallyDisabled` immediately after it
+is read, above the audio pre-pass. Every live cell of a disabled provider is written as a
+refused row naming the reason; a separate `disabledCells` counter carries its own note
+line (config_blocked's sentence says "provider API key not configured", which is the
+opposite of true here); `totalCells` counts what the run was ASKED for, so a run whose only
+provider was disabled can never read `okCells === totalCells` and finalize `complete`.
+**Acceptance:** WHEN a run names a provider with `manuallyDisabled` THEN no cell for that
+provider SHALL reach an adapter, AND each such cell SHALL be recorded with a message
+naming the switch, AND the run's notes SHALL say how many cells were never sent.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/api-server test` (175);
+integration suite 29 files / 145 tests (was 28 / 142); break test 10 of 10 caught, after
+two of them were misses on the first pass (learned 7).
+**Must not:** put a real provider id in the new suite, disabled or not; gate on the derived
+`status` column instead of `manuallyDisabled`; refuse the whole run when only one of its
+providers is off; close the doors (bulk create, the UI checkbox) in this step.
+
+**Learned:**
+
+1. **A claim of mine was wrong, and R-12 rested on it.** R-12's learned item 1 said "a
+   disabled row cannot be streamed to at all". That was true of one route. The path that
+   actually spends money in this tool — create a bulk, launch it — never looked at the
+   column at all, and the UI offers the tick. Corrected in R-12's own block and in
+   M-11d's, where each was written.
+2. **A gate on the door only guards that door.** Four doors reach `executeBenchmarkRun`
+   and one of them had the lock. The refusal now sits at the choke point every door leads
+   to, which is also the only place that cannot be bypassed by a path nobody has enumerated
+   yet — including the ones added after this.
+3. **`not_configured` was never protected either; it was lucky.** Its safety comes from a
+   missing key, not from a check. The moment a key exists for a row someone has switched
+   off, the luck runs out — which is exactly the state both Deepgram socket rows are in.
+4. **The refusal is recorded, not skipped.** A silently dropped cell is invisible; these
+   are written as rows with their reason, so a bulk that quietly did less than asked says
+   so on its own results.
+5. **Placement was decided by a test failure, not by taste.** The first draft of the
+   second case expected the enabled provider to fail at the missing-adapter branch; it
+   fails earlier, in the audio pre-pass ("Call has no audioObjectPath"). That is the proof
+   the gate had to sit ABOVE the pre-pass: one placed below it would have reported a
+   disabled provider's cells as an audio problem, and would have resolved audio — a Vapi
+   request per call — for calls with nothing left to run. T-43's reasoning, one step over.
+7. **A break test that catches everything has not finished.** The first eight mutations
+   were 8 of 8 — which O-66 already warned is the shape of a harness aimed at the code the
+   test was written against. Two more, aimed at what the test does NOT assert, both MISSED:
+   reading the derived `status` column instead of `manuallyDisabled` (the fixture set both,
+   so the substitution was invisible), and dropping the `isCellLive` check (the upsert
+   refuses to replace an "ok" row, so nothing is destroyed — but `disabledCells` counts it
+   anyway and the note then names a cell that in fact succeeded). Both are fixed by the
+   test, not by the code: case one's fixture is now deliberately inconsistent
+   (`manuallyDisabled: true` with `status: "not_configured"`, a row whose derived column
+   has not caught up), and a third case re-executes a run whose disabled provider already
+   has an ok cell.
+8. **A bug register nobody reads is not a bug register.** `ox-alpha/bug-register.md` had
+   this as B-34 on 2026-08-25, with the fix written out. Two weeks. The register loop reads
+   `docs/step-register.md` and the memo; `ox-alpha/` is not in either. Logged as its own
+   open item rather than fixed here.
 
 ---
 

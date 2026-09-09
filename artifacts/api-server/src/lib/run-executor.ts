@@ -302,7 +302,7 @@ async function executeBenchmarkRunInner(
     .set({ status: "running", completedAt: null })
     .where(eq(benchmarkRunsTable.id, runId));
 
-  const [calls, providers, existingResults] = await Promise.all([
+  const [calls, selectedProviders, existingResults] = await Promise.all([
     db
       .select()
       .from(benchmarkCallsTable)
@@ -316,6 +316,38 @@ async function executeBenchmarkRunInner(
       .from(benchmarkProviderCallResultsTable)
       .where(eq(benchmarkProviderCallResultsTable.runId, runId)),
   ]);
+
+  // R-13 (ox-alpha B-34, found 2026-08-25, unfixed until now): a provider
+  // switched off in Setup is never transcribed to, on ANY path into this
+  // executor.
+  //
+  // Until now the lock was on one door only. POST /benchmark/runs refuses to
+  // CREATE a run naming a provider whose status is not "ready" -- and nothing
+  // else checked at all: createBulkFromCriteria (bulks.ts) reads the provider
+  // ids only to prove they EXIST, launchBulk then inserts its shard runs
+  // "queued" and executes them, POST /runs/:runId/execute re-enters this
+  // function on a run created earlier, and the Bulks create dialog renders a
+  // live checkbox for every provider, the disabled ones included behind a
+  // grey label. "Tick the row marked DISABLED, press Launch" spent real
+  // money.
+  //
+  // A not_configured provider survived that gap by accident rather than by a
+  // gate: it has no API key, so its adapter throws ProviderConfigError before
+  // any network call and the cell lands config_blocked. A DISABLED row is the
+  // case with no accident left -- its key IS present (that is the only reason
+  // syncProviderReadiness has to override it) and the off-switch is a human
+  // decision. Both Deepgram socket rows are in exactly that state today, and
+  // neither has ever opened a socket from this repo.
+  //
+  // Read from manuallyDisabled, the stored human decision, not from the
+  // derived `status` column, which syncProviderReadiness may not have
+  // refreshed since the operator last changed it.
+  const disabledProviders = selectedProviders.filter(
+    (provider) => provider.manuallyDisabled,
+  );
+  const providers = selectedProviders.filter(
+    (provider) => !provider.manuallyDisabled,
+  );
 
   // M-5: which audio channel THIS run transcribes from, decided once here.
   // Wanting the caller-only track and REFUSING to run without it are two
@@ -437,6 +469,36 @@ async function executeBenchmarkRunInner(
     const key = `${providerId}::${callId}`;
     return !alreadyOk.has(key) && !permanentlyFailed.has(key);
   };
+  // R-13: recorded, not silently dropped -- a cell nobody can see is a cell
+  // nobody knows was refused. One row per live (call, disabled provider)
+  // pair, in the shape every other refusal here uses (there is no "blocked"
+  // cell status; config_blocked cells are written "failed" with a message
+  // too). Written BEFORE the audio pre-pass below, for T-43's reason: a call
+  // left with no live cell must not have its audio resolved either, and that
+  // resolution is a Vapi request per call.
+  //
+  // failureClass "unknown" follows the missing-adapter refusal in runCell
+  // below: a refusal is not any of the runtime failure modes that enum names,
+  // and forcing it into the nearest-looking bucket would be worse than
+  // leaving it visibly unclassified.
+  let disabledCells = 0;
+  for (const provider of disabledProviders) {
+    for (const call of calls) {
+      if (!isCellLive(provider.id, call.id)) continue;
+      await insertResult(runId, call.id, provider.id, {
+        status: "failed",
+        submittedAt: null,
+        finalAt: null,
+        httpStatus: null,
+        hypothesisTranscript: null,
+        rawOutput: null,
+        errorMessage: `Provider "${provider.id}" is switched off in Setup (manually disabled), so this cell was never sent to it.`,
+        failureClass: "unknown",
+      });
+      disabledCells += 1;
+    }
+  }
+
   const runnableCalls = calls.filter((call) =>
     providers.some((provider) => isCellLive(provider.id, call.id)),
   );
@@ -677,13 +739,24 @@ async function executeBenchmarkRunInner(
     logger.error({ err, runId, bulkId: run.bulkId }, "Failed to compute rankings for run");
   }
 
-  const totalCells = calls.length * providers.length;
+  // R-13: `selectedProviders`, not the enabled subset -- a run whose only
+  // provider was disabled must not read okCells === totalCells (0 === 0) and
+  // finalize "complete" for having done nothing.
+  const totalCells = calls.length * selectedProviders.length;
   const wasCancelled = cancelRequestedRuns.has(runId);
   cancelRequestedRuns.delete(runId);
   const notes: string[] = [];
   if (configBlockedCells > 0) {
     notes.push(
       `${configBlockedCells} cell(s) blocked: provider API key not configured. See docs/provider-matrix.md / PRO-01.`,
+    );
+  }
+  // R-13: said separately from configBlockedCells above, whose sentence is
+  // "provider API key not configured" -- the opposite of true here. A
+  // disabled provider's key is present; a person turned the row off.
+  if (disabledCells > 0) {
+    notes.push(
+      `${disabledCells} cell(s) never sent: their provider is switched off in Setup. Re-enable it there and re-execute this run if that was not intended.`,
     );
   }
   if (failedCells > 0) {
@@ -716,7 +789,7 @@ async function executeBenchmarkRunInner(
   // would let a re-execution of a run whose every remaining cell is
   // permanently dead read attemptedCells === 0 -- "nothing was attempted,
   // so nothing failed" -- and finalize as "complete".
-  const attemptedCells = okCells + failedCells + configBlockedCells + permanentlyFailedCells;
+  const attemptedCells = okCells + failedCells + configBlockedCells + permanentlyFailedCells + disabledCells;
   const finalStatus = wasCancelled
     ? "cancelled"
     : attemptedCells === 0
@@ -748,7 +821,7 @@ async function executeBenchmarkRunInner(
     actorLabel,
     action: "execute",
     beforeState: { status: run.status },
-    afterState: { status: finalStatus, okCells, failedCells, permanentlyFailedCells, configBlockedCells, skippedCells, cancelledCells, totalCells },
+    afterState: { status: finalStatus, okCells, failedCells, permanentlyFailedCells, configBlockedCells, disabledCells, skippedCells, cancelledCells, totalCells },
   });
 
   // A shard run finishing can finish its bulk (FR-BLK-4) -- recompute the
