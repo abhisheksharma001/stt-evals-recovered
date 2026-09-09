@@ -4808,6 +4808,63 @@ alias imports to 1 relative one, so it would traverse a single edge and report a
 false pass with better camouflage; add `lib/api-zod` or `lib/api-client-react`, which are
 orval output and not hand-fixable.
 
+---
+
+### R-11 — The one socket URL that still carries a key gets the guard the others already have
+
+**Status:** done 2026-09-09 (PR #129, `a558fbd`). Prompted by O-48, logged 2026-09-07 while
+shipping M-11a and carried as a "worth having" for two days.
+**Learned:** (1) *the item's own claim was wrong, and measuring it is what found that.*
+O-48 said `new WebSocket(url)`'s thrown message "would carry `access_token`" into
+`benchmark_provider_call_results.error_message`. It does not, and on this runtime it
+cannot. Four throwing inputs to node 22.22.2's global `WebSocket` — `ftp:` scheme, a URL
+fragment, a malformed host, an empty string — each produce a `DOMException` whose message
+is a **constant**, with no `cause`, `stack` as its only own property, and no key under a
+full `JSON.stringify` over its own property names. The inner `TypeError` from `new URL()`
+*does* carry the whole URL on `.input`, but undici stringifies it into the message and
+drops the object. `url` is also referenced exactly twice in the file — built at :272,
+consumed at :338 — never logged, never in `rawOutput`. **There was no live leak and there
+never had been.** The entry was written by reading two files against each other; nobody
+had made the constructor throw. Corrected where it was written.
+(2) *the measurement found a real defect pointing the other way.* Of the three socket
+adapters, `cartesia.ts` is the **only one whose URL still carries a secret** — M-11e moved
+Deepgram's onto the subprotocol, and every other adapter uses an `Authorization` header —
+and it was the **only one without the guard**. Both backwards. What the guard buys is that
+this stops resting on an undocumented property of undici's error construction.
+(3) *a stub must throw the thing being scrubbed, or the test reads its own stub.* The
+M-11e sibling case one block above stubs `WebSocket` to throw `"stub refused the
+connection"` and then asserts `errorMessage` does not contain the key — an assertion that
+holds with or without the guard, because the stub's message never had the key. What it
+really proves is that the throw is *caught*. R-11's case throws the URL itself, which is
+what an implementation that quoted its argument would do, and additionally asserts the key
+**was** on the URL the constructor received, so the result cannot hold for the wrong
+reason. The sibling is logged (O-93), not fixed here.
+(4) *the break test found a dead line in the fix itself, and it was kept on purpose.*
+7 of 8 mutations caught; M3 (report the error's own message) and M4 (append the url) are
+what a future leak looks like and both fail the suite. The miss — dropping `settled = true`
+— was investigated rather than waved through: all three `finish()` call sites sit inside
+callbacks registered after the constructor, so on the throw path none exists and `settled`
+is read by nothing. A no-op mutation, not a coverage gap. Kept because both Deepgram guards
+set it, and three sockets differing in a line this subtle is worse than one dead assignment;
+the comment says so.
+(5) *R-10's temporal dead zone, in the wild.* Mutation M5 makes the catch call `finish()`
+instead of resolving. `finish()` reads `connectTimer` and `responseTimer`, `const`s declared
+below the constructor — `ReferenceError`, caught.
+
+**PR:** one. Spends nothing: no provider call, no LLM, no database, no network.
+**Depends on:** nothing.
+**Files:** `lib/stt-providers/src/adapters/cartesia.ts`,
+`lib/stt-providers/src/adapters/parsers.test.ts`, `docs/backlog/good-to-have.md`.
+**Verified:** 97 provider tests (was 96), `pnpm run typecheck` clean at repo root. Break
+test re-run against the committed file, same 7 of 8.
+**Must not:** change how the key is carried — `access_token` as a query parameter is what
+Cartesia documents for a client that cannot set request headers, which the global Node
+`WebSocket` cannot; report the caught error's own message or the url from the catch (that
+is the leak this closes, and mutations M3/M4 fail on it); call `finish()` from the catch;
+claim this fixed a live leak.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
