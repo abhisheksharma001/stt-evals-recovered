@@ -52,10 +52,12 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      # T-75: no import cycles among api-server modules (a cycle only "works"
-      # by luck of evaluation order and breaks silently on the next refactor).
-      - name: Check import cycles (api-server)
-        run: node scripts/check-import-cycles.mjs artifacts/api-server/src
+      # T-75: no import cycles among the hand-written packages (a cycle only
+      # "works" by luck of evaluation order and breaks silently on the next
+      # refactor). O-88: pass no path -- the roots are the script's default, so
+      # this step and package.json check:cycles cannot drift apart again.
+      - name: Check import cycles
+        run: node scripts/check-import-cycles.mjs
 
       # T-120: every backticked repo path in the live docs exists.
       - name: Check doc paths

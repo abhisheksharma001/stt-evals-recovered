@@ -4,7 +4,7 @@
 // pair, how often they agree, so the consensus that hybrid flagging and
 // the judge lean on can be read with that in mind. Pure text arithmetic:
 // no gold transcript, no LLM.
-import { diffWords, normalizeTranscript } from "./index";
+import { diffWords, normalizeTranscript } from "./core";
 
 /** Raw agreement cannot tell "same engine" from "both correct" -- on the
  *  live corpus every pair sits between 0.78 and 0.94 because the transcripts

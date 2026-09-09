@@ -23,7 +23,7 @@
 // the words-to-watch list compare on. normalizeTranscript() (WER, the word
 // diff view) is deliberately left alone: the diff still shows "gonna" vs
 // "going to" as a difference, it just never raises a flag.
-import { normalizeTranscript, splitDigitRuns, type WordDiffOp } from "./index";
+import { normalizeTranscript, splitDigitRuns, type WordDiffOp } from "./core";
 
 /** Dropped before comparing. Narrow: "yeah" / "okay" / "right" are answers. */
 const DISFLUENCIES = new Set(["um", "uh", "umm", "uhh", "hmm", "mm", "mhm", "ah", "er", "erm"]);
