@@ -320,7 +320,7 @@ async function executeBenchmarkRunInner(
     .set({ status: "running", completedAt: null })
     .where(eq(benchmarkRunsTable.id, runId));
 
-  const [calls, selectedProviders, existingResults, scoreRows] = await Promise.all([
+  const [loadedCalls, selectedProviders, existingResults, scoreRows] = await Promise.all([
     db
       .select()
       .from(benchmarkCallsTable)
@@ -350,6 +350,35 @@ async function executeBenchmarkRunInner(
       .where(eq(benchmarkProviderCallResultsTable.runId, runId)),
   ]);
   const scoredResultIds = new Set(scoreRows.map((r) => r.resultId));
+
+  // R-44 (ox-alpha B-84 and B-97, which are the same line). `calls` came
+  // straight from `inArray(run.callIds)`, so the executor trusted the id list
+  // it was handed in two ways it should not have:
+  //
+  //   B-97: an id that no longer resolves is dropped by inArray without a
+  //         word. The run then drains fewer cells than it claims and
+  //         finalises "complete" over a set nobody agreed to.
+  //   B-84: a call ARCHIVED after the run was created still gets transcribed
+  //         and scored. Archiving is a human withdrawing data from the
+  //         corpus; paying a vendor to transcribe it afterwards, and letting
+  //         it into rankings, is the opposite of what that click meant.
+  //
+  // Both are recorded rather than silently applied, which is R-13's rule for
+  // a refused cell: "a cell nobody can see is a cell nobody knows was
+  // refused." The asymmetry below is forced, not chosen -- an archived call
+  // still has a row, so its refusal can be a real cell; a missing id has no
+  // row at all, so `benchmark_provider_call_results.call_id` has nothing to
+  // point at and the run's notes are the only place it can be said.
+  const foundCallIds = new Set(loadedCalls.map((c) => c.id));
+  const missingCallIds = run.callIds.filter((id) => !foundCallIds.has(id));
+  const withdrawnCalls = loadedCalls.filter((c) => c.status === "archived");
+  const calls = loadedCalls.filter((c) => c.status !== "archived");
+  if (missingCallIds.length > 0 || withdrawnCalls.length > 0) {
+    logger.warn(
+      { runId, missingCallIds: missingCallIds.length, withdrawnCalls: withdrawnCalls.length },
+      "R-44: run references calls that are gone or archived",
+    );
+  }
 
   // R-13 (ox-alpha B-34, found 2026-08-25, unfixed until now): a provider
   // switched off in Setup is never transcribed to, on ANY path into this
@@ -543,6 +572,33 @@ async function executeBenchmarkRunInner(
         failureClass: "unknown",
       });
       disabledCells += 1;
+    }
+  }
+
+  // R-44: same shape as the disabled-provider refusal above, and for the same
+  // reason -- the cell is refused, so it is written down as refused.
+  let withdrawnCells = 0;
+  for (const call of withdrawnCalls) {
+    // `selectedProviders`, not the enabled subset: the call is withdrawn
+    // whatever state its providers are in. Iterating only the enabled ones
+    // left an (archived call, disabled provider) pair with NO row at all --
+    // the disabled loop above skips it because `calls` already excludes
+    // archived rows, so the cell vanished entirely. That is the exact thing
+    // R-13 wrote its loop to prevent, reintroduced one filter later. Caught
+    // by the test below, not by review.
+    for (const provider of selectedProviders) {
+      if (!isCellLive(provider.id, call.id)) continue;
+      await insertResult(runId, call.id, provider.id, {
+        status: "failed",
+        submittedAt: null,
+        finalAt: null,
+        httpStatus: null,
+        hypothesisTranscript: null,
+        rawOutput: null,
+        errorMessage: `Call "${call.id}" was archived after this run was created, so this cell was never sent to a provider.`,
+        failureClass: "unknown",
+      });
+      withdrawnCells += 1;
     }
   }
 
@@ -789,7 +845,12 @@ async function executeBenchmarkRunInner(
   // R-13: `selectedProviders`, not the enabled subset -- a run whose only
   // provider was disabled must not read okCells === totalCells (0 === 0) and
   // finalize "complete" for having done nothing.
-  const totalCells = calls.length * selectedProviders.length;
+  // R-44: `run.callIds`, not the rows that resolved. Counting only what came
+  // back re-hides exactly what B-97 is about -- a run whose ids no longer all
+  // resolve would report a smaller total and look complete over it. The claim
+  // is the id list; the shortfall belongs in the notes below, not in a
+  // quietly smaller denominator.
+  const totalCells = run.callIds.length * selectedProviders.length;
   const wasCancelled = cancelRequestedRuns.has(runId);
   cancelRequestedRuns.delete(runId);
   const notes: string[] = [];
@@ -821,6 +882,21 @@ async function executeBenchmarkRunInner(
   if (cancelledCells > 0) {
     notes.push(`${cancelledCells} cell(s) cancelled before starting (FR-BLK-7).`);
   }
+  // R-44: said separately from the disabled-provider line, which is about a
+  // provider being switched off. This is about the CALL being withdrawn.
+  if (withdrawnCells > 0) {
+    notes.push(
+      `${withdrawnCells} cell(s) never sent: their call was archived after this run was created. Un-archive it in Corpus and re-execute this run if that was not intended.`,
+    );
+  }
+  // R-44 (B-97): no cell row can exist for these -- the call they name is
+  // gone, and benchmark_provider_call_results.call_id has nothing to point
+  // at. This line is the only place the shortfall is visible.
+  if (missingCallIds.length > 0) {
+    notes.push(
+      `${missingCallIds.length} call(s) named by this run no longer exist, so ${missingCallIds.length * selectedProviders.length} cell(s) could not be attempted or recorded. This run covers less than it was created for.`,
+    );
+  }
 
   // Bug found live 2026-08-27 (Abhishek noticed a run reading "failed" with
   // nothing actually wrong): a shard whose calls are ALL not-yet-reviewed
@@ -836,7 +912,12 @@ async function executeBenchmarkRunInner(
   // would let a re-execution of a run whose every remaining cell is
   // permanently dead read attemptedCells === 0 -- "nothing was attempted,
   // so nothing failed" -- and finalize as "complete".
-  const attemptedCells = okCells + failedCells + configBlockedCells + permanentlyFailedCells + disabledCells;
+  // R-44 includes withdrawnCells for the same reason T-43 includes
+  // permanentlyFailedCells and R-13 includes disabledCells: a run that
+  // refused every cell it had must not read attemptedCells === 0 and
+  // finalize "complete" for having done nothing.
+  const attemptedCells =
+    okCells + failedCells + configBlockedCells + permanentlyFailedCells + disabledCells + withdrawnCells;
   const finalStatus = wasCancelled
     ? "cancelled"
     : attemptedCells === 0
@@ -868,7 +949,7 @@ async function executeBenchmarkRunInner(
     actorLabel,
     action: "execute",
     beforeState: { status: run.status },
-    afterState: { status: finalStatus, okCells, failedCells, permanentlyFailedCells, configBlockedCells, disabledCells, skippedCells, cancelledCells, totalCells },
+    afterState: { status: finalStatus, okCells, failedCells, permanentlyFailedCells, configBlockedCells, disabledCells, withdrawnCells, missingCallIds: missingCallIds.length, skippedCells, cancelledCells, totalCells },
   });
 
   // A shard run finishing can finish its bulk (FR-BLK-4) -- recompute the
