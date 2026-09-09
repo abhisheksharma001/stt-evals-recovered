@@ -5753,7 +5753,38 @@ found nothing wrong with the conclusion and something wrong with the scan.
 
 ### R-21 — The one gold transcript cannot be erased by a typo
 
-**Status:** todo
+**Status:** done 2026-09-09 (PR #146)
+
+**What it taught:** the step as written in O-103 was "no gold **or status**
+guard". Half of it had to be refused. Imported calls land at `ready_to_run`
+with no gold on purpose, so a guard tying status to gold would refuse the
+normal import path — and it would have looked, in a diff, exactly like the
+careful thing to do. *The half of a bug report that names a second missing
+check is not automatically a second bug.*
+
+**And the break test found a hole it could not close.** Mutating the route to
+spread `body.data` — flag included — straight into `db.update(...).set(...)`
+broke nothing: all 170 tests passed. Probed directly against the test database
+rather than inferring: `.set({ notAColumnAtAll: "xyz" })` throws nothing and
+the real field still updates. **A typo'd column name in any `.set()` in this
+repo is a silent no-op**, and no test that reads the response can see it,
+because every response is built by a `serialize*` function from the row and
+not from what was sent. The destructure stays — it is the honest expression of
+"this is a request flag, not a field" — but it is not load-bearing today and
+no test can make it so. Logged in `docs/backlog/good-to-have.md` as its own
+scan, since it is repo-wide.
+
+One mutation of the five was invalid and had to be caught and redone: deleting
+the `confirmClearGold !== true` line left a dangling `&&`, so the file did not
+compile and the run reported "3 passed" — a *collection* failure wearing a
+result's clothes. **A break test that reports far fewer tests than the baseline
+has not been passed or failed; it has not run.** Compare the total, not only
+the failure count.
+
+The other four all caught it: dropping the `.trim()` lets `"   "` through
+(1 failed), ignoring the flag refuses the confirmed clear (1 failed), dropping
+the before-check refuses a call that never had gold (1 failed), and disabling
+the guard entirely fails 2. Restored: 170 passed, tree clean.
 
 **PR:** one. Spends nothing.
 **Depends on:** R-17 (which is what left the labelled set at one call).
