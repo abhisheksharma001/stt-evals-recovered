@@ -6480,6 +6480,77 @@ mechanism survives (B-26, B-40 and B-45 are all recorded live-but-narrowed for t
 
 ---
 
+### R-34 — The P3 tranche gets read, and three entries are left undecided on purpose
+
+**Status:** done 2026-09-10. Third of O-100's four tranches.
+**PR:** one, docs only. Spends nothing. Fixes nothing.
+**Depends on:** R-33.
+**Files:** `docs/step-register.md`.
+
+The never-cited P3 entries, 27 of them (`B-51` … `B-80`), read against HEAD `41c8240`:
+
+**Live — 7**
+
+| entry | the line that decides it |
+|---|---|
+| B-63 `stt-score` CLI crashes on malformed rows | `scripts/src/stt-score.ts:14` — `JSON.parse(raw) as ScoreInput` is still a blind cast |
+| B-67 `start` needs Node ≥22.9 with no `engines` declared | `artifacts/api-server/package.json:9` uses `--env-file-if-exists`; there is no `engines` field, so Node 20 crashes on `bad option` instead of failing at install |
+| B-68 executor wipes caller-authored `run.notes` | `run-executor.ts:860` — `notes: notes.join("\n") \|\| null` still replaces them |
+| B-69 unguarded bookkeeping insert aborts the run | **narrowed**: two sites are wrapped now (`:696`, `:727`), but the R-13 disabled-cell loop at `:534` is not, and a throw there aborts the run before any cell runs |
+| B-70 `hashtext()` 32-bit collision drops an execution | **narrowed**: `:260` still hashes into 32 bits. At ~30 runs the collision odds are negligible; **the defect that survives is the silence** — a collision logs "locked by another instance" and returns success-shaped |
+| B-71 "(after N attempt(s))" on a single-attempt failure | `run-executor.ts:978` interpolates `CELL_MAX_ATTEMPTS`, not the attempts actually made |
+| B-79 results endpoint returns 200 `[]` for an unknown runId | `benchmark.ts:1756-1770` selects by `runId` with no existence check, while the manifest route beside it 404s (`:1684`) |
+
+**Narrowed — 3.** B-74 (null telemetry scoring best-possible) is addressed in spirit —
+`lib/scoring/src/core.ts:444` now speaks of *"insufficient evidence rather than silently
+ranking on partial data"*. B-75 (Vapi account id collisions) keeps its first-match
+resolution at `vapi.ts:133`, but an unknown account now fails loudly with the configured
+list. B-78 (invisible preview truncation) now reports a `truncated` flag (`vapi.ts:421`);
+whether the UI shows it was not chased here.
+
+**Fixed since it was written — 6.** B-56 (Dashboard now has `isLoading`/`error` at `:252`),
+B-65 (`vite.config.ts:99` has the `preview` proxy the entry said was missing), B-72
+(`deepgram.ts:151` is `res.json().catch(() => null)`), B-73 (`:45` returns **null**, not 0,
+when there are no words), B-76 (`benchmark.ts:1287` is `Boolean(env?.trim())`), B-77
+(`:828`, `:933` carry the `sourceProvider = 'vapi'` guard).
+
+**Half fixed — 1.** B-62: the CLI now sets `process.exitCode = 1` on partial failure
+(`import-vapi-calls.ts:230`). The 200-vs-500 id cap half was not re-derived.
+
+**Moot — 7.** B-51, B-58, B-59 name `Review.tsx` and `Agent.tsx`, both deleted. B-55's
+attestation gate was removed by decision — `Corpus.tsx:1079` records calls landing *"directly
+at ready_to_run, no gate in between"*. B-57's label logic is gone from `Dashboard.tsx`.
+B-66's deploy path filter cannot be wrong because T-68 removed the `push` trigger entirely.
+B-80's scan catch-all is retired with the route.
+
+**Three left undecided, and that is the honest state — 3.** B-60 (import date-window edges),
+B-61 (indeterminate select-all) and B-64 (vacuous rehearsal proofs). For B-60 and B-61 the
+**cited lines no longer exist** in `Import.tsx` — but "the line is gone" settles the citation,
+not the behaviour, and I did not re-derive whether an inverted range or a partially-ticked
+list still misbehaves. B-64 needs the rehearsal script's assertions read against what they
+claim to prove, which is a sitting, not a grep. **Recording them as undecided is the point:**
+a triage whose value is that every row was actually opened cannot afford three rows that were
+skimmed and rounded to "moot".
+
+**Score: 7 live, 3 narrowed, 1 half fixed, 6 fixed, 7 moot, 3 undecided.**
+
+> **What was learned.** *The moots are concentrated, not scattered.* Across R-33 and R-34,
+> thirteen of the fourteen moot entries trace to four deletions — `Review.tsx`, `Agent.tsx`,
+> `POST /agent/scans`, and two gates removed by decision. A bug register ages by **product
+> shape**, not by time: the entries that die are the ones whose surface was removed, and they
+> die all at once, so "how old is this file" predicts almost nothing about how much of it is
+> still true.
+
+**Acceptance:** WHEN a reader opens this block THEN every never-cited P3 entry SHALL carry a
+disposition and the line that decides it, or SHALL be named as undecided with the reason.
+**Verify:** the R-19 citation scan; each file:line above read at HEAD `41c8240`.
+**Must not:** fix anything here; round an unread entry to "moot" because its cited line moved.
+
+**Remaining: wave 2** (`B-83 … B-101`, 12 never cited), then the **330** in
+`ox-alpha/bug-register-waves.md`, which no live doc cites at all.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
