@@ -5751,6 +5751,90 @@ found nothing wrong with the conclusion and something wrong with the scan.
 
 ---
 
+### R-21 — The one gold transcript cannot be erased by a typo
+
+**Status:** done 2026-09-09 (PR #146)
+
+**What it taught:** the step as written in O-103 was "no gold **or status**
+guard". Half of it had to be refused. Imported calls land at `ready_to_run`
+with no gold on purpose, so a guard tying status to gold would refuse the
+normal import path — and it would have looked, in a diff, exactly like the
+careful thing to do. *The half of a bug report that names a second missing
+check is not automatically a second bug.*
+
+**And the break test found a hole it could not close.** Mutating the route to
+spread `body.data` — flag included — straight into `db.update(...).set(...)`
+broke nothing: all 170 tests passed. Probed directly against the test database
+rather than inferring: `.set({ notAColumnAtAll: "xyz" })` throws nothing and
+the real field still updates. **A typo'd column name in any `.set()` in this
+repo is a silent no-op**, and no test that reads the response can see it,
+because every response is built by a `serialize*` function from the row and
+not from what was sent. The destructure stays — it is the honest expression of
+"this is a request flag, not a field" — but it is not load-bearing today and
+no test can make it so. Logged in `docs/backlog/good-to-have.md` as its own
+scan, since it is repo-wide.
+
+One mutation of the five was invalid and had to be caught and redone: deleting
+the `confirmClearGold !== true` line left a dangling `&&`, so the file did not
+compile and the run reported "3 passed" — a *collection* failure wearing a
+result's clothes. **A break test that reports far fewer tests than the baseline
+has not been passed or failed; it has not run.** Compare the total, not only
+the failure count.
+
+The other four all caught it: dropping the `.trim()` lets `"   "` through
+(1 failed), ignoring the flag refuses the confirmed clear (1 failed), dropping
+the before-check refuses a call that never had gold (1 failed), and disabling
+the guard entirely fails 2. Restored: 170 passed, tree clean.
+
+**PR:** one. Spends nothing.
+**Depends on:** R-17 (which is what left the labelled set at one call).
+**Files:** `artifacts/api-server/src/routes/benchmark.ts`,
+`lib/api-spec/openapi.yaml`,
+`artifacts/api-server/src/routes/__integration__/calls-write.int.test.ts`
+
+**Today:** `PATCH /benchmark/calls/:callId` (`routes/benchmark.ts:565`)
+validates the body and spreads it straight into the update. `goldTranscript`
+is a plain optional string and nothing reads what it was, so
+`{"goldTranscript":""}` is an ordinary, accepted request. R-17 cleared the
+fragment gold and left exactly one labelled call, so that one request empties
+the entire labelled set — the set every proxy-agreement and MEASURABLE_FLOOR
+sentence in `docs/PRD-v7-decide.md` rests on. R-19 found this (memo O-103).
+
+The clear that was *meant* to happen did not go through this route. It went
+through a one-off script guarded by the SHA-256 of the exact text it expected
+to find, which refuses rather than deleting work it has not read. That is the
+friction a destructive edit deserves, and the API has none of it.
+
+**Change:** the route refuses, with **409**, to replace a non-empty gold with
+one that is empty, unless the body carries `confirmClearGold: true`. The test
+is on the *resulting state*, not on the literal sent: a string that trims to
+empty is a clear, whitespace included. Everything else about the route is
+untouched, and `confirmClearGold` is a request flag only — it never reaches
+the row.
+
+**Deliberately not built: the status half of O-103.** Imported calls land at
+`ready_to_run` with no gold on purpose (`routes/benchmark.ts:406-408`), and
+the de-identification gate that used to guard that status was removed on
+2026-08-27 by Abhishek's explicit decision. A guard tying status to gold would
+refuse the normal import path. Status answers whether a call may be *run*;
+gold answers whether it can be *scored*. Wiring them together would be a new
+rule wearing a safety rule's clothes.
+
+**Acceptance:** WHEN a call has a non-empty gold AND the request would leave it
+empty AND `confirmClearGold` is absent or false THEN the API SHALL answer 409
+AND the stored gold SHALL be unchanged; AND WHEN `confirmClearGold` is true
+THEN the clear SHALL proceed and the `audit_log` row SHALL carry the old text
+in its before state; AND WHEN the stored gold is already empty THEN no
+confirmation SHALL be required.
+**Verify:** `pnpm run typecheck`; the integration suite; the break test writes
+`{"goldTranscript":""}` against a call with gold and expects 409, and a second
+mutation removes the trim so `"   "` slips through.
+**Must not:** block an edit that replaces a non-empty gold with a different
+non-empty gold; write `confirmClearGold` to the row; change what any status
+means; touch the de-identification columns.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

@@ -1,3 +1,16 @@
+## Found 2026-09-09 (R-21): drizzle's `.set()` drops a key that is not a column, silently
+R-21's break test mutated the route to spread `body.data` -- including the request-only
+`confirmClearGold` flag -- straight into `db.update(...).set(...)`, expecting a failure.
+All 170 integration tests passed. Probed it directly against `stt_evals_test` rather than
+inferring: `.set({ label: "probe-updated", notAColumnAtAll: "xyz" })` throws nothing, and
+`label` still updates. So a **typo'd column name in any `.set()` call in this repo is a
+silent no-op** -- the write reports success, the field never moves, and no test that reads
+the response can tell, because every response is built by a `serialize*` function from the
+row rather than from what was sent. Nothing found by this, yet; the point is that nothing
+would find it. A check worth having: a script that reads every `.set({...})` literal's keys
+and asserts each one is a column on the table being updated. Not part of R-21 -- it is a
+repo-wide scan, and R-21's own guard is proved by four other mutations.
+
 ## Found 2026-09-09 (U-1b): the page render tests never assert nothing went unstubbed
 `stubApi` in artifacts/stt-benchmark/src/pages/__render__/harness.tsx builds an `unmatched`
 list precisely so a page quietly depending on an endpoint nobody planned for shows up as a

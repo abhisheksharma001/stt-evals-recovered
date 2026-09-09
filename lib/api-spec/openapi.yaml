@@ -241,6 +241,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BenchmarkCall"
+        "409":
+          description: Would empty a gold transcript that has text in it, without confirmClearGold (R-21)
   /benchmark/calls/{callId}/audio:
     get:
       operationId: getBenchmarkCallAudio
@@ -1654,6 +1656,9 @@ components:
         label: { type: string, minLength: 2 }
         status: { $ref: "#/components/schemas/CallStatus" }
         goldTranscript: { type: string }
+        # R-21: emptying a gold that has text in it is refused with 409 unless
+        # this is true. Request-only -- it is never stored on the call.
+        confirmClearGold: { type: boolean }
         entityNotes: { type: string }
         entityReferences:
           type: array

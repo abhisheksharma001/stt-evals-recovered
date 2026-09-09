@@ -282,6 +282,7 @@ export interface BenchmarkCallUpdate {
   label?: string;
   status?: CallStatus;
   goldTranscript?: string;
+  confirmClearGold?: boolean;
   entityNotes?: string;
   entityReferences?: EntityReference[];
   hardCases?: string[];

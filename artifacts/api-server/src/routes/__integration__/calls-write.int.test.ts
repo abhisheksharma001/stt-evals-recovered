@@ -1,4 +1,5 @@
-// T-178: POST /api/benchmark/calls and POST /api/benchmark/calls/:callId/attest-deid
+// T-178: the write routes on a single call -- POST /api/benchmark/calls,
+// PATCH /api/benchmark/calls/:callId (R-21's gold guard) and POST /api/benchmark/calls/:callId/attest-deid
 // against the throwaway database. The create is the manual way a call
 // enters the corpus (import is the other, and it needs a live Vapi). The
 // attestation is the FR-C3 compliance gate: two DISTINCT people must say a
@@ -60,6 +61,74 @@ describe("POST /api/benchmark/calls", () => {
       .send({ label: `fx-bad-${fx.suffix}`, vertical: "banking", durationSeconds: 30 });
     expect(badVertical.status).toBe(400);
     expect(badVertical.body.error).toMatch(/vertical/);
+  });
+});
+
+// R-21: the labelled set is one call. Until this guard existed,
+// {"goldTranscript":""} was an ordinary accepted request that emptied it.
+describe("PATCH /api/benchmark/calls/:callId -- the gold clear guard", () => {
+  const GOLD = "the unit number is two zero four and the gate code is nine one one";
+
+  const patch = (callId: string, body: Record<string, unknown>) =>
+    request(server).patch(`/api/benchmark/calls/${callId}`).set("x-actor", fx.actor).send(body);
+
+  it("refuses to empty a gold that has text, and leaves the text where it was", async () => {
+    const call = await fx.call({ goldTranscript: GOLD });
+
+    const res = await patch(call.id, { goldTranscript: "" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/confirmClearGold/);
+
+    // The refusal is only worth anything if the row is untouched. Read it
+    // back rather than trusting the status code.
+    const after = await request(server).get(`/api/benchmark/calls/${call.id}`);
+    expect(after.body.goldTranscript).toBe(GOLD);
+  });
+
+  it("counts whitespace as empty -- a gold of spaces is a gold that is gone", async () => {
+    const call = await fx.call({ goldTranscript: GOLD });
+    const res = await patch(call.id, { goldTranscript: "   \n  " });
+    expect(res.status).toBe(409);
+
+    const after = await request(server).get(`/api/benchmark/calls/${call.id}`);
+    expect(after.body.goldTranscript).toBe(GOLD);
+  });
+
+  it("clears it when the caller says so, and the old text survives in the trail", async () => {
+    const call = await fx.call({ goldTranscript: GOLD });
+
+    const res = await patch(call.id, { goldTranscript: "", confirmClearGold: true });
+    expect(res.status).toBe(200);
+    expect(res.body.goldTranscript).toBe("");
+    // The flag is a request flag. It must not appear on the row it authorised.
+    expect(res.body).not.toHaveProperty("confirmClearGold");
+
+    const audit = await request(server)
+      .get("/api/benchmark/audit-log")
+      .query({ entityType: "call", entityId: call.id });
+    expect(audit.body[0].beforeState.goldTranscript).toBe(GOLD);
+    expect(audit.body[0].afterState.goldTranscript).toBe("");
+  });
+
+  it("does not stand between a gold and a better gold", async () => {
+    const call = await fx.call({ goldTranscript: GOLD });
+    const res = await patch(call.id, { goldTranscript: `${GOLD} please` });
+    expect(res.status).toBe(200);
+    expect(res.body.goldTranscript).toBe(`${GOLD} please`);
+  });
+
+  it("asks nothing when there was no gold to lose", async () => {
+    const call = await fx.call();
+    expect(call.goldTranscript).toBeNull();
+    const res = await patch(call.id, { goldTranscript: "" });
+    expect(res.status).toBe(200);
+  });
+
+  it("leaves a request that never mentions gold alone", async () => {
+    const call = await fx.call({ goldTranscript: GOLD });
+    const res = await patch(call.id, { status: "gold_in_review" });
+    expect(res.status).toBe(200);
+    expect(res.body.goldTranscript).toBe(GOLD);
   });
 });
 
