@@ -1,4 +1,22 @@
 
+## Found 2026-09-10 (R-42): the Vapi import route cannot be tested offline at all
+
+`POST /benchmark/calls/import-vapi` calls Vapi directly, so nothing in the integration
+suite drives it -- there is no test file for it. Three separate register entries land on
+that route and none of their fixes can be covered: B-98 (the duration floor, fixed in R-42
+with only its input contract pinned), B-33 (duplicate ids in one request) and B-77 (the
+label-fallback duplicate check).
+
+The shape that would fix it is the one `executeBenchmarkRun` already uses: an injected
+seam. That function takes `opts.audioResolver` *"purely so tests/rehearsals can substitute
+a deterministic resolver"*, and R-27 added `opts.connect` for the same reason. An
+equivalent `opts.fetchCalls` on the import path would make all three testable without a
+Vapi key and without spending anything.
+
+Not urgent, and deliberately not done inside a bug fix: adding a seam to a route is a
+change to that route's contract, and doing it as a side effect of fixing something else is
+how a small PR stops being reviewable.
+
 ## Found 2026-09-10 (R-33): three runs have been stuck `running` for a day
 
 Three `benchmark_runs` rows on the dev database have had status `running` since

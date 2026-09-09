@@ -6877,6 +6877,49 @@ declare an `engines.node` floor at least as high as the flag requires.
 
 ---
 
+### R-42 — "We do not know how long this call was" stops being recorded as one second (B-98)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-35.
+**Files:** `artifacts/api-server/src/routes/benchmark.ts`,
+new file artifacts/api-server/src/lib/duration-seconds.test.ts.
+
+**Today:** the import route stored `Math.max(1, durationSecondsOf(call))`.
+`durationSecondsOf` returns **0** when `startedAt` or `endedAt` is missing, unparseable, or
+the delta is not positive — a crashed call. Flooring that to 1 makes *"we do not know"*
+indistinguishable from *"one second"*, at import time and permanently, and it **disagrees
+with the preview route two above it**, which shows the true 0.
+
+**Measured:** 376 calls, **exactly 2** with `durationSeconds = 1`. Whether those two are real
+one-second calls or fabricated ones **cannot be recovered** — which is the bug stated as
+plainly as it can be. They are left alone; nothing here rewrites history it cannot read.
+
+**The floor was not guarding anything.** Nothing divides *by* duration — checked across
+`artifacts` and `lib`: the cost math multiplies (`run-executor.ts:1078`) and the bulk
+estimate sums (`bulks.ts:445`), so 0 is safe in both.
+
+**And the floor was actively worse in the one place duration steers behaviour.**
+`scaledPollTimeoutMs(0)` returns the **120s** default; `scaledPollTimeoutMs(1)` returns
+**60s**. The fabrication was handing a call of unknown length a *shorter* transcription
+budget than "unknown" gets. That is the opposite of what a defensive floor is for, and it is
+the argument that makes this a correctness fix rather than a taste one.
+
+**No test can reach the changed line, and that is worth naming.** The import route calls
+Vapi, so it cannot be driven offline; there is no integration test for it at all. What is
+pinned instead is the input contract — `durationSecondsOf` returns 0 for every unknown shape
+— and the timeout asymmetry above, which is the reason the floor was harmful. **The
+untestable import route is itself the larger problem** and blocks B-33 and B-77 as well;
+logged to `docs/backlog/good-to-have.md` rather than pretended around.
+
+**Acceptance:** WHEN a call has no usable start or end THEN the stored duration SHALL be 0,
+the same value the preview shows; AND existing rows SHALL NOT be rewritten.
+**Verify:** `pnpm run typecheck`; api-server unit (218) and integration (184).
+**Must not:** rewrite the 2 existing `1` rows; make the column nullable, which is a schema
+change and wants a worktree; change what `durationSecondsOf` returns.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
