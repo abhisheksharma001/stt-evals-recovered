@@ -6613,6 +6613,58 @@ shape.
 
 ---
 
+### R-36 — A job that may already be billed stops being submitted twice (B-86)
+
+**Status:** open.
+**PR:** one. Spends nothing — and is entirely about not spending.
+**Depends on:** R-35.
+**Files:** `lib/stt-providers/src/types.ts`,
+`lib/stt-providers/src/adapters/assemblyai.ts`,
+`lib/stt-providers/src/adapters/speechmatics.ts`,
+`lib/stt-providers/src/adapters/openai.ts`,
+new file lib/stt-providers/src/submit-leg.test.ts.
+
+**Today:** each adapter handles its HTTP-error paths. What none of them handles is a
+**transport-level throw** — a socket reset, a lost response — on the request that submits
+the billable work. That throw escapes `transcribe()`, and `isRetryableError`
+(`run-executor.ts:218`) returns **true** for any generic `Error`, so the attempt loop
+immediately submits again. AssemblyAI (`:91`) and Speechmatics (`:77`) create an async job
+there; OpenAI's call (`:71`) **is** the transcription. All three charge, and a lost response
+is indistinguishable from a failure — so the retry pays for work that may already be running.
+
+**No new failure class was needed, and that is the whole trick.** A *thrown* error goes to
+`isRetryableError`, which retries. A *returned* failed result goes to `isRetryableOutcome`,
+which with a null `httpStatus` and no "safe to retry" in the message **stops the loop**. So
+catching the throw and returning is the fix; the classification machinery already says the
+right thing. `failureClass` stays `unknown`, which is retryable at the **run** level — a
+human can still decide to pay again. That is exactly the difference the standing rule names:
+*a run must be resumable, not retryable-by-luck.*
+
+**The test found a bug in the fix.** The helper interpolates the provider's own error text
+for diagnosis. `"safe to retry"` is a **control phrase** in this repo — `isRetryableOutcome`
+greps for it — so a vendor whose message happened to contain those words would have steered
+our retry decision and got the job resubmitted after all. That is the *"safe to retry
+contract abuse"* the wave-2 register warns about, reintroduced by the very fix meant to stop
+double-billing. The phrase is now neutralised in the interpolated text rather than trusted.
+**Review would not have caught this; a test asserting the absence of a string did.**
+
+**Acceptance:** WHEN the fetch that submits billable work throws THEN `transcribe` SHALL
+return a failed result rather than throw; AND that result SHALL carry a null `httpStatus`
+and a message that does not contain "safe to retry", so the attempt loop does not resubmit;
+AND the cell SHALL remain retryable by a deliberate run-level retry.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/stt-providers test` (117);
+api-server unit (206) and integration (181) unchanged; the break test restores the bare
+`await fetch` on each adapter's submit leg.
+**Must not:** make the cell permanently unretryable; add a failure class; touch the
+HTTP-error paths, which were already correct; let a provider's error text reach the message
+unfiltered.
+
+**Not fixed here:** the upload leg (`assemblyai.ts:71`). AssemblyAI bills on transcription,
+not on upload, so re-uploading costs nothing and a throw there should stay retryable. Left
+deliberately, and named so nobody "completes" the fix by wrapping it too.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

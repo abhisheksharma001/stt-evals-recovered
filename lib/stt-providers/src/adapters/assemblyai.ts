@@ -5,6 +5,7 @@ import {
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
   type ProviderModelOption,
+  submitLegThrewResult,
 } from "../types";
 import {
   classifyProviderHttpStatus,
@@ -88,21 +89,30 @@ export const assemblyAiAdapter: ProviderAdapter = {
       };
     }
 
-    const submitRes = await fetch("https://api.assemblyai.com/v2/transcript", {
-      method: "POST",
-      headers: { authorization: apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        audio_url: uploadBody.upload_url,
-        speaker_labels: input.diarize ?? true,
-        // T-110: the historical "assemblyai-universal" row used to send no
-        // model at all, i.e. whatever AssemblyAI's default was that day -- a
-        // moving target that would silently change what old and new results
-        // of the same row mean. Pinned to the default verified 2026-08-30;
-        // a newer model gets its own row via T-104, never a silent swap.
-        speech_models: [input.model ?? ASSEMBLYAI_DEFAULT_MODEL],
-        word_boost: input.keywordBoosts?.length ? input.keywordBoosts : undefined,
-      }),
-    });
+    // R-36 (ox-alpha B-86): this request creates a billable job. A throw
+    // here used to escape transcribe(), and run-executor treats a generic
+    // Error as retryable -- so the cell submitted a SECOND job while the
+    // first may already have been accepted and started billing.
+    let submitRes: Response;
+    try {
+      submitRes = await fetch("https://api.assemblyai.com/v2/transcript", {
+        method: "POST",
+        headers: { authorization: apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio_url: uploadBody.upload_url,
+          speaker_labels: input.diarize ?? true,
+          // T-110: the historical "assemblyai-universal" row used to send no
+          // model at all, i.e. whatever AssemblyAI's default was that day -- a
+          // moving target that would silently change what old and new results
+          // of the same row mean. Pinned to the default verified 2026-08-30;
+          // a newer model gets its own row via T-104, never a silent swap.
+          speech_models: [input.model ?? ASSEMBLYAI_DEFAULT_MODEL],
+          word_boost: input.keywordBoosts?.length ? input.keywordBoosts : undefined,
+        }),
+      });
+    } catch (err) {
+      return submitLegThrewResult({ vendorLabel: "AssemblyAI", submittedAt, err });
+    }
 
     if (!submitRes.ok) {
       const rawOutput = await submitRes.json().catch(() => null);

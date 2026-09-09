@@ -4,6 +4,7 @@ import {
   type ProviderAdapter,
   type ProviderTranscribeInput,
   type ProviderTranscribeResult,
+  submitLegThrewResult,
 } from "../types";
 import {
   ClassifiedError,
@@ -74,11 +75,19 @@ export const speechmaticsAdapter: ProviderAdapter = {
     form.append("config", JSON.stringify(config));
     form.append("data_file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
 
-    const submitRes = await fetch("https://asr.api.speechmatics.com/v2/jobs", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-    });
+    // R-36 (ox-alpha B-86): this request creates a billable job. A throw
+    // here used to escape transcribe() and be re-attempted, submitting a
+    // second job while the first may already be running.
+    let submitRes: Response;
+    try {
+      submitRes = await fetch("https://asr.api.speechmatics.com/v2/jobs", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+    } catch (err) {
+      return submitLegThrewResult({ vendorLabel: "Speechmatics", submittedAt, err });
+    }
 
     if (!submitRes.ok) {
       const rawOutput = await submitRes.json().catch(() => null);

@@ -161,6 +161,55 @@ export function redactUrlForMessage(raw: string): string {
   return `${parsed.origin}${parsed.pathname}${carried ? " (credentials redacted)" : ""}`;
 }
 
+/** R-36 (ox-alpha B-86): the outcome for a `fetch` that THREW while submitting
+ *  billable work.
+ *
+ *  The HTTP-error paths in each adapter are already handled. What was not is a
+ *  transport-level throw -- a socket reset, a lost response -- on the request
+ *  that creates the job. Those escaped `transcribe()`, and `isRetryableError`
+ *  in run-executor treats a generic Error as retryable, so the cell
+ *  immediately submitted a SECOND job while the first may already have been
+ *  accepted and started billing. AssemblyAI and Speechmatics create an async
+ *  job here; OpenAI's call does the transcription itself. All three charge.
+ *
+ *  Returning a failed result instead of throwing is the whole fix: the attempt
+ *  loop asks `isRetryableOutcome(httpStatus, errorMessage)`, and with a null
+ *  status and a message that does not say "safe to retry" it stops rather than
+ *  resubmitting. The cell stays retryable by a HUMAN -- failureClass "unknown"
+ *  is retryable at the run level -- which is the difference between a run that
+ *  is resumable and one that is retryable by luck.
+ *
+ *  The message must never contain "safe to retry": that exact phrase is the
+ *  contract `isRetryableOutcome` reads. */
+export function submitLegThrewResult(params: {
+  vendorLabel: string;
+  submittedAt: string;
+  err: unknown;
+}): ProviderTranscribeResult {
+  // "safe to retry" is a CONTROL PHRASE in this repo -- isRetryableOutcome()
+  // greps for it. Interpolating a provider's own error text verbatim would let
+  // a vendor whose message happens to contain those words steer our retry
+  // decision and get the job resubmitted after all, which is the "safe to
+  // retry contract abuse" the wave-2 register warns about. Neutralised here
+  // rather than trusted. Caught by a test of this function, not by review.
+  const raw = params.err instanceof Error ? params.err.message : String(params.err);
+  const detail = raw.replace(/safe to retry/gi, "[provider text removed]");
+  return {
+    status: "failed",
+    submittedAt: params.submittedAt,
+    finalAt: new Date().toISOString(),
+    httpStatus: null,
+    hypothesisTranscript: null,
+    rawOutput: null,
+    errorMessage:
+      `${params.vendorLabel} did not answer the request that submits the work: ${detail}. ` +
+      `The job may already have been accepted and billed, so it was NOT resubmitted ` +
+      `automatically. Retry this run deliberately if you want to pay for it again.`,
+    diarizationScore: null,
+    failureClass: "unknown",
+  };
+}
+
 export async function fetchAudioBytes(audioUrl: string): Promise<Buffer> {
   const res = await fetch(audioUrl);
   if (!res.ok) {
