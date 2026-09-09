@@ -4004,9 +4004,18 @@ the cell. Live run only with a "go spend".
 
 **PR:** one.
 **Depends on:** M-18 (the labelled set and its query).
-**Files:** artifacts/api-server/src/lib/proxy-agreement.ts (created by M-18, plain),
-`lib/api-spec/openapi.yaml`, `artifacts/stt-benchmark/src/pages/Rankings.tsx` (the
-judge-confidence lines on the assistant card).
+**Files:** `artifacts/api-server/src/lib/proxy-agreement.ts` (created by M-18),
+`artifacts/api-server/src/lib/proxy-agreement-aggregate.ts` and its test (the arithmetic,
+where M-18 put its own), `lib/api-spec/openapi.yaml`,
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`,
+`artifacts/api-server/src/routes/__integration__/proxy-agreement.int.test.ts`.
+**Files corrected 2026-09-09 (shipping this step):** this line named
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` for "the judge-confidence lines on the
+assistant card". M-18's line does not live there — it is `ProxyAgreementLine` inside
+`BulkVerdictBanner` in `verdict-headline.tsx`, which Rankings only renders. Putting M-20's
+line in Rankings would have separated the two lines this block requires to appear and
+disappear together, which is exactly what the shared floor is for.
 **Today:** the judge's pick is shown as a verdict input; its accuracy has never been
 measured (the judge-accuracy report was removed in batch 4).
 **Change:** for each labelled call (as M-18), the judge's pick either is or is not the
