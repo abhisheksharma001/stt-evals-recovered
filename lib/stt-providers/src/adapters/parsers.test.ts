@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseAssemblyAiResponse } from "./assemblyai";
 import {
+  cartesiaAdapter,
   cartesiaEncodingForBitDepth,
   endOfAudioLatencyMs,
   parseWavPcm,
@@ -768,6 +769,49 @@ describe("deepgramStreamingAdapter socket wiring (M-11e)", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.protocols).toEqual(["token", key]);
     expect(seen[0]!.url).not.toContain(key);
+  });
+});
+
+describe("cartesiaAdapter socket wiring (R-11)", () => {
+  it("reports a constant when the socket constructor throws, and never the key", async () => {
+    const key = "cartesia-wiring-secret-777";
+    const seen: string[] = [];
+    const originalWs = globalThis.WebSocket;
+    const originalKey = process.env.CARTESIA_API_KEY;
+    // The stub throws with the URL *in the message*, which is what a
+    // WebSocket implementation that quoted its argument would do. Node
+    // 22.22.2's does not (measured: constant message, no `cause`, `stack`
+    // its only own property) -- so a stub that threw a key-free message
+    // would pass with or without the guard and prove nothing. Throwing the
+    // URL is what makes this test read the guard rather than its absence.
+    class LeakyWebSocket {
+      constructor(url: string) {
+        seen.push(url);
+        throw new Error(`connect failed for ${url}`);
+      }
+    }
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = LeakyWebSocket;
+    process.env.CARTESIA_API_KEY = key;
+    try {
+      const result = await cartesiaAdapter.transcribe({
+        callId: "call-r11",
+        audioBytes: buildMonoPcmWav({ sampleRate: 16000, bitsPerSample: 16, samples: [0, 1, -1, 0] }),
+      });
+      // Settles as a failed cell rather than rejecting: without the guard the
+      // throw escapes transcribe() and this await rejects instead.
+      expect(result.status).toBe("failed");
+      expect(result.errorMessage).toBe("Cartesia WebSocket could not be opened.");
+      expect(result.errorMessage ?? "").not.toContain(key);
+      expect(JSON.stringify(result)).not.toContain(key);
+    } finally {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWs;
+      if (originalKey === undefined) delete process.env.CARTESIA_API_KEY;
+      else process.env.CARTESIA_API_KEY = originalKey;
+    }
+    // The key really was on the URL handed to the constructor -- otherwise
+    // the assertions above would hold for a reason this step is not about.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!).toContain(`access_token=${key}`);
   });
 });
 

@@ -1,3 +1,27 @@
+## Found 2026-09-09 (building R-11): the sibling guard's test would pass without the guard's point
+
+`parsers.test.ts`'s `deepgramStreamingAdapter socket wiring (M-11e)` case stubs
+`globalThis.WebSocket` with a class that throws `new Error("stub refused the
+connection")`, then asserts `result.errorMessage` does not contain the key. The stub's
+message never contained the key, so that assertion holds whether or not the adapter
+scrubs anything. What the test really proves is that the constructor throw is *caught*
+(without the guard the promise rejects and `result.status` is never read) -- which is
+worth proving, but is not what the assertion says it is.
+
+R-11's Cartesia case throws the URL itself, so its identical assertion reads the guard
+rather than the stub. Cheap to bring the Deepgram case up to the same standard: throw
+`` `connect failed for ${url}` `` there too. Not done inside R-11 -- Deepgram's URL has
+carried no key since M-11e, so the case is about a message-scrubbing rule rather than a
+live secret, and it is a different adapter than the step names.
+
+**Reproduce:** `parsers.test.ts`, the `ThrowingWebSocket` class in the M-11e block; delete
+the `catch` in `deepgram-streaming.ts` and watch which assertion fails (the status one,
+never the key one).
+
+**Worth having:** one shared throwing-socket stub that always throws its own URL, used by
+all three adapters' wiring tests, so "the message is a constant" is the thing under test
+everywhere.
+
 ## Found 2026-09-09 (shipping M-17): a break test ran the thing it was proving must not run
 
 The M-17 break test mutated `scripts/daily-import.sh` by deleting its `jq`
@@ -331,6 +355,27 @@ unguarded.**
 
 **Worth having:** the same wrap in `cartesia.ts`, and a rule that no adapter's thrown
 message is ever persisted unfiltered.
+
+**Corrected 2026-09-09 by measuring it (R-11).** This entry was written by reading the
+two files against each other; nobody had made the constructor throw. Run on node 22.22.2,
+it does not leak and cannot: four throwing inputs (`ftp:` scheme, a URL fragment, a
+malformed host, an empty string) all produce a `DOMException` whose message is a
+**constant** -- `Expected a ws: or wss: protocol, got ftp:`, `Got fragment`,
+`TypeError: Invalid URL` -- with no `cause`, `stack` as its only own property, and no key
+in a full `JSON.stringify` over its own property names. The inner `TypeError` from
+`new URL()` *does* carry the whole URL on `.input`, but undici stringifies it into the
+message and drops the object, so nothing downstream can reach it. There has never been a
+leak here, and the "worth having" was therefore not the fix it looked like.
+
+The asymmetry it found is real, though, and is why R-11 shipped the wrap anyway: of the
+three socket adapters, **`cartesia.ts` is the only one whose URL still carries a secret**
+(M-11e moved Deepgram's onto the subprotocol) and it was the only one without the guard.
+Both facts point the same way and both were backwards. What the guard buys is that the
+safety no longer rests on an undocumented property of undici's error construction.
+
+**Also corrected:** "Any constructor message quoting the URL would put the key in the
+database" is the honest form and is what this entry says. The memo's O-48 said the message
+"would carry `access_token`" flatly, as though it did. It does not. Fixed there too.
 
 ## Found 2026-09-07 (shipping M-11a): shared helpers live in one vendor's file and speak in its name
 
