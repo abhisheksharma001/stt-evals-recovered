@@ -4747,6 +4747,67 @@ with the other filters could not be read as "how many exist".
 **Must not:** add the flag to a write response (it is a read-route decoration, absent not
 false, like the two cache flags); run one query per row; treat an absent flag as "run".
 
+---
+
+### R-10 — The import-cycle guard checks every package it claims to
+
+**Status:** done 2026-09-09 (PR #128, `a668854`). Prompted by O-88, logged while building
+M-19a and left as a "worth having" — it turned out to be a "was hiding six".
+**Learned:** (1) *a guard pointed at one place is not a guard, and the default is where the
+rot hides.* `scripts/check-import-cycles.mjs` took its root as an argument and defaulted to
+`artifacts/api-server/src` — and BOTH callers, `package.json` `check:cycles` and
+`.github/workflows/ci.yml`, passed that same root explicitly. Every caller overriding a
+default with the default's own value is how a list stops being one. The fix is that the
+roots are the script's default and both callers now pass nothing.
+(2) *`lib/scoring` had six cycles, and the type checker had been green over all six the
+whole time.* `index.ts` was both the package barrel and the home of the primitives, so
+`export * from "./hybrid"` evaluated `hybrid.ts` first and `hybrid.ts` imported `diffWords`
+back through the barrel; `spans.ts`, `provider-correlation.ts` and `equivalence.ts` the
+same. **A type checker is not a cycle checker** — TypeScript compiles circular ES modules
+without complaint. The register's own earlier note said "`tsc --build` would fail
+differently if it were" cyclic; that is corrected where it was written.
+(3) *the mechanism is narrower than the first draft of this entry said, and running it is
+what found that out.* Draft one blamed hoisting: the symbols pulled back through the barrel
+are `export function`, `RANKING_WEIGHTS` is a `const`. True, not decisive. A cycle bites
+only when a module **reads** a cycle-imported binding while that binding's module is still
+evaluating — these siblings only *call* through the barrel later, at runtime, so a `const`
+would have been fine there too. One top-level read is the whole distance to a break, proved
+on node with a three-file copy of the shape: hoisted function returns, `const` read at
+sibling top level throws `ReferenceError: Cannot access 'RANKING_WEIGHTS' before
+initialization`.
+(4) *the break test's job here was to prove the guard is load-bearing, not just loud.*
+Seven mutations reintroduce a cycle (four scoring siblings back on the barrel, one fresh
+cycle in each of `lib/db`, `lib/stt-providers`, `artifacts/api-server`) — all caught. The
+two that matter most invert it: dropping `lib/scoring` from `DEFAULT_ROOTS`, and pinning
+`package.json` back to one root, both make the guard go **blind** on a real cycle. 9 of 9.
+(5) *the reason for leaving the UI out was itself wrong, and measuring it is what found
+that.* The first version of this step said `artifacts/stt-benchmark` is excluded because it
+is 87 `.tsx` to 14 `.ts` and the walker matches `/\.ts$/` — so widening the filter was "its
+own step, once the UI's cycles are counted". Counted: **202 `@/` alias imports to 1
+relative one.** This walker only follows relative specifiers, so widening the filter would
+traverse one edge out of 203 across 101 files and print `no import cycles among 101 files`.
+A green pass that has checked nothing — the exact failure this step exists to fix, dressed
+up to look thorough. Resolving `@/*` against `compilerOptions.paths` is the real work, and
+the `.tsx` widening on its own would make things worse. Corrected in the script header, the
+backlog entry and on the PR before merge.
+
+**PR:** one. Spends nothing: no provider, no LLM, no database.
+**Depends on:** nothing.
+**Files:** `scripts/check-import-cycles.mjs`, `package.json`, `.github/workflows/ci.yml`,
+`lib/scoring/src/core.ts` (new), `lib/scoring/src/index.ts`,
+`lib/scoring/src/{hybrid,spans,provider-correlation,equivalence}.ts`,
+`docs/backlog/good-to-have.md`.
+**Verified:** the extraction is byte-for-byte, asserted against `git show HEAD:` of the
+original and checked that no original line landed in neither file. **No test file changed** —
+that is the proof the move carries no behaviour. 174 scoring · 173 API unit · 96 providers ·
+157 UI · 142 integration, `pnpm run typecheck` clean.
+**Must not:** change scoring arithmetic (this moves lines, it does not edit them); point the
+guard at `artifacts/stt-benchmark` before it resolves the `"@/*"` alias — the UI is 202
+alias imports to 1 relative one, so it would traverse a single edge and report a pass over
+101 files; widen the filter to `.tsx` alone and call the UI covered, which is that same
+false pass with better camouflage; add `lib/api-zod` or `lib/api-client-react`, which are
+orval output and not hand-fixable.
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
