@@ -5051,6 +5051,7 @@ providers is off; close the doors (bulk create, the UI checkbox) in this step.
 
 ### R-14 — The two unmeasured lines stop saying "yet"
 
+**Status:** done 2026-09-09 (PR #REPLACEME).
 **PR:** one. Spends nothing.
 **Depends on:** nothing. Caused by Abhishek's 2026-09-09 answer to PRD v7 C2: *"no by
 hand thing"* -- nobody will transcribe the 20 calls, so the labelled set is frozen at 2
@@ -5084,6 +5085,84 @@ says so is the audit trail -- deleting it is how a tool quietly starts sounding 
 touch the M-9 legend sentence above them, which is already correct.
 **Before code:** this is user-facing copy for a non-technical reader, so the
 `visual-and-research` pass runs first and its evidence note goes in this block.
+
+**Evidence (`visual-and-research`, 2026-09-09) — R-14, the two below-floor lines.**
+
+**Pattern to use:** an unavailable metric keeps its label and its condition sentence, and
+replaces the number with words rather than a zero — Braintrust's monitor cards print the
+metric name with "No data" where the chart would be, and a one-line reason above the grid
+([Braintrust screen](https://mobbin.com/screens/eae8cdb3-c2da-4e08-9433-1f5ba8791655));
+Graphite states the condition in the reader's terms rather than the system's ("There are
+fewer than 5 Graphite users who were active across this entire time frame for these
+repos")
+([Graphite screen](https://mobbin.com/screens/2674ce11-f87a-4cd0-b25d-50d1a8c72893)).
+
+**Patterns to avoid:** every empty state on file ends in an action the reader can take,
+which is exactly the sentence R-14 must not write. Cloudflare: *"There is not enough data
+for Web Analytics right now. **Check back** after more visitors have visited your
+website"*
+([Cloudflare screen](https://mobbin.com/screens/7ec1f61d-bfbe-4481-9ced-eafac4916bbc));
+Vapi: *"No data here — Please expand your date range or make some calls to start seeing
+metrics"*
+([Vapi screen](https://mobbin.com/screens/09275981-aeca-4550-b0ad-de53f05ae650)).
+"Not enough human-checked calls to measure this **yet**" is that grammar, and it promises
+a check-back that will never pay out.
+
+**What operators say:** eval dashboards fail on trust, not on maths — *"Many teams build
+eval dashboards that look useful but are ultimately ignored and don't lead to better
+products, because the metrics these evals report are disconnected from real user
+problems"* ("Building eval systems that improve your AI product", Hamel Husain & Shreya
+Shankar, 2025-09-09,
+https://www.lennysnewsletter.com/p/building-eval-systems-that-improve-your-ai-product).
+The same post puts a named human expert and ~100 labelled interactions at the root of any
+trustworthy eval — the exact input this project has decided not to buy, which is why the
+line has to say so instead of implying it is queued.
+
+**Changes to the plan:** two. (1) Keep the metric's label ("Judge accuracy:") and lead
+with the state, Braintrust-style, instead of opening with the shortfall. (2) Add the
+"what is measured instead" clause the register asked for to the M-18 line only — the
+M-20 line gets "never as a verified answer" instead, because the judge's pick is a
+verdict input on this page and a reader who is not told that will read an ungraded pick
+as a right answer.
+
+**No evidence found for:** a shipped product that says a metric will *never* be computed.
+Every unavailable-metric screen on Mobbin is a recoverable state, and the settings
+screens that do describe an off state
+([Basecamp](https://mobbin.com/screens/d840c4e8-e9df-47aa-af91-bf31d4e3ab96),
+[Gorgias](https://mobbin.com/screens/e3e51b42-ddc4-43f1-95b3-c0e53b9545c1)) are toggles
+the reader controls, not read-only report lines. The permanence sentence is this
+project's own; nothing was borrowed for it.
+
+> **What shipped.** Two below-floor branches in
+> `artifacts/stt-benchmark/src/components/verdict-headline.tsx`, both self-contained (no
+> "for the same reason" between them — `n` and `judgePicks` are different numbers and can
+> land either side of the floor independently):
+>
+> - M-18: *"Not checked against human transcripts. That check needs 20 calls written out
+>   by a person; 2 exist and no more are being written. What the ranking on this page
+>   measures is how much the providers disagreed with each other."*
+> - M-20: *"Judge accuracy: not checked. Scoring its picks needs the same human
+>   transcripts -- 1 of the 20 it would take, and none are coming. Its pick is shown as
+>   one input to the ranking, never as a verified answer."*
+>
+> `MEASURABLE_FLOOR` stays 20 and its comment now carries the reason it is unreachable
+> and an explicit "do not lower this to 1 or 2 to make a percentage appear". The
+> above-floor branches, the floor and the M-9 legend are byte-identical.
+>
+> **What was learned.** *A number with a denominator is a promise.* Neither line lied —
+> "2 of 20" was true on both. What made them wrong was the shape: `N of M` is the same
+> shape as a loading bar, and a reader who cannot read the code reads the shape, not the
+> sentence. The fix was not to hide the count but to stop it being the subject: the state
+> comes first ("Not checked"), the count arrives as evidence for it, and the sentence
+> ends on what IS being measured so the reader is not left holding a gap. The research
+> pass is what named this: every unavailable-metric screen in the library ends in an
+> action, because in every one of those products the data is coming. Ours is not, and
+> that is the whole difference the copy had to carry.
+>
+> **A claim corrected where it was made.** The M-18 doc comment in the same file said
+> "below the floor the reader is told how far along the check is". It is not how far
+> along anything is any more; the comment now says so and points at the floor constant
+> for why.
 
 ---
 

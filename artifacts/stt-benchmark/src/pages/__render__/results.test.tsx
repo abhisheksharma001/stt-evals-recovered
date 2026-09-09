@@ -284,7 +284,12 @@ describe("Results", () => {
     expect(screen.queryByTestId("proxy-agreement")).toBeNull()
   })
 
-  it("reports how far along the check is, and no percentage, below 20 calls", async () => {
+  // R-14: below the floor this line used to read "Not enough human-checked
+  // calls to measure this yet -- 2 of 20", a progress bar over a counter that
+  // will never advance. Both roads to a labelled set are closed by decision
+  // (2026-09-09), so the sentence now says the check is not being run, why, and
+  // what the order IS measured on. The count survives as evidence, not progress.
+  it("says the check is not being run, and no percentage, below 20 calls", async () => {
     // The live corpus while this was built: 2 labelled calls, tau-b 0.017 --
     // no relationship. The step as written would have printed "agreed 50% of
     // the time" off that. The floor is M-20's, on this same labelled set.
@@ -292,8 +297,15 @@ describe("Results", () => {
     renderPage(<Results />, { path: "/results" })
 
     const line = await screen.findByTestId("proxy-agreement")
-    expect(line.textContent).toContain("Not enough human-checked calls to measure this yet")
-    expect(line.textContent).toContain("2 of 20")
+    expect(line.textContent).toContain("Not checked against human transcripts.")
+    expect(line.textContent).toContain("needs 20 calls written out by a person")
+    expect(line.textContent).toContain("2 exist and no more are being written")
+    // What the reader is looking at instead. Without this the sentence says
+    // only what is missing and the ranking is left unexplained.
+    expect(line.textContent).toContain("the ranking on this page measures is how much the providers disagreed")
+    // The whole failure this step exists to prevent: any wording that reads as
+    // a human pass still to come.
+    expect(line.textContent).not.toContain("yet")
     expect(line.textContent).not.toContain("%")
     expect(line.textContent).not.toContain("50")
     // The whole-order figure is still available to anyone who wants it.
@@ -313,7 +325,7 @@ describe("Results", () => {
     // "a person has transcribed" would credit less work than was done.
     expect(line.textContent).toContain("On 21 of the 24 calls a person has transcribed")
     expect(line.textContent).toContain("71% of the time")
-    expect(line.textContent).not.toContain("Not enough human-checked calls")
+    expect(line.textContent).not.toContain("Not checked against human transcripts")
     expect(line.getAttribute("title")).toContain("24 call(s) carry a human transcript")
     expect(line.getAttribute("title")).toContain("0.63")
   })
@@ -322,12 +334,20 @@ describe("Results", () => {
   // its accuracy has never been measured. Below the floor the card has to say
   // so with a number and no percentage -- the failure this guards is a card
   // that prints "100%" off one call.
-  it("refuses a judge-accuracy percentage below the floor, and says how far along it is", async () => {
+  it("refuses a judge-accuracy percentage below the floor, and says the check is not being run", async () => {
     stubApi({ ...baseRoutes, "GET /api/benchmark/proxy-agreement": agreement(2, 2, 0.5, 0.017, 1, 0) })
     renderPage(<Results />, { path: "/results" })
 
     const line = await screen.findByTestId("judge-accuracy")
-    expect(line.textContent).toContain("Judge accuracy: not measured (1 of 20).")
+    expect(line.textContent).toContain("Judge accuracy: not checked.")
+    expect(line.textContent).toContain("1 of")
+    expect(line.textContent).toContain("20")
+    expect(line.textContent).toContain("none are coming")
+    // R-14: the judge's pick is on this page as a verdict input. Saying only
+    // "not checked" would leave a reader free to read it as a right answer
+    // that simply has not been graded.
+    expect(line.textContent).toContain("never as a verified answer")
+    expect(line.textContent).not.toContain("yet")
     expect(line.textContent).not.toContain("%")
   })
 
@@ -338,7 +358,7 @@ describe("Results", () => {
     const line = await screen.findByTestId("judge-accuracy")
     expect(line.textContent).toContain("on 24 calls a person has transcribed")
     expect(line.textContent).toContain("63% of the time")
-    expect(line.textContent).not.toContain("not measured")
+    expect(line.textContent).not.toContain("not checked")
   })
 
   // The two lines share one floor and one response. This is the pair that
