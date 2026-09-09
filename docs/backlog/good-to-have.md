@@ -1,3 +1,28 @@
+## Found 2026-09-09 (R-20, measuring O-104 option b): this corpus argues for `numerals`, not keyterms
+Mined the 110 calls that carry three or more `ok` transcripts for vocabulary the providers
+actually split on. After folding conventions and near-variants, 155 tokens are disputed in
+three or more calls, and the top of the list is `whatever` 28/28, `that` 19/67, `help`
+17/104, `hello` 16/33 — ordinary English, where a boost changes nothing. What *is* disputed
+on nearly every appearance is the spelled digits: `zero` 7/7, `three` 14/14, `four` 17/17,
+`five` 12/12, `seven` 12/12, `eight` 10/10, `nine` 9/9. That is Deepgram's `numerals`
+parameter, read live 2026-09-08 as unset on all 14 of the largest assistants — a free,
+one-parameter experiment on the corpus we already have, and a better first move than the
+keyterm plumbing M-19b is blocked on. Not stepped: `numerals` changes how every number in
+every transcript is written, so it needs its own before/after, not a drive-by flag.
+**Reproduce:** the script in R-20's register block. Free — local API only.
+
+## Found 2026-09-09 (R-20): 68 of the 315 agent scans are archaeology, not a live fault
+`GET /benchmark/agent/scans` returns 315 rows, 68 with `status: error`. **62 of the 68 are
+one failure, all dated 2026-08-27**, and the message names `judge_cost_cents` — the integer
+column T-01 replaced with `judge_cost_microcents` the next day. They are the wreckage T-01
+already diagnosed and fixed, not a fault still happening. A further 169 flagged rows dated
+2026-08-28 carry no judge verdict at all; the judged rows in the table begin 2026-09-04.
+Recording it so the next person reading that error rate does not re-diagnose a closed bug —
+and so nobody averages a cost or a coverage number across rows written under three
+different pipelines.
+**Reproduce:** `curl -s localhost:8177/api/benchmark/agent/scans`, group by `status`,
+`errorMessage` prefix and `createdAt` date. Free.
+
 ## Found 2026-09-09 (R-19, triaging ox-alpha): the second bug file nobody has opened
 `ox-alpha/bug-register-waves.md` holds **330** `[P0..P3]` findings and is cited by no
 live doc at all — four times the file everyone has been calling "the bug register".

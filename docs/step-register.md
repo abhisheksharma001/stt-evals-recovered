@@ -4057,6 +4057,11 @@ has produced a keyterm list for an assistant that has none. Read live 2026-09-08
 largest assistants (124 of 176 calls) carry 0 keyterms, so `boosts: production` would
 carry an empty list for the whole property-management corpus today. Also depends on
 M-11d for the streaming rows it names.
+**Second wall, added 2026-09-09 by R-20:** the corpus cannot supply the list either. Mining
+it was tried and measured — the judge's `keyDifferences` yield 79 distinct spans of which 2
+recur, entity mismatches yield only digit strings, and the vocabulary the providers actually
+split on is ordinary English plus the spelled digits. There is no minable list here, so this
+step waits on Tune mode specifically, not on "a list from somewhere".
 **PR:** one.
 **Depends on:** M-19a, M-11d, M-5, and a list to carry.
 **Files, Change, Acceptance, Verify, Must not:** as M-19's block above, minus the Deepgram
@@ -5573,6 +5578,176 @@ P2 (`B-23 … B-49`, 23 never cited), P3 (`B-50 … B-81`, 28 never cited), wave
 > against today's corpus it is the most dangerous entry in the tranche, because the corpus
 > shrank to one call in the meantime. **A finding's severity is a function of the codebase
 > it lands in, and both keep moving.** Re-rank on read; never inherit the old priority.
+
+---
+
+### R-20 — What a keyterm list mined from this corpus actually contains
+
+**Status:** done 2026-09-09 (PR #141). Answers memo O-104 option (b) — Abhishek's pick — with
+a measurement, and the measurement says no. No code is built; M-19b stays blocked, and the
+reason it stays blocked is now two reasons instead of one.
+**PR:** one, docs only. Spends nothing: reads the local API on :8177, makes no provider call.
+**Depends on:** nothing.
+**Files:** `docs/step-register.md`, `docs/backlog/good-to-have.md`.
+**Today:** option (b) read *"mine a keyterm list from the corpus's own entity mismatches and
+the judge's `keyDifferences`, feed it to the providers, and M-19b is unblocked without waiting
+for Tune mode."* **That claim was mine, written into memo O-104 on 2026-09-09, and it is
+wrong.** Corrected here rather than quietly dropped. Both named seams were measured before
+anything was built:
+
+```python
+# R-20: what a keyterm list mined from this corpus would actually contain.
+# Reads the live API only. Prints counts and terms; never a transcript.
+import json, re, collections, difflib, urllib.request
+API = "http://localhost:8177/api"
+def get(p):
+    with urllib.request.urlopen(API + p) as f: return json.load(f)
+
+# --- seam 1: the judge's keyDifferences -----------------------------------
+scans = get("/benchmark/agent/scans")
+judged = [s for s in scans if s.get("judgeConfidence")]
+kd = [s for s in scans if s.get("judgeKeyDifferences")]
+spans = [d["span"].strip() for s in kd for d in s["judgeKeyDifferences"] if (d.get("span") or "").strip()]
+def shape(t):
+    if re.fullmatch(r"[\d\s\-.()#]+", t): return "digits-only"
+    if any(c.isdigit() for c in t): return "mixed-with-digits"
+    return "words"
+words = [t.lower() for t in spans if shape(t) == "words"]
+wc = collections.Counter(words)
+print("scans %d  judged %d  with keyDifferences %d" % (len(scans), len(judged), len(kd)))
+print("spans %d  distinct %d  |  shape %s" % (len(spans), len(set(t.lower() for t in spans)),
+      dict(collections.Counter(shape(t) for t in spans))))
+print("word-only spans %d  distinct %d  recurring(2+) %d"
+      % (len(words), len(wc), sum(1 for v in wc.values() if v >= 2)))
+
+# --- seam 2: entity mismatches --------------------------------------------
+em = collections.Counter()
+for s in scans:
+    for m in ((s.get("hybridFlags") or {}).get("entityMismatches") or []): em[m["type"]] += 1
+print("entityMismatch types %s" % dict(em))
+
+# --- seam 3: recurring vocabulary the providers actually split on ----------
+runs = get("/benchmark/runs?limit=200")
+bycall = collections.defaultdict(dict)
+for r in [x for x in runs if x.get("bulkId")]:
+    for row in get("/benchmark/runs/%s/results" % r["id"]):
+        if row.get("status") == "ok" and row.get("hypothesisTranscript"):
+            bycall[row["callId"]][row["providerId"]] = row["hypothesisTranscript"]
+CONV = [("gonna","going to"),("wanna","want to"),("alright","all right"),
+        ("yeah","yes"),("ok","okay"),("cuz","because"),("kinda","kind of")]
+def norm(t):
+    t = t.lower()  # NB: the tokenizer below already splits on "-", so a
+                   # hyphen fold here would be dead code (break test B).
+    for a, b in CONV: t = re.sub(r"\b%s\b" % a, b, t)
+    return t
+disputed, seen = collections.Counter(), collections.Counter()
+comparable = 0
+for byp in bycall.values():
+    if len(byp) < 3: continue          # 2 providers is not corroboration.
+                                       # Unexercised on this corpus: every
+                                       # call has 5 or 6 (break test C).
+    comparable += 1
+    toks = {p: set(re.findall(r"[a-z][a-z']{3,}", norm(t))) for p, t in byp.items()}
+    for t in set().union(*toks.values()):
+        seen[t] += 1
+        miss = [p for p, s in toks.items() if t not in s]
+        # near-variant guard: a missing provider that wrote something within
+        # edit distance 1 split on SPELLING, not on vocabulary.
+        if miss and any(not difflib.get_close_matches(t, toks[p], n=1, cutoff=0.86) for p in miss):
+            disputed[t] += 1
+print("calls with 3+ ok transcripts %d  |  tokens disputed in 3+ calls %d"
+      % (comparable, sum(1 for v in disputed.values() if v >= 3)))
+DIGITS = "zero one two three four five six seven eight nine".split()
+print("digit-words, disputed/seen: %s"
+      % {d: "%d/%d" % (disputed[d], seen[d]) for d in DIGITS if seen[d]})
+print("top 6 by dispute count: %s"
+      % {t: "%d/%d" % (n, seen[t]) for t, n in disputed.most_common(6)})
+NOUNS = "edison hills mary".split()
+print("proper nouns, disputed/seen: %s"
+      % {w: "%d/%d" % (disputed[w], seen[w]) for w in NOUNS if seen[w]})
+```
+
+Output, 2026-09-09, against the live API:
+
+```
+scans 315  judged 65  with keyDifferences 61
+spans 101  distinct 97  |  shape {'words': 82, 'digits-only': 4, 'mixed-with-digits': 15}
+word-only spans 82  distinct 79  recurring(2+) 2
+entityMismatch types {'phone_number': 76, 'reference_number': 18}
+calls with 3+ ok transcripts 110  |  tokens disputed in 3+ calls 155
+digit-words, disputed/seen: {'zero': '7/7', 'three': '14/14', 'four': '17/17', 'five': '12/12', 'seven': '12/12', 'eight': '10/10', 'nine': '9/9'}
+top 6 by dispute count: {'whatever': '28/28', 'that': '19/67', 'help': '17/104', 'four': '17/17', 'hello': '16/33', 'three': '14/14'}
+proper nouns, disputed/seen: {'edison': '6/24', 'hills': '3/11', 'mary': '13/92'}
+```
+
+**Seam 1 — the judge's `keyDifferences`: no vocabulary in it.** 315 scans, 65 judged, 61 carry
+key differences — **101 spans, 97 distinct, and of the 82 word-only spans exactly 2 recur.** A
+boost list only earns its place when the term comes back: you boost a property name because
+every caller says it. 79 distinct one-off spans is not a vocabulary, it is 79 separate
+arguments. And 15 of the 101 spans carry digits and 43 run four words or longer — a clause the
+judge quoted, not a term any vendor's `keyterm` parameter accepts.
+
+**Seam 2 — entity mismatches: the wrong material, not a small amount of the right material.**
+94 mismatches across the whole corpus: `phone_number` 76, `reference_number` 18, `vin` 0.
+`lib/scoring/src/hybrid.ts:245` extracts those three types and no others, and all three are
+digit strings. No future call is helped by boosting a past caller's phone number. This seam
+cannot fill — a bigger corpus produces more of the same unusable thing.
+
+**Seam 3 — the one option (b) did not name, measured anyway.** If the mine has ore it is the
+vocabulary the providers actually split on, so the scan looks for that directly: 110 calls with
+three or more `ok` transcripts, **155 tokens disputed in three or more calls** after folding
+the seven convention pairs and any near-variant within edit distance 1. The top of that list is
+`whatever` 28/28, `that` 19/67, `help` 17/104, `hello` 16/33 — ordinary English a general model
+already knows, where boosting changes nothing. The genuine proper nouns are present and thin:
+`mary` 13/92, `edison` 6/24, `hills` 3/11. All three are the client's own names, already
+readable from the assistant config without mining anything.
+
+**What the measurement did find, and it is not keyterms.** The digit words split on nearly
+every appearance: `zero` 7/7, `three` 14/14, `four` 17/17, `five` 12/12, `seven` 12/12,
+`eight` 10/10, `nine` 9/9 — disputed in *every* call they occur in. That is Deepgram's
+`numerals`, not a keyterm list, and `numerals` was read live on 2026-09-08 as unset on all 14
+of the largest assistants (PRD v7, the corpus table). **Caveat on those counts:** the scan's
+token pattern is `[a-z][a-z']{3,}`, so `one`, `two` and `six` were never in the token set at
+all — the finding covers the seven digit words of four letters or more and understates the
+effect rather than overstating it.
+
+**Change:** none to code.
+**Acceptance:** WHEN M-19b is picked up THEN its blocked reason SHALL name both walls — no
+Tune-mode list, and no minable list inside the corpus either.
+**Verify:** re-run the script above; every number in this block is one of its output lines.
+**Must not:** ship a 79-term list of one-off spans and call M-19b unblocked.
+
+**Break test.** Five mutations of the scan, each run against the same live data. Two of them
+found nothing wrong with the conclusion and something wrong with the scan.
+
+| # | Mutation | Expected | Observed |
+| --- | --- | --- | --- |
+| A | near-variant fold removed (`if miss:`) | count rises; the fold is doing work | 155 → **170** ✓ |
+| B | hyphen fold removed (`t.lower()` alone) | count rises | **155 → 155, no change.** The fold was dead code: the tokenizer `[a-z][a-z']{3,}` never keeps a `-`, so `one-bedroom` was already two tokens before it ran. Line removed from the script above. |
+| C | two-provider calls admitted (`< 2`) | count rises | **155 → 155, no change.** Every call in this corpus carries 5 or 6 `ok` transcripts, never 2. Right policy, untested by this data; noted in the script. |
+| D | convention pairs dropped (gonna, wanna, alright…) | count rises | 155 → **159** ✓ |
+| E | read `keyDifferences` instead of `judgeKeyDifferences` | seam 1 reports nothing | 61 → **0** ✓ |
+
+> **What was learned.** *An empty result and a wrong field name are the same shape from the
+> outside.* Mutation E is not hypothetical — the first run of this scan really did report zero
+> scans carrying key differences, and the next sentence I nearly wrote was "the judge never
+> returns them." The wire field is `judgeKeyDifferences`; `keyDifferences` is what the BAML
+> class calls it and what `call-comparison.ts:339` renames it back to on a different endpoint.
+> **A mining scan that finds nothing has to be proved capable of finding something before
+> "nothing" is allowed to be the finding.**
+>
+> **The break test audited the scan, not only the conclusion.** B and C changed no number at
+> all: two of five filters were doing no work — one dead outright, one never reached by this
+> corpus — and both had been written because they sounded like the careful thing to do. The
+> answer would have been identical without them, which means they were never evidence of care,
+> only its appearance. *A filter you cannot make change the answer is not a safeguard.*
+>
+> **And why (b) fails, stated as the rule it is.** The most-disputed tokens in this corpus are
+> `whatever`, `that`, `help`, `hello` and the spelled digits — the providers are not
+> disagreeing about *which* words were said, they are disagreeing about *how to write* the
+> words they all heard. A keyterm boost only ever answers the first question. **Match the
+> parameter to the kind of disagreement you measured, not to the one you hoped to find** — this
+> corpus argues for `numerals`, and it argues against the list I proposed yesterday.
 
 ---
 
