@@ -4546,8 +4546,13 @@ rule in code review, which is what this step was modelled on.
 
 **PR:** one. Spends nothing: read-only over the dev database, no provider, no LLM.
 **Depends on:** nothing.
-**Files:** new file artifacts/api-server/src/mine-triage-signals.ts (plain: not written
-yet; same shape and same door as `artifacts/api-server/src/mine-confirmed-entities.ts`),
+**Files:** `artifacts/api-server/src/mine-triage-signals.ts` (new; same shape and same
+door as `artifacts/api-server/src/mine-confirmed-entities.ts`),
+`artifacts/api-server/src/lib/triage-signals.ts` and
+`artifacts/api-server/src/lib/triage-signals.test.ts` (new, added while shipping: the
+2×2 arithmetic is the half that becomes a PRD decision, so it lives in `lib/` and is
+proved against synthetic cells — the same split M-15 made, and the split this block's
+own "same shape as mine-confirmed-entities" was pointing at),
 `docs/PRD-v7-decide.md` (Part E — the table and the decision go back in).
 **Today:** stored per call and read by nothing for this purpose: `source_success_evaluation`
 (118 true / 23 false / 35 null — Vapi's LLM verdict on goal completion, not on the

@@ -304,6 +304,59 @@ would make the leaderboard lie and kill M-21's canary.
 **What is not the answer:** an LLM reading the production transcript alone and deciding
 it "makes sense". That is the retired pass under a new name.
 
+### E1 answered — 2026-09-09, R-7 (PR #123)
+
+`artifacts/api-server/src/mine-triage-signals.ts` (its 2×2 arithmetic in
+`artifacts/api-server/src/lib/triage-signals.ts`, unit-tested against synthetic cells so
+these numbers are provable without re-reading the corpus), run read-only against the dev
+database `stt_evals`. 176 calls, 315 scans, 124 with a latest scan. A scan that errored
+(5) or was rejected (1) is dropped from every population: it is not a verdict, and
+counting it as "not flagged" would invent one. A `null` column is dropped the same way —
+"not measured" is never "no".
+
+`sel` = the signal picked it; `prec` = flagged among selected; `rec` = of all flagged,
+the share selected; `base` = the flagged share of that signal's population; `lift` =
+`prec - base`; `head` = the most lift arithmetic allows, `1 - base`.
+
+| signal | pop | sel | sel+flag | sel+ok | prec | rec | base | lift | head | seed? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| success evaluation is false | 94 | 18 | 15 | 3 | 83.3 % | 16.7 % | 95.7 % | −12.4 pt | 4.3 pt | **untestable** |
+| assistant was interrupted ≥ 1 | 26 | 25 | 22 | 3 | 88.0 % | 95.7 % | 88.5 % | −0.5 pt | 11.5 pt | no |
+| transcriber latency above corpus median | 54 | 28 | 24 | 4 | 85.7 % | 49.0 % | 90.7 % | −5.0 pt | 9.3 pt | **untestable** |
+| ended reason is not the customer hanging up | 113 | 68 | 64 | 4 | 94.1 % | 59.8 % | 94.7 % | −0.6 pt | 5.3 pt | **untestable** |
+| no tool call was made | 56 | 13 | 12 | 1 | 92.3 % | 23.5 % | 91.1 % | +1.2 pt | 8.9 pt | **untestable** |
+
+Seed rule, stated before the table was read: a signal is a seed when it selects at most
+80 % of its population **and** its precision beats the base rate by at least 10 points.
+
+**DECISION: do not build the monitor path on this corpus — and the table is not the
+reason.** Read the `base` column: **112 of the 118 calls that carry a verdict are
+flagged.** The hybrid pass flags 88–96 % of everything it looks at, so the ceiling on any
+signal's lift is 4.3 to 11.5 points and the 10-point margin is unreachable **by
+arithmetic** on four of the five. Those four were not tested and beaten; they could not
+be tested at all. The one that had headroom (interruptions, 11.5 pt) came in at −0.5 pt
+on a population of 26.
+
+So "which calls need checking" has no useful answer here, because the answer is *nearly
+all of them*. **The thing to decide first is the flag rate itself, not the trigger.** A
+pass that flags 95 % of calls is either finding real disagreement everywhere — in which
+case triage is pointless and the fix is provider selection, which is what this tool
+already does — or its threshold is too loose, and no monitor built on top of it can be
+better than it is. Both readings point away from building a trigger next.
+
+**Open question 5 (new, for Abhishek):** is a 95 % flag rate what you expect? If yes, the
+monitor idea is answered and Part E closes. If not, the next step in this area is a look
+at the hybrid thresholds, not a monitor.
+
+The script is permanent and free. Re-run it when the corpus grows or the flag rate moves:
+
+```
+pnpm --filter @workspace/api-server exec tsx --env-file-if-exists=.env ./src/mine-triage-signals.ts
+```
+
+**What R-7 did not do:** touch the thresholds, build any trigger, or write anything to
+the database. It only decided whether to build, and the answer is no.
+
 ---
 
 ## Part F — Tune, then write back (v5 Parts E and F, re-sequenced)
