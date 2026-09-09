@@ -5313,7 +5313,7 @@ its own step with that verification named.
 
 ### R-17 — The fragment gold goes, and the count beside "written out by a person" is the right one
 
-**Status:** done 2026-09-09 (PR #PR).
+**Status:** done 2026-09-09 (PR #137).
 **PR:** one. Spends nothing.
 **Depends on:** R-14 (which decided the labelled set is frozen, and so retired the
 "finish it" branch this row used to have). Closes memo O-76.
