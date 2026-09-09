@@ -3838,6 +3838,12 @@ not a justification for how it was obtained.
 
 **Status:** done 2026-09-08 (PR #117, `9626b72`), deployed `ffe4342a86e8 -> 9626b727282d`.
 Live: `labelledCalls 2, n 2, top1Agreement 0.5, kendallTau 0.017`.
+**Updated 2026-09-09 — those numbers are final, not a snapshot.** Abhishek answered PRD
+v7 C2 *"no by hand thing"*: nobody will transcribe the 20 calls, so `labelledCalls` stays
+2 and this line stays below its floor for the life of the project. The step was built
+right -- the floor is what stops `tau-b 0.017` being reported as "agreed 50% of the time"
+-- but its below-floor wording ("...to measure this **yet**") now describes a wait that
+has no end. R-14 fixes the wording only; the floor stands.
 
 **Corrections to M-18 as it was written** (all three found by grilling, before code):
 
@@ -4066,6 +4072,13 @@ the cell. Live run only with a "go spend".
 **Status:** done 2026-09-09 (PR #124, `cfd7009`), deployed with the batch below.
 Live today: 2 labelled calls, **1** measurable pick, so the card reads
 "Judge accuracy: not measured (1 of 20)" — the floor doing its job, not a bug.
+**Updated 2026-09-09 (same day, later): "not measured" is now permanent.** Abhishek
+answered PRD v7 C2 *"no by hand thing"*, so the labelled set never grows and the judge's
+pick is never scored. Learned item 1 below -- the single measurable call is a
+*disagreement*, the judge picked the higher-error provider -- is therefore the last
+evidence this scorecard will ever have. One call proves nothing in either direction; what
+it does prove is that "the judge is reliable" cannot be said out loud anywhere in this
+tool. R-14 makes the card stop implying the check is on its way.
 **Learned:** (1) *the one measurable call is a disagreement.* The judge picked openai
 (WER 0.436) when deepgram was lowest (0.365). One call proves nothing, which is exactly
 why the floor exists — but it is not the reassuring direction either.
@@ -5033,6 +5046,44 @@ providers is off; close the doors (bulk create, the UI checkbox) in this step.
    this as B-34 on 2026-08-25, with the fix written out. Two weeks. The register loop reads
    `docs/step-register.md` and the memo; `ox-alpha/` is not in either. Logged as its own
    open item rather than fixed here.
+
+---
+
+### R-14 — The two unmeasured lines stop saying "yet"
+
+**PR:** one. Spends nothing.
+**Depends on:** nothing. Caused by Abhishek's 2026-09-09 answer to PRD v7 C2: *"no by
+hand thing"* -- nobody will transcribe the 20 calls, so the labelled set is frozen at 2
+(1 usable; the other is O-76's fragment).
+**Files:** `artifacts/stt-benchmark/src/components/verdict-headline.tsx`
+(`ProxyAgreementLine`, `JudgeAccuracyLine`, the `MEASURABLE_FLOOR` comment),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx` (the two below-floor
+cases assert the exact strings and must be rewritten with them),
+`docs/PRD-v7-decide.md` C2.
+**Today:** below the floor the two lines read *"Not enough human-checked calls to measure
+this **yet** -- 2 of 20"* and *"Judge accuracy: not measured (1 of 20)"*. Both are a
+progress bar over a counter that will never advance. A reader who waits is waiting for
+work nobody is going to do, and a reader who does not notice reads "not measured" as a
+temporary state of a tool that is otherwise measuring accuracy. It is not: **this tool
+measures disagreement between providers, and now always will.**
+**Change:** below the floor, both lines say the check is not being run and why, in the
+reader's words, not the codebase's -- the count stays visible (it is the evidence for the
+sentence) but stops being framed as progress. The floor constant and the above-floor
+branch stay exactly as they are: if a labelled set ever does appear, the lines must still
+work without another edit. `MEASURABLE_FLOOR`'s comment gains the reason the floor is now
+unreachable, so the next reader does not "fix" it by lowering it to 1 -- one call is the
+noise M-18's grill already rejected.
+**Acceptance:** WHEN `labelledCalls > 0` and the count is below the floor THEN neither
+line SHALL contain the word "yet" or any other wording that implies a pending human pass;
+AND the sentence SHALL name what the ranking is measured on instead. WHEN the count
+reaches the floor THEN the existing percentage sentences SHALL render unchanged.
+**Verify:** the two below-floor render cases in `results.test.tsx` rewritten and green,
+plus the two above-floor cases untouched and still green; `pnpm run typecheck`.
+**Must not:** lower or remove the floor; delete either line (an unmeasured check that
+says so is the audit trail -- deleting it is how a tool quietly starts sounding accurate);
+touch the M-9 legend sentence above them, which is already correct.
+**Before code:** this is user-facing copy for a non-technical reader, so the
+`visual-and-research` pass runs first and its evidence note goes in this block.
 
 ---
 
