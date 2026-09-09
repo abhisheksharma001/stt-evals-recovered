@@ -12,7 +12,7 @@
 // provider here is only an alignment anchor and a clock, never "the right
 // answer". Its own words appear as one reading among the others.
 
-import { diffWords } from "./index";
+import { diffWords } from "./core";
 import { canonicalTranscript } from "./equivalence";
 
 export type TimedWord = { word: string; start: number; end: number };

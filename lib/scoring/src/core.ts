@@ -1,0 +1,445 @@
+// The scoring primitives: normalization, word alignment, entity scoring and
+// the composite. They live here rather than in index.ts because index.ts is
+// the package barrel -- its `export * from "./hybrid"` evaluates hybrid.ts
+// first, and hybrid.ts, spans.ts, provider-correlation.ts and equivalence.ts
+// all need these primitives. Importing them back through the barrel made a
+// cycle that scripts/check-import-cycles.mjs never saw, because it only ever
+// ran on artifacts/api-server/src (O-88). It survived on the fact that every
+// symbol they pulled is a hoisted `export function`; `RANKING_WEIGHTS` below
+// is a `const` and would have thrown on the same path. Siblings import from
+// here, and nothing under this package imports "./index".
+
+// Scoring version. Bump this whenever normalization or metric behavior
+// changes -- every stored Score row references the version that produced
+// it, so a re-score run can tell whether it reproduced the original
+// (NFR-6, FR-S7, FR-REP3).
+// v2 (2026-08-27, T-5 base-solidity fix): normalizeTranscript now folds
+// spelled-out spoken digits ("five five five") to match formatted digit
+// strings ("555") -- see normalizeNumberWords/splitDigitRuns below. Old
+// (v1) scored rows are untouched; they just aren't directly comparable to
+// new ones on word-diff-derived metrics.
+// v3 (2026-09-04, M-2): a line-leading "AI:" / "User:" speaker label is
+// stripped before lower-casing. Vapi writes its transcripts that way, and
+// the labels were surviving as the words "ai" and "user" -- one deletion
+// charged to a provider per line of the reference.
+export const SCORING_VERSION = "v3";
+
+export type EntityType =
+  | "ro_number"
+  | "unit_number"
+  | "vin"
+  | "phone_number"
+  | "name"
+  | "address"
+  | "load_number"
+  | "city";
+
+export type EntityReference = {
+  type: EntityType;
+  value: string;
+};
+
+export type ScoreInput = {
+  callId: string;
+  vertical: "rush" | "property_management" | "trucking";
+  providerId: string;
+  goldTranscript: string;
+  hypothesisTranscript: string;
+  entities: EntityReference[];
+  latencyFirstPartialMs?: number | null;
+  latencyFinalMs?: number | null;
+  costPerMinute?: number | null;
+  diarizationScore?: number | null;
+};
+
+export type EditCounts = {
+  substitutions: number;
+  deletions: number;
+  insertions: number;
+  referenceWords: number;
+};
+
+// One aligned word pair from the edit-distance backtrack. "ok"/"sub" always
+// carry both ref and hyp (equal for "ok"); "del" is a gold word the provider
+// missed entirely (hyp null); "ins" is a word the provider added that isn't
+// in gold (ref null). This is the same alignment WER has always computed
+// internally -- previously the backtrack only counted operations and threw
+// the actual word pairs away. Surfacing it lets a reviewer see exactly which
+// words a provider got wrong, not just how many.
+export type WordDiffOp = {
+  op: "ok" | "sub" | "del" | "ins";
+  ref: string | null;
+  hyp: string | null;
+  /** R-6: set by markConventionOps() when this op is part of a difference
+   *  that is only a convention ("1-bedroom" against "1 bedroom", a stray
+   *  "um"). The alignment itself never sets it, so an op that has been
+   *  through diffWords() alone -- and every score row stored before R-6 --
+   *  carries undefined, which reads as "not decided", not "not a
+   *  convention". */
+  convention?: boolean;
+};
+
+export type EntityScoreResult = EntityReference & {
+  normalized: string;
+  exactMatch: boolean;
+};
+
+export type ScoreOutput = {
+  callId: string;
+  vertical: ScoreInput["vertical"];
+  providerId: string;
+  normalizationVersion: string;
+  scoringVersion: string;
+  wer: number | null;
+  edits: EditCounts;
+  entityAccuracy: number | null;
+  alphanumericAccuracy: number | null;
+  entityResults: EntityScoreResult[];
+  wordDiff: WordDiffOp[];
+  latencyFirstPartialMs: number | null;
+  latencyFinalMs: number | null;
+  costPerMinute: number | null;
+  diarizationScore: number | null;
+};
+
+const punctuation = /[^\p{L}\p{N}\s'-]/gu;
+const entitySeparators = /[\s\-().,/\\]+/g;
+// B-88 (verified wave-2): NFKC does not fold typographic quotes/dashes to
+// ASCII, so identical speech transcribed with ’ vs ' split words — one word
+// became sub+ins, inflating WER up to 2x on affected transcripts. Fold
+// before punctuation stripping.
+const quoteFold = /[\u2018\u2019\u201B\u02BC]/gu;
+const dashFold = /[\u2013\u2014\u2015\u2212]/gu;
+
+// T-5 fix (2026-08-27, base-solidity review): providers disagree on
+// formatting, not just words -- Deepgram runs with smart_format (turns
+// spoken digits into "555-1212"), other adapters spell them out. Left
+// unhandled, that scored as pure format noise: several word-level
+// substitutions for identically-spoken digits, inflating both WER-style
+// diffs and cross-provider disagreement for every provider, and it made
+// PHONE_RE/REFERENCE_RE (hybrid.ts) unable to match a provider that spells
+// numbers out at all -- which meant that provider could never produce a
+// phone/reference entity, so it could never be flagged for getting one
+// wrong (T-3 interaction). Deliberately narrow: single spoken digit words
+// only (the way phone/reference numbers are actually read aloud), not full
+// cardinal-number parsing ("nine hundred" stays a quantity, not folded).
+const SPOKEN_DIGIT_WORD: Record<string, string> = {
+  zero: "0",
+  oh: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+};
+const SPOKEN_DIGIT_RE = /\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi;
+
+/** Word-array form: converts each spoken single-digit word to its digit
+ * character, one-for-one (array length unchanged) -- used inside
+ * normalizeTranscript so a diff/consensus alignment sees digits either way
+ * a provider chose to write them. */
+export function normalizeNumberWords(words: string[]): string[] {
+  return words.map((w) => SPOKEN_DIGIT_WORD[w] ?? w);
+}
+
+/** Splits any token that's entirely digits (with embedded -, ., already
+ * digit-only after normalizeNumberWords) into individual digit-character
+ * tokens -- "555-1212" and a digit-by-digit spelled "five five five one
+ * two one two" (after normalizeNumberWords) both become the same run of
+ * single-digit tokens instead of scoring as 7 substitutions of pure
+ * formatting noise. */
+export function splitDigitRuns(words: string[]): string[] {
+  const out: string[] = [];
+  for (const w of words) {
+    if (/^[\d.-]+$/.test(w) && /\d/.test(w)) {
+      out.push(...w.replace(/[^\d]/g, "").split(""));
+    } else {
+      out.push(w);
+    }
+  }
+  return out;
+}
+
+/** Raw-text form (used by extractEntities in hybrid.ts, which runs regexes
+ * against untokenized text): substitutes spoken digit words in place, then
+ * collapses a run of space-separated single digits into one contiguous
+ * digit string -- "unit four four seven one" -> "unit 4471" -- so a
+ * provider that spells numbers out can still match PHONE_RE/REFERENCE_RE,
+ * which expect a contiguous digit run the way a formatted number reads. */
+export function digitizeSpokenDigits(text: string): string {
+  const withDigits = text.replace(SPOKEN_DIGIT_RE, (m) => SPOKEN_DIGIT_WORD[m.toLowerCase()] ?? m);
+  return withDigits.replace(/\d(?:\s+\d)+/g, (run) => run.replace(/\s+/g, ""));
+}
+
+// M-2: the two speaker labels Vapi writes at the head of a line ("AI: ..." /
+// "User: ..."). Stripped before lower-casing, and only at a line start, so a
+// spoken "the user said no" mid-line keeps its word.
+const speakerLabel = /^(?:AI|User):\s*/gm;
+const customerLabel = /^\s*User:\s*/;
+
+/**
+ * M-8a: the caller's half of a Vapi draft transcript.
+ *
+ * A draft is one line per turn, each headed "AI: " or "User: " -- the same
+ * two labels the regex above strips, and the only two that occur: 645 "AI"
+ * and 521 "User" line heads across the 126 calls of the two bulks on disk
+ * (2026-09-06), no third. The "User:" lines are what PRODUCTION's own
+ * transcriber heard the CALLER say, so they are the only part of a draft
+ * comparable to a candidate transcribed from the customer channel. Compared
+ * against a mono candidate they would look ~70% wrong purely for missing the
+ * assistant's turns, which is why the caller gates this on the channel.
+ *
+ * The empty string means the draft carried no "User:" line at all (2 of
+ * those 126 calls) -- an empty transcript, which is not the same as a
+ * transcript that agreed with everyone; what that means is the caller's to
+ * decide, so nothing is invented here.
+ */
+export function productionCustomerTurns(draft: string): string {
+  return draft
+    .split(/\r?\n/)
+    .filter((line) => customerLabel.test(line))
+    .map((line) => line.replace(customerLabel, ""))
+    .join("\n");
+}
+
+export function normalizeTranscript(value: string): string {
+  const base = value
+    .replace(speakerLabel, "")
+    .normalize("NFKC")
+    .replace(quoteFold, "'")
+    .replace(dashFold, "-")
+    .toLocaleLowerCase("en-US")
+    .replace(punctuation, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!base) return base;
+  return splitDigitRuns(normalizeNumberWords(base.split(" "))).join(" ");
+}
+
+export function normalizeEntity(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(quoteFold, "'")
+    .replace(dashFold, "-")
+    .toLocaleUpperCase("en-US")
+    .replace(entitySeparators, "")
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+// T-33: the one CPU-bound routine in the system. Every hybrid flag, span,
+// correlation and WER goes through here, once per (provider pair, call), so
+// a bulk of N calls x P providers runs it ~N*P^2 times. The recurrence is
+// plain Levenshtein with the tie-break sub > del > ins (kept bit-for-bit
+// identical to the original -- index.test.ts proves it against a copy of
+// the old implementation). What changed is only how it is laid out:
+//   * distance lives in two Int32Array rows (the recurrence only ever
+//     looks one row back), not an array of arrays for the whole matrix;
+//   * ops live in one Uint8Array of rows*cols bytes -- needed for the
+//     backtrace, but a byte per cell instead of a JS string per cell;
+//   * the inner loop allocates nothing: the old code built three objects
+//     and sorted them for every mismatched cell.
+// Measured 2026-08-29 (tsx, M-series, see PR): 0.285 -> 0.028 ms at 32
+// words (10x), 3.0 -> 0.12 ms at 160 (24x), 607 -> 32 ms at 2,000 (19x).
+const OP_OK = 0;
+const OP_SUB = 1;
+const OP_DEL = 2;
+const OP_INS = 3;
+const OP_NAMES = ["ok", "sub", "del", "ins"] as const;
+
+function alignWords(
+  reference: string[],
+  hypothesis: string[],
+): { counts: EditCounts; ops: WordDiffOp[] } {
+  const rows = reference.length + 1;
+  const cols = hypothesis.length + 1;
+  const operation = new Uint8Array(rows * cols);
+  let previous = new Int32Array(cols);
+  let current = new Int32Array(cols);
+
+  for (let col = 1; col < cols; col += 1) {
+    previous[col] = col;
+    operation[col] = OP_INS;
+  }
+
+  for (let row = 1; row < rows; row += 1) {
+    const base = row * cols;
+    current[0] = row;
+    operation[base] = OP_DEL;
+    const refWord = reference[row - 1];
+    for (let col = 1; col < cols; col += 1) {
+      if (refWord === hypothesis[col - 1]) {
+        current[col] = previous[col - 1];
+        operation[base + col] = OP_OK;
+        continue;
+      }
+      const sub = previous[col - 1] + 1;
+      const del = previous[col] + 1;
+      const ins = current[col - 1] + 1;
+      if (sub <= del && sub <= ins) {
+        current[col] = sub;
+        operation[base + col] = OP_SUB;
+      } else if (del <= ins) {
+        current[col] = del;
+        operation[base + col] = OP_DEL;
+      } else {
+        current[col] = ins;
+        operation[base + col] = OP_INS;
+      }
+    }
+    const swap = previous;
+    previous = current;
+    current = swap;
+  }
+
+  let row = reference.length;
+  let col = hypothesis.length;
+  let substitutions = 0;
+  let deletions = 0;
+  let insertions = 0;
+  const opsReversed: WordDiffOp[] = [];
+
+  while (row > 0 || col > 0) {
+    const code = operation[row * cols + col];
+    const op = OP_NAMES[code];
+    if (code === OP_OK || code === OP_SUB) {
+      if (code === OP_SUB) substitutions += 1;
+      opsReversed.push({ op, ref: reference[row - 1], hyp: hypothesis[col - 1] });
+      row -= 1;
+      col -= 1;
+    } else if (code === OP_DEL) {
+      deletions += 1;
+      opsReversed.push({ op, ref: reference[row - 1], hyp: null });
+      row -= 1;
+    } else {
+      insertions += 1;
+      opsReversed.push({ op, ref: null, hyp: hypothesis[col - 1] });
+      col -= 1;
+    }
+  }
+
+  return {
+    counts: { substitutions, deletions, insertions, referenceWords: reference.length },
+    ops: opsReversed.reverse(),
+  };
+}
+
+export function editCounts(reference: string[], hypothesis: string[]): EditCounts {
+  return alignWords(reference, hypothesis).counts;
+}
+
+/** The word-by-word diff between gold and a provider's transcript --
+ * exposes exactly which words were substituted, dropped, or added, in
+ * order. Used by the Review/Results UI to highlight specific mismatches
+ * instead of only showing an aggregate WER number. */
+export function diffWords(reference: string[], hypothesis: string[]): WordDiffOp[] {
+  return alignWords(reference, hypothesis).ops;
+}
+
+export function scoreEntities(entities: EntityReference[], hypothesis: string) {
+  const normalizedHypothesis = normalizeEntity(hypothesis);
+  const results: EntityScoreResult[] = entities.map((entity) => {
+    const normalized = normalizeEntity(entity.value);
+    return {
+      ...entity,
+      normalized,
+      exactMatch: normalized.length > 0 && normalizedHypothesis.includes(normalized),
+    };
+  });
+  const correct = results.filter((entity) => entity.exactMatch).length;
+  const alphanumeric = results.filter(
+    (entity) => /[A-Z]/.test(entity.normalized) && /\d/.test(entity.normalized),
+  );
+  const alphanumericCorrect = alphanumeric.filter((entity) => entity.exactMatch).length;
+
+  return {
+    results,
+    accuracy: results.length === 0 ? null : correct / results.length,
+    alphanumericAccuracy:
+      alphanumeric.length === 0 ? null : alphanumericCorrect / alphanumeric.length,
+  };
+}
+
+export function score(input: ScoreInput): ScoreOutput {
+  const gold = normalizeTranscript(input.goldTranscript).split(" ").filter(Boolean);
+  const hypothesis = normalizeTranscript(input.hypothesisTranscript)
+    .split(" ")
+    .filter(Boolean);
+  const aligned = alignWords(gold, hypothesis);
+  const edits = aligned.counts;
+  const entity = scoreEntities(input.entities, input.hypothesisTranscript);
+  const errors = edits.substitutions + edits.deletions + edits.insertions;
+
+  return {
+    callId: input.callId,
+    vertical: input.vertical,
+    providerId: input.providerId,
+    normalizationVersion: "v1",
+    scoringVersion: SCORING_VERSION,
+    wer: edits.referenceWords === 0 ? null : errors / edits.referenceWords,
+    edits,
+    entityAccuracy: entity.accuracy,
+    alphanumericAccuracy: entity.alphanumericAccuracy,
+    entityResults: entity.results,
+    wordDiff: aligned.ops,
+    latencyFirstPartialMs: input.latencyFirstPartialMs ?? null,
+    latencyFinalMs: input.latencyFinalMs ?? null,
+    costPerMinute: input.costPerMinute ?? null,
+    diarizationScore: input.diarizationScore ?? null,
+  };
+}
+
+// Composite ranking score (FR-S8). Weights are an open decision (PRD OD-1) --
+// this default weighting follows the plan's stated logic (docs/logic-register.md,
+// docs/task-graph.mmd RANK-01): entity/alphanumeric accuracy outweighs raw WER
+// because a wrong VIN or RO number breaks downstream automation even when WER
+// looks fine; cost and latency are tie-breakers, not primary drivers.
+// Every raw metric is still published alongside this number so the weights
+// never hide a tradeoff (RANK-01 logic note).
+export const RANKING_WEIGHTS = {
+  entityAccuracy: 0.40,
+  alphanumericAccuracy: 0.25,
+  wer: 0.20,
+  latency: 0.10,
+  cost: 0.05,
+} as const;
+
+export type CompositeInput = {
+  wer: number | null;
+  entityAccuracy: number | null;
+  alphanumericAccuracy: number | null;
+  latencyFinalMs: number | null;
+  costPerMinute: number | null;
+  maxLatencyFinalMs: number;
+  maxCostPerMinute: number;
+};
+
+// Returns null when there isn't enough evidence (missing entity or WER data)
+// to compute a defensible composite -- callers should surface that as
+// "insufficient evidence" rather than silently ranking on partial data.
+export function compositeScore(input: CompositeInput): number | null {
+  if (input.wer === null || input.entityAccuracy === null) return null;
+
+  const werComponent = 1 - Math.min(input.wer, 1);
+  const entityComponent = input.entityAccuracy;
+  const alphanumericComponent = input.alphanumericAccuracy ?? input.entityAccuracy;
+  const latencyComponent =
+    input.latencyFinalMs === null || input.maxLatencyFinalMs <= 0
+      ? 1
+      : 1 - Math.min(input.latencyFinalMs / input.maxLatencyFinalMs, 1);
+  const costComponent =
+    input.costPerMinute === null || input.maxCostPerMinute <= 0
+      ? 1
+      : 1 - Math.min(input.costPerMinute / input.maxCostPerMinute, 1);
+
+  return (
+    RANKING_WEIGHTS.entityAccuracy * entityComponent +
+    RANKING_WEIGHTS.alphanumericAccuracy * alphanumericComponent +
+    RANKING_WEIGHTS.wer * werComponent +
+    RANKING_WEIGHTS.latency * latencyComponent +
+    RANKING_WEIGHTS.cost * costComponent
+  );
+}

@@ -15,7 +15,7 @@
 // first, expensive judgment only where the deterministic layer already
 // found something worth explaining.
 
-import { diffWords, digitizeSpokenDigits } from "./index";
+import { diffWords, digitizeSpokenDigits } from "./core";
 import { canonicalTranscript } from "./equivalence";
 
 export type HybridSeverity = "none" | "low" | "medium" | "high";

@@ -57,6 +57,26 @@ expanded row is `WordDiffView`.
 from `./index`. Harmless (nothing is used at module top level) and R-6 added only a
 type-only import to it, but it is a live example of what the guard cannot see.
 
+**Corrected 2026-09-09, when the guard was finally pointed at it (O-88):** it was not one
+cycle, it was **six**. `hybrid.ts`, `spans.ts` and `provider-correlation.ts` import
+`diffWords` / `digitizeSpokenDigits` / `normalizeTranscript` back through the barrel too,
+and `index.ts` re-exports all three. "Harmless" was the right read of the risk and the
+wrong read of the size.
+
+**And "harmless" for a narrower reason than first written here.** The first draft of this
+correction said the cycle survived because every symbol pulled back through the barrel is
+a hoisted `export function`. That is true but is not the load-bearing fact, and running it
+showed why: a cycle only bites when a module **reads** a cycle-imported binding while that
+binding's module is still evaluating. lib/scoring's siblings only ever *call* through the
+barrel later, at runtime, by which point `index.ts` has finished -- so even a `const`
+would have been fine there. What was one line away from breaking is a top-level read.
+Reproduced on node with a three-file copy of the exact shape: the hoisted function
+returns normally, `const RANKING_WEIGHTS` read at sibling module top level throws
+`ReferenceError: Cannot access 'RANKING_WEIGHTS' before initialization`.
+
+Fixed by moving the primitives out of the barrel into `lib/scoring/src/core.ts`;
+`index.ts` is now barrel-only.
+
 ## Found 2026-09-09 (building M-19a): the import-cycle guard never looks at `lib/`
 
 `scripts/check-import-cycles.mjs` takes its root as an argument and defaults to
@@ -73,6 +93,30 @@ passes; nothing in CI ever runs it.
 
 **Worth having:** one more line in the workflow, or a loop over the four roots. Small, and
 it earns its keep the first time a lib package grows a second cross-file helper.
+
+**Done 2026-09-09.** The script now carries the four roots as its default and both callers
+pass no path, so they cannot drift apart again. It earned its keep immediately, not on some
+later refactor: `lib/scoring` had **six** cycles waiting the first time it was pointed
+there. Correcting this entry's own words -- *"Nothing is cyclic today -- `tsc --build`
+would fail differently if it were"* is **wrong**, and was the reason nobody looked. TypeScript
+compiles circular ES modules without complaint; `pnpm run typecheck` was green across all
+six. A type checker is not a cycle checker.
+
+**Still not covered, deliberately -- and the first reason written here was the wrong one.**
+The draft said `artifacts/stt-benchmark/src` is out because it is 87 `.tsx` to 14 `.ts` and
+the walker matches `/\.ts$/`, so widening the filter was "its own step, once the UI's cycles
+are counted". They have now been counted, and the filter is not the blocker: **the UI
+imports through the `"@/*"` tsconfig alias, 202 alias specifiers to 1 relative one.** This
+walker only follows relative specifiers. Widen the filter and it traverses one edge out of
+203 across 101 files and prints `no import cycles among 101 files` -- a green pass that has
+checked essentially nothing, which is precisely the failure this entry is about. The `.tsx`
+widening alone would make it worse, not better, by making the lie look thorough. Resolving
+`@/*` against `artifacts/stt-benchmark/tsconfig.json` `compilerOptions.paths` is the actual
+step. (Both UI roots do come back clean under a filter-widened copy of the script -- but on
+1 edge, so that result carries no weight and is not a reason to skip the alias work.)
+
+`lib/api-zod` and `lib/api-client-react` stay out for a different reason: they are orval
+output, so a cycle there is not a thing a person fixes by editing the file.
 
 ## Found 2026-09-09 (building R-4): "N calls scored" is printed twice, and means two things
 Results prints the phrase in two places. The page-top bulk banner
