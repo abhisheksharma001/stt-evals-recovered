@@ -5890,6 +5890,57 @@ as permission to skip the grill on any individual row.
 
 ---
 
+### R-23 — A presigned recording URL stops being persisted into an error row (B-5)
+
+**Status:** open. First of R-22's twelve.
+**PR:** one. Spends nothing; changes no measured number.
+**Depends on:** R-22.
+**Files:** `lib/stt-providers/src/types.ts`, new file lib/stt-providers/src/redact-url.test.ts.
+
+**Today:** `fetchAudioBytes` interpolates the whole audio URL into the error it
+throws (`lib/stt-providers/src/types.ts:147`). Vapi's recording links are presigned --
+the signature, the access key id and the expiry all live in the query string. That
+sentence does not stay in a log. `run-executor.ts:678` writes it verbatim into
+`benchmark_scores.error_message`, and the results route serves that column to the
+browser, so a credentialed URL is **stored in the database and rendered in the UI**,
+and stays in the row long after the signature expires. One site: a scan for a URL
+interpolated into any thrown or logged string across `lib` and `artifacts` returns
+this line and nothing else.
+
+**Change:** a `redactUrlForMessage` helper next to the thrower. Keep `origin` +
+`pathname`, which still name the object well enough to debug with; drop the query, the
+fragment and the userinfo, and append `(credentials redacted)` only when there was
+something to drop, so a clean URL does not grow a scary suffix.
+
+**Three things the obvious version gets wrong**, and each has a test:
+
+- `URL.origin` already excludes `user:pass@`, but a reviewer cannot see that from the
+  call site, so **userinfo is asserted separately** rather than assumed. A
+  password with no username leaves `username` empty and sets `password`; the origin
+  drops it either way, so this only decides whether the suffix tells the truth.
+- `data:` and `blob:` are not locators. A `data:` URI's path **is the audio**, and
+  `audio-cache.test.ts` feeds exactly those, so echoing a path there would put caller
+  bytes into a persisted error row. Non-http(s) schemes return `${protocol}<redacted>`.
+- This runs **inside a catch**. A helper that throws on a malformed URL would replace a
+  provider failure with a different, wrong one, so a parse failure returns a placeholder
+  and never the input.
+
+**And the helper being right is not the fix.** A test that only exercises
+`redactUrlForMessage` stays green if someone reverts the call site, so the suite also
+asserts on the message `fetchAudioBytes` actually throws, with `fetch` stubbed to a 403.
+
+**Acceptance:** WHEN `fetchAudioBytes` fails on a presigned URL THEN the thrown message
+SHALL contain the host and path AND SHALL contain no part of the signature, access key
+or expiry; AND WHEN the URL is a `data:` URI THEN no part of the payload SHALL appear.
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/stt-providers test`, which CI
+already runs (`.github/workflows/ci.yml:91`); the break test restores the raw
+`${audioUrl}` and expects the signature assertion to fail.
+**Must not:** redact the host or path, which are what make the failure diagnosable;
+change the failure class or the retry decision, both of which read `httpStatus`, not the
+sentence; touch any other error message while in this file.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

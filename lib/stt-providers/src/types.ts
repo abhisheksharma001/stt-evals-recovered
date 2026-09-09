@@ -132,6 +132,35 @@ export class ProviderConfigError extends Error {
   }
 }
 
+/** B-5: a recording link is a credential. Vapi's presigned URLs carry their
+ *  signature in the query string, and this message is persisted verbatim into
+ *  benchmark_scores.error_message (run-executor.ts:678) and served from
+ *  GET /benchmark/runs/:runId/results -- so the whole URL reaches the browser
+ *  and stays in the row after the signature has expired. Origin and path name
+ *  the object well enough to debug with; everything that authenticates is cut.
+ *
+ *  This runs inside an error path, so it never throws and never returns the
+ *  input on a parse failure. data: and blob: are handled separately because
+ *  their "path" is the audio itself, not a locator (audio-cache.test.ts feeds
+ *  data: URIs). */
+export function redactUrlForMessage(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return "<unparseable url>";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return `${parsed.protocol}<redacted>`;
+  }
+  const carried =
+    parsed.search !== "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== "";
+  return `${parsed.origin}${parsed.pathname}${carried ? " (credentials redacted)" : ""}`;
+}
+
 export async function fetchAudioBytes(audioUrl: string): Promise<Buffer> {
   const res = await fetch(audioUrl);
   if (!res.ok) {
@@ -144,7 +173,7 @@ export async function fetchAudioBytes(audioUrl: string): Promise<Buffer> {
         ? "audio_url_forbidden"
         : classifyProviderHttpStatus(res.status);
     throw new ClassifiedError(
-      `Failed to fetch audio from ${audioUrl}: HTTP ${res.status}`,
+      `Failed to fetch audio from ${redactUrlForMessage(audioUrl)}: HTTP ${res.status}`,
       failureClass,
       { httpStatus: res.status },
     );
