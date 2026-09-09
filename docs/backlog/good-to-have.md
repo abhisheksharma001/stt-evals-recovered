@@ -1,4 +1,28 @@
 
+## Found 2026-09-10 (R-43): a number word and its digits score as a total miss
+
+Measured while verifying the stt-score CLI:
+
+    normalizeTranscript("load twelve") -> "load twelve"
+    normalizeTranscript("load 12")     -> "load 1 2"
+    score(gold="load twelve", hyp="load 12").wer === 1
+
+`SPOKEN_DIGIT_WORD` in `lib/scoring/src/core.ts` maps `zero`..`nine` only, and
+`splitDigitRuns` then splits a digit token into individual characters. That pairing is
+right for what it was built for -- digit-by-digit spelling, where "five five five" and
+"555" must agree for a phone or RO number. A cardinal like "twelve", "thirty", "fifteen
+hundred" is not in the map, so gold and hypothesis end up with different token counts and
+the row is charged both a substitution and an insertion.
+
+Why it matters: WER carries 20% of the composite rank. A provider that writes digits,
+scored against a gold written in words (or the reverse), is penalised for agreeing. This
+is the same phenomenon as the digit-word disputes already measured across the corpus.
+
+This is a scoring-policy decision, not a bug to patch: extending the map changes what every
+past score means, so it wants a SCORING_VERSION bump (currently v3) and a line in
+`docs/scoring-policy.md` saying which direction is canonical -- words to digits, or digits
+to words. Deliberately not done inside a CLI-validation fix.
+
 ## Found 2026-09-10 (R-42): the Vapi import route cannot be tested offline at all
 
 `POST /benchmark/calls/import-vapi` calls Vapi directly, so nothing in the integration
