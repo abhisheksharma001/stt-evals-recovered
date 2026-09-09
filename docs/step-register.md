@@ -5051,7 +5051,7 @@ providers is off; close the doors (bulk create, the UI checkbox) in this step.
 
 ### R-14 — The two unmeasured lines stop saying "yet"
 
-**Status:** done 2026-09-09 (PR #REPLACEME).
+**Status:** done 2026-09-09 (PR #134).
 **PR:** one. Spends nothing.
 **Depends on:** nothing. Caused by Abhishek's 2026-09-09 answer to PRD v7 C2: *"no by
 hand thing"* -- nobody will transcribe the 20 calls, so the labelled set is frozen at 2
