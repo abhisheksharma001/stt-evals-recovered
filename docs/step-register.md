@@ -4961,7 +4961,7 @@ model list.
 
 ### R-13 — The disabled switch guards every path into the executor, not one route
 
-**Status:** `done` — PR #PENDING, sha `PENDING`. Spends nothing.
+**Status:** `done` — PR #131, sha `2ee8426`. Spends nothing.
 **PR:** one.
 **Depends on:** R-12 (which is what made the gap matter: two socket rows now sit disabled,
 adapter present, key present).
