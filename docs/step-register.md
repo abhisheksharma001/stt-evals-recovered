@@ -6982,6 +6982,73 @@ normalisation in this step.
 
 ---
 
+### R-44 — The executor stops trusting the id list it was handed (B-84 and B-97)
+
+**Status:** open.
+**PR:** one. Spends nothing, and is mostly about not spending.
+**Depends on:** R-35.
+**Files:** `artifacts/api-server/src/lib/run-executor.ts`,
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+
+**B-84 and B-97 are the same line.** `calls` came straight from
+`inArray(run.callIds)`, so the executor trusted its input twice over:
+
+- **B-97** — an id that no longer resolves is dropped by `inArray` **without a word**. The
+  run drains fewer cells than it claims and finalises `complete` over a set nobody agreed to.
+- **B-84** — a call **archived after the run was created** is still transcribed and scored.
+  Archiving is a human withdrawing data from the corpus; paying a vendor to transcribe it
+  afterwards, and letting it into rankings, is the opposite of what that click meant.
+
+**Measured before touching a spend path:** 164 call references across every run on the dev
+database, **0 archived and 0 dangling.** Both are latent, so this is a provable no-op on
+today's data — which is what makes it safe to change the function that spends money.
+
+**Recorded, never silently applied.** That is R-13's rule — *"a cell nobody can see is a
+cell nobody knows was refused"* — and this follows its shape exactly. **The asymmetry is
+forced, not chosen:** an archived call still has a row, so its refusal is a real cell with
+its own sentence; a missing id has no row at all, so
+`benchmark_provider_call_results.call_id` has nothing to point at and the run's notes are
+the only place the shortfall can be said.
+
+**`totalCells` now counts `run.callIds`, not the rows that came back.** Counting only what
+resolved would re-hide exactly what B-97 is about: a run whose ids no longer all resolve
+would report a smaller denominator and look complete against it. The claim is the id list.
+
+**And `withdrawnCells` joins `attemptedCells`**, for the same reason T-43 includes
+permanently-failed cells and R-13 includes disabled ones: a run that refused every cell it
+had must not read `attemptedCells === 0` and finalize `complete` for having done nothing.
+
+**The test caught a bug in the fix, and it was R-13's own bug reintroduced one filter
+later.** The refusal loop first iterated `providers` — the *enabled* subset. Since `calls`
+now excludes archived rows, the disabled-provider loop skips them too, so an **(archived
+call, disabled provider)** pair got **no row at all**: the cell vanished entirely, which is
+precisely the thing R-13 wrote its loop to prevent. Fixed to `selectedProviders`. Review
+would not have found it; a test asserting two cells where one appeared did.
+
+**Acceptance:** WHEN a run names a call that no longer exists THEN its notes SHALL say how
+many cells could not be attempted AND `totalCells` SHALL still reflect the ids the run was
+created with; AND WHEN a call is archived after creation THEN each of its cells SHALL be
+recorded refused with the call's own reason, not a provider's.
+**Verify:** `pnpm run typecheck`; api-server integration (186), including one test per half.
+Break test, four mutations, all caught, totals held at 186: no call ever treated as
+withdrawn (1 failed); `totalCells` computed from the resolved rows (1 failed); the
+missing-id note removed (1 failed); the refusal loop back to enabled providers only
+(1 failed).
+
+**What the tests do NOT prove, and cannot.** They pin that the refusal is *recorded* with
+the right reason. They do **not** pin that an archived call is never *sent to a provider* —
+that needs a `ready` provider in the suite, which spends real money, and this file's header
+forbids it in as many words. The first mutation I tried was a bad one for exactly this
+reason: removing the `calls` filter left the recording intact, so all 186 passed and it
+looked like a caught mutation until I read what it had actually changed. The spend
+protection rests on the filter being read, not on a test.
+**Must not:** silently skip either case; count `totalCells` from the resolved rows; give an
+archived call a provider's reason; refuse a call for any status other than `archived` —
+`ready_to_run` with no gold is the normal import path and R-19 already refused that gate
+once.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

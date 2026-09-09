@@ -21,6 +21,8 @@
 //
 // Never put a real provider id in this file, disabled or not.
 import { afterAll, describe, expect, it } from "vitest";
+import request from "supertest";
+import { server } from "./server";
 import { eq } from "drizzle-orm";
 import {
   benchmarkProviderCallResultsTable,
@@ -227,6 +229,67 @@ describe("executeBenchmarkRun and a manually disabled provider (R-13)", () => {
     const cells = await cellsOf(run.id);
     expect(cells).toHaveLength(1);
     expect(cells[0].errorMessage).toContain("switched off in Setup");
+  });
+
+  // R-44 (ox-alpha B-84). A call archived AFTER the run was created was still
+  // transcribed and scored. Archiving is a human withdrawing data from the
+  // corpus; paying a vendor to transcribe it afterwards, and letting it into
+  // rankings, is the opposite of what that click meant.
+  //
+  // The provider here is disabled, so this test costs nothing either way --
+  // what it pins is that the ARCHIVED call is refused with its own reason,
+  // not the provider's.
+  it("refuses a call archived after the run was created, and says which reason", async () => {
+    const live = await fx.call();
+    const withdrawn = await fx.call({ status: "archived" });
+    const provider = await fx.provider({ manuallyDisabled: true, status: "disabled" });
+    const run = await fx.run({
+      status: "queued",
+      providerIds: [provider.id],
+      callIds: [live.id, withdrawn.id],
+      callCount: 2,
+    });
+
+    await executeBenchmarkRun(run.id, fx.actor, { audioResolver });
+
+    const cells = await cellsOf(run.id);
+    expect(cells).toHaveLength(2);
+    const byCall = new Map(cells.map((c) => [c.callId, c]));
+    expect(byCall.get(withdrawn.id)?.errorMessage).toContain("archived after this run was created");
+    // The live call still gets the provider's reason, not the call's.
+    expect(byCall.get(live.id)?.errorMessage).toContain("switched off in Setup");
+
+    const notes = after_notes(await runRow(run.id));
+    expect(notes).toContain("archived after this run was created");
+  });
+
+  // R-44 (ox-alpha B-97). An id that no longer resolves is dropped by
+  // inArray without a word, and the run finalises over a smaller set than it
+  // was created for. No cell row can exist for it -- the call is gone and
+  // call_id has nothing to point at -- so the notes are the only place it can
+  // be said.
+  it("says so when a call it names no longer exists, instead of quietly covering less", async () => {
+    const live = await fx.call();
+    const provider = await fx.provider({ manuallyDisabled: true, status: "disabled" });
+    const ghost = "00000000-0000-4000-8000-0000000000ff";
+    const run = await fx.run({
+      status: "queued",
+      providerIds: [provider.id],
+      callIds: [live.id, ghost],
+      callCount: 2,
+    });
+
+    await executeBenchmarkRun(run.id, fx.actor, { audioResolver });
+
+    const notes = after_notes(await runRow(run.id));
+    expect(notes).toContain("no longer exist");
+    // The claim is the id list, so the denominator must not shrink to hide it.
+    const audit = await request(server)
+      .get("/api/benchmark/audit-log")
+      .query({ entityType: "run", entityId: run.id });
+    const after = audit.body[0]?.afterState as { totalCells?: number; missingCallIds?: number };
+    expect(after?.totalCells).toBe(2);
+    expect(after?.missingCallIds).toBe(1);
   });
 });
 
