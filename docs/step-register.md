@@ -4544,6 +4544,27 @@ rule in code review, which is what this step was modelled on.
 
 ### R-7 — Which calls need checking: count the seeds before building a monitor
 
+**Status:** done 2026-09-09 (PR #123, `ff8a66c`). Nothing deployed by it — a script, a
+pure lib nothing on the server imports, and docs. **Answer: do not build the monitor
+path, and the table is not the reason.**
+**Learned:** (1) *the measurement was impossible before it was wrong.* 112 of the 118
+calls carrying a verdict are flagged, so the base rate is 88–96 % and the ceiling on any
+signal's lift is 4.3–11.5 points. The seed rule's 10-point margin is unreachable **by
+arithmetic** on four of the five signals. A plain "no" would have claimed they were
+measured against a fair bar; the script prints a `head` column and the word `UNTESTABLE`
+instead. **A negative result has to say which kind of negative it is.**
+(2) *So the question underneath is the flag rate, not the trigger* — a pass that flags
+95 % of what it sees cannot be triaged, and nothing built on it can be better than it is.
+That is **new open question 5** in PRD v7 Part E, for Abhishek: is 95 % what he expects?
+(3) *An errored or rejected scan is not a verdict.* Counting the 5 errors and 1 rejection
+as "not flagged" understated the base rate by 4.8 points on the first signal alone. Same
+rule as a null column: dropped, never defaulted.
+(4) *The break test found two of its own mutations were provably no-op code* —
+`population > 0` is implied by `selected > 0`, and the seed/untestable branch order cannot
+matter because `lift ≤ headroom` always. Both dead guards deleted, and the comment that
+claimed "order matters" corrected. A third miss was a real hole in a test: at a 90 %
+selected share the arithmetic caps lift at exactly 10 points, so against a 10-point margin
+that test never exercised the ceiling it was written to guard.
 **PR:** one. Spends nothing: read-only over the dev database, no provider, no LLM.
 **Depends on:** nothing.
 **Files:** `artifacts/api-server/src/mine-triage-signals.ts` (new; same shape and same
