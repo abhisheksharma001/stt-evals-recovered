@@ -6665,6 +6665,50 @@ deliberately, and named so nobody "completes" the fix by wrapping it too.
 
 ---
 
+### R-37 — An infinite price stops being a valid price (B-95)
+
+**Status:** open.
+**PR:** one. Spends nothing.
+**Depends on:** R-35.
+**Files:** `lib/api-spec/openapi.yaml`, the generated clients,
+`artifacts/api-server/src/routes/__integration__/providers-write.int.test.ts`.
+
+**Today:** `costPerMinute` was `{ type: number, minimum: 0 }` on both `ProviderInput` and
+`ProviderUpdate`. `JSON.parse("1e999")` is `Infinity`, and **zod's `number()` rejects `NaN`
+but not `Infinity`** — `minimum` cannot stop it, because `Infinity >= 0` is true. It reached
+pg `float4`, came back over the wire as `null`, and `Providers.tsx` called `.toFixed` on it.
+
+**Verified rather than inherited.** The register said it passes; I parsed all three cases
+through the real generated schema before touching anything:
+
+```
+costPerMinute=Infinity   ACCEPTED -> Infinity
+costPerMinute=-1         rejected: too_small
+costPerMinute=0.005      ACCEPTED -> 0.005
+```
+
+The first attempt at that probe reported **all three rejected**, including the valid one —
+because it sent `model: "m"` against a `minLength: 2`. A probe that rejects everything is
+not evidence of a strict schema; it is evidence of a broken probe. Worth the extra minute.
+
+**Change:** a finite `maximum`. That is what rejects `Infinity` — `Infinity <= 10` is false —
+and it needed no hand-written guard, because the contract is the right place for it.
+
+**Why 10, measured rather than picked.** Real `costPerMinute` on file runs **0.0043 to
+0.0102** dollars per minute, across 12 providers. Ten is ~1000× the most expensive of them,
+so it can never refuse a genuine price — and unlike an enormous bound it also catches a
+fat-fingered exponent, not only the infinite case. A cap that only stops `Infinity` would
+have been the smaller change and the weaker one.
+
+**Acceptance:** WHEN `costPerMinute` is `Infinity` on create or update THEN the request SHALL
+be refused with 400; AND a real price SHALL still be accepted.
+**Verify:** `pnpm run typecheck`; `node scripts/check-api-routes.mjs`; api-server integration
+(184); the break test removes `maximum` from the spec and regenerates.
+**Must not:** guard this in the route instead of the contract; pick a bound that a real
+provider price could reach; change `minimum`.
+
+---
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

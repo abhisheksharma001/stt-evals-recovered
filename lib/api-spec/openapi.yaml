@@ -1896,7 +1896,16 @@ components:
       type: object
       properties:
         disabled: { type: boolean }
-        costPerMinute: { type: number, minimum: 0 }
+        # R-37 (ox-alpha B-95): `minimum` alone lets Infinity through -- zod's
+        # number() rejects NaN but not Infinity, and JSON.parse("1e999") is
+        # Infinity. It reached pg float4, came back over the wire as null, and
+        # Providers.tsx called .toFixed on it. A maximum makes the schema
+        # reject it, because Infinity <= any finite bound is false.
+        # 10 is ~1000x the most expensive provider actually on file (measured
+        # 2026-09-10: real costPerMinute runs 0.0043 to 0.0102), so it can
+        # never refuse a genuine price, and it also catches a fat-fingered
+        # exponent rather than only the infinite case.
+        costPerMinute: { type: number, minimum: 0, maximum: 10 }
         configNote: { type: string }
     ProviderInput:
       type: object
@@ -1904,7 +1913,16 @@ components:
       properties:
         name: { type: string, minLength: 2 }
         model: { type: string, minLength: 2 }
-        costPerMinute: { type: number, minimum: 0 }
+        # R-37 (ox-alpha B-95): `minimum` alone lets Infinity through -- zod's
+        # number() rejects NaN but not Infinity, and JSON.parse("1e999") is
+        # Infinity. It reached pg float4, came back over the wire as null, and
+        # Providers.tsx called .toFixed on it. A maximum makes the schema
+        # reject it, because Infinity <= any finite bound is false.
+        # 10 is ~1000x the most expensive provider actually on file (measured
+        # 2026-09-10: real costPerMinute runs 0.0043 to 0.0102), so it can
+        # never refuse a genuine price, and it also catches a fat-fingered
+        # exponent rather than only the infinite case.
+        costPerMinute: { type: number, minimum: 0, maximum: 10 }
         supportsStreaming: { type: boolean }
         supportsDiarization: { type: boolean }
         keywordBoosting: { type: boolean }

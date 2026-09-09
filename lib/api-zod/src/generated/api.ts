@@ -861,13 +861,14 @@ export const createBenchmarkProviderBodyNameMin = 2;
 export const createBenchmarkProviderBodyModelMin = 2;
 
 export const createBenchmarkProviderBodyCostPerMinuteMin = 0;
+export const createBenchmarkProviderBodyCostPerMinuteMax = 10;
 
 
 
 export const CreateBenchmarkProviderBody = zod.object({
   "name": zod.string().min(createBenchmarkProviderBodyNameMin),
   "model": zod.string().min(createBenchmarkProviderBodyModelMin),
-  "costPerMinute": zod.number().min(createBenchmarkProviderBodyCostPerMinuteMin),
+  "costPerMinute": zod.number().min(createBenchmarkProviderBodyCostPerMinuteMin).max(createBenchmarkProviderBodyCostPerMinuteMax),
   "supportsStreaming": zod.boolean().optional(),
   "supportsDiarization": zod.boolean().optional(),
   "keywordBoosting": zod.boolean().optional(),
@@ -954,12 +955,13 @@ export const UpdateBenchmarkProviderParams = zod.object({
 })
 
 export const updateBenchmarkProviderBodyCostPerMinuteMin = 0;
+export const updateBenchmarkProviderBodyCostPerMinuteMax = 10;
 
 
 
 export const UpdateBenchmarkProviderBody = zod.object({
   "disabled": zod.boolean().optional(),
-  "costPerMinute": zod.number().min(updateBenchmarkProviderBodyCostPerMinuteMin).optional(),
+  "costPerMinute": zod.number().min(updateBenchmarkProviderBodyCostPerMinuteMin).max(updateBenchmarkProviderBodyCostPerMinuteMax).optional(),
   "configNote": zod.string().optional()
 })
 

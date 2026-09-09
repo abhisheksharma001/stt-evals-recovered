@@ -507,7 +507,10 @@ export interface EnableProviderModelResult {
 
 export interface ProviderUpdate {
   disabled?: boolean;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
   costPerMinute?: number;
   configNote?: string;
 }
@@ -517,7 +520,10 @@ export interface ProviderInput {
   name: string;
   /** @minLength 2 */
   model: string;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
   costPerMinute: number;
   supportsStreaming?: boolean;
   supportsDiarization?: boolean;

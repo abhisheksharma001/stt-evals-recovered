@@ -86,6 +86,31 @@ describe("POST /api/benchmark/providers", () => {
     expect(res.status).toBe(400);
   });
 
+  // R-37 (ox-alpha B-95). JSON.parse("1e999") is Infinity, and zod's number()
+  // rejects NaN but not Infinity -- `minimum` alone let it through to pg
+  // float4, from which it came back over the wire as null, and Providers.tsx
+  // called .toFixed on it. A finite `maximum` is what rejects it, because
+  // Infinity <= any finite bound is false.
+  it("refuses an infinite price on create", async () => {
+    const res = await request(server)
+      .post("/api/benchmark/providers")
+      .set("x-actor", fx.actor)
+      .set("Content-Type", "application/json")
+      .send(`{"name":"Deepgram","model":"fxinf-${fx.suffix}","costPerMinute":1e999}`);
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain("costPerMinute");
+  });
+
+  it("still accepts a real price, which is three orders of magnitude below the cap", async () => {
+    const res = await request(server)
+      .post("/api/benchmark/providers")
+      .set("x-actor", fx.actor)
+      .send({ name: "Deepgram", model: `fxok-${fx.suffix}`, costPerMinute: 0.0102 });
+    expect(res.status).toBe(201);
+    fx.adoptProvider(res.body.id);
+    expect(res.body.costPerMinute).toBe(0.0102);
+  });
+
   it("refuses a second row for the same vendor and model instead of minting another id", async () => {
     const model = `fxdup-${fx.suffix}`;
     const first = await request(server)
@@ -142,6 +167,17 @@ describe("PATCH /api/benchmark/providers/:providerId", () => {
     expect(audit.body).toHaveLength(1);
     expect((audit.body[0].beforeState as { costPerMinute: number }).costPerMinute).toBe(1);
     expect((audit.body[0].afterState as { costPerMinute: number }).costPerMinute).toBe(2.5);
+  });
+
+  // R-37: the update route carries the same schema and the same hole.
+  it("refuses an infinite price on update", async () => {
+    const provider = await fx.provider({});
+    const res = await request(server)
+      .patch(`/api/benchmark/providers/${provider.id}`)
+      .set("x-actor", fx.actor)
+      .set("Content-Type", "application/json")
+      .send(`{"costPerMinute":1e999}`);
+    expect(res.status).toBe(400);
   });
 
   it("answers 404 for an unknown provider and 400 for a bad price", async () => {
