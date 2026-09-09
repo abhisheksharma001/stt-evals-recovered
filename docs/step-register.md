@@ -4448,6 +4448,27 @@ pick from a typed enum; run the contract record or the bulk without the go-spend
 
 ### R-6 — Conventions never show as differences in the comparison unless asked
 
+**Status:** done 2026-09-09 (PR #122, `37fd46c7e40d`), deployed `3315a96acbb7 -> 37fd46c7e40d`,
+verified live on the running API: across 40 calls, 94 provider cells carry at least one
+marked op and **312 of 2,600 differing ops (12 %) are conventions** — mostly fillers
+(`uh`, `um`), plus real pairs like `because` / `'cause` and `the` / `the-`.
+**Learned:** (1) *the rule the step was written on was wrong, and the corpus said so.*
+Marking op-by-op — as this block, PRD v7 D2 and the v7 research note all specified —
+marks **nothing** on the two commonest pairs in the T-101 mining, because `1 bedroom`
+against `1-bedroom` is two words against one and aligns as a `sub` **plus** a `del`. The
+rule has to be per **run** of consecutive differing ops. The wording is corrected in this
+block and in PRD v7 D2, each saying what it used to read. (2) *A conservative rule beats
+a clever one:* a run holding one real error is not marked at all, so an error can never
+hide behind a convention beside it — the failure mode is showing too much, never hiding a
+mistake. (3) *The mark had to stay out of the arithmetic.* `wordsDiffer`,
+`werVsReference`, `editCounts` and every stored score row still count these ops, and the
+wire test asserts it — a mark that silently moved WER would have been a scoring change
+smuggled in as a UI change. (4) *`lib/scoring` has always had an import cycle*
+(`index.ts` re-exports `./equivalence`, `equivalence.ts` imports `./index`) and the
+cycle guard has never looked at `lib/` — logged 2026-09-09 in the backlog, alongside the
+one adjacent problem this step deliberately did not fix: the Rows view's `Differ / ref`
+column still prints the wire's `wordsDiffer`, so that table and the row under it now
+count differences two ways. That is R-2's question, not this step's.
 **PR:** one.
 **Depends on:** nothing.
 **Files:** `lib/scoring/src/index.ts` (`WordDiffOp` gains `convention: boolean`),

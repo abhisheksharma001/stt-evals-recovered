@@ -374,7 +374,7 @@ M-13 and M-14 parked.
 | R-3 | A3 production against the pack is the headline sentence | none — **shipped 2026-09-09, PR #119**; the artefact and both pages now open on Flux, 6.6 vs 2.6 |
 | R-4 | B1 the assistant card stops claiming a decision | none — **shipped 2026-09-09, PR #120**; live acceptance waits on O-84's recompute |
 | R-5 | D1 the judge reads the assistant's prompt and vocabulary | cents (go-spend) |
-| R-6 | D2 conventions hidden in the comparison view, toggle to show | none |
+| R-6 | D2 conventions hidden in the comparison view, toggle to show | none — **shipped 2026-09-09, PR #122**; 12 % of differing ops on the corpus are conventions, and the per-op rule this row specified marked none of the hyphen pairs — corrected to per-run above |
 | R-7 | E1 count the triage seeds (grill script) | none |
 | M-19a / M-19b | F2 the split of M-19 | **M-19a shipped 2026-09-09, PR #121** / M-19b later |
 | — | C2 twenty golds: a person's task, not a step | time |
