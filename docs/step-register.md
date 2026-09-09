@@ -6254,3 +6254,198 @@ code.
 **Must not:** paper over it with a retry, a longer timeout, or `.skip`. A flaky test that
 is silenced is worse than one that fails.
 
+---
+
+## Part U — Mark it here, change the agent there
+
+Asked for 2026-09-09: _"once we go into the result, we should be able to do it
+from there. We can mark what things we need to do or update the agent with."_
+Two answers followed: mark from **both** the per-call comparison and the
+Results card, and a mark must end up **applied to the live assistant in Vapi**.
+
+Three steps, in this order, because the write half has nothing to write until
+the mark half exists. U-1 and U-2 touch nothing outside this repo. U-3 is the
+first line of code this project has ever written to a production voice agent
+and needs its own go.
+
+**Evidence (visual-and-research, 2026-09-09).** Pattern to use: marking and
+applying are two separate surfaces with a before → after review in between —
+[ElevenLabs agent settings](https://mobbin.com/screens/ff16450b-9de9-4c60-8738-770be8df0a5c)
+(published-vs-current diff, a version description, then Publish),
+[Railway](https://mobbin.com/screens/131e5390-18b7-4eb6-9715-bb5d9497c7fb)
+(old → new per field),
+[Arcade](https://mobbin.com/screens/b850abdb-2418-47b3-adaf-eac362756c6d)
+(per-item checkboxes at confirm time, "12 of 12 selected"),
+[PlanetScale](https://mobbin.com/screens/f207fd84-f5ed-4596-9cae-efab4339d886)
+(counts by kind of change),
+[Jira](https://mobbin.com/screens/04674b74-506d-4bf1-82e4-606c4a540ab2) (the
+confirm screen states the side effects: "Email notifications will NOT be
+sent"),
+[Workable](https://mobbin.com/screens/a0b8a010-71fe-411d-8b2f-335b33306587).
+Patterns to avoid: applying from the same control that captured the mark —
+none of the six does it. What operators say: open-ended notes on individual
+traces first, group them into a taxonomy of under ten failure modes second,
+count the categories third to decide where to spend — and do not force the
+categories up front, "Building eval systems that improve your AI product"
+(Hamel Husain & Shreya Shankar, 2025-09-09,
+https://www.lennysnewsletter.com/p/building-eval-systems-that-improve-your-ai-product);
+their worked example is an apartment-leasing assistant, which is this corpus.
+Changes to the plan: the typed action became **optional** and the free-text
+note **mandatory** — U-1 was drafted the other way round, and the
+count-by-type view is the part that earns its keep. No evidence found for the
+capture control itself: nothing in the six screens marks a span inside a
+diff, so the affordance in U-1 is this project's own.
+
+---
+
+### U-1 — A mark, captured where the problem is visible
+
+**Status:** not started
+
+**PR:** two — `U-1a` schema + contract + routes, `U-1b` the two capture
+affordances and the list. Spends nothing.
+**Depends on:** nothing.
+**Files (U-1a):** new file lib/db/src/schema/agent-marks.ts,
+`lib/db/src/schema/index.ts`, `lib/api-spec/openapi.yaml`,
+new file artifacts/api-server/src/routes/agent-marks.ts,
+`artifacts/api-server/src/routes/index.ts`,
+new file artifacts/api-server/src/routes/__integration__/agent-marks.int.test.ts.
+**Files (U-1b):** `artifacts/stt-benchmark/src/components/provider-comparison-section.tsx`,
+`artifacts/stt-benchmark/src/pages/Rankings.tsx`, a new marks list component
+and its render test.
+
+**Today:** there is nowhere to write any of this down. The comparison view
+renders the judge's disputed spans (`JudgeKeyDifferences`,
+`provider-comparison-section.tsx:284`) and the Results card renders the
+assistant's live Vapi config (`Rankings.tsx:349-359`) — between them they hold
+the problem and the thing that would fix it, and neither can record a
+sentence. No table in `lib/db/src/schema/` stores an annotation of any kind.
+
+**Change:** one table, `agent_marks`:
+
+| column | type | why |
+| --- | --- | --- |
+| `id` | uuid pk | |
+| `assistantId` | text, **nullable** | the basket key. Null is real: calls imported with no `source_assistant_id` are the Results page's own "no assistant on file" bucket, and a mark on one of those is a note with no agent to apply it to. |
+| `callId` | uuid, nullable, `onDelete: "set null"` | set when marked from a comparison, null when marked from the Results card. **Not** `cascade` (which `benchmark_agent_scans` uses): a scan is about a call and dies with it, a mark is about the agent and outlives it. |
+| `span` | text, nullable | the disputed span the mark came from, copied at mark time. |
+| `note` | text, notNull | free text, always required. |
+| `actionType` | text, nullable | `keyterm` / `numerals` / `prompt`, or null for "a note, no action yet". |
+| `actionValue` | text, nullable | the term to boost, or the prompt change in words. Must be null when `actionType` is `numerals`. |
+| `status` | text, notNull, default `open` | `open` / `applied` / `dismissed`. Only U-3 ever writes `applied`. |
+| `createdByLabel` | text, nullable | same `x-actor` header convention as `audit_log`. |
+| `createdAt` / `updatedAt` | timestamptz | |
+
+Four routes: `POST /benchmark/agent-marks`,
+`GET /benchmark/agent-marks` (optional `assistantId`, `callId`, `status`
+filters), `PATCH /benchmark/agent-marks/{id}` (note, action, status),
+`DELETE /benchmark/agent-marks/{id}`. Every write lands an `audit_log` row,
+`entityType: "agent_mark"`.
+
+U-1b: a **Mark** control on each rendered `JudgeKeyDifferences` span
+(pre-filling `span` and `callId`) and one on the Results assistant card
+(pre-filling `assistantId` only), both opening the same small form — note
+first, action optional. Below the Results card, the assistant's open marks
+with a count per `actionType`, which is the count-the-categories view the
+evidence asks for.
+
+**Why this is worth doing beyond the ask:** R-20 measured that a keyterm list
+cannot be mined from this corpus, which is M-19b's second wall. A human
+marking terms as they read comparisons is the only remaining source of that
+list, so U-1 removes the wall without Tune mode.
+
+**Acceptance (U-1a):** WHEN a mark is POSTed with a note and no action THEN it
+SHALL be stored and returned by GET; AND WHEN one is POSTed with
+`actionType: "numerals"` and a non-null `actionValue` THEN the API SHALL
+answer **400**; AND WHEN one is POSTed with no `note`, or an empty/whitespace
+`note`, THEN the API SHALL answer **400**; AND WHEN a marked call is deleted
+THEN the mark SHALL survive with `callId` null.
+**Acceptance (U-1b):** WHEN the comparison renders a judge key-difference THEN
+a Mark control SHALL be present for it; AND WHEN the Results card renders an
+assistant with open marks THEN their count SHALL be shown broken down by
+action type.
+**Verify:** `pnpm run typecheck`; the new integration file through
+`tee` (never a short `tail`, never a re-run before the log is read);
+`cd artifacts/stt-benchmark && pnpm run test`.
+**Must not:** send anything to Vapi (U-3 owns that); write a mark into
+`gold_transcript` or any transcript field; make `actionType` mandatory; make a
+mark on an unassigned call an error — it is a real note.
+
+---
+
+### U-2 — What the change would actually do to the agent, before anything is sent
+
+**Status:** not started
+
+**PR:** one. Spends nothing — Vapi **reads** only, which are free.
+**Depends on:** U-1.
+**Files:** artifacts/api-server/src/routes/agent-marks.ts (from U-1a),
+`artifacts/api-server/src/lib/vapi.ts` (read side only),
+`lib/api-spec/openapi.yaml`, a new review component in
+`artifacts/stt-benchmark/src/`.
+
+**Today:** `fetchVapiAssistantTranscriber` (`vapi.ts:324-386`) reads five
+fields off the live assistant. Nothing computes what the open marks would turn
+those five into.
+
+**Change:** `GET /benchmark/agent-marks/preview?assistantId=…` reads the live
+assistant and returns, per field the open marks touch, the current value and
+the value the marks would produce — keyterms as added / already present /
+would exceed Deepgram's 100 (M-19a's cap), `numerals` as false → true, prompt
+marks as text for a human to act on, never as an automatic edit. The screen
+renders one row per field, before → after, each row selectable, with the
+selection carried to U-3.
+
+**Acceptance:** WHEN an assistant has open keyterm marks THEN the preview SHALL
+show its current keyterm list and the list after; AND WHEN a marked term is
+already on the assistant THEN it SHALL be listed as already present and SHALL
+NOT appear in the "after" as a duplicate; AND WHEN the marks would push the
+list past 100 terms THEN the preview SHALL say so and SHALL NOT silently
+truncate.
+**Verify:** `pnpm run typecheck`; a unit test on the diff function with a
+fixture assistant (no live call); `cd artifacts/stt-benchmark && pnpm run test`.
+**Must not:** issue any HTTP method but GET against Vapi; cache the assistant
+config in the database; treat a prompt mark as machine-applicable.
+
+---
+
+### U-3 — The first write to a live assistant
+
+**Status:** blocked — needs an explicit go from Abhishek before it ships.
+Reverses the posture recorded at `vapi.ts:356` ("Read-only; nothing here
+writes to Vapi.") and touches production voice agents taking real calls.
+
+**PR:** one.
+**Depends on:** U-2.
+**Files:** `artifacts/api-server/src/lib/vapi.ts`,
+artifacts/api-server/src/routes/agent-marks.ts (from U-1a), `lib/api-spec/openapi.yaml`,
+the U-2 review screen.
+
+**Today:** `vapi.ts` exports fetch/read functions and a private `vapiGet<T>`.
+There is no POST, PATCH, PUT or DELETE anywhere in it.
+
+**Change:** `POST /benchmark/agent-marks/apply` takes an assistant id and the
+selected mark ids, **re-reads the assistant immediately before writing**,
+merges only the fields the marks touch into the object it just read, and
+PATCHes the whole thing back. On success it writes an `audit_log` row carrying
+the full before and after transcriber object, and flips those marks to
+`applied`.
+
+**The hazard that decides the shape of this step:** `VapiTranscriberSpec`
+(`vapi.ts:325`) types only the fields this project reads — its own comment
+says anything else stays unread. A PATCH assembled from that type would
+silently delete every transcriber field we never modelled. The write must be
+read-modify-write on the raw JSON object, never a rebuild from our typed
+subset.
+
+**Acceptance:** WHEN apply runs THEN the request body SHALL contain every key
+the immediately-preceding read returned, with only the marked fields changed;
+AND WHEN the assistant changed between preview and apply THEN the apply SHALL
+be refused with **409** and the newer values shown; AND WHEN it succeeds THEN
+an `audit_log` row SHALL hold the complete before and after.
+**Verify:** the round trip against **one** assistant chosen by Abhishek, with
+its transcriber block read and recorded before and after; the 409 proved by
+mutating the assistant between preview and apply.
+**Must not:** ship before an explicit go; apply without the immediately
+preceding read; write a field no mark named; log, store or print a Vapi key;
+apply to more than one assistant per request.
