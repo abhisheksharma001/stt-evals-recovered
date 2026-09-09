@@ -1,3 +1,37 @@
+## Found 2026-09-09 (shipping M-17): a break test ran the thing it was proving must not run
+
+The M-17 break test mutated `scripts/daily-import.sh` by deleting its `jq`
+requirement, then ran the script with `PATH=/usr/bin:/bin` to see whether the guard was
+the only thing that reported a missing `jq`. `jq` lives at `/usr/bin/jq`. So the guard
+was gone AND `jq` was present: the script sailed past every check and executed the import
+it was written to hold -- **200 calls into the dev corpus at 2026-09-09T06 UTC**,
+`benchmark_calls` 176 -> 376, audio cache 1.9 GB. All 200 are `ready_to_run` with no
+provider result rows, so nothing scored moved; they are eligible for any future bulk that
+sweeps ready calls.
+
+**The rule this breaks, stated so it is not relearned:** a break test removes a guard, so
+it must be run somewhere the guard was the ONLY thing preventing the effect. Deleting a
+`jq` check and then supplying `jq` proves nothing and executes everything. For a script
+whose success path writes, the mutation has to be run against a sandbox -- a throwaway
+database or a stub API -- or not at all. *A sandbox is every path the code under test can
+reach, including its default arguments*: `STT_API` defaulted to the live API, and nothing
+in the harness overrode it.
+
+**Two gaps this exposed, neither fixed here:**
+1. **No shell script in this repo has any automated coverage.** `deploy-api.sh`,
+   `backup-db.sh` and `daily-import.sh` are all untested by CI, and the only way anyone
+   has ever exercised them is by running them for real. A stub-API harness would let the
+   import path be proved without writing; there is nowhere to put one today.
+2. **`daily-import.sh` has no dry-run.** `--dry-run` was rejected while writing it as
+   speculative, on the grounds that `/benchmark/vapi/preview` already is one. That is
+   true for a person and false for a test: there is no way to exercise the script's own
+   control flow to the edge of the import without crossing it.
+
+**Also noticed while measuring the damage:** `lib/api-spec/openapi.yaml` summarises
+`POST /benchmark/vapi/import` as importing calls "as needs_review". They land
+`ready_to_run`, deliberately (`artifacts/api-server/src/routes/benchmark.ts` line 856
+says why). The summary is stale, not the behaviour.
+
 ## Found 2026-09-09 (shipping R-6): one screen now counts differences two ways
 
 R-6 hides conventions in the two diff *views*, and deliberately leaves `wordsDiffer`

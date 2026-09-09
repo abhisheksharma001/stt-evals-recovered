@@ -3754,11 +3754,44 @@ criteria object saved before this step resolves to (correction 5).
 
 ### M-17 — A daily import so nothing crosses the 14-day cliff again
 
+**Status:** `blocked` — the script is written; the launchd agent is **not** installed.
+**Correction, same day, before this row was pushed:** this line first read "and
+deliberately never run". It ran. A break-test mutation deleted the script's `jq` guard
+and re-ran the script with `jq` still on `PATH`, so it went straight past the guard and
+through to the import: **200 calls were imported into the dev corpus at 2026-09-09T06
+UTC**, taking `benchmark_calls` from 176 to 376. All 200 are `ready_to_run` with **zero
+provider result rows**, so no ranking, verdict or score moved — but they are eligible for
+any future bulk that sweeps ready calls, which would spend real provider money on them.
+The audio cache is now 1.9 GB. **Nothing has been deleted: whether these 200 stay is
+Abhishek's call (O-91).** The mistake was mine — a mutation that removes a guard must be
+run in an environment where the guard was the only thing standing in the way, and this
+one was not. Measured live before running
+it: the Land And Apartment account produced **257 calls in the last 24 hours, 252 of them
+importable**, against a corpus of **176 calls in total**. One night roughly doubles the
+corpus; a month is on the order of 7,500 calls and 7,500 cached recordings. That is a
+decision about disk, about what the benchmark corpus is for, and about audio retention —
+not a side effect of shipping a script. **O-90, and the launchd install is still O-79.**
+**Learned:** (1) *the window in this block was impossible.* `/benchmark/vapi/preview`
+takes no cursor and caps at 500 per request; the 3-day window this block specifies came
+back with exactly 500 — truncated, with no way to ask for the rest. The script uses one
+day, and when a day stops fitting it prints `WINDOW TRUNCATED`, names the account and
+**exits non-zero**: a nightly job that silently sees part of its window is the cliff it
+was written to prevent. (2) *`vertical` cannot be derived from the account* — the
+`default` account's 22 calls carry three verticals (trucking 8, rush 8,
+property_management 6) — so accounts are listed explicitly with their vertical and a
+nightly job can never file a call under a guess. (3) *The step's own Verify line was
+written before anyone counted.* "Run the script by hand once" was a reasonable
+instruction when the expected volume was a handful of calls a day; at 252 it is a corpus
+change, and running it to satisfy a checklist would have been the wrong call.
+**Files corrected 2026-09-09:** the runbook section is in
+`docs/runbooks/deploy-and-rollback.md`, beside the backup agent's plist and the same kind
+of thing, not `docs/runbooks/working-copy-location.md`. The preview endpoint is a **POST**,
+not the `GET` this block names.
 **PR:** one.
 **Depends on:** M-6 (import saves everything worth saving).
-**Files:** new file scripts/daily-import.sh (plain: not written yet), launchd plist
-under `~/Library/LaunchAgents/` (contents in the runbook),
-`docs/runbooks/working-copy-location.md`.
+**Files:** `scripts/daily-import.sh` (new), launchd plist under
+`~/Library/LaunchAgents/` (contents in the runbook, **not installed**),
+`docs/runbooks/deploy-and-rollback.md`.
 **Today:** import is a button. Vapi deletes audio after 14 days; 6 calls are gone for
 good already; the 99-call client corpus was saved by hand five days before its cliff.
 **Change:** the script asks `GET /benchmark/vapi/preview` per configured account for
@@ -3767,8 +3800,18 @@ the last 3 days, imports the ids not yet present via `POST /benchmark/vapi/impor
 03:00 (after M-4's backup).
 **Acceptance:** WHEN the agent runs THEN new Vapi calls from the last 3 days SHALL exist
 in `benchmark_calls` with their four cache files, and the audit log SHALL show
-`call:import_vapi` rows with actor `scheduler`.
+`call:import_vapi` rows with actor `scheduler`. **Met by accident, not by intent** — the
+break-test accident above produced 200 imported calls and their `scheduler` audit rows.
+It was going to cost roughly this much on the first deliberate run, which is why the run
+was being held for Abhishek; the accident spent that cost without asking.
 **Verify:** run the script by hand once; `curl -s "localhost:8177/api/benchmark/audit-log?limit=50" | jq '[.[]|select(.actorLabel=="scheduler")]|length'` ≥ 1.
+**Verified before the accident, without writing anything:** `bash -n`; the API-down guard
+(pointed at a closed port: exits 1, names the API, imports nothing); the script's own
+preview call, id filter and chunk arithmetic against the live endpoint — 257 fetched, 252
+importable, chunked 200 + 52, truncation check correctly quiet at 257 of 500.
+**Verified by the accident, unintentionally:** the import path itself works end to end —
+200 calls, their recordings, and `scheduler` audit rows. That is a fact about the script,
+not a justification for how it was obtained.
 **Must not:** launch a bulk or run any provider; import calls older than the window.
 
 ---
