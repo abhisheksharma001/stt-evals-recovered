@@ -13,6 +13,12 @@ import type { FailureClass } from "../failure-class";
 // the failure M-10a had to unpick. Imported, not copied. (That they still
 // live in a vendor's file is logged in docs/backlog/good-to-have.md.)
 import { endOfAudioLatencyMs, parseWavPcm, type WavPcmInfo } from "./cartesia";
+// M-19a: the boost parameter is a property of the Deepgram MODEL, not of
+// the endpoint, and this adapter runs the same nova-3 the batch adapter
+// does. Imported from there for the same reason the two helpers above are
+// imported rather than copied: a second definition is how the two nova-3
+// rows start differing in something other than how the audio arrives.
+import { deepgramBoostParam } from "./deepgram";
 
 // Deepgram nova-3 over the streaming WebSocket, as opposed to deepgram.ts
 // which POSTs the whole file to the same /v1/listen path. Two adapters for
@@ -216,7 +222,8 @@ export function deepgramStreamSocketArgs(
     // partial would be the time to the first FINAL, silently.
     interim_results: "true",
   });
-  for (const term of opts.keywordBoosts ?? []) params.append("keywords", term);
+  const boostParam = deepgramBoostParam(opts.model);
+  for (const term of opts.keywordBoosts ?? []) params.append(boostParam, term);
   return {
     url: `wss://api.deepgram.com/v1/listen?${params.toString()}`,
     protocols: ["token", apiKey],

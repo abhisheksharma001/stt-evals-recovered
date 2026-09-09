@@ -49,6 +49,30 @@ export function parseDeepgramResponse(body: DeepgramResponse): {
 const PROVIDER_ID = "deepgram-nova-3";
 const API_KEY_ENV_VAR = "DEEPGRAM_API_KEY";
 
+/** M-19a: Deepgram spells vocabulary boosting differently per model
+ *  generation, and sending the wrong spelling is silent -- the parameter is
+ *  simply not the one that model reads, so the boost has no effect and the
+ *  request still succeeds.
+ *
+ *  Docs read 2026-09-09:
+ *    https://developers.deepgram.com/docs/keywords -- "Keywords is only
+ *      available for use with Nova-2, Nova-1, Enhanced, and Base speech to
+ *      text models. For Nova-3, use Keyterm Prompting."
+ *    https://developers.deepgram.com/docs/keyterm -- "Keyterm Prompting is
+ *      available for both monolingual and multilingual transcription using
+ *      the Nova-3 Models, as well as Flux", on pre-recorded and streaming
+ *      alike. So this rule is the same one on both endpoints, which is why
+ *      the batch and streaming adapters share it rather than each keeping
+ *      their own copy: the two nova-3 rows exist to be compared and must
+ *      differ only in how the audio arrives (M-11a's rule).
+ *
+ *  The MODEL decides, not the file. A model generation Deepgram's docs do
+ *  not name yet is a new fact for a new step, not a guess here -- it gets
+ *  `keywords`, which is what every model before nova-3 takes. */
+export function deepgramBoostParam(model: string): "keyterm" | "keywords" {
+  return /^(nova-3|flux)/.test(model) ? "keyterm" : "keywords";
+}
+
 /** T-104: Deepgram lists its models live (GET /v1/models, verified
  *  2026-08-30: 443 STT entries, keyed by canonical_name + architecture).
  *  Deduped to one row per canonical name; "latest" = the general model of
@@ -99,15 +123,20 @@ export const deepgramAdapter: ProviderAdapter = {
     if (!apiKey) throw new ProviderConfigError(PROVIDER_ID, API_KEY_ENV_VAR);
 
     const submittedAt = new Date().toISOString();
+    // Falls back to the historical hardcoded model so existing provider
+    // rows behave exactly as before; the catalog supplies the rest. Resolved
+    // once, because the boost parameter below is chosen from this same
+    // string -- reading input.model there instead would spell the boost for
+    // nova-2 on a row that is actually running the nova-3 default.
+    const model = input.model ?? "nova-3";
     const params = new URLSearchParams({
-      // Falls back to the historical hardcoded model so existing provider
-      // rows behave exactly as before; the catalog supplies the rest.
-      model: input.model ?? "nova-3",
+      model,
       smart_format: "true",
       diarize: String(input.diarize ?? true),
     });
     if (input.keywordBoosts?.length) {
-      for (const term of input.keywordBoosts) params.append("keywords", term);
+      const boostParam = deepgramBoostParam(model);
+      for (const term of input.keywordBoosts) params.append(boostParam, term);
     }
 
     const res = await fetch(`https://api.deepgram.com/v1/listen?${params.toString()}`, {
