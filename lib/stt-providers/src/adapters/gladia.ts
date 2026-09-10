@@ -10,6 +10,7 @@ import {
   classifyProviderHttpStatus,
   failureClassOf,
 } from "../failure-class";
+import { audioUploadBlob } from "../audio-blob";
 
 // Gladia: upload bytes first (POST /v2/upload -- returns a URL on Gladia's
 // own storage), submit a transcription job against that URL
@@ -75,7 +76,7 @@ export const gladiaAdapter: ProviderAdapter = {
     const submittedAt = new Date().toISOString();
 
     const uploadForm = new FormData();
-    uploadForm.append("audio", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
+    uploadForm.append("audio", audioUploadBlob(input.audioBytes), "audio.wav");
     const uploadRes = await fetch("https://api.gladia.io/v2/upload", {
       method: "POST",
       headers: { "x-gladia-key": apiKey },

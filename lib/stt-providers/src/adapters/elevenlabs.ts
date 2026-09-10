@@ -5,6 +5,7 @@ import {
   type ProviderTranscribeResult,
 } from "../types";
 import { classifyProviderHttpStatus } from "../failure-class";
+import { audioUploadBlob } from "../audio-blob";
 
 // ElevenLabs Scribe: POST /v1/speech-to-text (multipart upload).
 // Docs: https://elevenlabs.io/docs/api-reference/speech-to-text
@@ -51,7 +52,7 @@ export const elevenLabsAdapter: ProviderAdapter = {
     const submittedAt = new Date().toISOString();
 
     const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
+    form.append("file", audioUploadBlob(input.audioBytes), "audio.wav");
     form.append("model_id", input.model ?? "scribe_v2");
     form.append("diarize", String(input.diarize ?? true));
 
