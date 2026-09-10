@@ -7324,6 +7324,56 @@ and it does not re-route log output after the worker dies — once the formatter
 lines are dropped, and the operator gets one stderr line saying so. An API that keeps
 serving without pretty logs beats an API that exits.
 
+---
+
+### R-50 — A web build that is not pointed at an API stops answering its own API calls — **done**
+
+Same sampling pass as R-49, two more sections of `ox-alpha/bug-register-waves.md`:
+`custom-fetch.ts` and `vercel.json`. Their findings are separate entries but they are one
+failure, and neither half is dangerous alone.
+
+`vercel.json` rewrote `/(.*)` to `/index.html`. `main.tsx` only leaves same-origin mode
+under `if (apiBaseUrl)`, and `.github/workflows/deploy-web.yml` passes the repo variable to
+`--build-env` unconditionally — so an **unset** variable bakes same-origin into the bundle.
+Every `/api/...` request then landed on the catch-all and got **200 text/html**.
+
+`customFetch` finished it. The default `responseType` is `"auto"`, and `inferResponseType`
+classifies `text/html` as text, so `index.html` came back as a **successful string** and
+never became an `ApiError`. React Query cached the app's own HTML as `BenchmarkCall[]`. The
+one fact the operator needed — *this build is not pointed at an API* — was the one thing
+nothing reported.
+
+**Fixed at the root, not at the symptom.** The catch-all now excludes `/api`, so those
+paths fall to the host's 404, which the client already surfaces as `HTTP 404`. Nothing
+legitimate is served from `/api` on that host: the output is a static bundle
+(`dist/public`), there are no functions, and the API is a separate Express process.
+
+**No client-side media-type policy was added, and that was checked rather than assumed.**
+The spec declares exactly one `text/html` operation — T-32's verdict artefact — and its own
+summary says it is not part of the generated JSON client. So a blanket "reject HTML" in
+`customFetch` would have been a policy change to a shared, generic client to fix a hosting
+misconfiguration. The hosting misconfiguration was fixed instead.
+
+`setBaseUrl` now trims. The value arrives from a build-time variable CI injects verbatim, so
+a trailing newline or stray space was prepended to every path and broke every request.
+Whitespace-only is now the same as unset: same-origin.
+
+**`vercel.json` is left as strict JSON with no explanatory comments.** Whether Vercel
+tolerates comments there cannot be verified from this repo without a deploy, and a config
+file that fails to parse takes the whole web deploy with it. The reasoning lives in the
+test and here.
+
+**Proved by breaking it, both halves, on the committed tree.** Restoring `/(.*)` fails the
+API-path test; removing the trim fails three. stt-benchmark **188** (181 before), typecheck
+clean, all 7 structural checks pass.
+
+**What this does not do.** It does not give browser requests a timeout — `custom-fetch.ts`
+still calls bare `fetch` with no signal, so a hung connection still pins a query pending
+forever. That is the browser twin of B-38 and it needs a number nobody has chosen (O-119).
+And it does not touch `deploy-web.yml` passing an unset variable as an explicit empty
+`--build-env`, which is what makes the misconfiguration reachable in the first place —
+logged as O-121.
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
