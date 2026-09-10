@@ -7423,6 +7423,66 @@ unit 232, scoring 194, typecheck clean.
 saving is one allocation the size of the audio, per in-flight upload; that it is real
 follows from the types, not from a profile.
 
+---
+
+### R-52 — A failing request that will never succeed stops being asked three times — **done**
+
+Same sampling pass, the `App.ts` section. This one the waves file states three separate
+times, which turned out to be a fair reflection of how many places it reaches.
+
+`App.tsx` set one app-wide query default: `retry: 2`, a bare number. React Query applies a
+bare number to **every** failure, so a 404 was re-asked twice more, 1s and 2s later, and
+answered 404 each time.
+
+**The live path is one I created.** R-38 made an unknown run id answer 404 instead of a
+pending status. `ResultsDialog` (`pages/Runs.tsx:408`) polls that same endpoint every 3s for
+as long as the dialog is open. Open it against a run id that is gone and every 3s tick became
+three requests whose backoff waits overlap the next tick — triple the load and triple the log
+noise, for an answer that cannot change. `Dashboard.tsx:206` polls a bulk on the same terms
+every 5s.
+
+**The line drawn.** 408 and 429 are the only two 4xx codes that come out differently without
+the request changing: a timeout, and a rate limit that expires. Every other 4xx is the server
+saying the request itself is wrong. 5xx and transport failures — a dropped socket, DNS, the
+API being restarted by `deploy-api.sh` — keep both retries, because that is what a retry is
+for. A failure carrying no status at all is treated as having no server verdict, so it
+retries.
+
+**Read-after-write was considered and rejected as a reason to retry 404.** Every polling
+query in this app already re-asks on its own interval, which covers a row that appears a
+second later far better than a 1s backoff does.
+
+`ApiError` was not exported from `@workspace/api-client-react` — only its generated hooks
+and the base-url setters were. It is now, because the predicate and its test both need to
+name the type they are deciding about.
+
+**Proved by breaking it, and the third break found a real gap.** Removing the 4xx guard fails
+two tests; removing the 408/429 exception fails a third. But putting `retry: 2` back into
+`App.tsx` was caught by **nothing** — `noUnusedLocals` is `false` repo-wide, so the now-unused
+import raised no error, and no test could reach a module-scope `const` inside `App.tsx`. A
+correct policy nobody installed is not a fix. The client moved to `lib/query-client.ts` for
+exactly that reason; three more tests now assert the app's own defaults, and unwiring it fails
+two of them. stt-benchmark **203** (188 before), typecheck clean, 7 structural checks pass.
+
+Nothing else constructed a `QueryClient` — every other site uses `useQueryClient()` — so the
+move is a relocation, not a second client.
+
+**What this does not do.** It does not touch mutations, which were already `retry: 0`, and it
+does not change any per-query override — `layout.tsx:98`, `agent-mark.tsx:322`,
+`monthly-cost.tsx:60` and `Dashboard.tsx:229` all set their own `retry` deliberately and keep
+it. It also does not reduce the *polling* itself: `ResultsDialog`'s 3s interval against a
+dead run id still fires once every 3s forever while the dialog is open. That is one request
+instead of three, which is the whole claim.
+
+**No deploy.** This is web-only, and nothing is hosted — `deploy-web.yml` is manual-only with
+no `VERCEL_*` secrets (T-68), the same fact recorded against R-50. Verified by the test suite
+and typecheck, not by a live URL.
+
+**Files:** `artifacts/stt-benchmark/src/lib/retry-policy.ts`,
+`artifacts/stt-benchmark/src/lib/retry-policy.test.ts`,
+`artifacts/stt-benchmark/src/lib/query-client.ts`,
+`artifacts/stt-benchmark/src/App.tsx`, `lib/api-client-react/src/index.ts`
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
