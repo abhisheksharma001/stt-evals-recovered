@@ -7279,6 +7279,51 @@ rejection SHALL not surface as an unhandled rejection.
 
 ---
 
+---
+
+### R-49 — The logger cannot take the API down with it — **done**
+
+Found the same way R-48 was: sampling `ox-alpha/bug-register-waves.md`, this time its
+three-finding `logger.ts` section. All three are live, and two of them are the same bug at
+different removes. This is a **20-line file** that runs before any route exists.
+
+**A dead pino-pretty worker killed the API.** pino's `transport` option runs the formatter
+on a worker thread, and thread-stream's `ThreadStream` is an `EventEmitter`. When that
+worker dies it calls `emit("error", ...)`. Nothing listened, nothing installs an
+`uncaughtException` handler, so Node made it fatal. **Verified against a real worker, not a
+synthetic emit:** terminating it exits an unguarded process with `Error: the worker thread
+exited`, code 1. This is R-45's mechanism again — **the second unlistened `error` event
+found in this process**, and a third candidate for O-116's three stuck runs. None of the
+three is confirmed as their cause.
+
+**It is not dev-only, which is the part that matters.** `isProduction` is
+`NODE_ENV === "production"`, and *nothing sets NODE_ENV*: not the package `start` script,
+not `scripts/deploy-api.sh`. **Verified against the running deploy** — its log file is full
+of ANSI escape codes, so the API serving traffic right now is running the pretty transport
+on a worker thread. The waves entry called this a throughput complaint. It is a liveness
+one.
+
+**`LOG_LEVEL=` bricked boot.** `process.env.LOG_LEVEL ?? "info"` only falls back when the
+variable is *absent*. An empty value is a string, so pino received it and threw
+`default level: must be included in custom levels` at module load. Measured pino's real
+contract rather than assuming it: the accepted set is
+`trace/debug/info/warn/error/fatal/silent`, **case-insensitive** (`INFO` works) but
+**whitespace-intolerant** (`" info"` throws). So the fix trims and lowercases, and an
+unrecognised level now falls back with one line on stderr instead of taking the process
+with it.
+
+**Proved by breaking it, twice, on the committed tree.** Removing the listener fails two
+tests and raises two unhandled errors; restoring `?? "info"` fails four. api-server unit
+**232** (223 before), typecheck clean. The bundle `build.mjs` produces still resolves
+`pino.transport("pino-pretty")` and still boots — checked, because moving from the inline
+`transport` option to an explicit stream could have broken target resolution inside a
+bundle and silently only in production.
+
+**What this does not do.** It does not decide what NODE_ENV should be in the deploy (O-120)
+and it does not re-route log output after the worker dies — once the formatter is gone the
+lines are dropped, and the operator gets one stderr line saying so. An API that keeps
+serving without pretty logs beats an API that exits.
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine
