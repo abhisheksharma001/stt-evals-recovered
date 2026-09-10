@@ -4,6 +4,7 @@ import {
   GetBenchmarkCallParams,
   ListDisagreementSpansQueryParams,
   AttestBenchmarkCallDeidBody,
+  AttestBenchmarkCallDeidParams,
   SetRunArchivedBody,
 } from "@workspace/api-zod";
 import { describeInvalidInput, respondInvalid } from "./validation-error";
@@ -47,6 +48,40 @@ describe("describeInvalidInput", () => {
     );
   });
 
+  // O-122: the five handlers that parse the URL and the body separately have
+  // two errors and one answer. These are the real pair those routes produce.
+  it("describes both halves when the id and the body are each wrong", () => {
+    const params = AttestBenchmarkCallDeidParams.safeParse({ callId: "not-a-uuid" });
+    const body = AttestBenchmarkCallDeidBody.safeParse({});
+    if (params.success || body.success) throw new Error("expected both to be rejected");
+    expect(describeInvalidInput(params.error, body.error)).toBe(
+      "callId must be a valid uuid; approverLabel is required",
+    );
+  });
+
+  it("keeps the order it was given, so the URL is named before the body", () => {
+    const params = AttestBenchmarkCallDeidParams.safeParse({ callId: "nope" });
+    const body = AttestBenchmarkCallDeidBody.safeParse({});
+    if (params.success || body.success) throw new Error("expected both to be rejected");
+    expect(describeInvalidInput(body.error, params.error)).toBe(
+      "approverLabel is required; callId must be a valid uuid",
+    );
+  });
+
+  it("skips the half that parsed, without a gap or a stray separator", () => {
+    const body = AttestBenchmarkCallDeidBody.safeParse({});
+    if (body.success) throw new Error("expected this input to be rejected");
+    expect(describeInvalidInput(undefined, body.error)).toBe("approverLabel is required");
+    expect(describeInvalidInput(body.error, undefined)).toBe("approverLabel is required");
+  });
+
+  it("still says something when handed nothing at all", () => {
+    // Unreachable from the routes -- the guard only fires when one half
+    // failed -- but the sentence must never come out empty or `undefined`.
+    expect(describeInvalidInput()).toBe("The request is not valid.");
+    expect(describeInvalidInput(undefined)).toBe("The request is not valid.");
+  });
+
   it("joins several problems and caps the list", () => {
     const parsed = CreateBulkBody.safeParse({});
     if (parsed.success) throw new Error("expected this input to be rejected");
@@ -67,5 +102,18 @@ describe("respondInvalid", () => {
     respondInvalid(res as never, parsed.error);
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ error: "callId must be a valid uuid" });
+  });
+
+  it("passes every error it is handed through to the sentence", () => {
+    const res: { statusCode?: number; body?: unknown; status: unknown; json: unknown } = {
+      status: vi.fn(function (this: void, code: number) { res.statusCode = code; return res; }),
+      json: vi.fn(function (this: void, body: unknown) { res.body = body; return res; }),
+    };
+    const params = AttestBenchmarkCallDeidParams.safeParse({ callId: "nope" });
+    const body = AttestBenchmarkCallDeidBody.safeParse({});
+    if (params.success || body.success) throw new Error("expected both to be rejected");
+    respondInvalid(res as never, params.error, body.error);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: "callId must be a valid uuid; approverLabel is required" });
   });
 });

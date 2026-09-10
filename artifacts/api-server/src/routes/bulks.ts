@@ -824,7 +824,7 @@ router.post("/benchmark/bulk-templates/:templateId/launch", async (req, res): Pr
   const params = LaunchBulkTemplateParams.safeParse(req.params);
   const body = LaunchBulkTemplateBody.safeParse(req.body ?? {});
   if (!params.success || !body.success) {
-    res.status(400).json({ error: (params.error ?? body.error)?.message });
+    respondInvalid(res, params.error, body.error);
     return;
   }
   const [template] = await db

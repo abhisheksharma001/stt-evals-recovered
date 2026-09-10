@@ -7543,6 +7543,75 @@ from the same handler. That is a separate step, logged as O-122, not a drive-by.
 `artifacts/api-server/src/routes/__integration__/calls-write.int.test.ts`,
 `artifacts/api-server/src/routes/__integration__/writes.int.test.ts`
 
+### R-54 — One way to refuse a request — **done**
+
+**O-122.** T-150 made `respondInvalid` the one way a route answers a failed `safeParse`,
+because zod's `ZodError.message` is its own `JSON.stringify` of its issue array and that
+string reached a screen. Five handlers were missed, and they were missed for a reason: each
+parses the URL and the body *separately*, so each had two errors and one answer to give.
+
+    routes/agent.ts:135      POST /benchmark/agent/scans/{scanId}/approve
+    routes/agent.ts:183      POST /benchmark/agent/scans/{scanId}/reject
+    routes/benchmark.ts:670  POST /benchmark/calls/{callId}/attest-deid
+    routes/benchmark.ts:1442 PATCH /benchmark/providers/{providerId}
+    routes/bulks.ts:826      POST /benchmark/bulk-templates/{templateId}/launch
+
+All five wrote the same line:
+
+```ts
+res.status(400).json({ error: (params.error ?? body.error)?.message });
+```
+
+**Two defects in it, not one.** The issue array is the logged one. The second is `??`: it
+names the first failure and drops the other. Send a malformed id *and* an empty body and only
+the id is mentioned — so fixing the id earns a second 400 for something that was already
+wrong on the first request. Three of these five are R-53's routes, which is how it was found:
+a blank `approverLabel` answered in a sentence while a malformed one answered in machine
+internals, from the same handler.
+
+**Why `describeInvalidInput` became variadic.** Routing these through `respondInvalid`
+unchanged needs `(params.error ?? body.error)!` — a non-null assertion, and the dropped half
+kept. Taking `...errors: (ZodError | undefined)[]` removes both: the call site is
+`respondInvalid(res, params.error, body.error)`, the `undefined` half is skipped without a
+stray separator, and the existing dedup and five-issue cap apply across the pair. The other
+~40 single-argument call sites are untouched.
+
+**Not a leak, and checked rather than assumed.** These bodies were read before the change:
+none carries a secret (`UpdateBenchmarkProviderBody` is `disabled` / `costPerMinute` /
+`configNote`), and `describeIssue` echoes field names, type names and bounds — never a
+submitted value. So this is legibility, not a disclosure fix, and is not claimed as one.
+
+**Left alone deliberately.** `benchmark.ts:420` still logs `parsed.error.message` via
+`req.log.warn`. That is a server log, read by machines, where the issue array is the useful
+form. Ten `res.status(4xx).json({ error: err.message })` sites in `benchmark.ts` and
+`bulks.ts` are domain errors (`BulkSelectionEmptyError`, `VapiNoRecordingError`,
+`AgentConfigError`, …) thrown with a human sentence already — they are correct, and the new
+check is written not to flag them.
+
+**The check.** `check-response-edge.mjs` guarded only *success* payloads, which is exactly why
+T-150 could leave five handlers behind and CI stay green. It now also fails on a `.error`
+property access reaching `.message` inside a `.json(...)`. The first regex written for this
+was too loose and flagged all ten domain-error sites; the shipped one matches the parse
+result's failure half, not the `error:` key.
+
+**Proved by breaking it.** Each of the five sites put back to
+`(params.error ?? body.error)?.message` fails an integration test; the loose `??` restored in
+the helper fails the both-halves tests; the old line restored anywhere fails
+`check-response-edge`. The integration tests use ids that do not exist on purpose — the guard
+is the first statement in all five handlers, so a 400 there is the guard answering and
+nothing is looked up, launched or written. That matters most on the template-launch route,
+which spends provider money once it gets past this line. api-server unit **243** (238
+before), integration **198** (193 before), typecheck clean, 7 structural checks pass.
+
+**Deploy.** API change, deployed and verified by `healthz` `commitSha`.
+
+**Files:** `artifacts/api-server/src/lib/validation-error.ts`,
+`artifacts/api-server/src/lib/validation-error.test.ts`,
+`artifacts/api-server/src/routes/agent.ts`, `artifacts/api-server/src/routes/benchmark.ts`,
+`artifacts/api-server/src/routes/bulks.ts`,
+`artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`,
+`scripts/check-response-edge.mjs`
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

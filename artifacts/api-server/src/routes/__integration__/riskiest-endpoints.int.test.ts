@@ -431,3 +431,74 @@ describe("(h) the two routes that read their params raw, and what a refusal says
     expect(res.body.error.startsWith("[")).toBe(false);
   });
 });
+
+// O-122: the five handlers T-150 missed. Each parses the URL and the body
+// separately, so each had its own `(params.error ?? body.error)?.message` --
+// zod's issue array, and only ever one of the two failures. Every id below
+// is deliberately one that does not exist: the guard is the first statement
+// in all five handlers, so a 400 here is the guard answering and nothing is
+// looked up, launched or written. That is also what makes these tests worth
+// having -- a unit test on the helper cannot tell whether a route calls it.
+describe("(i) the five handlers that parse the URL and the body separately", () => {
+  const junk = "not-a-uuid";
+  const absent = "00000000-0000-4000-8000-000000000000";
+
+  // [route, method, path with a malformed id, path with a well-formed one]
+  const routes = [
+    ["approve", "post", `/api/benchmark/agent/scans/${junk}/approve`, `/api/benchmark/agent/scans/${absent}/approve`, "scanId"],
+    ["reject", "post", `/api/benchmark/agent/scans/${junk}/reject`, `/api/benchmark/agent/scans/${absent}/reject`, "scanId"],
+    ["attest-deid", "post", `/api/benchmark/calls/${junk}/attest-deid`, `/api/benchmark/calls/${absent}/attest-deid`, "callId"],
+  ] as const;
+
+  it("names the body's problem in a sentence, on every one of them", async () => {
+    for (const [name, method, , goodId] of routes) {
+      const res = await request(server)[method](goodId).send({});
+      expectStatus(res, 400, name);
+      expect(`${name} -> ${res.body.error}`).toBe(`${name} -> approverLabel is required`);
+    }
+  });
+
+  it("names both halves when the id and the body are each wrong", async () => {
+    for (const [name, method, badId, , idField] of routes) {
+      const res = await request(server)[method](badId).send({});
+      expectStatus(res, 400, name);
+      // The old `??` reported the id and stopped, so fixing the id earned a
+      // second 400 for the body -- which was already wrong the first time.
+      expect(`${name} -> ${res.body.error}`).toBe(
+        `${name} -> ${idField} must be a valid uuid; approverLabel is required`,
+      );
+    }
+  });
+
+  it("refuses a provider PATCH body in a sentence", async () => {
+    // providerId is a plain string in the contract, so only the body can
+    // fail here -- the half that is `undefined` must not leave a gap.
+    const res = await request(server)
+      .patch(`/api/benchmark/providers/does-not-exist-${suffix}`)
+      .send({ costPerMinute: "free" });
+    expectStatus(res, 400);
+    expect(res.body.error).toBe("costPerMinute must be a number, not a string");
+  });
+
+  it("refuses a template launch in a sentence, before it can spend anything", async () => {
+    const res = await request(server)
+      .post(`/api/benchmark/bulk-templates/${junk}/launch`)
+      .send({ confirm: "yes" });
+    expectStatus(res, 400);
+    expect(res.body.error).toBe("templateId must be a valid uuid; confirm must be a boolean, not a string");
+  });
+
+  it("never answers with zod's issue array, or with nothing at all", async () => {
+    const all = [
+      ...routes.map(([, method, badId]) => request(server)[method](badId).send({})),
+      request(server).patch(`/api/benchmark/providers/does-not-exist-${suffix}`).send({ disabled: "yes" }),
+      request(server).post(`/api/benchmark/bulk-templates/${junk}/launch`).send({ name: "" }),
+    ];
+    for (const res of await Promise.all(all)) {
+      expectStatus(res, 400);
+      expect(typeof res.body.error).toBe("string");
+      expect(res.body.error.startsWith("[")).toBe(false);
+      expect(res.body.error.length).toBeGreaterThan(0);
+    }
+  });
+});

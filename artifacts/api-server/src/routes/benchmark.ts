@@ -668,7 +668,7 @@ router.post("/benchmark/calls/:callId/attest-deid", async (req, res): Promise<vo
   const params = AttestBenchmarkCallDeidParams.safeParse(req.params);
   const body = AttestBenchmarkCallDeidBody.safeParse(req.body);
   if (!params.success || !body.success) {
-    res.status(400).json({ error: (params.error ?? body.error)?.message });
+    respondInvalid(res, params.error, body.error);
     return;
   }
 
@@ -1440,7 +1440,7 @@ router.patch("/benchmark/providers/:providerId", async (req, res): Promise<void>
   const params = UpdateBenchmarkProviderParams.safeParse(req.params);
   const body = UpdateBenchmarkProviderBody.safeParse(req.body);
   if (!params.success || !body.success) {
-    res.status(400).json({ error: (params.error ?? body.error)?.message });
+    respondInvalid(res, params.error, body.error);
     return;
   }
 

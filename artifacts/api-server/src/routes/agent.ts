@@ -133,7 +133,7 @@ router.post("/benchmark/agent/scans/:scanId/approve", async (req, res): Promise<
   const params = ApproveAgentScanParams.safeParse(req.params);
   const body = ApproveAgentScanBody.safeParse(req.body);
   if (!params.success || !body.success) {
-    res.status(400).json({ error: (params.error ?? body.error)?.message });
+    respondInvalid(res, params.error, body.error);
     return;
   }
 
@@ -181,7 +181,7 @@ router.post("/benchmark/agent/scans/:scanId/reject", async (req, res): Promise<v
   const params = RejectAgentScanParams.safeParse(req.params);
   const body = RejectAgentScanBody.safeParse(req.body);
   if (!params.success || !body.success) {
-    res.status(400).json({ error: (params.error ?? body.error)?.message });
+    respondInvalid(res, params.error, body.error);
     return;
   }
 
