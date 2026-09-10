@@ -11,6 +11,7 @@ import {
   classifyProviderHttpStatus,
   failureClassOf,
 } from "../failure-class";
+import { audioUploadBlob } from "../audio-blob";
 
 // Speechmatics batch: POST /v2/jobs (multipart `config` part plus a
 // `data_file` part with the raw audio), then poll GET /v2/jobs/{id} for
@@ -73,7 +74,7 @@ export const speechmaticsAdapter: ProviderAdapter = {
 
     const form = new FormData();
     form.append("config", JSON.stringify(config));
-    form.append("data_file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
+    form.append("data_file", audioUploadBlob(input.audioBytes), "audio.wav");
 
     // R-36 (ox-alpha B-86): this request creates a billable job. A throw
     // here used to escape transcribe() and be re-attempted, submitting a

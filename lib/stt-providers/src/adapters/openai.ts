@@ -7,6 +7,7 @@ import {
   submitLegThrewResult,
 } from "../types";
 import { classifyProviderHttpStatus } from "../failure-class";
+import { audioUploadBlob } from "../audio-blob";
 
 // OpenAI gpt-4o-transcribe / whisper: POST /v1/audio/transcriptions.
 // Takes uploaded bytes directly -- the executor already hands us the cached
@@ -65,7 +66,7 @@ export const openAiAdapter: ProviderAdapter = {
     const submittedAt = new Date().toISOString();
 
     const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(input.audioBytes)]), "audio.wav");
+    form.append("file", audioUploadBlob(input.audioBytes), "audio.wav");
     form.append("model", input.model ?? MODEL);
     form.append("response_format", "json");
 
