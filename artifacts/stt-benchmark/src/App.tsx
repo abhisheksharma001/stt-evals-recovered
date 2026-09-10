@@ -4,6 +4,7 @@ import { useLocation } from "wouter"
 import { Layout } from "@/components/layout"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { Toaster } from "@/components/ui/toaster"
+import { shouldRetryQuery } from "@/lib/retry-policy"
 
 import Dashboard from "@/pages/Dashboard"
 import NotFound from "@/pages/not-found"
@@ -39,7 +40,10 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000, // mutations invalidate explicitly; no need to refetch sooner
       gcTime: 5 * 60_000,
-      retry: 2,
+      // R-52: was a bare `retry: 2`, which re-asked permanent 4xx answers.
+      // A polling dialog on a 404 fired three requests per tick. See
+      // lib/retry-policy.ts for which codes still get the two retries.
+      retry: shouldRetryQuery,
       refetchOnWindowFocus: false, // single-user internal tool; focus storms just hammer Express
     },
     mutations: {
