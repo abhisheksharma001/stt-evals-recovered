@@ -7367,12 +7367,61 @@ test and here.
 API-path test; removing the trim fails three. stt-benchmark **188** (181 before), typecheck
 clean, all 7 structural checks pass.
 
+> **Correction, same session.** The R-50 write-up above describes the mechanism correctly but
+> left its severity unqualified. **Nothing is hosted on Vercel today.** T-68 (2026-08-29) made
+> `deploy-web.yml` `workflow_dispatch`-only precisely because no `VERCEL_*` secrets exist, and
+> its last five runs — all August, all `push` — failed. So R-50 disarms a trap before it can
+> fire; it did not fix a live outage. The `setBaseUrl` trim is latent in the same way: it
+> matters the first time a repo variable carries a stray newline. Both are worth having in
+> place before the first web deploy, which is when the failure would otherwise appear as
+> "the app loads but every page is empty".
+
 **What this does not do.** It does not give browser requests a timeout — `custom-fetch.ts`
 still calls bare `fetch` with no signal, so a hung connection still pins a query pending
 forever. That is the browser twin of B-38 and it needs a number nobody has chosen (O-119).
 And it does not touch `deploy-web.yml` passing an unset variable as an explicit empty
 `--build-env`, which is what makes the misconfiguration reachable in the first place —
 logged as O-121.
+
+---
+
+### R-51 — Audio uploads stop copying the whole recording an extra time — **done**
+
+Same sampling pass, the adapter sections. Most of what they claim is stale, and measuring
+that is the point:
+
+- **`assemblyai.ts`'s P1 "submit-leg throws escape try, executor auto-resubmits a billed
+  job" is already fixed** — that is R-36 (B-86), with `submit-leg.test.ts` covering all
+  three adapters it named.
+- **`openai.ts`'s "submittedAt stamped pre-download for upload adapters vs URL-pass peers"
+  is refuted as written.** All three adapters checked stamp `submittedAt` immediately before
+  their request, and Deepgram — the supposed URL-pass peer — posts bytes too. The line
+  numbers in the entry predate the current file.
+
+What is live is the buffer copying. Each of the four upload adapters built its multipart
+part as `new Blob([new Uint8Array(input.audioBytes)])`. `audioBytes` is a `Buffer`, a Buffer
+*is* a Uint8Array, so `new Uint8Array(buffer)` copies every byte; the Blob constructor then
+copies them again. **Two full copies of a call recording per cell, times
+PROVIDER_CONCURRENCY.**
+
+**The register's own suggested fix does not compile, which is the part worth recording.**
+`new Blob([buffer])` fails: `BlobPart` wants `Uint8Array<ArrayBuffer>`, Node types a Buffer
+as `Buffer<ArrayBufferLike>`, and TypeScript cannot prove that is not SharedArrayBuffer-
+backed. The copy was doing double duty as a type workaround and could not simply be deleted.
+A view over the same memory satisfies both, with one narrow cast.
+
+**Verified rather than assumed:** a Buffer that is a view into Node's shared pool (offset 8
+of a 64-byte allocation) still uploads 8 bytes, not 64. Getting that wrong would attach
+unrelated process memory to an outbound provider POST, so it has its own test.
+
+**Proved by breaking it.** Restoring the copying form fails the two tests that assert the
+view shares the Buffer's memory — the only assertions that can see the change at all, since
+the Blob constructor copies once regardless. stt-providers **128** (122 before), api-server
+unit 232, scoring 194, typecheck clean.
+
+**What this does not claim.** No measurement of the memory actually saved under load. The
+saving is one allocation the size of the audio, per in-flight upload; that it is real
+follows from the types, not from a profile.
 
 ## Part A — Setup page
 
