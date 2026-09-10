@@ -7483,6 +7483,66 @@ and typecheck, not by a live URL.
 `artifacts/stt-benchmark/src/lib/query-client.ts`,
 `artifacts/stt-benchmark/src/App.tsx`, `lib/api-client-react/src/index.ts`
 
+---
+
+### R-53 — An approval has to name who gave it — **done**
+
+Found by sampling the same waves file, then verified live against the code rather than taken
+on the file's word. Three routes read `approverLabel`, trimmed it, and wrote the trimmed
+value as the person who decided something, without ever re-checking what trimming left:
+
+- `routes/agent.ts:153` (approve) → `decidedByLabel` + audit `actorLabel`
+- `routes/agent.ts:197` (reject) → the same two
+- `routes/benchmark.ts:684` (attest-deid) → `deIdAttestedByLabel` /
+  `deIdSecondApproverLabel` + audit `actorLabel`
+
+**Neither surface was protected by the contract.** `AgentScanDecision` carries no `minLength`
+at all, so `""` itself reached the handler. `AttestDeidBody` has `minLength: 2`, which counts
+characters — and `"  "` is two characters. So the strictest-looking of the three was the one
+where a blank label mattered most: attest-deid is the two-person de-identification gate
+(FR-C3), whose entire content is *who* said the recording carries no PII. A row attributed to
+`""` satisfies that gate on paper and names nobody.
+
+**The codebase had already answered this one file over.** `routes/agent-marks.ts:112` trims a
+mark's note, re-checks the trimmed value, and carries the comment *"The contract's
+`minLength: 1` rejects "" but not "   ""*. R-53 is that check, moved into
+`lib/approver-label.ts` because three sites need it, with one shared message.
+
+**The spec was deliberately not touched.** Adding `minLength: 2` to `AgentScanDecision` for
+symmetry would have copied a rule that has already failed once — it does not reject `"  "`.
+The rule that *is* precise, `pattern: "\\S"`, has no precedent anywhere in this 2,400-line
+spec, orval's zod output contains no `.regex(` today, and both generated packages regenerate
+under `clean: true` — a large blast radius for a check the handler must do anyway, since only
+the handler knows what the trimmed value will be. The contract stays as it is; the server
+states the rule.
+
+**Blank is the only refusal.** A one-character label is a real name and is kept. This is not
+the place to decide what a person may call themselves.
+
+**Proved by breaking it.** Putting `.trim()` back at each of the three sites fails an
+integration test that would otherwise have written an unattributed decision — and the
+integration tests assert the absence, not just the status: after a refusal, the call is still
+unattested, the scan is still `flagged`, and the audit trail for that entity is empty. The
+unit tests alone would **not** have caught an unwired site, which is R-52's lesson applied
+before it could bite: `lib/approver-label.test.ts` (6) tests the rule, the two integration
+tests test that all three routes actually use it. api-server unit **238** (232 before),
+integration **193** (191 before), typecheck clean, 7 structural checks pass.
+
+**Adjacent, logged not fixed.** These three handlers answer a failed `safeParse` with
+`(params.error ?? body.error)?.message` — zod's `JSON.stringify` of its issue array, the exact
+machine-internals string T-150 replaced with `respondInvalid`. Five sites were missed:
+`agent.ts:135`, `agent.ts:179`, `benchmark.ts:670`, `benchmark.ts:1438`, `bulks.ts:827`. Three
+of them are these routes, so a bad body and a blank body now answer in two different styles
+from the same handler. That is a separate step, logged as O-122, not a drive-by.
+
+**Deploy.** API change, deployed and verified by `healthz` `commitSha`.
+
+**Files:** `artifacts/api-server/src/lib/approver-label.ts`,
+`artifacts/api-server/src/lib/approver-label.test.ts`,
+`artifacts/api-server/src/routes/agent.ts`, `artifacts/api-server/src/routes/benchmark.ts`,
+`artifacts/api-server/src/routes/__integration__/calls-write.int.test.ts`,
+`artifacts/api-server/src/routes/__integration__/writes.int.test.ts`
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

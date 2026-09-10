@@ -30,6 +30,7 @@ import {
   RejectAgentScanResponse,
 } from "@workspace/api-zod";
 import { actorFromRequest, writeAudit } from "../lib/audit";
+import { BLANK_APPROVER_MESSAGE, trimmedApproverLabel } from "../lib/approver-label";
 import { respondInvalid } from "../lib/validation-error";
 import { respondJson } from "../lib/respond";
 import type { ZodInput } from "@workspace/api-zod";
@@ -150,7 +151,11 @@ router.post("/benchmark/agent/scans/:scanId/approve", async (req, res): Promise<
     return;
   }
 
-  const approver = body.data.approverLabel.trim();
+  const approver = trimmedApproverLabel(body.data.approverLabel);
+  if (approver === null) {
+    res.status(400).json({ error: BLANK_APPROVER_MESSAGE });
+    return;
+  }
   // 2026-08-27: gold-free -- there is nothing left to write. Approve is now
   // purely an audit-trail acknowledgment that a human looked at the flags
   // and the agent's pick and agreed with it (or at least isn't disputing
@@ -194,7 +199,11 @@ router.post("/benchmark/agent/scans/:scanId/reject", async (req, res): Promise<v
     return;
   }
 
-  const approver = body.data.approverLabel.trim();
+  const approver = trimmedApproverLabel(body.data.approverLabel);
+  if (approver === null) {
+    res.status(400).json({ error: BLANK_APPROVER_MESSAGE });
+    return;
+  }
   const [rejected] = await db
     .update(benchmarkAgentScansTable)
     .set({ status: "rejected", decidedByLabel: approver, decidedAt: new Date() })

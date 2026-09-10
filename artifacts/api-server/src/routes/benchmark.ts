@@ -30,6 +30,7 @@ import { assistantSignals } from "../lib/assistant-signals";
 import { proxyAgreement } from "../lib/proxy-agreement";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
 import { respondVapiError } from "../lib/vapi-error-response";
+import { BLANK_APPROVER_MESSAGE, trimmedApproverLabel } from "../lib/approver-label";
 import { listOpenAiJudgeModels, OpenAiModelsError, PINNED_AGENT_MODELS } from "../lib/openai-models";
 import { callComparison, cellRetryable } from "../lib/call-comparison";
 import { callDisagreement } from "../lib/call-disagreement";
@@ -681,7 +682,11 @@ router.post("/benchmark/calls/:callId/attest-deid", async (req, res): Promise<vo
     return;
   }
   const current = existing[0];
-  const approver = body.data.approverLabel.trim();
+  const approver = trimmedApproverLabel(body.data.approverLabel);
+  if (approver === null) {
+    res.status(400).json({ error: BLANK_APPROVER_MESSAGE });
+    return;
+  }
 
   if (!current.deIdAttestedByLabel) {
     const [call] = await db

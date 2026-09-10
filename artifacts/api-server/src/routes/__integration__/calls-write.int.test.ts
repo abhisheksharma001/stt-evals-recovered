@@ -172,4 +172,40 @@ describe("POST /api/benchmark/calls/:callId/attest-deid", () => {
       .send({ approverLabel: `Bob-${fx.suffix}` });
     expect(res.status).toBe(404);
   });
+
+  // R-53. The contract's `minLength: 2` counts characters, and two spaces are
+  // two characters -- so a blank approver reached the handler, was trimmed to
+  // "", and was stored as the person who attested that a caller's recording
+  // carries no PII. That is the one field on this route that matters.
+  it("refuses a blank approver and attests nothing", async () => {
+    const call = await fx.call();
+    const attest = (approverLabel: string) =>
+      request(server).post(`/api/benchmark/calls/${call.id}/attest-deid`).send({ approverLabel });
+
+    const spaces = await attest("   ");
+    expect(spaces.status).toBe(400);
+    expect(spaces.body.error).toMatch(/approverLabel is blank/);
+
+    const tab = await attest("\t\n");
+    expect(tab.status).toBe(400);
+
+    // "" never gets that far -- the contract's minLength stops it -- but it
+    // must still be a 400 and must still attest nothing.
+    const empty = await attest("");
+    expect(empty.status).toBe(400);
+
+    const after = await request(server).get(`/api/benchmark/calls/${call.id}`);
+    expect(after.body.deIdAttestedByLabel).toBeNull();
+    expect(after.body.deIdAttestedAt).toBeNull();
+
+    const audit = await request(server)
+      .get("/api/benchmark/audit-log")
+      .query({ entityType: "call", entityId: call.id });
+    expect(audit.body).toEqual([]);
+
+    // A real name still works right after -- the refusal left no state behind.
+    const real = await attest(`  Bob-${fx.suffix}  `);
+    expect(real.status).toBe(200);
+    expect(real.body.deIdAttestedByLabel).toBe(`Bob-${fx.suffix}`);
+  });
 });
