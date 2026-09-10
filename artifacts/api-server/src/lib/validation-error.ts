@@ -64,11 +64,23 @@ function describeIssue(issue: ZodIssue): string {
   }
 }
 
-export function describeInvalidInput(error: ZodError): string {
+/**
+ * O-122: takes more than one error because five handlers parse the URL and
+ * the body separately and then have two failures to answer with one status.
+ * They used to write `(params.error ?? body.error)?.message`, which names
+ * only the first of the two -- send a malformed id *and* an empty body and
+ * the body's problem is never mentioned, so fixing the id earns a second
+ * 400 for something that was already wrong on the first request. Every
+ * error given here is described, in the order given, and `undefined` is
+ * accepted so a call site can pass both halves without narrowing first.
+ */
+export function describeInvalidInput(...errors: (ZodError | undefined)[]): string {
   const seen: string[] = [];
-  for (const issue of error.issues) {
-    const text = describeIssue(issue);
-    if (!seen.includes(text)) seen.push(text);
+  for (const error of errors) {
+    for (const issue of error?.issues ?? []) {
+      const text = describeIssue(issue);
+      if (!seen.includes(text)) seen.push(text);
+    }
   }
   if (seen.length === 0) return "The request is not valid.";
   const shown = seen.slice(0, MAX_ISSUES).join("; ");
@@ -77,6 +89,6 @@ export function describeInvalidInput(error: ZodError): string {
 }
 
 /** The one way a route answers a failed `safeParse`. */
-export function respondInvalid(res: Response, error: ZodError): void {
-  res.status(400).json({ error: describeInvalidInput(error) });
+export function respondInvalid(res: Response, ...errors: (ZodError | undefined)[]): void {
+  res.status(400).json({ error: describeInvalidInput(...errors) });
 }

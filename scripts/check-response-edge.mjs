@@ -49,6 +49,21 @@ for (const name of readdirSync(ROUTES)) {
     if (/\.json\(\s*\w+\.parse\(/.test(line)) {
       offences.push(`routes/${name}:${i + 1}: .json(Schema.parse(...)) -- the parse alone is runtime-only; use respondJson`);
     }
+    // O-122: a ZodError's own `.message` is its `JSON.stringify`ed issue
+    // array, and it reaches a screen. T-150 replaced it with a sentence
+    // everywhere except five handlers that parsed the URL and the body
+    // separately and wrote `(params.error ?? body.error)?.message` -- which
+    // also named only the first of the two failures. Narrow on purpose: an
+    // inline `res.status(404).json({ error: "Run not found" })` is still
+    // fine, and so is `{ error: err.message }` for a domain error thrown
+    // with a sentence of its own (BulkSelectionEmptyError and friends).
+    // What is matched is a `.error` *property access* -- a parse result's
+    // failure half -- reaching `.message`.
+    if (/\.json\([^;]*\.error\s*\)?\s*\??\.message/.test(line)) {
+      offences.push(
+        `routes/${name}:${i + 1}: .json(... zodError.message ...) -- that is zod's issue array; use respondInvalid(res, ...errors)`,
+      );
+    }
   });
 }
 
@@ -63,8 +78,9 @@ if (filesRead === 0 || respondJsonSites === 0) {
 if (offences.length) {
   for (const o of offences) console.error(o);
   console.error(
-    `\ncheck-response-edge: ${offences.length} success response(s) bypass respondJson. ` +
-      "respondJson(res, Schema, value[, status]) keeps the payload compile-checked against the contract.",
+    `\ncheck-response-edge: ${offences.length} response(s) bypass respondJson/respondInvalid. ` +
+      "respondJson(res, Schema, value[, status]) keeps the payload compile-checked against the contract; " +
+      "respondInvalid(res, ...errors) turns a failed safeParse into a sentence.",
   );
   process.exit(1);
 }
