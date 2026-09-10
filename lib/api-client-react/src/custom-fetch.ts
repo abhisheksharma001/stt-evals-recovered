@@ -24,9 +24,17 @@ let _authTokenGetter: AuthTokenGetter | null = null;
  *
  * Useful for Expo bundles that need to call a remote API server.
  * Pass `null` to clear the base URL.
+ *
+ * R-50: the value is trimmed. It arrives from a build-time environment
+ * variable that CI injects verbatim -- `.github/workflows/deploy-web.yml`
+ * passes `--build-env VITE_API_BASE_URL="$VITE_API_BASE_URL"` -- so a repo
+ * variable with a trailing newline or a stray space used to be prepended to
+ * every path and break every request, with nothing to read but a malformed
+ * URL. A value that is only whitespace is the same as unset: same-origin.
  */
 export function setBaseUrl(url: string | null): void {
-  _baseUrl = url ? url.replace(/\/+$/, "") : null;
+  const trimmed = url?.trim().replace(/\/+$/, "");
+  _baseUrl = trimmed ? trimmed : null;
 }
 
 /**
