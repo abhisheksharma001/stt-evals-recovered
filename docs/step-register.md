@@ -7456,10 +7456,16 @@ second later far better than a 1s backoff does.
 and the base-url setters were. It is now, because the predicate and its test both need to
 name the type they are deciding about.
 
-**Proved by breaking it.** The three tests that drive a real `QueryClient` through the real
-retry machinery — not the predicate alone — count attempts: 1 for a 404, 3 for a 503, 3 for
-a transport failure. Restoring `retry: 2` makes the 404 case count 3. stt-benchmark **200**
-(188 before), typecheck clean.
+**Proved by breaking it, and the third break found a real gap.** Removing the 4xx guard fails
+two tests; removing the 408/429 exception fails a third. But putting `retry: 2` back into
+`App.tsx` was caught by **nothing** — `noUnusedLocals` is `false` repo-wide, so the now-unused
+import raised no error, and no test could reach a module-scope `const` inside `App.tsx`. A
+correct policy nobody installed is not a fix. The client moved to `lib/query-client.ts` for
+exactly that reason; three more tests now assert the app's own defaults, and unwiring it fails
+two of them. stt-benchmark **203** (188 before), typecheck clean, 7 structural checks pass.
+
+Nothing else constructed a `QueryClient` — every other site uses `useQueryClient()` — so the
+move is a relocation, not a second client.
 
 **What this does not do.** It does not touch mutations, which were already `retry: 0`, and it
 does not change any per-query override — `layout.tsx:98`, `agent-mark.tsx:322`,
@@ -7474,6 +7480,7 @@ and typecheck, not by a live URL.
 
 **Files:** `artifacts/stt-benchmark/src/lib/retry-policy.ts`,
 `artifacts/stt-benchmark/src/lib/retry-policy.test.ts`,
+`artifacts/stt-benchmark/src/lib/query-client.ts`,
 `artifacts/stt-benchmark/src/App.tsx`, `lib/api-client-react/src/index.ts`
 
 ## Part A — Setup page

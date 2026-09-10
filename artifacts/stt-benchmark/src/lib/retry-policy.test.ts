@@ -1,4 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
+
+import { queryClient } from "./query-client";
 import { ApiError } from "@workspace/api-client-react";
 import { describe, expect, it } from "vitest";
 
@@ -101,5 +103,36 @@ describe("a real QueryClient using this policy", () => {
     const { run, attempts } = clientWithCounter(new TypeError("Failed to fetch"));
     await expect(run()).rejects.toBeInstanceOf(TypeError);
     expect(attempts()).toBe(1 + MAX_QUERY_RETRIES);
+  });
+});
+
+// Breaking the policy back to `retry: 2` in the app's own client was caught by
+// nothing before these existed: `noUnusedLocals` is false, and the client was a
+// module-scope const inside App.tsx that no test could reach. A correct policy
+// nobody installed is not a fix.
+describe("the app's own QueryClient", () => {
+  const defaults = queryClient.getDefaultOptions();
+
+  it("uses this policy, not a bare number", () => {
+    expect(defaults.queries?.retry).toBe(shouldRetryQuery);
+  });
+
+  it("asks a 404 endpoint once through the app's real defaults", async () => {
+    let attempts = 0;
+    await expect(
+      queryClient.fetchQuery({
+        queryKey: ["app-defaults-404"],
+        retryDelay: 0,
+        queryFn: () => {
+          attempts += 1;
+          return Promise.reject(apiError(404, "Not Found"));
+        },
+      }),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(attempts).toBe(1);
+  });
+
+  it("still never auto-retries a mutation", () => {
+    expect(defaults.mutations?.retry).toBe(0);
   });
 });
