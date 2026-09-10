@@ -168,4 +168,38 @@ describe("POST /api/benchmark/agent/scans/:scanId/approve | reject", () => {
       .send({ approverLabel: fx.actor });
     expect(unknown.status).toBe(404);
   });
+
+  // R-53. `AgentScanDecision` carries no `minLength` at all, so even "" got
+  // through the contract, was trimmed to "" again, and was written as the
+  // human who decided -- in the one place whose entire purpose is recording
+  // that a human decided.
+  it("refuses a blank approver and decides nothing", async () => {
+    const call = await fx.call();
+    const flagged = await fx.scan(call.id, { status: "flagged", agentPickReasoning: "reads better" });
+
+    for (const [route, label] of [
+      ["approve", "   "],
+      ["approve", ""],
+      ["reject", "   "],
+      ["reject", "\t"],
+    ] as const) {
+      const res = await request(server)
+        .post(`/api/benchmark/agent/scans/${flagged.id}/${route}`)
+        .send({ approverLabel: label });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/approverLabel is blank/);
+    }
+
+    // Still undecided, and nothing in the trail claiming otherwise.
+    const scans = await request(server).get("/api/benchmark/agent/scans").query({ callId: call.id });
+    expect(scans.body[0]).toMatchObject({ id: flagged.id, status: "flagged", decidedByLabel: null });
+    expect(await auditFor("agent_scan", flagged.id)).toEqual([]);
+
+    // The same scan still takes a real decision afterwards.
+    const ok = await request(server)
+      .post(`/api/benchmark/agent/scans/${flagged.id}/approve`)
+      .send({ approverLabel: `  ${fx.actor}  ` });
+    expect(ok.status).toBe(200);
+    expect(ok.body.decidedByLabel).toBe(fx.actor);
+  });
 });
