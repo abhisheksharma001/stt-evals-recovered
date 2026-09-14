@@ -8665,12 +8665,25 @@ regenerate.
 
 ### W-3 — The seeded sampler
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-14 (PR #TBD). Spent nothing. Learned: the seed the step
+prescribed, `${scheduleId}:${day}`, is not enough on its own. One stream shared across
+the agent groups makes every agent's draw depend on which OTHER agents had calls that
+day, so an agent going quiet silently re-draws its neighbour -- reproducible only while
+the roster never changes, which is the one thing a daily watch cannot promise. The
+assistant id is now part of the seed sentence, and the test that catches it is the
+roster-change one, not the plain determinism one. Second: `lib/scoring/src/verdict.ts`
+already carries the same mulberry32 privately, and it is deliberately NOT shared -- that
+copy exists so a statistic is reproducible, this one decides which calls money is spent
+on, and wiring them together would let a bootstrap tweak re-draw every schedule. Third:
+`resolveCriteriaSelection` returns call ids only, with no assistant id, so W-5 owns the
+join that feeds this function; the sampler declares its own two-field input type rather
+than importing one.
 **PR:** one.
 **Depends on:** W-1 (the criteria it is fed are resolved by the matcher, not by it).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part A.
-**Files:** a new pure module beside `artifacts/api-server/src/lib/triage-signals.ts`
-(plain name: watch-sampler) and its unit test beside it, following
+**Files:** `artifacts/api-server/src/lib/watch-sampler.ts` and
+`artifacts/api-server/src/lib/watch-sampler.test.ts`, beside
+`artifacts/api-server/src/lib/triage-signals.ts` and following
 `artifacts/api-server/src/lib/assistant-signals-aggregate.test.ts`.
 
 **Today:** nothing picks "N calls per agent". `resolveCriteriaSelection` returns every
@@ -8680,6 +8693,8 @@ matching call.
 callIds, matched, shortfall }[] }`. Group by `sourceAssistantId`; per group, Fisher–Yates
 with a 32-bit PRNG seeded from a string hash of `${scheduleId}:${day}`; take
 `sampleSize`; `shortfall = max(0, sampleSize − matched)`. No I/O, no Date.now().
+(Shipped with the agent's id appended to the seed sentence -- see Status for why
+`${scheduleId}:${day}` alone was wrong.)
 
 **Acceptance:** WHEN called twice with the same inputs THEN it SHALL return identical ids
 in identical order; WHEN an assistant has fewer matching calls than `sampleSize` THEN it
