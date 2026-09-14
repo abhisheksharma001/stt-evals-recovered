@@ -8715,7 +8715,7 @@ draws move. Restore with `git checkout -- artifacts/api-server/src/lib/watch-sam
 
 ### W-4 — Import becomes a library function (a move, no behaviour change)
 
-**Status:** done 2026-09-14 (PR #PENDING). Spent nothing. Learned three things this
+**Status:** done 2026-09-14 (PR #183). Spent nothing. Learned three things this
 step's own text did not anticipate. First: the acceptance sentence named "the existing
 preview/import integration cases", and there were none -- measured before the move, no
 integration file mentioned `/benchmark/vapi/preview` or `/benchmark/vapi/import` at all,
