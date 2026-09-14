@@ -401,6 +401,31 @@ better than it is. Both readings point away from building a trigger next.
 monitor idea is answered and Part E closes. If not, the next step in this area is a look
 at the hybrid thresholds, not a monitor.
 
+### E1 re-run — 2026-09-14 (W-0, PRD v8)
+
+Same script, same rule, read-only against `stt_evals` after M-17's accidental import
+grew the corpus to **376 calls**. 347 scans, 156 calls with a latest scan: 144 flagged,
+6 clean, 5 errored and 1 rejected (both dropped, as before). Signal columns as stored:
+successEvaluation true 277 / null 58 / false 41; endedReason assistant-forwarded-call
+214, customer-ended-call 116, assistant-ended-call 20, null 14, silence-timed-out 9,
+two rarer values 3; transcriber latency measured on 235 (median 419 ms), interruptions
+on 121 (median 1), tool calls on 300 (median 1).
+
+| signal | pop | sel | sel+flag | sel+ok | prec | rec | base | lift | head | seed? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| success evaluation is false | 122 | 24 | 21 | 3 | 87.5 % | 17.8 % | 96.7 % | −9.2 pt | 3.3 pt | **untestable** |
+| assistant was interrupted ≥ 1 | 40 | 39 | 36 | 3 | 92.3 % | 97.3 % | 92.5 % | −0.2 pt | 7.5 pt | **untestable** |
+| transcriber latency above corpus median | 86 | 46 | 42 | 4 | 91.3 % | 51.9 % | 94.2 % | −2.9 pt | 5.8 pt | **untestable** |
+| ended reason is not the customer hanging up | 145 | 91 | 87 | 4 | 95.6 % | 62.6 % | 95.9 % | −0.3 pt | 4.1 pt | **untestable** |
+| no tool call was made | 88 | 16 | 15 | 1 | 93.8 % | 18.1 % | 94.3 % | −0.6 pt | 5.7 pt | **untestable** |
+
+**Seeds found: 0. Untestable: 5 of 5.** The base rate is 92.5–96.7 %, so the headroom is
+3.3–7.5 points and the 10-point margin is out of reach for every signal — now including
+interruptions, which had 11.5 points of headroom on the 176-call corpus and has 7.5 here.
+The decision above stands unchanged, and open question 5 is still the thing to answer.
+PRD v8 (`docs/PRD-v8-watch.md` §3) builds nothing on the flag bit: its daily number is the
+peer-flag *rate* per 100 words, and its sample is criteria-then-random.
+
 The script is permanent and free. Re-run it when the corpus grows or the flag rate moves:
 
 ```
