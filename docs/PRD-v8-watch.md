@@ -299,8 +299,8 @@ the same day twice.
   three days of call-level detail. The 30-day line therefore never reads bulks: when a
   launched bulk settles, the tick copies the day's four T-19 totals per (agent,
   provider) — `peerFlags`, `words`, `callsScored`, `cleanCalls` — onto the ledger row.
-  Raising the cap (to 10, say) is a separate decision for Abhishek and only lengthens how
-  far back Layer 3 can click.
+  **Decided 2026-09-14: the cap goes to 10** (W-13, ordered before W-5). That only
+  lengthens how far back Layer 3 can click; the 30-day line never depended on it.
 
 ### Part C — Three layers, no more
 
@@ -392,11 +392,25 @@ thought: we do not compete with the leaderboards; we **borrow one to check our m
 and say so.
 
 Caveats stated on the screen: 16 kHz mic audio, not 8 kHz telephony; English; single
-distribution. It calibrates the *method*, not the client's numbers. Two more facts
-before any spend: the dataset card shows **no licence field** (the benchmark code is
-BSD-2) — read it from the repository and get a yes; and with `MAX_LIVE_BULKS = 3` the
-calibration bulk must not be created while three client bulks are live, or it evicts
-one.
+distribution. It calibrates the *method*, not the client's numbers.
+
+**Licence and spend — decided 2026-09-14 (D-15), on Abhishek's delegation ("u decide").**
+Checked at the source: neither `pipecat-ai/stt-benchmark-data` nor its parent
+`pipecat-ai/smart-turn-data-v3.1-train` carries a licence field on the Hub; the
+benchmark code is BSD-2 and its README publishes the set as "publicly available on
+Hugging Face" for exactly this use. The decision, and the rule W-12 is written to:
+
+- **Internal method check only.** The audio and the transcripts are never redistributed,
+  never served to a client, never leave the gitignored audio cache; the calls carry
+  `vertical: public_benchmark` and `sourceProvider: pipecat` and every client view
+  excludes them. What gets published is aggregate arithmetic — per-provider WER, per-
+  provider peer-flag rate, and the Spearman between them.
+- **The spend is approved once, with a ceiling.** ≈ $6.32 at today's seven prices; the
+  script refuses above **$7** and refuses unless it can print the exact minutes first. It
+  runs only after W-13 (so it evicts no client bulk) and only once; a second run is a new
+  decision.
+- If either dataset gains a licence that forbids this, the calls are deleted and the
+  "Method check" line says so with the date.
 
 ---
 
@@ -416,7 +430,8 @@ one.
 ## 7. Steps
 
 The steps are register rows — `docs/step-register.md`, **Part W** — because a step that
-lives in two places drifts. Order and dependencies:
+lives in two places drifts. **Start here after compaction: W-1**, then the table's
+order. Order and dependencies:
 
 | step | one line | depends on | spends |
 |---|---|---|---|
@@ -425,6 +440,7 @@ lives in two places drifts. Order and dependencies:
 | W-2 | `watch_schedules` table and CRUD | — | nothing |
 | W-3 | the seeded sampler, pure | W-1 | nothing |
 | W-4 | preview/import move from the route into a library function (no behaviour change) | — | nothing |
+| W-13 | `MAX_LIVE_BULKS` 3 → 10 (decided 2026-09-14) — before W-5 so daily bulks keep ten days of call detail | — | nothing |
 | W-5 | the ledger and the tick; settled totals on the ledger row | W-2, W-3, W-4 | caps, in production only |
 | W-6 | Orgs layer: overview endpoint, baseline rule, tick bar | W-5 | nothing |
 | W-7 | agent-day layer: per-assistant verdict, "what else happened" strip | W-6, S-AB1 | nothing |
@@ -432,7 +448,7 @@ lives in two places drifts. Order and dependencies:
 | W-9 | CLI, plus the `run-now` route | W-8, W-2, W-5 | nothing by itself |
 | W-10 | MCP server: six reads, one ledger-gated write | W-8, W-9 | nothing by itself |
 | W-11 | Claude Code plugin (new repo) | W-10 | nothing |
-| W-12 | public calibration set — the receipt for §1b | — | **≈ $6.32, on "go spend"** |
+| W-12 | public calibration set — the receipt for §1b | W-13 | **≈ $6.32 once, approved 2026-09-14 by delegation, ceiling $7** |
 
 ## 8. Evidence — daily watch, org → agent → call
 
@@ -486,10 +502,10 @@ changes the named step, nothing else.
    holds: 0 seeds on 376 calls), O-79 (import schedule), O-97 (disagreement only,
    permanently — answered "yes" on 2026-09-09; Part F respects it: the only gold is the
    public set's).
-7. **`MAX_LIVE_BULKS`:** raise it from 3 (recommended 10) so Layer 3 call detail outlives
-   three daily bulks? The 30-day line does not depend on it (W-5's ledger totals).
-8. **The Pipecat dataset licence:** the card shows none; read from the repository and
-   say yes before W-12 spends.
+7. **`MAX_LIVE_BULKS`:** **answered 2026-09-14: 10.** Step W-13.
+8. **The Pipecat dataset licence and the W-12 spend:** **delegated 2026-09-14 ("u
+decide") and decided as D-15** — see Part F. Internal method check only, aggregate
+   numbers published, one run, ceiling $7, after W-13.
 
 ## 10. Deliberately not doing, or parked
 

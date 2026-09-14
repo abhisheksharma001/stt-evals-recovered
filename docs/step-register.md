@@ -8506,9 +8506,10 @@ count-only read instead, adding one if none exists. Do not present a pick as a w
 ## Part W — Watch: a daily sample of real calls, per org, per agent (`docs/PRD-v8-watch.md`)
 
 Written 2026-09-14 from the grill in `docs/PRD-v8-watch.md`. Order: W-0 (done) → W-1 → W-2 →
-W-3 → W-4 → W-5 → W-6 → W-7, then the code surface W-8 → W-9 → W-10 → W-11, and W-12 (the
-public calibration set) as soon as "go spend" is given — it is the receipt for the USP and
-sits in the order wherever that go lands. Each is one PR.
+W-3 → W-4 → **W-13** → W-5 → W-6 → W-7, then the code surface W-8 → W-9 → W-10 → W-11, and
+W-12 (the public calibration set) any time after W-13 — its spend was approved by
+delegation on 2026-09-14 (PRD v8 §9 Q8, D-15) with a $7 ceiling, so it is the receipt for
+the USP and can go early. Each is one PR.
 
 The steps proceed on the assumptions in PRD v8 §9 until Abhishek overrides one: the "500"
 is a per-policy, per-day ceiling on the sample size; the scheduler runs inside the API
@@ -8526,7 +8527,8 @@ Three facts every step below is written against, read from the tree 2026-09-14:
 - `MAX_LIVE_BULKS = 3` (`artifacts/api-server/src/lib/bulks.ts`): FR-BLK-10 evicts the
   oldest bulk — its runs, results, scores and rankings — when a fourth is created. A
   daily bulk per policy therefore keeps **three days** of call-level detail, no more. W-5
-  makes the ledger, not the bulk, the 30-day history.
+  makes the ledger, not the bulk, the 30-day history. **Decided 2026-09-14: the cap goes
+  to 10** — W-13, ordered before W-5.
 - `createBulkFromCriteria` accepts explicit `callIds` in the criteria (the type in
   `lib/db/src/schema/benchmark-bulks.ts` carries `callIds?: string[]`), so a sampled set
   can be frozen without inventing a new create path.
@@ -8770,9 +8772,9 @@ the double-tick test fails. Restore.
 default; call a provider in any test; backfill more than one day; pass `confirm: true`;
 write a transcript, a name or a number into `detail`; touch a Vapi assistant (D-12).
 
-**Decision for Abhishek, not taken here:** raise `MAX_LIVE_BULKS` (3) so Layer 3 call
-detail survives longer than three days — 10 keeps a working week and a half of daily
-bulks; the ledger makes the 30-day line independent of it either way.
+**Decided 2026-09-14: `MAX_LIVE_BULKS` goes to 10 — W-13, ordered before this step.**
+The ledger makes the 30-day line independent of it either way; 10 keeps a working week
+and a half of daily bulks clickable down to the call.
 
 ### W-6 — Orgs: the first layer
 
@@ -8957,10 +8959,11 @@ tools alone.
 
 ### W-12 — The public calibration set: does the no-gold rank agree with gold WER?
 
-**Status:** not started. **Spends ≈ $6.32** once (all seven ready providers), after an
-explicit "go spend".
+**Status:** not started. **Spends ≈ $6.32** once (all seven ready providers). The spend
+was **approved by delegation on 2026-09-14** ("u decide" — PRD v8 §9 Q8, decision D-15)
+with a hard **$7 ceiling** the script enforces; a second run is a new decision.
 **PR:** one.
-**Depends on:** nothing technically; ordered as early as the go allows.
+**Depends on:** W-13 (so the calibration bulk evicts no client bulk).
 **Spec:** `docs/PRD-v8-watch.md` §1d and §5 Part F.
 **Files:** a new script beside `scripts/src/import-vapi-calls.ts` (plain name:
 import-public-set), `lib/api-spec/openapi.yaml` (the `Vertical` enum gains
@@ -9000,9 +9003,59 @@ then, after the go, the bulk's manifest listing 1,000 calls.
 **Prove it by breaking it:** after committing, remove the `--go-spend` check; the script's
 own dry-run test fails. Restore.
 
-**Must not:** run without "go spend"; run before the dataset licence has been read from
-the repository and Abhishek has said yes; let a `public_benchmark` call enter any client
-org's verdict, trend, overview or baseline (W-6 excludes by `sourceProvider`; the
-`accountLabel` criterion keeps it out of every template); be created while three live
-bulks exist — FR-BLK-10 would evict a client's bulk to make room, so the script refuses
-when `GET /benchmark/bulks` shows three.
+**Must not:** price above $7 and continue; run more than once; redistribute, serve or
+copy the audio or the transcripts anywhere outside the gitignored audio cache (D-15:
+internal method check only — neither dataset carries a licence field, checked at the
+source 2026-09-14; the code is BSD-2 and its README publishes the set for this use);
+let a `public_benchmark` call enter any client org's verdict, trend, overview or
+baseline (W-6 excludes by `sourceProvider`; the `accountLabel` criterion keeps it out
+of every template); be created while `MAX_LIVE_BULKS` live bulks exist — FR-BLK-10
+would evict a client's bulk to make room, so the script refuses when
+`GET /benchmark/bulks` shows the cap.
+
+### W-13 — `MAX_LIVE_BULKS` goes from 3 to 10
+
+**Status:** not started. Spends nothing. Decided by Abhishek 2026-09-14 ("10").
+**PR:** one.
+**Depends on:** nothing; **ordered before W-5** so the first daily bulks are not evicted
+on day four.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part B and §9 Q7.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (the constant and its comment),
+`artifacts/api-server/src/routes/__integration__/bulk-eviction.int.test.ts` (imports
+the constant; if any case seeds a literal three, make it seed `MAX_LIVE_BULKS`),
+`artifacts/stt-benchmark/src/pages/Bulks.tsx` (the copy "Creating a 4th bulk evicts the
+oldest (FR-BLK-10)").
+
+**Today:** `MAX_LIVE_BULKS = 3`, chosen in PRD v2 (FR-BLK-10, "max-3 auto-delete") when a
+bulk was a hand-launched thing a person made a few times a month. Eviction is a
+thin-wrapper delete — runs, results, scores, rankings; never `benchmark_calls` (AC-2.8
+asserts the call rows are byte-identical). The 20,000-row result cap PRD v2 also named
+(FR-EXC-8) was never implemented — there is no such constant in the tree — so the only
+thing a larger cap presses on is disk, and a bulk's rows are small (238 rows ≈ 1 MB,
+measured 2026-08-26).
+
+**Change:** the constant becomes 10 and its comment says why (daily watch bulks; ten
+days of call-level detail; the ledger holds the 30-day line regardless). The UI copy
+says "11th". No other behaviour changes: eviction still takes the oldest by
+`created_at`, in the same transaction, and still never touches the corpus.
+
+**Acceptance:** WHEN 10 bulks exist and an 11th is created THEN the oldest SHALL be
+evicted, exactly one, AND every `benchmark_calls` row SHALL be byte-identical before and
+after; AND WHEN 9 exist THEN creating a 10th SHALL evict nothing.
+
+**Verify:**
+```
+pnpm run typecheck
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+pnpm --filter @workspace/stt-benchmark test
+```
+A pass: the eviction cases green with the new number; the Bulks render test green with
+the new copy.
+
+**Prove it by breaking it:** after committing, set the constant back to 3; the "nine
+live bulks, a tenth evicts nothing" case fails. Restore with
+`git checkout -- artifacts/api-server/src/lib/bulks.ts`.
+
+**Must not:** change what eviction deletes; touch `BULK_COST_THRESHOLD_CENTS` or any
+other constant in the file; make the cap env-tunable (a number nobody re-derives is a
+number somebody sets to 1,000).
