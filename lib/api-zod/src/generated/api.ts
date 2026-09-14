@@ -1334,6 +1334,10 @@ export const listBulksResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const listBulksResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const listBulksResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const listBulksResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const ListBulksResponseItem = zod.object({
@@ -1354,6 +1358,8 @@ export const ListBulksResponseItem = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(listBulksResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(listBulksResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(listBulksResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1385,6 +1391,10 @@ export const createBulkBodyCriteriaMaxDurationSecondsMin = 0;
 
 export const createBulkBodyCriteriaMinCustomerWordsMin = 0;
 
+export const createBulkBodyCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const createBulkBodyCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 export const createBulkBodyShardSizeMax = 500;
 
@@ -1410,6 +1420,8 @@ export const CreateBulkBody = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(createBulkBodyCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(createBulkBodyCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(createBulkBodyCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1427,6 +1439,10 @@ export const createBulkResponseSelectionCriteriaMinDurationSecondsMin = 0;
 export const createBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const createBulkResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
+export const createBulkResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const createBulkResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
 
 
 
@@ -1448,6 +1464,8 @@ export const CreateBulkResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(createBulkResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(createBulkResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(createBulkResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1477,6 +1495,10 @@ export const previewBulkSelectionBodyCriteriaMaxDurationSecondsMin = 0;
 
 export const previewBulkSelectionBodyCriteriaMinCustomerWordsMin = 0;
 
+export const previewBulkSelectionBodyCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const previewBulkSelectionBodyCriteriaMinProdAssistantInterruptionsMin = 0;
+
 export const previewBulkSelectionBodyMinDurationSecondsMin = 0;
 
 export const previewBulkSelectionBodyMaxDurationSecondsMin = 0;
@@ -1498,6 +1520,8 @@ export const PreviewBulkSelectionBody = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(previewBulkSelectionBodyCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(previewBulkSelectionBodyCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(previewBulkSelectionBodyCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1545,6 +1569,10 @@ export const getBulkResponseOneSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const getBulkResponseOneSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const getBulkResponseOneSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const getBulkResponseOneSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const GetBulkResponse = zod.object({
@@ -1565,6 +1593,8 @@ export const GetBulkResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(getBulkResponseOneSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(getBulkResponseOneSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(getBulkResponseOneSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1634,6 +1664,10 @@ export const launchBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const launchBulkResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const launchBulkResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const launchBulkResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const LaunchBulkResponse = zod.object({
@@ -1654,6 +1688,8 @@ export const LaunchBulkResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(launchBulkResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(launchBulkResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(launchBulkResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1687,6 +1723,10 @@ export const retryBulkFailedResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const retryBulkFailedResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const retryBulkFailedResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const retryBulkFailedResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const RetryBulkFailedResponse = zod.object({
@@ -1707,6 +1747,8 @@ export const RetryBulkFailedResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(retryBulkFailedResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(retryBulkFailedResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(retryBulkFailedResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1740,6 +1782,10 @@ export const cancelBulkResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const cancelBulkResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const cancelBulkResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const cancelBulkResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const CancelBulkResponse = zod.object({
@@ -1760,6 +1806,8 @@ export const CancelBulkResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(cancelBulkResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(cancelBulkResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(cancelBulkResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1899,6 +1947,10 @@ export const getBulkManifestResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const getBulkManifestResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const getBulkManifestResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const getBulkManifestResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const GetBulkManifestResponse = zod.object({
@@ -1920,6 +1972,8 @@ export const GetBulkManifestResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(getBulkManifestResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(getBulkManifestResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(getBulkManifestResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -1960,6 +2014,10 @@ export const listBulkTemplatesResponseSelectionCriteriaMaxDurationSecondsMin = 0
 
 export const listBulkTemplatesResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const listBulkTemplatesResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const listBulkTemplatesResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const ListBulkTemplatesResponseItem = zod.object({
@@ -1979,6 +2037,8 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(listBulkTemplatesResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -2005,6 +2065,10 @@ export const createBulkTemplateBodyCriteriaMaxDurationSecondsMin = 0;
 
 export const createBulkTemplateBodyCriteriaMinCustomerWordsMin = 0;
 
+export const createBulkTemplateBodyCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const createBulkTemplateBodyCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 export const createBulkTemplateBodyShardSizeMax = 500;
 
@@ -2030,6 +2094,8 @@ export const CreateBulkTemplateBody = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(createBulkTemplateBodyCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(createBulkTemplateBodyCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(createBulkTemplateBodyCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -2046,6 +2112,10 @@ export const createBulkTemplateResponseSelectionCriteriaMinDurationSecondsMin = 
 export const createBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin = 0;
 
 export const createBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin = 0;
+
+export const createBulkTemplateResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const createBulkTemplateResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
 
 
 
@@ -2066,6 +2136,8 @@ export const CreateBulkTemplateResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(createBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(createBulkTemplateResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(createBulkTemplateResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()
@@ -2112,6 +2184,10 @@ export const launchBulkTemplateResponseSelectionCriteriaMaxDurationSecondsMin = 
 
 export const launchBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin = 0;
 
+export const launchBulkTemplateResponseSelectionCriteriaMinProdTranscriberLatencyMsMin = 0;
+
+export const launchBulkTemplateResponseSelectionCriteriaMinProdAssistantInterruptionsMin = 0;
+
 
 
 export const LaunchBulkTemplateResponse = zod.object({
@@ -2132,6 +2208,8 @@ export const LaunchBulkTemplateResponse = zod.object({
   "successEvaluation": zod.string().optional(),
   "requireCustomerAudio": zod.boolean().optional(),
   "minCustomerWords": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMinCustomerWordsMin).optional(),
+  "minProdTranscriberLatencyMs": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMinProdTranscriberLatencyMsMin).optional(),
+  "minProdAssistantInterruptions": zod.number().min(launchBulkTemplateResponseSelectionCriteriaMinProdAssistantInterruptionsMin).optional(),
   "callIds": zod.array(zod.string()).optional(),
   "resolvedCallIds": zod.array(zod.string()).optional(),
   "resolvedAt": zod.coerce.date().nullish()

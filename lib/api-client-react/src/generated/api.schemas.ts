@@ -1488,6 +1488,10 @@ export interface BulkSelectionCriteria {
   requireCustomerAudio?: boolean;
   /** @minimum 0 */
   minCustomerWords?: number;
+  /** @minimum 0 */
+  minProdTranscriberLatencyMs?: number;
+  /** @minimum 0 */
+  minProdAssistantInterruptions?: number;
   callIds?: string[];
   resolvedCallIds?: string[];
   /** @nullable */

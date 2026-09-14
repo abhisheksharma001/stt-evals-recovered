@@ -58,6 +58,21 @@ export type BulkSelectionCriteria = {
   // keeps resolving to the calls it always resolved to -- same rule as
   // requireCustomerAudio above, for the same reason.
   minCustomerWords?: number;
+  // W-1 (PRD v8 Part A): floors on what PRODUCTION already measured about the
+  // call, captured by M-7a from Vapi's own performanceMetrics -- the
+  // transcriber latency the live agent saw, and how often the caller talked
+  // over it. A call matches when its stored value is >= the floor.
+  //
+  // NULL in either column means "never measured" (M-7a), never zero, so a
+  // null NEVER satisfies a floor and is counted under its own named bucket
+  // instead of being lumped in with calls that measured low -- the same rule
+  // T-13 applies to an unknown outcome. 235 of 376 calls carry a latency and
+  // 121 carry an interruption count, so the difference is not academic.
+  //
+  // Absent -> no floor. Every template saved before W-1 keeps matching
+  // exactly what it matched.
+  minProdTranscriberLatencyMs?: number;
+  minProdAssistantInterruptions?: number;
   // Explicit corpus picks; merged with filter matches.
   callIds?: string[];
   // Frozen resolution, set on bulks only, at creation time.
