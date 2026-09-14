@@ -8665,7 +8665,7 @@ regenerate.
 
 ### W-3 — The seeded sampler
 
-**Status:** done 2026-09-14 (PR #TBD). Spent nothing. Learned: the seed the step
+**Status:** done 2026-09-14 (PR #182). Spent nothing. Learned: the seed the step
 prescribed, `${scheduleId}:${day}`, is not enough on its own. One stream shared across
 the agent groups makes every agent's draw depend on which OTHER agents had calls that
 day, so an agent going quiet silently re-draws its neighbour -- reproducible only while
