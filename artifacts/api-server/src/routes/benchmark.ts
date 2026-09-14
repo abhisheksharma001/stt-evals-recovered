@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 // T-153: each serializer declares the shape it produces as the contract's own
 // input type, so a required field cannot fall out of a serializer without
 // failing tsc -- the error lands at the source, not at 20 call sites. The
@@ -20,7 +20,6 @@ import {
   benchmarkRunsTable,
   benchmarkScoresTable,
   db,
-  type BenchmarkCallRow,
   type BenchmarkRunRow,
 } from "@workspace/db";
 import { getProviderAdapter, listProviderAdapters, providerIdForModel, vendorOf, type ProviderModelOption } from "@workspace/stt-providers";
@@ -103,52 +102,33 @@ import {
   AnalyzeResultFailureParams,
   AnalyzeResultFailureResponse,
 } from "@workspace/api-zod";
+import { serializeCall } from "../lib/serialize-call";
+import {
+  importVapiCalls,
+  previewVapiCalls,
+  UnknownVapiAccountError,
+  VapiSourceError,
+} from "../lib/vapi-import";
 import { benchmarkPlan } from "../lib/benchmark-plan";
 import { buildRunManifest } from "../lib/manifest";
-
-// How many Vapi calls the import route re-fetches/inserts concurrently.
-// Vapi's API tolerates modest parallelism; 4 keeps a 100-call backfill at
-// ~25 round trips instead of 100 without risking 429 storms. Clamped like
-// the executor knobs (threshold review 2026-08-25) -- a typo of 400 here
-// would hammer Vapi from every import click.
-const VAPI_IMPORT_CONCURRENCY = (() => {
-  const raw = process.env.VAPI_IMPORT_CONCURRENCY;
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  if (!Number.isFinite(parsed) || parsed <= 0) return 4;
-  return Math.min(parsed, 16);
-})();
-
 import {
-  draftTranscriptOf,
-  durationSecondsOf,
-  successEvaluationOf,
   fetchVapiAssistants,
-  fetchVapiCall,
-  fetchVapiCalls,
   listVapiAccounts,
-  recordingUrlOf,
   resolveFreshRecordingUrl,
-  transcriberOf,
-  VapiConfigError,
   VapiNoRecordingError,
   VapiRequestError,
-  type VapiCall,
 } from "../lib/vapi";
 import { actorFromRequest, writeAudit } from "../lib/audit";
 import { AgentConfigError, AgentRequestError, JUDGE_MODEL, analyzeFailure, matchKnownFailure, pricedAgentModels } from "../lib/agent";
 import { logger } from "../lib/logger";
 import { executeBenchmarkRun } from "../lib/run-executor";
-import { drainWithConcurrency } from "../lib/concurrency";
-import { cacheCallSidecars, getOrCacheAudioBytes, audioCachePathFor, isAudioCached, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds } from "../lib/audio-cache";
+import { audioCachePathFor, isAudioCached, isCustomerAudioCached, listCachedCallIds, listCachedCustomerCallIds } from "../lib/audio-cache";
 import { listBenchmarkCallRows, listBenchmarkedCallIds } from "../lib/calls";
-import { readProductionSignals } from "../lib/production-signals";
 import { rescueUncachedAudio } from "../lib/audio-rescue";
-import { classifyAudioAttemptFailure, recordAudioCacheAttempt } from "../lib/audio-attempt";
 import { cachedVendorModels } from "../lib/model-list-cache";
 import { defaultProviders } from "../lib/default-providers";
 import { respondInvalid } from "../lib/validation-error";
 import { respondJson } from "../lib/respond";
-import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat as fsStat } from "node:fs/promises";
 
@@ -235,75 +215,6 @@ function serializeProvider(provider: typeof benchmarkProvidersTable.$inferSelect
     configNote: provider.configNote,
     hasAdapter: Boolean(adapter),
     apiKeyConfigured: Boolean(adapter && process.env[adapter.apiKeyEnvVar]),
-  };
-}
-
-// M-6: the two cache flags travel together in one object rather than as two
-// adjacent optional booleans -- they are both "is this file on disk", one
-// letter apart in meaning, and a swapped pair would be invisible.
-type CallCacheState = { audio: boolean; customerAudio: boolean };
-
-/** Decorations the read routes compute and the write routes do not, so they
- *  travel together and are absent (not false) on a write response. `cache` is
- *  M-6's pair; `benchmarked` is whether any provider has transcribed the call,
- *  which is a join, not a column. */
-type CallReadState = { cache?: CallCacheState; benchmarked?: boolean };
-
-function serializeCall(
-  call: BenchmarkCallRow,
-  read: CallReadState = {},
-): ZodInput<typeof GetBenchmarkCallResponse> {
-  const cache = read.cache;
-  return {
-    id: call.id,
-    label: call.label,
-    // Same rule as serializeProvider's status: unconstrained text columns,
-    // values held by the runtime parse.
-    vertical: call.vertical as ZodInput<typeof GetBenchmarkCallResponse>["vertical"],
-    durationSeconds: call.durationSeconds,
-    status: call.status as ZodInput<typeof GetBenchmarkCallResponse>["status"],
-    hardCases: call.hardCases,
-    goldTranscript: call.goldTranscript,
-    draftTranscript: call.draftTranscript,
-    entityNotes: call.entityNotes,
-    entityReferences: call.entityReferences,
-    audioObjectPath: call.audioObjectPath,
-    deIdAttestedByLabel: call.deIdAttestedByLabel,
-    deIdAttestedAt: call.deIdAttestedAt,
-    deIdSecondApproverLabel: call.deIdSecondApproverLabel,
-    deIdSecondApprovedAt: call.deIdSecondApprovedAt,
-    sourceProvider: call.sourceProvider,
-    sourceCallId: call.sourceCallId,
-    sourceAccountLabel: call.sourceAccountLabel,
-    sourceAssistantId: call.sourceAssistantId,
-    sourceStartedAt: call.sourceStartedAt,
-    sourceTranscriberProvider: call.sourceTranscriberProvider,
-    sourceTranscriberModel: call.sourceTranscriberModel,
-    sourceEndedReason: call.sourceEndedReason,
-    sourceSuccessEvaluation: call.sourceSuccessEvaluation,
-    // T-124: only the read routes pass this -- write responses leave it
-    // absent rather than claiming false without having looked.
-    audioCached: cache?.audio,
-    // M-6: same rule, for the caller-only channel. A call with the mono mix
-    // but no customer file can only be measured on audio that also contains
-    // the assistant's own voice.
-    customerAudioCached: cache?.customerAudio,
-    // Whether any provider has transcribed this call. Absent (not false) on
-    // write responses for the same reason as the two cache flags: only the
-    // read routes pay for the join that answers it.
-    benchmarked: read.benchmarked,
-    // T-131: last audio-cache attempt (rescue/import), so the UI can name a
-    // permanent source refusal instead of offering to save the unsaveable.
-    audioCacheLastOutcome: call.audioCacheLastOutcome ?? null,
-    audioCacheLastError: call.audioCacheLastError ?? null,
-    audioCacheLastAttemptAt: call.audioCacheLastAttemptAt,
-    // M-7a: production's own measurements. Null is "not measured" and must
-    // stay distinguishable from 0 all the way to the screen.
-    prodTranscriberLatencyMs: call.prodTranscriberLatencyMs,
-    prodEndpointingLatencyMs: call.prodEndpointingLatencyMs,
-    prodAssistantInterruptions: call.prodAssistantInterruptions,
-    prodToolCalls: call.prodToolCalls,
-    createdAt: call.createdAt,
   };
 }
 
@@ -825,50 +736,6 @@ router.get("/benchmark/calls/:callId/audio", async (req, res): Promise<void> => 
 // because scoring against the provider Vapi already chose would bias the
 // benchmark it feeds (GOLD-01).
 
-const VAPI_PREVIEW_CHARS = 240;
-
-/** Corpus label the importer assigns to a Vapi call.
- *
- * Hashes the id rather than truncating it directly -- Vapi call ids are
- * UUIDv7, whose first bytes are a millisecond timestamp, not random bits.
- * Truncating to the first 8 hex chars truncates the timestamp, so any two
- * calls placed close together in time collide on the label (confirmed live:
- * 3 real collisions in a 22-call corpus, calls made in the same session).
- * Hashing first makes the truncated output uniformly distributed, so
- * collisions go back to being astronomically rare instead of routine. */
-function vapiLabelFor(vapiCallId: string): string {
-  const digest = createHash("sha256").update(vapiCallId).digest("hex");
-  return `vapi-${digest.slice(0, 8)}`;
-}
-
-/**
- * Finds an existing corpus row for a Vapi call id.
- *
- * Two lookups, not one: `sourceCallId` is exact and authoritative, but calls
- * imported by the earlier CLI predate that column and only carry the derived
- * `vapi-<first8>` label. Without the label fallback, re-previewing a window
- * that overlaps the original CLI import would offer those calls as fresh
- * and duplicate them.
- */
-async function findExistingVapiCall(
-  vapiCallId: string,
-): Promise<{ id: string } | undefined> {
-  const [row] = await db
-    .select({ id: benchmarkCallsTable.id })
-    .from(benchmarkCallsTable)
-    .where(
-      or(
-        and(
-          eq(benchmarkCallsTable.sourceProvider, "vapi"),
-          eq(benchmarkCallsTable.sourceCallId, vapiCallId),
-        ),
-        eq(benchmarkCallsTable.label, vapiLabelFor(vapiCallId)),
-      ),
-    )
-    .limit(1);
-  return row;
-}
-
 /** Maps a Vapi/network failure onto an HTTP status without leaking the key. */
 router.get("/benchmark/vapi/accounts", async (_req, res): Promise<void> => {
   respondJson(res, ListVapiAccountsResponse, listVapiAccounts());
@@ -924,93 +791,23 @@ router.post("/benchmark/vapi/preview", async (req, res): Promise<void> => {
     respondInvalid(res, parsed.error);
     return;
   }
-  const account = listVapiAccounts().find((a) => a.id === parsed.data.accountId);
-  if (!account) {
-    res.status(400).json({
-      error: `Unknown or unconfigured Vapi account "${parsed.data.accountId}".`,
-    });
-    return;
-  }
-
-  let calls: VapiCall[];
   try {
-    calls = await fetchVapiCalls({
-      accountId: parsed.data.accountId,
-      limit: parsed.data.limit ?? 50,
-      // The generated zod schema coerces `format: date-time` into a Date;
-      // Vapi's query params want ISO strings.
-      createdAtGe: parsed.data.startDate?.toISOString(),
-      createdAtLe: parsed.data.endDate?.toISOString(),
-      assistantId: parsed.data.assistantId,
-    });
+    respondJson(res, PreviewVapiCallsResponse, await previewVapiCalls(parsed.data));
   } catch (err) {
-    req.log.warn({ err }, "Vapi preview failed");
-    respondVapiError(res, err);
-    return;
+    if (err instanceof UnknownVapiAccountError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    // W-4: only a failure of the Vapi read itself answers here. A database
+    // failure inside previewVapiCalls carries no tag and reaches the error
+    // handler, exactly as it did when this was one long handler body.
+    if (err instanceof VapiSourceError) {
+      req.log.warn({ err: err.cause }, "Vapi preview failed");
+      respondVapiError(res, err.cause);
+      return;
+    }
+    throw err;
   }
-
-  // One query for the whole batch rather than per-call, so the duplicate
-  // annotation stays cheap as the window widens. Matches on either the exact
-  // source id or the derived label (see findExistingVapiCall).
-  const ids = calls.map((c) => c.id);
-  const existing = ids.length
-    ? await db
-        .select({
-          id: benchmarkCallsTable.id,
-          label: benchmarkCallsTable.label,
-          sourceCallId: benchmarkCallsTable.sourceCallId,
-        })
-        .from(benchmarkCallsTable)
-        .where(
-          or(
-            and(
-              eq(benchmarkCallsTable.sourceProvider, "vapi"),
-              inArray(benchmarkCallsTable.sourceCallId, ids),
-            ),
-            inArray(benchmarkCallsTable.label, ids.map(vapiLabelFor)),
-          ),
-        )
-    : [];
-  const existingBySourceId = new Map(
-    existing.flatMap((row) => (row.sourceCallId ? [[row.sourceCallId, row.id]] : [])),
-  );
-  const existingByLabel = new Map(existing.map((row) => [row.label, row.id]));
-
-  const previewCalls = calls.map((call) => {
-    const draft = draftTranscriptOf(call);
-    const recordingUrl = recordingUrlOf(call);
-    const existingCallId =
-      existingBySourceId.get(call.id) ??
-      existingByLabel.get(vapiLabelFor(call.id)) ??
-      null;
-    const startedAtRaw = call.startedAt ?? call.createdAt ?? null;
-    return {
-      vapiCallId: call.id,
-      assistantId: call.assistantId ?? null,
-      startedAt: startedAtRaw ? new Date(startedAtRaw) : null,
-      durationSeconds: durationSecondsOf(call),
-      hasRecording: Boolean(recordingUrl),
-      recordingUrl: recordingUrl ?? null,
-      draftTranscriptChars: draft?.length ?? 0,
-      draftTranscriptPreview: draft ? draft.slice(0, VAPI_PREVIEW_CHARS) : null,
-      alreadyImported: existingCallId !== null,
-      existingCallId,
-    };
-  });
-
-  respondJson(
-    res,
-    PreviewVapiCallsResponse,
-    {
-      accountId: account.id,
-      accountLabel: account.label,
-      fetchedCount: previewCalls.length,
-      importableCount: previewCalls.filter(
-        (c) => c.hasRecording && !c.alreadyImported,
-      ).length,
-      calls: previewCalls,
-    },
-  );
 });
 
 router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
@@ -1019,202 +816,20 @@ router.post("/benchmark/vapi/import", async (req, res): Promise<void> => {
     respondInvalid(res, parsed.error);
     return;
   }
-  const account = listVapiAccounts().find((a) => a.id === parsed.data.accountId);
-  if (!account) {
-    res.status(400).json({
-      error: `Unknown or unconfigured Vapi account "${parsed.data.accountId}".`,
-    });
-    return;
-  }
-
-  const actor = actorFromRequest(req);
-
-  type ImportOutcome = {
-    vapiCallId: string;
-    outcome: "imported" | "skipped_duplicate" | "skipped_no_recording" | "failed";
-    callId: string | null;
-    label: string | null;
-    message: string | null;
-  };
-
-  // One call's full import path (duplicate check -> Vapi re-fetch -> insert
-  // -> audit). Errors other than a missing config are per-call failures; the
-  // batch continues (review finding #4's import parallelism, P1-4 in
-  // ox-alpha/improvement-plan.md).
-  const importOne = async (vapiCallId: string): Promise<ImportOutcome> => {
-    const duplicate = await findExistingVapiCall(vapiCallId);
-    if (duplicate) {
-      return {
-        vapiCallId,
-        outcome: "skipped_duplicate",
-        callId: duplicate.id,
-        label: null,
-        message: "Already in the corpus.",
-      };
-    }
-
-    let call: VapiCall;
-    try {
-      // Re-fetched from Vapi rather than taken from the request body: the
-      // browser must not be able to point a corpus entry at arbitrary audio.
-      call = await fetchVapiCall(parsed.data.accountId, vapiCallId);
-    } catch (err) {
-      if (err instanceof VapiConfigError) throw err; // aborts the whole batch
-      req.log.warn({ err, vapiCallId }, "Vapi call fetch failed during import");
-      return {
-        vapiCallId,
-        outcome: "failed",
-        callId: null,
-        label: null,
-        message: err instanceof Error ? err.message : "Fetch failed.",
-      };
-    }
-
-    const recordingUrl = recordingUrlOf(call);
-    if (!recordingUrl) {
-      return {
-        vapiCallId,
-        outcome: "skipped_no_recording",
-        callId: null,
-        label: null,
-        message: "Call has no recording URL; nothing to transcribe.",
-      };
-    }
-
-    const draft = draftTranscriptOf(call);
-    const transcriber = transcriberOf(call);
-    const label = vapiLabelFor(call.id);
-    const startedAt = call.startedAt ?? call.createdAt;
-
-    const [created] = await db
-      .insert(benchmarkCallsTable)
-      .values({
-        label,
-        vertical: parsed.data.vertical,
-        // R-42 (ox-alpha B-98): was Math.max(1, ...). durationSecondsOf
-        // returns 0 when startedAt or endedAt is missing or the delta is not
-        // positive -- a crashed call. Flooring that to 1 made "we do not know
-        // how long this was" indistinguishable from "this was a one-second
-        // call", permanently and at import time, and it disagreed with the
-        // preview two routes up, which shows the true 0.
-        //
-        // Nothing divides BY duration (checked across artifacts and lib): the
-        // cost math multiplies and the bulk estimate sums, so 0 is safe in
-        // both. It is also safer in the one place duration steers behaviour --
-        // scaledPollTimeoutMs(0) gives the 120s default, while the fabricated
-        // scaledPollTimeoutMs(1) gave 60s. The floor was handing a call of
-        // unknown length a SHORTER timeout than "unknown" gets.
-        durationSeconds: durationSecondsOf(call),
-        audioObjectPath: recordingUrl,
-        // Vapi's transcript goes in draftTranscript, never goldTranscript
-        // (GOLD-01): it is the reviewer's starting point, not the reference.
-        draftTranscript: draft ?? null,
-        status: "ready_to_run",
-        sourceProvider: "vapi",
-        sourceCallId: call.id,
-        sourceAccountLabel: account.label,
-        sourceAssistantId: call.assistantId ?? null,
-        sourceStartedAt: startedAt ? new Date(startedAt) : null,
-        // Best-effort -- null when Vapi doesn't echo the assistant config
-        // back on this call. See transcriberOf()'s comment in lib/vapi.ts.
-        sourceTranscriberProvider: transcriber?.provider ?? null,
-        sourceTranscriberModel: transcriber?.model ?? null,
-        sourceEndedReason: call.endedReason ?? null,
-        sourceSuccessEvaluation: successEvaluationOf(call),
-        // M-7a: what production's own pipeline measured on this call, from
-        // the same object the sidecar writer saves to disk seconds later --
-        // so an imported call and a rescued one carry identical numbers.
-        // Every one of these is null when Vapi measured nothing; see
-        // lib/production-signals.ts for why null and not 0.
-        ...readProductionSignals(call.artifact),
-      })
-      .returning();
-
-    await writeAudit({
-      entityType: "call",
-      entityId: created.id,
-      actorLabel: actor,
-      action: "import_vapi",
-      afterState: serializeCall(created),
-    });
-
-    // T-127: save the audio bytes to the server's disk right now, while the
-    // recording is certainly still alive at Vapi -- so a newly imported call
-    // never sits on the 14-day retention countdown at all. A cache failure
-    // must NOT fail the import (the call row is real either way); it is
-    // named in the outcome message instead of being a silent gap. This
-    // re-resolves a fresh URL via the same path every other cache write
-    // uses (getOrCacheAudioBytes), so the player, the run executor and the
-    // importer can never disagree about what "the audio" is.
-    let message: string | null = null;
-    try {
-      await getOrCacheAudioBytes(created);
-      await recordAudioCacheAttempt(created.id, "saved", null);
-      // M-6: the caller-only channel, the assistant channel and the call
-      // artifact, written from the SAME object the import already fetched --
-      // its presigned links are minutes old here and dead within the hour.
-      // Never fails the import: the corpus row and the mono mix are already
-      // real, and a missing channel is said out loud rather than left as a
-      // gap somebody discovers on the day they need the caller's voice.
-      const sidecars = await cacheCallSidecars(created.id, call);
-      const gaps = [
-        ...sidecars.missing.map((channel) => `Vapi offered no ${channel} channel for it`),
-        ...sidecars.errors,
-      ];
-      if (gaps.length > 0) {
-        message = `Imported with its mono audio, but ${gaps.join("; ")}.`;
-      }
-    } catch (err) {
-      req.log.warn({ err, callId: created.id }, "import: audio could not be cached at import time");
-      const errText = err instanceof Error ? err.message : String(err);
-      // T-131: remember what this attempt learned (permanent refusal vs
-      // retryable), same as the rescue endpoint does.
-      await recordAudioCacheAttempt(created.id, classifyAudioAttemptFailure(errText), errText);
-      message = `Imported, but the audio could not be saved to the server yet (${errText}). The first run, or "Save audio now" on Calls, will try again.`;
-    }
-
-    return {
-      vapiCallId,
-      outcome: "imported",
-      callId: created.id,
-      label,
-      message,
-    };
-  };
-
-  // Bounded-parallel import (same worker pool the run executor uses). A
-  // missing/invalid account key is fatal for every cell, so that one error
-  // aborts the drain and surfaces as the request's error response.
-  const byId = new Map<string, ImportOutcome>();
   try {
-    await drainWithConcurrency(
-      parsed.data.vapiCallIds,
-      VAPI_IMPORT_CONCURRENCY,
-      async (vapiCallId) => {
-        byId.set(vapiCallId, await importOne(vapiCallId));
-      },
-    );
+    const result = await importVapiCalls(parsed.data, actorFromRequest(req), req.log);
+    respondJson(res, ImportVapiCallsResponse, result, 201);
   } catch (err) {
-    if (err instanceof VapiConfigError) {
-      respondVapiError(res, err);
+    if (err instanceof UnknownVapiAccountError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err instanceof VapiSourceError) {
+      respondVapiError(res, err.cause);
       return;
     }
     throw err;
   }
-  // Preserve request order so the UI table matches what the operator ticked.
-  const results = parsed.data.vapiCallIds.map((id) => byId.get(id)!);
-
-  respondJson(
-    res,
-    ImportVapiCallsResponse,
-    {
-      importedCount: results.filter((r) => r.outcome === "imported").length,
-      skippedCount: results.filter((r) => r.outcome.startsWith("skipped")).length,
-      failedCount: results.filter((r) => r.outcome === "failed").length,
-      results,
-    },
-    201,
-  );
 });
 
 router.get("/benchmark/providers", async (_req, res): Promise<void> => {

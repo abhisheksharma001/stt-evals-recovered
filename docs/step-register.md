@@ -8715,13 +8715,34 @@ draws move. Restore with `git checkout -- artifacts/api-server/src/lib/watch-sam
 
 ### W-4 — Import becomes a library function (a move, no behaviour change)
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-14 (PR #PENDING). Spent nothing. Learned three things this
+step's own text did not anticipate. First: the acceptance sentence named "the existing
+preview/import integration cases", and there were none -- measured before the move, no
+integration file mentioned `/benchmark/vapi/preview` or `/benchmark/vapi/import` at all,
+so the stated proof was vacuous and the move would have been declared safe by a suite
+that never touched it. The Acceptance and Verify lines below are corrected to what was
+actually done, and `artifacts/api-server/src/routes/__integration__/vapi-import.int.test.ts`
+now covers the one branch provable with no key and no network: the unknown-account
+refusal, and that it writes nothing. Second: preserving the errors byte-for-byte needed a
+seam the step did not name. In the route bodies only the *Vapi read* was wrapped in a
+try/catch that answers 502; a database failure a few lines later fell through to the
+error handler and answered 500. A library that threw both alike would have turned a
+broken Postgres into "Vapi request failed" -- so `VapiSourceError` tags where a failure
+happened, carries the untouched original as `cause`, and the route unwraps and maps
+exactly as before. Third: the audit row needs `serializeCall`, which lived in the route
+file; importing it back would have made a cycle `routes/benchmark.ts` ->
+`lib/vapi-import.ts` -> `routes/benchmark.ts` that `scripts/check-import-cycles.mjs`
+refuses. It moved to its own module, unchanged, which is why this step touches three
+files and not two.
 **PR:** one.
 **Depends on:** nothing.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
 **Files:** `artifacts/api-server/src/routes/benchmark.ts` (the `/benchmark/vapi/preview`
-and `/benchmark/vapi/import` handlers), a new module beside
-`artifacts/api-server/src/lib/vapi.ts` (plain name: vapi-import).
+and `/benchmark/vapi/import` handlers), `artifacts/api-server/src/lib/vapi-import.ts`
+beside `artifacts/api-server/src/lib/vapi.ts`,
+`artifacts/api-server/src/lib/serialize-call.ts` (the moved serializer -- see Status for
+why it could not stay in the route file), and
+`artifacts/api-server/src/routes/__integration__/vapi-import.int.test.ts`.
 
 **Today:** the preview and import logic — duplicate check, recording check, provenance
 columns, audio save, production-signal read — lives inside the two route handlers. The
@@ -8731,14 +8752,26 @@ same process would have to do the same, or copy the code.
 **Change:** move the handler bodies into `previewVapiCalls(input)` and
 `importVapiCalls(input, actorLabel)` in the new module; the routes become parse → call →
 serialise. Same return shapes, same errors, same audit rows.
+(Shipped as `importVapiCalls(input, actorLabel, log)` -- the two `req.log.warn` lines
+inside the import path had to keep writing to the request's own logger, and the default
+is the process logger so W-5's tick can call it with no request in hand.)
 
-**Acceptance:** WHEN the existing preview/import integration cases run THEN every response
-SHALL be byte-identical to before the move AND the audit rows SHALL be unchanged.
+**Acceptance:** WHEN an account this server holds no key for is given to either route
+THEN the response SHALL be 400 with `Unknown or unconfigured Vapi account "<id>".` and no
+corpus row SHALL be written; AND WHEN the rest of the suite runs THEN every response SHALL
+be unchanged by the move. (Corrected 2026-09-14: the original sentence rested on
+integration cases that did not exist. See Status.)
 
-**Verify:** typecheck; the full integration suite green, no case edited.
+**Verify:** typecheck; `pnpm --filter @workspace/api-server test`; the full integration
+suite green with no existing case edited. Run 2026-09-14: typecheck clean in 4 projects,
+unit 33 files / 252 tests, integration 35 files / 207 tests (was 34 / 203 — this step adds
+one file and four cases and edits none).
 
-**Prove it by breaking it:** not applicable — this step adds no guard. The proof is the
-unedited suite staying green.
+**Prove it by breaking it:** the step said "not applicable — this step adds no guard",
+which was true of the move and false of what shipped. After committing, delete the
+`if (!account) throw new UnknownVapiAccountError(...)` line from `previewVapiCalls`; the
+preview refusal case fails. Restore with
+`git checkout -- artifacts/api-server/src/lib/vapi-import.ts`.
 
 **Must not:** change a response, a status code, or a log line; touch the Vapi client.
 
