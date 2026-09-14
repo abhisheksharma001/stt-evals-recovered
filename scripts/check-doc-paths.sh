@@ -19,6 +19,7 @@ LIVE_DOCS=(
   README.md docs/PRD.md docs/PRD-v4-technical.md docs/PRD-v4-uiux.md
   docs/provider-data-samples.md docs/runbooks/*.md docs/backlog/good-to-have.md
   docs/PRD-v6-measure.md docs/step-register.md docs/scoring-policy.md
+  docs/PRD-v7-decide.md docs/PRD-v8-watch.md docs/feature-head-to-head.md
 )
 
 exists_somewhere() {

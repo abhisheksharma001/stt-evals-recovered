@@ -5532,7 +5532,7 @@ fixes is a triage nobody can check.
 | B-6 orphan `ok` row skips an unscored cell | **narrowed** | T-43 added `permanentlyFailed`, but `run-executor.ts:377` still defines `alreadyOk` as `status === "ok"` alone, not "has a score row" |
 | B-7 `runningRuns` leak bricks re-entry | **narrowed** | unlock + `release()` + `delete()` are inside `finally` now (`run-executor.ts:252-258`) — but `pool.connect()` at `:238` is still **outside** the `try`, so a connect rejection still leaves the id in the Set until restart |
 | B-8 attest TOCTOU / Unicode defeats FR-C3 | **moot, with a residual** | the two-approver gate was removed by decision (`routes/benchmark.ts:589-591`); the blind `where(eq(id))` updates and the locale `toLowerCase` survive on a route that no longer gates anything |
-| B-9 in-flight scan overwrites human decisions | **moot** | `POST /agent/scans` is gone; the write happens inside `lib/agent-verify.ts` during a run, where no human click can race it |
+| B-9 in-flight scan overwrites human decisions | **moot** | `POST /agent/scans` is gone; the write happens inside `artifacts/api-server/src/lib/agent-verify.ts` during a run, where no human click can race it |
 | B-10 approve corrupts gold provenance | **mostly moot** | `routes/agent.ts:153-156`: approve *"no longer touches benchmarkCallsTable at all"*. The approve/reject TOCTOU on the scan row itself survives — guard read, then `where(eq(id))` |
 | B-11 PATCH strips the gold invariant | **live, and wider than written** | the gate is not half-present, it is **gone**: `routes/benchmark.ts:594-600` applies `...body.data` with no status or gold check. `{"goldTranscript":""}` clears gold on any call |
 | B-12 audit failure poisons committed work | **live** | `lib/audit.ts:21` is still an unguarded `await db.insert`. Exactly one call site wraps it — `agent-verify.ts`'s `auditOrLog` (T-37) |
@@ -8374,3 +8374,635 @@ mutating the assistant between preview and apply.
 **Must not:** ship before an explicit go; apply without the immediately
 preceding read; write a field no mark named; log, store or print a Vapi key;
 apply to more than one assistant per request.
+
+---
+
+### S-AB1 — The verdict can be asked about exactly two providers
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Spec:** `docs/feature-head-to-head.md`.
+**Files:** `lib/api-spec/openapi.yaml` (the `/benchmark/bulks/{bulkId}/verdicts` path),
+`artifacts/api-server/src/lib/verdict.ts` (`bulkVerdicts`), the generated clients
+(`lib/api-zod`, `lib/api-client-react`), and a new case in
+`artifacts/api-server/src/routes/__integration__/`.
+
+**Today:** `GET /benchmark/bulks/{bulkId}/verdicts` builds a `VerdictCell[]` from the
+bulk's ok cells and hands **every** provider's cells to `computeVerdict`
+(`lib/scoring/src/verdict.ts:284`). On live bulk `3f134973` that returns `too_close`
+over 31 shared calls for the org "Land And Apartment". There is no way to ask the same
+question about two named providers.
+
+**Change:** add an optional `providers` query parameter — a comma-separated list that
+must resolve to **exactly two distinct provider ids that appear in this bulk**. When
+present, filter the `VerdictCell[]` to those two ids *before* calling `computeVerdict`,
+and leave every other part of the response shape unchanged. Anything other than exactly
+two known ids is **400**, naming what was received. Absent parameter behaves exactly as
+today — the existing response is not modified, reordered or renamed.
+
+`computeVerdict` itself is **not touched**: it already pools flags per 100 words, draws a
+1000-iteration bootstrap interval on the top-two difference, and returns `too_close` when
+that interval contains zero. Feeding it two providers is the whole feature.
+
+**Acceptance:** WHEN `GET /benchmark/bulks/{bulkId}/verdicts?providers=<a>,<b>` is called
+THEN the returned `HeadlineVerdict` SHALL be computed over only those two providers'
+cells AND `noiseFloor.sharedCalls` SHALL count only calls both of them scored; AND WHEN
+`providers` does not resolve to exactly two distinct ids present in the bulk THEN the
+response SHALL be 400 and no verdict SHALL be returned.
+
+**Verify:**
+```
+pnpm run typecheck
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+A pass is: typecheck clean in all four projects; the new case green; and the unfiltered
+call returning byte-identical JSON to before the change.
+
+**Prove it by breaking it:** after committing, delete the `.filter(...)` that narrows the
+cells and confirm **exactly one** test fails — the one asserting `sharedCalls` differs
+between the filtered and unfiltered call. Restore with `git checkout -- <file>`.
+
+**Must not:** call any STT or judge provider; write to any table; change the response
+when `providers` is absent; accept one id or three; silently drop an id that is not in
+the bulk.
+
+---
+
+### S-AB2 — Results lets you pick the two providers
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** S-AB1.
+**Spec:** `docs/feature-head-to-head.md`.
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+
+**Today:** "One bulk" mode renders a bulk picker, `<BulkVerdictBanner>`
+(`Rankings.tsx:846`) and one table per assistant group listing all five providers. Page
+state is `viewMode`, `selectedBulkId`, `sortKey`, `asc`, `evidenceOpen` — no provider
+filter exists.
+
+**Change:** in `viewMode === "bulk"` only, add two `<Select>` controls, "Compare" and
+"against", populated from the providers present in this bulk's ranking rows. Default
+**A = rank 1, B = rank 2** — the pair `computeVerdict` already draws its noise floor
+from, so the default agrees with the existing banner by construction. When both are set,
+render `<GroupVerdictHeadline>` fed by the S-AB1 pair call, above the table, and dim
+every table row that is not one of the two. Selecting the same provider twice is not
+possible: choosing A's value in B swaps them.
+
+Do **not** compute anything in the browser. The pair's verdict comes from S-AB1 or it is
+not rendered.
+
+**Acceptance:** WHEN two providers are selected on a bulk THEN the page SHALL request
+`/benchmark/bulks/{id}/verdicts?providers=<a>,<b>` and render that verdict's own sentence
+and shared-call count; AND WHEN the view is switched to "All-time combined" THEN the
+pickers SHALL disappear, because no bulk-scoped noise floor exists there.
+
+**Verify:**
+```
+pnpm run typecheck
+cd artifacts/stt-benchmark && pnpm vitest run src/pages/__render__/results.test.tsx
+```
+
+**Prove it by breaking it:** after committing, hardcode the pair request to omit the
+`providers` parameter and confirm the new render test fails on the shared-call count.
+
+**Must not:** re-derive a winner client-side; render a pair verdict in All-time mode;
+change the all-providers table's existing sort or ranks; touch `computeVerdict`.
+
+---
+
+### S-AB3 — Say whether the judge agreed
+
+**Status:** not started. Spends nothing — reads rows the judge already wrote.
+**PR:** one.
+**Depends on:** S-AB2.
+**Spec:** `docs/feature-head-to-head.md`.
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx`, and whichever read the
+scans come from (see Must not).
+
+**Today:** the judge runs automatically per run (`artifacts/api-server/src/lib/agent-verify.ts`, called from
+`artifacts/api-server/src/lib/run-executor.ts:45`) and has written **97 picks across 347 live scans**, spread over 7
+providers. None of that reaches Results.
+
+**Change:** under the pair verdict, one line: on the calls in this bulk where the judge
+picked either A or B, how many it picked each way — "the AI reader preferred A on 7 of
+the 12 calls it judged". Silent when the count is zero; never phrased as a verdict, since
+a pick is a suggestion (the standing draft-is-not-gold rule).
+
+**Acceptance:** WHEN the judge picked A or B on at least one call in this bulk THEN the
+line SHALL show both counts and the number of calls judged; AND WHEN it picked neither
+THEN no line SHALL render.
+
+**Verify:** `pnpm run typecheck`, plus a case in `results.test.tsx` stubbing picks for A,
+for B, and for neither.
+
+**Must not:** call `GET /benchmark/agent/scans` unfiltered from Results — that endpoint
+serves every scan's full `sourceTranscript` and is already a payload and PII problem on
+Corpus (logged in `docs/backlog/good-to-have.md`, 2026-09-13). Take a bulk-scoped,
+count-only read instead, adding one if none exists. Do not present a pick as a winner.
+
+## Part W — Watch: a daily sample of real calls, per org, per agent (`docs/PRD-v8-watch.md`)
+
+Written 2026-09-14 from the grill in `docs/PRD-v8-watch.md`. Order: W-0 (done) → W-1 → W-2 →
+W-3 → W-4 → W-5 → W-6 → W-7, then the code surface W-8 → W-9 → W-10 → W-11, and W-12 (the
+public calibration set) as soon as "go spend" is given — it is the receipt for the USP and
+sits in the order wherever that go lands. Each is one PR.
+
+The steps proceed on the assumptions in PRD v8 §9 until Abhishek overrides one: the "500"
+is a per-policy, per-day ceiling on the sample size; the scheduler runs inside the API
+process behind an env flag; v8 is operated by Ellavox for each client org (no client
+login until B-1); the default provider set for a watch is the org's production
+transcriber plus two challengers.
+
+Money rules for this Part, stated once: **no step below calls a transcription provider
+in a test**, no integration case seeds a `ready` provider, and nothing launches a bulk
+unless a written cap has been checked first. W-12 is the only step that spends, and only
+after an explicit "go spend".
+
+Three facts every step below is written against, read from the tree 2026-09-14:
+
+- `MAX_LIVE_BULKS = 3` (`artifacts/api-server/src/lib/bulks.ts`): FR-BLK-10 evicts the
+  oldest bulk — its runs, results, scores and rankings — when a fourth is created. A
+  daily bulk per policy therefore keeps **three days** of call-level detail, no more. W-5
+  makes the ledger, not the bulk, the 30-day history.
+- `createBulkFromCriteria` accepts explicit `callIds` in the criteria (the type in
+  `lib/db/src/schema/benchmark-bulks.ts` carries `callIds?: string[]`), so a sampled set
+  can be frozen without inventing a new create path.
+- The import contract needs a `vertical` (`VapiImportInput` in `lib/api-spec/openapi.yaml`,
+  enum `rush | property_management | trucking`) and takes at most 200 ids per call; the
+  preview caps at 500 per request. `scripts/daily-import.sh` already solved "which
+  vertical" with an explicit per-account map, and the schedule row carries the same
+  answer as a column.
+
+### W-0 — Re-run the triage seeds on the 376-call corpus, write the table into v7 Part E
+
+**Status:** done 2026-09-14, in the docs PR that added this Part. Spent nothing.
+**PR:** the docs PR.
+**Depends on:** nothing.
+**Spec:** `docs/PRD-v8-watch.md` §3; `docs/PRD-v7-decide.md` Part E.
+**Files:** `docs/PRD-v7-decide.md` (E1 re-run subsection).
+
+**What was learned:** 376 calls, 347 scans, 156 with a latest scan — 144 flagged, 6
+clean. Base rate 92.5–96.7 %, headroom 3.3–7.5 points, **0 seeds, 5 of 5 untestable**.
+Interruptions, the one signal with headroom on the 176-call corpus (11.5 pt), has 7.5 pt
+here. v7's decision stands: nothing in Part W is built on the flag *bit*; the daily
+number is the peer-flag *rate* per 100 words. The script
+(`artifacts/api-server/src/mine-triage-signals.ts`) printed counts only, as its header
+promises; the run log was read from a file, not a tail.
+
+### W-1 — Two production signals become selection criteria
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part A.
+**Files:** `lib/db/src/schema/benchmark-bulks.ts` (`BulkSelectionCriteria`),
+`artifacts/api-server/src/lib/bulks.ts` (`resolveCriteriaSelection` — the matcher — and
+`previewBulkSelection` — the named excluded buckets), `lib/api-spec/openapi.yaml`
+(`BulkSelectionCriteria`), the generated clients via
+`pnpm --filter @workspace/api-spec codegen`, and a new case in
+`artifacts/api-server/src/routes/__integration__/bulk-preview-cancel.int.test.ts`.
+
+**Today:** the criteria type has 13 fields. `prod_transcriber_latency_ms` is stored on 235
+of 376 calls and `prod_assistant_interruptions` on 121, and neither can select a call.
+Null in those columns means "not measured" (M-7a), never zero.
+
+**Change:** add `minProdTranscriberLatencyMs?: number` and
+`minProdAssistantInterruptions?: number`. A call matches when the stored value is ≥ the
+floor. A **null** column never satisfies a floor and is reported by the preview under its
+own excluded bucket, named for the column, exactly as T-13 treats an unknown outcome.
+Absent field = no filter, so every saved template keeps matching what it matched.
+
+**Acceptance:** WHEN `POST /benchmark/bulks/preview` is called with
+`minProdAssistantInterruptions: 1` THEN only calls whose stored count is ≥ 1 SHALL match
+AND calls whose count is null SHALL be counted in a named excluded bucket AND the same
+call without the field SHALL match as before.
+
+**Verify:**
+```
+pnpm run typecheck
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+A pass: typecheck clean in all four projects; the new preview case green; every existing
+preview case unchanged.
+
+**Prove it by breaking it:** after committing, remove the null guard so a null column
+compares as 0; exactly one test fails — the one asserting the null-count call lands in
+the excluded bucket. Restore with `git checkout -- artifacts/api-server/src/lib/bulks.ts`.
+
+**Must not:** change any existing criterion; touch `benchmark_rankings`; read the artifact
+file (the columns are the source).
+
+### W-2 — `watch_schedules`: one row per org-or-agent policy, and its CRUD
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part A.
+**Files:** a new schema file beside `lib/db/src/schema/bulk-templates.ts` (plain name:
+watch-schedules), `lib/db/src/schema/index.ts`, `lib/api-spec/openapi.yaml`, a new route
+file beside `artifacts/api-server/src/routes/bulks.ts` (plain name: watch) mounted from
+`artifacts/api-server/src/routes/index.ts`, the generated clients, and a new integration
+file beside `artifacts/api-server/src/routes/__integration__/bulk-templates.int.test.ts`.
+
+**Today:** a template holds criteria + providers + band and launches only on a click
+(`POST /benchmark/bulk-templates/{templateId}/launch`). No row anywhere says "for this
+org, this agent, this many a day, this much money".
+
+**Change:** table `watch_schedules`:
+
+| column | type | rule |
+|---|---|---|
+| `id` | uuid | |
+| `template_id` | uuid → `bulk_templates.id` | must exist |
+| `account_id` | text | must be an id from `listVapiAccounts()` at write time |
+| `vertical` | text | one of the `Vertical` enum — the import needs it |
+| `assistant_id` | text, null | null = every agent on the account, sampled per agent |
+| `sample_size` | integer | 1..500, default 10 |
+| `daily_cap_cents` | integer | default 100 |
+| `monthly_cap_cents` | integer | default 3000 |
+| `hour_local` | integer | 0..23, default 3 |
+| `enabled` | boolean | default true |
+| `created_by_label`, `created_at`, `updated_at` | | as `bulk_templates` |
+
+Routes `GET /benchmark/watch-schedules`, `POST`, `PATCH /{id}`; every write goes through
+`respondInvalid` on a failed parse and `writeAudit` (`artifacts/api-server/src/lib/audit.ts`).
+Schema push: `pnpm --filter @workspace/db run push` (CI runs the same).
+
+**Acceptance:** WHEN a schedule is posted with `sampleSize: 501` THEN the response SHALL
+be 400 and no row SHALL exist; AND WHEN `accountId` is not a configured account THEN the
+response SHALL be 400 naming the known ids (never a key value, never a fingerprint).
+
+**Verify:** typecheck; the integration file green against `stt_evals_test`.
+
+**Prove it by breaking it:** after committing, remove the `max(500)` from the zod schema;
+exactly one test fails. Restore with `git checkout -- lib/api-spec/openapi.yaml` and
+regenerate.
+
+**Must not:** launch anything; store a key, a fingerprint, or an env-var *value*.
+
+### W-3 — The seeded sampler
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** W-1 (the criteria it is fed are resolved by the matcher, not by it).
+**Spec:** `docs/PRD-v8-watch.md` §5 Part A.
+**Files:** a new pure module beside `artifacts/api-server/src/lib/triage-signals.ts`
+(plain name: watch-sampler) and its unit test beside it, following
+`artifacts/api-server/src/lib/assistant-signals-aggregate.test.ts`.
+
+**Today:** nothing picks "N calls per agent". `resolveCriteriaSelection` returns every
+matching call.
+
+**Change:** `sampleForDay({ scheduleId, day, sampleSize, calls }) → { picks: { assistantId,
+callIds, matched, shortfall }[] }`. Group by `sourceAssistantId`; per group, Fisher–Yates
+with a 32-bit PRNG seeded from a string hash of `${scheduleId}:${day}`; take
+`sampleSize`; `shortfall = max(0, sampleSize − matched)`. No I/O, no Date.now().
+
+**Acceptance:** WHEN called twice with the same inputs THEN it SHALL return identical ids
+in identical order; WHEN an assistant has fewer matching calls than `sampleSize` THEN it
+SHALL return all of them and a non-zero `shortfall`; WHEN `day` changes THEN the order
+SHALL change.
+
+**Verify:** `pnpm --filter @workspace/api-server test` — the new file green.
+
+**Prove it by breaking it:** after committing, replace the seeded PRNG with `Math.random`;
+exactly one test fails — the determinism one. Restore.
+
+**Must not:** read the database; import anything from `artifacts/api-server/src/lib/bulks.ts`.
+
+### W-4 — Import becomes a library function (a move, no behaviour change)
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part B.
+**Files:** `artifacts/api-server/src/routes/benchmark.ts` (the `/benchmark/vapi/preview`
+and `/benchmark/vapi/import` handlers), a new module beside
+`artifacts/api-server/src/lib/vapi.ts` (plain name: vapi-import).
+
+**Today:** the preview and import logic — duplicate check, recording check, provenance
+columns, audio save, production-signal read — lives inside the two route handlers. The
+only other caller, `scripts/daily-import.sh`, goes through HTTP. A scheduler inside the
+same process would have to do the same, or copy the code.
+
+**Change:** move the handler bodies into `previewVapiCalls(input)` and
+`importVapiCalls(input, actorLabel)` in the new module; the routes become parse → call →
+serialise. Same return shapes, same errors, same audit rows.
+
+**Acceptance:** WHEN the existing preview/import integration cases run THEN every response
+SHALL be byte-identical to before the move AND the audit rows SHALL be unchanged.
+
+**Verify:** typecheck; the full integration suite green, no case edited.
+
+**Prove it by breaking it:** not applicable — this step adds no guard. The proof is the
+unedited suite staying green.
+
+**Must not:** change a response, a status code, or a log line; touch the Vapi client.
+
+### W-5 — The ledger and the tick
+
+**Status:** not started. Spends nothing in tests; in production it launches bulks under
+written caps.
+**PR:** one.
+**Depends on:** W-2, W-3, W-4.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part B.
+**Files:** a new schema file (plain name: watch-runs) beside
+`lib/db/src/schema/bulk-templates.ts`; `lib/db/src/schema/benchmark-bulks.ts`
+(`watch_schedule_id`, `watch_day`, nullable, unique together); a new module beside
+`artifacts/api-server/src/lib/run-executor.ts` (plain name: watch-scheduler) with a
+**pure** decision function and its unit test; `artifacts/api-server/src/index.ts` (start
+the tick when `WATCH_SCHEDULER=1`); a new integration file beside
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+
+**Today:** nothing runs on a clock. `POST /benchmark/bulks` creates a draft (or
+`awaiting_confirmation` over the FR-BLK-5 gate); `launchBulk` starts it. `MAX_LIVE_BULKS`
+is 3, so the fourth bulk evicts the oldest with everything under it.
+
+**Change:**
+
+1. Table `watch_runs`: `id`, `schedule_id`, `day` (date), `started_at`, `outcome` (one of
+   `imported`, `sampled`, `refused:no_calls`, `refused:daily_cap`,
+   `refused:monthly_cap`, `refused:no_key`, `held:cost_gate`, `launched`, `settled`,
+   `failed`), `detail` jsonb (`imported`, `matched`, `sampled`, `shortfall`,
+   `estimatedCents`, `error` — counts and one message, never a transcript), `bulk_id`
+   null, and **`totals` jsonb** — filled at `settled`. **Unique index on
+   `(schedule_id, day)`.** That index *is* the idempotency.
+2. Pure `decideTick({ schedule, now, ledgerRowsForSchedule }) → { action: "skip" | "run",
+   day }`: run when `enabled`, `now.hour ≥ hour_local` in server-local time, and no row
+   exists for the **most recent** due day. Never returns more than one day.
+3. The tick, every 60 s when `WATCH_SCHEDULER=1`: for each schedule with `action: "run"`,
+   **insert the ledger row first** (a unique violation → another tick won → skip); then
+   import the account's last 24 h through W-4 in chunks of 200 (`refused:no_key` if the
+   env var is unset); resolve criteria for that window plus `accountLabel`; W-3 sample;
+   `previewBulkSelection` with explicit `callIds`; refuse on either cap (monthly = this
+   schedule's ledger `estimatedCents` this month + this one); else
+   `createBulkFromCriteria` with `confirm: false` — if the bulk comes back
+   `awaiting_confirmation` write `held:cost_gate` and stop; if `draft`, `launchBulk` and
+   write `launched`.
+4. Settle: on every tick, each `launched` row whose bulk is `complete` or `partial` gets
+   `totals` = the four T-19 numbers per (assistant, provider) — `peerFlags`, `words`,
+   `callsScored`, `cleanCalls`, the same sums `GET /benchmark/trend` computes — and
+   `outcome: settled`. **This is why eviction does not lose the history:** the day's
+   numbers live on the ledger; the bulk is the workbench.
+
+**Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one ledger
+row SHALL exist and at most one bulk SHALL have been created; WHEN the preview prices
+above `daily_cap_cents` THEN the row SHALL read `refused:daily_cap` and no bulk SHALL
+exist; WHEN the created bulk is `awaiting_confirmation` THEN the row SHALL read
+`held:cost_gate` and `launchBulk` SHALL NOT be called; WHEN the process was down for
+three days THEN on restart it SHALL run at most one day.
+
+**Verify:**
+```
+pnpm --filter @workspace/api-server test
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+The integration file seeds providers with status `disabled` only (standing rule), so a
+launched bulk has nothing to spend on; the assertions are on ledger rows and bulk rows.
+
+**Prove it by breaking it:** after committing, drop the unique index in the test schema;
+the double-tick test fails. Restore.
+
+**Must not:** start without `WATCH_SCHEDULER=1`; run inside the integration suite by
+default; call a provider in any test; backfill more than one day; pass `confirm: true`;
+write a transcript, a name or a number into `detail`; touch a Vapi assistant (D-12).
+
+**Decision for Abhishek, not taken here:** raise `MAX_LIVE_BULKS` (3) so Layer 3 call
+detail survives longer than three days — 10 keeps a working week and a half of daily
+bulks; the ledger makes the 30-day line independent of it either way.
+
+### W-6 — Orgs: the first layer
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** W-5 (settled ledger rows); reads S-AB1's pair verdict when present.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1) and Part D; evidence note in §8.
+**Files:** `lib/api-spec/openapi.yaml` (one new read path, `GET /benchmark/watch/overview`),
+the watch route file from W-2, a pure baseline module beside
+`artifacts/api-server/src/lib/triage-signals.ts` (plain name: watch-baseline) with its
+unit test, a new page beside `artifacts/stt-benchmark/src/pages/Rankings.tsx` (plain
+name: Orgs), `artifacts/stt-benchmark/src/App.tsx` (route), the sidebar in
+`artifacts/stt-benchmark/src/components/layout.tsx`, and a render test beside
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx` using
+`artifacts/stt-benchmark/src/pages/__render__/harness.tsx`.
+
+**Today:** Results shows one bulk or all-time. No screen lists orgs, and no screen shows a
+day-by-day line for an agent.
+
+**Change:** the endpoint returns, per (account, assistant): the production transcriber
+(via the same resolution `GET /benchmark/assistants/{assistantId}/transcriber` uses),
+the last 30 scheduled days from the ledger — each with `day`, `outcome`, `bulkId`, the
+production provider's rate (`peerFlags / words × 100`), its `callsScored`, and the best
+challenger's rate — plus `baseline: forming | steady | moved` from the pure function:
+*moved* when today's production rate lies outside the trailing days' 5th–95th percentile
+**and** `callsScored ≥ MIN_SHARED_CALLS_FOR_VERDICT` (5, `lib/scoring/src/verdict.ts`);
+*forming* below 7 prior days. Accounts that are not Vapi accounts (the public set of
+W-12) are excluded by `sourceProvider`. The page renders the org → agent rows with the
+tick bar (green ran, amber moved or `too_close`, grey no run, red refused/failed with the
+ledger outcome on hover), today's rate vs baseline with its call count, and cost this
+month from the ledger's `estimatedCents`.
+
+**Acceptance:** WHEN an agent has fewer than 7 settled days THEN its row SHALL read
+"baseline forming" and SHALL NOT be amber; WHEN today's production rate lies outside the
+trailing 5th–95th percentile with ≥ 5 calls scored THEN the tick SHALL be amber; WHEN a
+day's ledger outcome starts with `refused:` THEN the tick SHALL be red and its hover
+SHALL show that outcome verbatim.
+
+**Verify:** `pnpm --filter @workspace/api-server test`;
+`pnpm --filter @workspace/stt-benchmark test`; typecheck.
+
+**Prove it by breaking it:** after committing, remove the `callsScored ≥ 5` clause from the
+baseline function; exactly one unit test fails — the one with four calls scored and an
+outlying rate.
+
+**Must not:** compute any verdict in the browser (D-13 — the rates and the baseline come
+from the endpoint); render the word "vertical"; show an absent measurement as 0.
+
+### W-7 — One agent, one day: the verdict for that agent, and what else happened
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** W-6; S-AB1 (shares its cell-filtering seam in `bulkVerdicts`).
+**Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 2).
+**Files:** `artifacts/api-server/src/lib/verdict.ts` (`bulkVerdicts` gains an
+`assistantId` filter beside S-AB1's `providers`), `lib/api-spec/openapi.yaml` (the
+`assistantId` query parameter on `/benchmark/bulks/{bulkId}/verdicts`, and one new read
+path for turn signals), `artifacts/api-server/src/lib/production-signals.ts` (a second
+reader for `turnLatencies`), the Orgs page from W-6 (a day drawer), a new integration
+case beside `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`.
+
+**Today:** `bulkVerdicts` groups by org (`sourceAccountLabel`) and lists `assistantIds`
+inside the group; there is no per-assistant verdict. The saved artifact's
+`performanceMetrics.turnLatencies[]` (`modelLatency`, `voiceLatency`,
+`transcriberLatency`, `endpointingLatency`, `turnLatency`) is read by nothing; only the
+averages are stored as columns (M-7a).
+
+**Change:** (a) `assistantId` on the verdicts route filters the `VerdictCell[]` to calls
+with that `sourceAssistantId` before `computeVerdict`, 400 when the id is not in the
+bulk; (b) the turn-signals endpoint returns, per call in the bulk (scoped to the agent),
+the per-turn numbers above plus the stored `prod_assistant_interruptions`,
+`prod_tool_calls`, `source_ended_reason`, `source_success_evaluation`, **each with a
+measured/not-measured flag**; (c) the drawer shows the agent-day verdict sentence and the
+five-layer strip (STT · turn-taking · LLM · voice · outcome) with denominators.
+
+**Acceptance:** WHEN Vapi timed 7 of 10 calls THEN the latency cells SHALL read "7 of 10
+timed" and SHALL NOT show 0 for the other three; WHEN `assistantId` is given THEN
+`noiseFloor.sharedCalls` SHALL count only that assistant's calls.
+
+**Verify:** typecheck; the integration suite; the render test.
+
+**Prove it by breaking it:** after committing, remove the assistant filter; exactly one
+integration test fails on `sharedCalls`. Restore with
+`git checkout -- artifacts/api-server/src/lib/verdict.ts`.
+
+**Must not:** serialise `messages`, `transcript`, or any text from the artifact — numbers
+and enums only; log an artifact path with a caller id.
+
+### W-8 — An SDK generated from the spec
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part E (1).
+**Files:** `lib/api-spec/orval.config.ts` (a third target, `client: "fetch"`), a new
+workspace package beside `lib/api-client-react` (plain name: api-client) with a
+non-React mutator modelled on `lib/api-client-react/src/custom-fetch.ts`,
+`pnpm-workspace.yaml` if the glob does not already cover it, root `package.json`
+typecheck wiring.
+
+**Today:** the only generated client is the TanStack one, unusable outside React.
+
+**Acceptance:** WHEN the spec gains a path and `pnpm --filter @workspace/api-spec codegen`
+runs THEN the new package SHALL export a typed function for it with no hand edit AND
+`pnpm run typecheck` SHALL pass.
+
+**Verify:** codegen, then typecheck; `node scripts/check-import-cycles.mjs`.
+
+**Prove it by breaking it:** not applicable — generated code; the proof is the codegen
+script's own typecheck of what it generates (T-141's rule).
+
+**Must not:** hand-write a request; import React.
+
+### W-9 — A CLI over the SDK
+
+**Status:** not started. Spends nothing by itself.
+**PR:** one.
+**Depends on:** W-8, W-2 (schedules), W-5 (`run-now` needs the tick function behind a
+route: `POST /benchmark/watch-schedules/{id}/run-now`, added here, which calls the same
+function the tick calls and returns the ledger outcome).
+**Spec:** `docs/PRD-v8-watch.md` §5 Part E (2).
+**Files:** `scripts/src/import-vapi-calls.ts` (folded in as `import`), a new entry file
+beside it (plain name: stt-evals), `scripts/package.json`.
+
+**Change:** subcommands `orgs`, `agents <org>`, `watch list|create|run-now <id>`,
+`verdict <bulkId> [--assistant <id>] [--providers a,b]`, `moved [--days 30]`,
+`import` (today's flags). Reads `API_BASE_URL` only.
+
+**Acceptance:** WHEN `watch run-now <id>` is called THEN the same cost gate and ledger
+SHALL apply as to the scheduler AND the command SHALL print the ledger outcome verbatim
+AND a refused run SHALL exit non-zero.
+
+**Verify:** typecheck; a smoke run of `orgs` against the local API.
+
+**Must not:** read any `*_API_KEY`; talk to Vapi or a provider directly.
+
+### W-10 — An MCP server: read tools, and one write that obeys the ledger
+
+**Status:** not started. Spends nothing by itself.
+**PR:** one.
+**Depends on:** W-8, W-9 (the `run-now` route).
+**Spec:** `docs/PRD-v8-watch.md` §5 Part E (3); `docs/integration-strategy.md` (MCP is
+never in the runtime path — this server is a *client* of the API).
+**Files:** a new workspace package beside `lib/api-client-react` (plain name:
+mcp-server) on the official MCP TypeScript SDK over stdio; `scripts/check-import-cycles.mjs`
+or a new one-line check that `artifacts/api-server` never imports it.
+
+**Change:** tools `list_orgs`, `list_agents`, `get_verdict`, `get_moved`,
+`get_words_to_watch`, `get_call_disagreement` (read), and `watch_run_now` (write, via the
+W-9 route). Configuration is one env var, the API base URL.
+
+**Acceptance:** WHEN `watch_run_now` is invoked and the cap refuses THEN the tool SHALL
+return the ledger outcome and no bulk SHALL exist; WHEN any read tool is invoked THEN no
+transcript text SHALL be in its result unless the tool is `get_call_disagreement`, and
+then only the disagreeing spans the existing endpoint already returns.
+
+**Verify:** typecheck; the cycle check; a manual `claude mcp add` against the local API
+with the seven tools listed.
+
+**Must not:** be imported by `artifacts/api-server`; carry or print a key; add a tool that
+creates or patches a Vapi assistant (D-12).
+
+### W-11 — A Claude Code plugin that installs the server and three skills
+
+**Status:** not started. Spends nothing.
+**PR:** one, in a new repository (plain name: ellavox/stt-evals-plugin); one line in
+`docs/HANDOFF.md` here.
+**Depends on:** W-10.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part E (4).
+
+**Change:** a marketplace repo with a plugin manifest, a `.mcp.json` pointing at the W-10
+server, and three skills: *read the verdict for an org*, *find where STT failed on a
+call*, *add a provider adapter* (the template is
+`lib/stt-providers/src/adapters/elevenlabs.ts`, 95 lines). Install path is the one Vapi's
+own plugin uses: `/plugin marketplace add <owner/repo>`, `/plugin install`.
+
+**Acceptance:** WHEN installed THEN `/plugin` SHALL list the three skills and the MCP
+server AND a fresh session SHALL answer "did STT move for <org> this week" from the read
+tools alone.
+
+**Must not:** carry any key in the plugin env; ship a skill that writes to Vapi.
+
+### W-12 — The public calibration set: does the no-gold rank agree with gold WER?
+
+**Status:** not started. **Spends ≈ $6.32** once (all seven ready providers), after an
+explicit "go spend".
+**PR:** one.
+**Depends on:** nothing technically; ordered as early as the go allows.
+**Spec:** `docs/PRD-v8-watch.md` §1d and §5 Part F.
+**Files:** a new script beside `scripts/src/import-vapi-calls.ts` (plain name:
+import-public-set), `lib/api-spec/openapi.yaml` (the `Vertical` enum gains
+`public_benchmark`; the DB column is plain text so no migration), the local `Vertical`
+type in `scripts/src/import-vapi-calls.ts`, `artifacts/stt-benchmark/src/pages/Rankings.tsx`
+(the "Method check" line), `docs/scoring-policy.md`.
+
+**Today, measured 2026-09-14:** the Pipecat set is 1,000 clips, 16 kHz mono `.wav`, 1–16 s
+each, **mean 9.59 s, median 10.90 s** (datasets-server statistics), so **159.9 audio
+minutes**; at the seven ready providers' summed $0.0395/min that is **$6.32**. Cartesia's
+adapter streams at real time, so its 1,000 cells take ≈ 2.7 h of wall-clock. Columns:
+`sample_id`, `audio`, `duration_seconds`, `transcription`. The dataset card shows **no
+licence field**; the benchmark code is BSD-2. When gold exists the executor still scores
+WER (`artifacts/api-server/src/lib/run-executor.ts`, the `hasGold` branch).
+
+**Change:** the script pulls rows through the Hugging Face datasets-server rows API in
+pages of 100, downloads each clip, creates a call through `POST /benchmark/calls` with
+`goldTranscript` = `transcription`, `vertical: public_benchmark`, `sourceProvider` =
+"pipecat", `sourceAccountLabel` = "Public: Pipecat 1k", and stores the clip as both the
+mono file and the customer track (the clip *is* the customer). It prints the summed
+minutes and the priced estimate and **stops** unless `--apply` and a fresh `--go-spend`
+flag are both given. One bulk is then created with `minDurationSeconds: 0`,
+`minCustomerWords: 0`, `requireCustomerAudio: true`, every ready provider. When it
+completes, a read-only script prints, per provider, gold WER and peer-flag rate, and the
+Spearman rank correlation between the two over the providers; Results shows that number
+under "Method check", dated, with the caveat line (16 kHz mic audio, English, not
+telephony).
+
+**Acceptance:** WHEN the Pipecat bulk completes THEN Results SHALL show the Spearman rank
+agreement between gold WER and peer-flag rate across the ready providers, dated; AND
+WHEN the script is run without `--go-spend` THEN it SHALL print the minutes and the
+estimate and create nothing.
+
+**Verify:** typecheck; the script's dry run printing `159.9 min` (±0.1) and the estimate;
+then, after the go, the bulk's manifest listing 1,000 calls.
+
+**Prove it by breaking it:** after committing, remove the `--go-spend` check; the script's
+own dry-run test fails. Restore.
+
+**Must not:** run without "go spend"; run before the dataset licence has been read from
+the repository and Abhishek has said yes; let a `public_benchmark` call enter any client
+org's verdict, trend, overview or baseline (W-6 excludes by `sourceProvider`; the
+`accountLabel` criterion keeps it out of every template); be created while three live
+bulks exist — FR-BLK-10 would evict a client's bulk to make room, so the script refuses
+when `GET /benchmark/bulks` shows three.

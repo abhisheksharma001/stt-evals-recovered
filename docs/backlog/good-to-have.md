@@ -2797,3 +2797,47 @@ Live voice-agent latency budgets, TOPSIS-style composite provider scoring,
 MLOps drift-detection triggers -- all real, all aimed at *production*
 STT selection for a live agent. This tool does offline backtesting against
 recorded calls, a different problem. Revisit only if the tool's job changes.
+
+## Found 2026-09-13 (grilling the head-to-head feature): Corpus ships every agent scan's full transcript, and 62 of them carry caller PII in an error column
+
+`artifacts/stt-benchmark/src/pages/Corpus.tsx:74` and `:594` both call
+`useListAgentScans()` **unfiltered** -- the file's own comment at `:542` notes the hook is
+"unfiltered/shared across" its consumers. `GET /benchmark/agent/scans` serves every row
+with its `sourceTranscript` populated.
+
+**Measured live 2026-09-13:** 347 scans returned, **347 of them carrying a full
+transcript**. The Calls page downloads all of it on every visit, to render per-call
+chips.
+
+**The worse half.** 62 rows dated `2026-08-27` have `status: "error"` and an
+`errorMessage` that is a serialised failed INSERT -- *including its bound parameters*. So
+the column holds the call's transcript verbatim: the assistant's and caller's turns, a
+person's name, a property name, and a spoken phone number. The longest `errorMessage` in
+the live response is **22,207 characters**. All 62 are served to the browser by the same
+unfiltered call.
+
+**Why those 62 exist, and why that part needs no fix.** The schema's own T-01 note
+(`lib/db/src/schema/benchmark-agent-scans.ts:99-108`) records it: the column was
+`judge_cost_cents integer`, a judge call costs a fraction of a cent, Postgres rejected
+the insert, and the catch in `agent-verify.ts` read the write failure as a judge failure.
+Fixed 2026-08-28 by moving to `judge_cost_microcents`. **Zero insert failures on any date
+after 2026-08-27** -- confirmed by grouping all 347 live scans by date and status. The
+defect is closed; its 62 rows are still being served.
+
+**Reproduce:**
+```
+curl -s http://localhost:8177/api/benchmark/agent/scans | python3 -c "
+import sys,json
+rows=json.load(sys.stdin)
+print('rows', len(rows))
+print('with transcript', sum(1 for r in rows if r.get('sourceTranscript')))
+print('max errorMessage', max(len(str(r.get('errorMessage') or '')) for r in rows))"
+```
+
+**Worth having, in order:** (a) stop returning `sourceTranscript` and `errorMessage` from
+the list route -- a list does not need either, and the detail route can carry them;
+(b) give Corpus a count-only or call-scoped read; (c) decide separately whether the 62
+dead rows are redacted or deleted, since that is a data change and Abhishek's call.
+
+**Do not** fix this by truncating `errorMessage` at the edge. The PII is in the database
+column; truncation moves where it leaks, not whether it is stored.
