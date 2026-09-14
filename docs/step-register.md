@@ -8556,7 +8556,14 @@ promises; the run log was read from a file, not a tail.
 
 ### W-1 — Two production signals become selection criteria
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-14 (PR #180). Spent nothing. Learned: the two floors needed no
+migration at all -- `BulkSelectionCriteria` lives in an existing `jsonb` column, so the
+whole step is a type, a matcher branch, a spec block and regenerated clients. The break
+test (a `?? 0` in place of each null guard) failed exactly one case, which is the point:
+before W-1 the only thing stopping a never-measured call from reading as a fast,
+uninterrupted one was a guard nothing asserted. `hasFilters` was deliberately NOT
+extended -- like the duration band and `minCustomerWords`, these floors are not "who"
+filters, so a `callIds`-only selection still resolves to exactly its explicit picks.
 **PR:** one.
 **Depends on:** nothing.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part A.
