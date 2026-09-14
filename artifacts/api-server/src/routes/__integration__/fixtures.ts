@@ -22,6 +22,7 @@ import {
   benchmarkScoresTable,
   bulkTemplatesTable,
   db,
+  watchSchedulesTable,
 } from "@workspace/db";
 
 type ProviderRow = typeof benchmarkProvidersTable.$inferSelect;
@@ -229,6 +230,11 @@ export class Fixtures {
     // delete on purpose (`onDelete: "set null"` -- a mark is about the agent,
     // not the call), so nothing else here reaches them.
     await db.delete(agentMarksTable).where(eq(agentMarksTable.createdByLabel, this.actor));
+    // W-2: before the templates, not after -- a schedule holds an FK to the
+    // template it watches, so deleting the template first fails the
+    // constraint. Schedules are created only through their route, which
+    // stamps the `x-actor` this fixture sends as createdByLabel.
+    await db.delete(watchSchedulesTable).where(eq(watchSchedulesTable.createdByLabel, this.actor));
     // Bulk templates are created only through their route (T-177), which
     // stamps the `x-actor` this fixture sends as createdByLabel.
     await db.delete(bulkTemplatesTable).where(eq(bulkTemplatesTable.createdByLabel, this.actor));

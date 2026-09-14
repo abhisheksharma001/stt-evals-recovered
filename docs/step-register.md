@@ -8606,15 +8606,26 @@ file (the columns are the source).
 
 ### W-2 — `watch_schedules`: one row per org-or-agent policy, and its CRUD
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-14 (PR #181). Spent nothing. Learned: the FK to
+`bulk_templates` reaches further than the table -- `Fixtures.cleanup()` had to
+delete schedules BEFORE templates or the whole integration suite fails on the
+constraint, so a new table with an FK is never only a schema file. The
+known-account check is deliberately its own sentence rather than the FK's or
+`vapiKeyFor()`'s: a schedule must refuse an unconfigured account at save time,
+while `vapiKeyFor` only refuses at spend time, which is far too late for a row
+that will spend on its own later. `assistantId: null` had to be kept
+distinguishable from "field not sent" in the PATCH -- null means "widen back to
+every agent on this account", and a naive spread would have made that
+unsayable. The route holds no defaults: `sampleSize`/caps/`hourLocal` are set
+only on the column, so the row has one source of truth.
 **PR:** one.
 **Depends on:** nothing.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part A.
-**Files:** a new schema file beside `lib/db/src/schema/bulk-templates.ts` (plain name:
-watch-schedules), `lib/db/src/schema/index.ts`, `lib/api-spec/openapi.yaml`, a new route
-file beside `artifacts/api-server/src/routes/bulks.ts` (plain name: watch) mounted from
-`artifacts/api-server/src/routes/index.ts`, the generated clients, and a new integration
-file beside `artifacts/api-server/src/routes/__integration__/bulk-templates.int.test.ts`.
+**Files:** `lib/db/src/schema/watch-schedules.ts`, `lib/db/src/schema/index.ts`,
+`lib/api-spec/openapi.yaml`, `artifacts/api-server/src/routes/watch.ts` mounted from
+`artifacts/api-server/src/routes/index.ts`, the generated clients,
+`artifacts/api-server/src/routes/__integration__/watch-schedules.int.test.ts`, and
+`artifacts/api-server/src/routes/__integration__/fixtures.ts` (cleanup order).
 
 **Today:** a template holds criteria + providers + band and launches only on a click
 (`POST /benchmark/bulk-templates/{templateId}/launch`). No row anywhere says "for this

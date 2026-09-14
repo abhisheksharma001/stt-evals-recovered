@@ -1912,6 +1912,77 @@ export interface BulkTemplateLaunchInput {
   confirm?: boolean;
 }
 
+export interface WatchSchedule {
+  id: string;
+  templateId: string;
+  accountId: string;
+  vertical: Vertical;
+  /** @nullable */
+  assistantId: string | null;
+  sampleSize: number;
+  dailyCapCents: number;
+  monthlyCapCents: number;
+  hourLocal: number;
+  enabled: boolean;
+  /** @nullable */
+  createdByLabel?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WatchScheduleInput {
+  templateId: string;
+  /** @minLength 1 */
+  accountId: string;
+  vertical: Vertical;
+  /**
+     * @minLength 1
+     * @nullable
+     */
+  assistantId?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  sampleSize?: number;
+  /** @minimum 1 */
+  dailyCapCents?: number;
+  /** @minimum 1 */
+  monthlyCapCents?: number;
+  /**
+     * @minimum 0
+     * @maximum 23
+     */
+  hourLocal?: number;
+  enabled?: boolean;
+}
+
+export interface WatchSchedulePatch {
+  vertical?: Vertical;
+  /** @minLength 1 */
+  accountId?: string;
+  /**
+     * @minLength 1
+     * @nullable
+     */
+  assistantId?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  sampleSize?: number;
+  /** @minimum 1 */
+  dailyCapCents?: number;
+  /** @minimum 1 */
+  monthlyCapCents?: number;
+  /**
+     * @minimum 0
+     * @maximum 23
+     */
+  hourLocal?: number;
+  enabled?: boolean;
+}
+
 export interface RunManifestCall {
   id: string;
   label: string;

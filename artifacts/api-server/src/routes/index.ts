@@ -5,6 +5,7 @@ import agentMarksRouter from "./agent-marks";
 import benchmarkRouter from "./benchmark";
 import bulksRouter from "./bulks";
 import healthRouter from "./health";
+import watchRouter from "./watch";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(bulksRouter);
 router.use(agentRouter);
 router.use(agentMarksRouter);
 router.use(disagreementSpansRouter);
+router.use(watchRouter);
 
 export default router;

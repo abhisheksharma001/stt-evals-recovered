@@ -89,6 +89,9 @@ import type {
   VapiPreviewInput,
   VapiPreviewResult,
   VerticalRanking,
+  WatchSchedule,
+  WatchScheduleInput,
+  WatchSchedulePatch,
   WordsToWatch
 } from './api.schemas';
 
@@ -4301,6 +4304,226 @@ export const useLaunchBulkTemplate = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getLaunchBulkTemplateMutationOptions(options));
+    }
+
+export const getListWatchSchedulesUrl = () => {
+
+
+
+
+  return `/api/benchmark/watch-schedules`
+}
+
+/**
+ * @summary List watch schedules -- one row per org-or-agent daily-sampling policy (W-2)
+ */
+export const listWatchSchedules = async ( options?: Parameters<typeof customFetch>[1]): Promise<WatchSchedule[]> => {
+
+  return customFetch<WatchSchedule[]>(getListWatchSchedulesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWatchSchedulesQueryKey = () => {
+    return [
+    `/api/benchmark/watch-schedules`
+    ] as const;
+    }
+
+
+export const getListWatchSchedulesQueryOptions = <TData = Awaited<ReturnType<typeof listWatchSchedules>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWatchSchedules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWatchSchedulesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWatchSchedules>>> = ({ signal }) => listWatchSchedules({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWatchSchedules>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWatchSchedulesQueryResult = NonNullable<Awaited<ReturnType<typeof listWatchSchedules>>>
+export type ListWatchSchedulesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List watch schedules -- one row per org-or-agent daily-sampling policy (W-2)
+ */
+
+export function useListWatchSchedules<TData = Awaited<ReturnType<typeof listWatchSchedules>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWatchSchedules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWatchSchedulesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateWatchScheduleUrl = () => {
+
+
+
+
+  return `/api/benchmark/watch-schedules`
+}
+
+/**
+ * @summary Save a watch schedule. Creating one starts nothing -- it is inert until the W-5 tick reads it.
+ */
+export const createWatchSchedule = async (watchScheduleInput: WatchScheduleInput, options?: Parameters<typeof customFetch>[1]): Promise<WatchSchedule> => {
+
+  return customFetch<WatchSchedule>(getCreateWatchScheduleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(watchScheduleInput)
+  }
+);}
+
+
+
+
+
+export const getCreateWatchScheduleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWatchSchedule>>, TError,{data: BodyType<WatchScheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWatchSchedule>>, TError,{data: BodyType<WatchScheduleInput>}, TContext> => {
+
+const mutationKey = ['createWatchSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWatchSchedule>>, {data: BodyType<WatchScheduleInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWatchSchedule(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWatchScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof createWatchSchedule>>>
+    export type CreateWatchScheduleMutationBody = BodyType<WatchScheduleInput>
+    export type CreateWatchScheduleMutationError = ErrorType<void>
+
+    /**
+ * @summary Save a watch schedule. Creating one starts nothing -- it is inert until the W-5 tick reads it.
+ */
+export const useCreateWatchSchedule = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWatchSchedule>>, TError,{data: BodyType<WatchScheduleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createWatchSchedule>>,
+        TError,
+        {data: BodyType<WatchScheduleInput>},
+        TContext
+      > => {
+      return useMutation(getCreateWatchScheduleMutationOptions(options));
+    }
+
+export const getUpdateWatchScheduleUrl = (scheduleId: string,) => {
+
+
+
+
+  return `/api/benchmark/watch-schedules/${scheduleId}`
+}
+
+/**
+ * @summary Change a watch schedule. Every field is optional; the ones sent are the ones changed.
+ */
+export const updateWatchSchedule = async (scheduleId: string,
+    watchSchedulePatch: WatchSchedulePatch, options?: Parameters<typeof customFetch>[1]): Promise<WatchSchedule> => {
+
+  return customFetch<WatchSchedule>(getUpdateWatchScheduleUrl(scheduleId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(watchSchedulePatch)
+  }
+);}
+
+
+
+
+
+export const getUpdateWatchScheduleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWatchSchedule>>, TError,{scheduleId: string;data: BodyType<WatchSchedulePatch>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWatchSchedule>>, TError,{scheduleId: string;data: BodyType<WatchSchedulePatch>}, TContext> => {
+
+const mutationKey = ['updateWatchSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWatchSchedule>>, {scheduleId: string;data: BodyType<WatchSchedulePatch>}> = (props) => {
+          const {scheduleId,data} = props ?? {};
+
+          return  updateWatchSchedule(scheduleId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWatchScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof updateWatchSchedule>>>
+    export type UpdateWatchScheduleMutationBody = BodyType<WatchSchedulePatch>
+    export type UpdateWatchScheduleMutationError = ErrorType<void>
+
+    /**
+ * @summary Change a watch schedule. Every field is optional; the ones sent are the ones changed.
+ */
+export const useUpdateWatchSchedule = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWatchSchedule>>, TError,{scheduleId: string;data: BodyType<WatchSchedulePatch>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateWatchSchedule>>,
+        TError,
+        {scheduleId: string;data: BodyType<WatchSchedulePatch>},
+        TContext
+      > => {
+      return useMutation(getUpdateWatchScheduleMutationOptions(options));
     }
 
 export const getGetBenchmarkRunManifestUrl = (runId: string,) => {
