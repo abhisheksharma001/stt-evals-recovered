@@ -8703,8 +8703,13 @@ SHALL change.
 
 **Verify:** `pnpm --filter @workspace/api-server test` — the new file green.
 
-**Prove it by breaking it:** after committing, replace the seeded PRNG with `Math.random`;
-exactly one test fails — the determinism one. Restore.
+**Prove it by breaking it:** after committing, replace the seeded PRNG with `Math.random`.
+Run 2026-09-14: **two** tests fail, not the one this step predicted — "draws the same ids
+in the same order" and "never lets one agent move another's draw". The step's prediction
+was wrong because the second test is also a determinism assertion, and it is the stricter
+of the two. The two ordering tests ("the day changes", "the schedule changes") keep
+passing under `Math.random`, which is correct: they assert that the draw MOVES, and random
+draws move. Restore with `git checkout -- artifacts/api-server/src/lib/watch-sampler.ts`.
 
 **Must not:** read the database; import anything from `artifacts/api-server/src/lib/bulks.ts`.
 
