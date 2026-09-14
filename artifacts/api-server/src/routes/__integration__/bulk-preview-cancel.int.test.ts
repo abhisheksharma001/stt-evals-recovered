@@ -151,6 +151,86 @@ describe("POST /api/benchmark/bulks/preview", () => {
     expect(picked.body.matchedCount).toBe(1);
   });
 
+  // W-1: the two production signals become floors. The thing this case
+  // exists for is the NULL column: 141 of the 376 calls in the corpus have
+  // no transcriber latency and 255 have no interruption count, because M-7a
+  // only writes what Vapi actually reported. Null means "never measured",
+  // so it can neither pass a floor nor be counted as a call that measured
+  // low -- it gets its own bucket, like T-13's unknown outcome.
+  it("floors on what production measured, and never reads an unmeasured call as a zero", async () => {
+    const accountLabel = `fx-prod-${fx.suffix}`;
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      prodTranscriberLatencyMs: 500,
+      prodAssistantInterruptions: 2,
+    });
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+      prodTranscriberLatencyMs: 100,
+      prodAssistantInterruptions: 0,
+    });
+    // Never measured: both columns null, which is what a call imported
+    // before M-7a -- or one Vapi reported no metrics for -- looks like.
+    await fx.call({
+      durationSeconds: 90,
+      sourceAccountLabel: accountLabel,
+    });
+
+    const send = (criteria: Record<string, unknown>) =>
+      request(server)
+        .post("/api/benchmark/bulks/preview")
+        .send({
+          criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0, ...criteria },
+          providerIds: [],
+          minDurationSeconds: 30,
+          maxDurationSeconds: 300,
+        });
+
+    // Absent field = no filter: all three calls match exactly as they did
+    // before W-1 existed, so every template saved earlier is untouched.
+    const unfiltered = await send({});
+    expect(unfiltered.status).toBe(200);
+    expect(unfiltered.body.inScopeCount).toBe(3);
+    expect(unfiltered.body.matchedCount).toBe(3);
+    expect(unfiltered.body.excluded).toEqual([]);
+
+    // The acceptance sentence: >= 1 interruption selects the one call that
+    // has one, the 0-count call is named for its count, and the null-count
+    // call is named for having no count at all.
+    const interrupted = await send({ minProdAssistantInterruptions: 1 });
+    expect(interrupted.status).toBe(200);
+    expect(interrupted.body.matchedCount).toBe(1);
+    expect(interrupted.body.excluded).toEqual([
+      { bucket: "fewer than 1 production interruptions", count: 1 },
+      { bucket: "no production interruption count on record", count: 1 },
+    ]);
+
+    // Same rule on the other signal.
+    const slow = await send({ minProdTranscriberLatencyMs: 400 });
+    expect(slow.body.matchedCount).toBe(1);
+    expect(slow.body.excluded).toEqual([
+      { bucket: "no production transcriber latency on record", count: 1 },
+      { bucket: "production transcriber latency under 400ms", count: 1 },
+    ]);
+
+    // A call failing both floors is counted once, under the first one read
+    // -- latency, then interruptions, matching the order of the comment on
+    // exclusionBucketFor and T-14's one-call-one-bucket rule.
+    const both = await send({ minProdTranscriberLatencyMs: 400, minProdAssistantInterruptions: 1 });
+    expect(both.body.matchedCount).toBe(1);
+    expect(both.body.excluded).toEqual([
+      { bucket: "no production transcriber latency on record", count: 1 },
+      { bucket: "production transcriber latency under 400ms", count: 1 },
+    ]);
+    const excludedTotal = both.body.excluded.reduce(
+      (sum: number, e: { count: number }) => sum + e.count,
+      0,
+    );
+    expect(both.body.matchedCount + excludedTotal).toBe(both.body.inScopeCount);
+  });
+
   // M-16, found by the break test: every case above states its floor out
   // loud, which left the DEFAULT itself asserted by nothing -- setting
   // DEFAULT_MIN_CUSTOMER_WORDS to 0 passed the whole suite. So did letting

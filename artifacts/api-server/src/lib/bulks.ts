@@ -190,12 +190,16 @@ type CandidateRow = {
   // below is pure and gets a number; the draft itself (a caller's own words)
   // never outlives the row it came from.
   customerWordCount: number;
+  // W-1: null means production never measured this, not zero.
+  prodTranscriberLatencyMs: number | null;
+  prodAssistantInterruptions: number | null;
 };
 
 /**
  * Decides, for one in-scope call, which exclusion bucket it falls into, or
  * null when it is selected. Order matters and is the order a person reads
- * the filters in: date window, duration band, outcome, success evaluation.
+ * the filters in: date window, duration band, what the caller said, what
+ * production measured, outcome, success evaluation.
  * A call failing several filters is counted once, under the first.
  *
  * This is THE matcher. resolveCriteriaCallIds (bulk creation) and the
@@ -230,6 +234,23 @@ function exclusionBucketFor(
     c.customerWordCount < criteria.minCustomerWords
   ) {
     return `fewer than ${criteria.minCustomerWords} customer words`;
+  }
+  // W-1: the two production signals, read right after the two things this
+  // corpus measures itself, because they answer the same question from the
+  // live agent's side. A null column was never measured (M-7a) and gets its
+  // own bucket -- it must not compare as 0 and quietly fail the floor as if
+  // production had measured a fast, uninterrupted call.
+  if (criteria.minProdTranscriberLatencyMs !== undefined) {
+    if (c.prodTranscriberLatencyMs === null) return "no production transcriber latency on record";
+    if (c.prodTranscriberLatencyMs < criteria.minProdTranscriberLatencyMs) {
+      return `production transcriber latency under ${criteria.minProdTranscriberLatencyMs}ms`;
+    }
+  }
+  if (criteria.minProdAssistantInterruptions !== undefined) {
+    if (c.prodAssistantInterruptions === null) return "no production interruption count on record";
+    if (c.prodAssistantInterruptions < criteria.minProdAssistantInterruptions) {
+      return `fewer than ${criteria.minProdAssistantInterruptions} production interruptions`;
+    }
   }
   // T-13: an unknown outcome never passes an outcome filter, and is its own
   // bucket rather than hiding inside a reason it does not have.
@@ -288,6 +309,9 @@ export async function resolveCriteriaSelection(
     // M-16: selected so the customer-word count can be taken, then dropped
     // by `toCandidate` -- the count travels, the transcript does not.
     draftTranscript: benchmarkCallsTable.draftTranscript,
+    // W-1: the production signals the new floors read.
+    prodTranscriberLatencyMs: benchmarkCallsTable.prodTranscriberLatencyMs,
+    prodAssistantInterruptions: benchmarkCallsTable.prodAssistantInterruptions,
   };
   const toCandidate = (row: {
     id: string;
@@ -296,6 +320,8 @@ export async function resolveCriteriaSelection(
     sourceEndedReason: string | null;
     sourceSuccessEvaluation: string | null;
     draftTranscript: string | null;
+    prodTranscriberLatencyMs: number | null;
+    prodAssistantInterruptions: number | null;
   }): CandidateRow => ({
     id: row.id,
     durationSeconds: row.durationSeconds,
@@ -303,6 +329,8 @@ export async function resolveCriteriaSelection(
     sourceEndedReason: row.sourceEndedReason,
     sourceSuccessEvaluation: row.sourceSuccessEvaluation,
     customerWordCount: countCustomerWords(row.draftTranscript),
+    prodTranscriberLatencyMs: row.prodTranscriberLatencyMs,
+    prodAssistantInterruptions: row.prodAssistantInterruptions,
   });
 
   // Scope = the "who" filters. Everything after (date, band, outcome) is a

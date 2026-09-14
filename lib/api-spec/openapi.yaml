@@ -2609,6 +2609,15 @@ components:
         # reads it as 20, a template launch leaves it absent so a template
         # saved before M-16 keeps matching exactly what it matched.
         minCustomerWords: { type: number, minimum: 0 }
+        # W-1: floors on what production already measured (M-7a, from Vapi's
+        # own performanceMetrics). A call matches when its stored value is
+        # >= the floor; a call whose column is NULL was never measured and
+        # never passes a floor -- it is counted under its own named bucket in
+        # the preview, exactly as T-13 treats an unknown outcome. Absent
+        # means no floor, so a template saved before W-1 keeps matching what
+        # it matched.
+        minProdTranscriberLatencyMs: { type: number, minimum: 0 }
+        minProdAssistantInterruptions: { type: number, minimum: 0 }
         callIds:
           type: array
           items: { type: string }
