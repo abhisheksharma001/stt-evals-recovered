@@ -2230,6 +2230,116 @@ export const LaunchBulkTemplateResponse = zod.object({
 
 
 /**
+ * @summary List watch schedules -- one row per org-or-agent daily-sampling policy (W-2)
+ */
+export const ListWatchSchedulesResponseItem = zod.object({
+  "id": zod.string(),
+  "templateId": zod.string(),
+  "accountId": zod.string(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "assistantId": zod.string().nullable(),
+  "sampleSize": zod.number(),
+  "dailyCapCents": zod.number(),
+  "monthlyCapCents": zod.number(),
+  "hourLocal": zod.number(),
+  "enabled": zod.boolean(),
+  "createdByLabel": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})
+export const ListWatchSchedulesResponse = zod.array(ListWatchSchedulesResponseItem)
+
+
+/**
+ * @summary Save a watch schedule. Creating one starts nothing -- it is inert until the W-5 tick reads it.
+ */
+
+
+export const createWatchScheduleBodySampleSizeMax = 500;
+
+
+
+export const createWatchScheduleBodyHourLocalMin = 0;
+export const createWatchScheduleBodyHourLocalMax = 23;
+
+
+
+export const CreateWatchScheduleBody = zod.object({
+  "templateId": zod.string().uuid(),
+  "accountId": zod.string().min(1),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "assistantId": zod.string().min(1).nullish(),
+  "sampleSize": zod.number().min(1).max(createWatchScheduleBodySampleSizeMax).optional(),
+  "dailyCapCents": zod.number().min(1).optional(),
+  "monthlyCapCents": zod.number().min(1).optional(),
+  "hourLocal": zod.number().min(createWatchScheduleBodyHourLocalMin).max(createWatchScheduleBodyHourLocalMax).optional(),
+  "enabled": zod.boolean().optional()
+})
+
+export const CreateWatchScheduleResponse = zod.object({
+  "id": zod.string(),
+  "templateId": zod.string(),
+  "accountId": zod.string(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "assistantId": zod.string().nullable(),
+  "sampleSize": zod.number(),
+  "dailyCapCents": zod.number(),
+  "monthlyCapCents": zod.number(),
+  "hourLocal": zod.number(),
+  "enabled": zod.boolean(),
+  "createdByLabel": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Change a watch schedule. Every field is optional; the ones sent are the ones changed.
+ */
+export const UpdateWatchScheduleParams = zod.object({
+  "scheduleId": zod.string().uuid()
+})
+
+
+
+export const updateWatchScheduleBodySampleSizeMax = 500;
+
+
+
+export const updateWatchScheduleBodyHourLocalMin = 0;
+export const updateWatchScheduleBodyHourLocalMax = 23;
+
+
+
+export const UpdateWatchScheduleBody = zod.object({
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "accountId": zod.string().min(1).optional(),
+  "assistantId": zod.string().min(1).nullish(),
+  "sampleSize": zod.number().min(1).max(updateWatchScheduleBodySampleSizeMax).optional(),
+  "dailyCapCents": zod.number().min(1).optional(),
+  "monthlyCapCents": zod.number().min(1).optional(),
+  "hourLocal": zod.number().min(updateWatchScheduleBodyHourLocalMin).max(updateWatchScheduleBodyHourLocalMax).optional(),
+  "enabled": zod.boolean().optional()
+})
+
+export const UpdateWatchScheduleResponse = zod.object({
+  "id": zod.string(),
+  "templateId": zod.string(),
+  "accountId": zod.string(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "assistantId": zod.string().nullable(),
+  "sampleSize": zod.number(),
+  "dailyCapCents": zod.number(),
+  "monthlyCapCents": zod.number(),
+  "hourLocal": zod.number(),
+  "enabled": zod.boolean(),
+  "createdByLabel": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
  * @summary Immutable run manifest -- frozen corpus + provider config + scoring version snapshot (RUN-01, P2-T1)
  */
 export const GetBenchmarkRunManifestParams = zod.object({

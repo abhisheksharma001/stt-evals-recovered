@@ -29,4 +29,5 @@ export * from "./bulk-templates";
 export * from "./app-settings";
 export * from "./audit-log";
 export * from "./agent-marks";
+export * from "./watch-schedules";
 

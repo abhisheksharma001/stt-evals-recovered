@@ -1147,6 +1147,71 @@ paths:
           description: Nothing matched the resolved criteria
         "404":
           description: Template not found
+  # W-2 (PRD v8 Part A): a watch schedule is the policy row -- which template,
+  # which Vapi account and agent, how many calls a day, and the spend ceilings.
+  # It launches nothing; the tick that reads these rows arrives in W-5.
+  /benchmark/watch-schedules:
+    get:
+      operationId: listWatchSchedules
+      tags: [benchmark]
+      summary: List watch schedules -- one row per org-or-agent daily-sampling policy (W-2)
+      responses:
+        "200":
+          description: Watch schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WatchSchedule"
+    post:
+      operationId: createWatchSchedule
+      tags: [benchmark]
+      summary: Save a watch schedule. Creating one starts nothing -- it is inert until the W-5 tick reads it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchScheduleInput"
+      responses:
+        "201":
+          description: Created schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchSchedule"
+        "400":
+          description: Invalid body, unknown Vapi account, or unknown template
+  /benchmark/watch-schedules/{scheduleId}:
+    patch:
+      operationId: updateWatchSchedule
+      tags: [benchmark]
+      summary: Change a watch schedule. Every field is optional; the ones sent are the ones changed.
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchSchedulePatch"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchSchedule"
+        "400":
+          description: Invalid body or unknown Vapi account
+        "404":
+          description: Schedule not found
   /benchmark/runs/{runId}/manifest:
     get:
       operationId: getBenchmarkRunManifest
@@ -3144,6 +3209,52 @@ components:
         # Override the auto-generated bulk name (default: template name + date).
         name: { type: string, minLength: 1 }
         confirm: { type: boolean }
+    WatchSchedule:
+      type: object
+      required: [id, templateId, accountId, vertical, assistantId, sampleSize, dailyCapCents, monthlyCapCents, hourLocal, enabled, createdAt]
+      properties:
+        id: { type: string }
+        templateId: { type: string }
+        # A Vapi account id, which is derived from an env-var NAME. Never a
+        # key, a key prefix or a fingerprint.
+        accountId: { type: string }
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        # null = every agent on the account, sampled per agent.
+        assistantId: { type: ["string", "null"] }
+        sampleSize: { type: number }
+        dailyCapCents: { type: number }
+        monthlyCapCents: { type: number }
+        hourLocal: { type: number }
+        enabled: { type: boolean }
+        createdByLabel: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WatchScheduleInput:
+      type: object
+      required: [templateId, accountId, vertical]
+      properties:
+        templateId: { type: string, format: uuid }
+        accountId: { type: string, minLength: 1 }
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        assistantId: { type: ["string", "null"], minLength: 1 }
+        # 500 is the ceiling on ONE day's sample, not a budget. The money
+        # ceilings are the two caps below.
+        sampleSize: { type: number, minimum: 1, maximum: 500 }
+        dailyCapCents: { type: number, minimum: 1 }
+        monthlyCapCents: { type: number, minimum: 1 }
+        hourLocal: { type: number, minimum: 0, maximum: 23 }
+        enabled: { type: boolean }
+    WatchSchedulePatch:
+      type: object
+      properties:
+        vertical: { $ref: "#/components/schemas/Vertical" }
+        accountId: { type: string, minLength: 1 }
+        assistantId: { type: ["string", "null"], minLength: 1 }
+        sampleSize: { type: number, minimum: 1, maximum: 500 }
+        dailyCapCents: { type: number, minimum: 1 }
+        monthlyCapCents: { type: number, minimum: 1 }
+        hourLocal: { type: number, minimum: 0, maximum: 23 }
+        enabled: { type: boolean }
     RunManifestCall:
       type: object
       required: [id, label, goldTranscriptSha256]
