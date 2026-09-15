@@ -8976,7 +8976,7 @@ them now W-5c2's problem:**
 
 ### W-5c1 — `benchmark_bulks` learns which schedule and day it belongs to
 
-**Status:** done 2026-09-15. Spent nothing — every bulk the new tests create parks
+**Status:** done 2026-09-15 (PR #187). Spent nothing — every bulk the new tests create parks
 at `awaiting_confirmation` over the FR-BLK-5 gate and never launches.
 **PR:** one.
 **Depends on:** W-5a, W-2.
