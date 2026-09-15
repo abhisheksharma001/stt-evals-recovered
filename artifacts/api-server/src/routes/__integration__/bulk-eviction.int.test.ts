@@ -7,29 +7,59 @@
 //
 // Nothing here spends: POST /benchmark/bulks only creates the bulk row, and
 // the fixture provider id matches no adapter.
-import { afterAll, describe, expect, it } from "vitest";
+//
+// W-13: the cap moved 3 -> 10, and this file was the only place that could
+// prove it. It could not, as written. It seeded a literal three bulks and
+// leaned on "whatever else is present" to reach the cap -- true at 3, false
+// at 10 -- and it had no case at all for the other half of FR-BLK-10, that
+// BELOW the cap nothing is evicted. So the two cases below split the job:
+// the eviction case is written in terms of MAX_LIVE_BULKS and passes at any
+// value of it, and the under-cap case is written in literal 9s and 10s
+// precisely so it fails the moment the number moves.
+//
+// Both count every bulk row in the database, so both need to start from a
+// known one. `beforeEach` empties the table: this suite refuses to start
+// unless TEST_DATABASE_URL is set and differs from DATABASE_URL
+// (vitest.integration.config.ts), so the only table this can reach is the
+// throwaway one, and files run one at a time (`fileParallelism: false`) with
+// each file cleaning up after itself.
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import request from "supertest";
 import { db, pool, benchmarkAgentScansTable, benchmarkBulksTable } from "@workspace/db";
+import { MAX_LIVE_BULKS } from "../../lib/bulks";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
 const fx = new Fixtures();
+
+beforeEach(async () => {
+  await db.delete(benchmarkBulksTable);
+});
 
 afterAll(async () => {
   await fx.cleanup();
   await pool.end();
 });
 
+/** `count` bulks, oldest first, back-dated a day apart from 2020-01-01 so the
+ *  eviction order is unambiguous. */
+async function seedBulks(count: number) {
+  const rows = [];
+  for (let i = 0; i < count; i++) {
+    rows.push(await fx.bulk({ createdAt: new Date(Date.UTC(2020, 0, 1 + i)) }));
+  }
+  return rows;
+}
+
 describe("POST /api/benchmark/bulks at the bulk cap", () => {
   it("evicts the oldest bulk even when one of its runs has an agent scan", async () => {
-    // Back-dated so this is the globally oldest bulk in the shared test
-    // database -- eviction takes the oldest, and every other suite's bulk is
-    // newer than this. Three of ours guarantee the cap is reached whatever
-    // else is present, so the test does not depend on suite order.
-    const doomed = await fx.bulk({ createdAt: new Date("2020-01-01T00:00:00Z") });
-    await fx.bulk({ createdAt: new Date("2020-01-02T00:00:00Z") });
-    await fx.bulk({ createdAt: new Date("2020-01-03T00:00:00Z") });
+    // Exactly the cap, back-dated a day apart, on an emptied table: the
+    // oldest is unambiguous and the very next create must evict. Written in
+    // terms of the constant so this case says "at the cap" rather than
+    // naming a number -- W-13 moved the number and this case should not
+    // have to move with it.
+    const [doomed] = await seedBulks(MAX_LIVE_BULKS);
 
     const scannedCall = await fx.call({ durationSeconds: 60 });
     const doomedRun = await fx.run({ bulkId: doomed.id, purpose: "batch" });
@@ -91,5 +121,42 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
     // The call it describes is untouched -- eviction never reaches the corpus.
     const stillThere = await request(server).get(`/api/benchmark/calls/${scannedCall.id}`);
     expect(stillThere.status).toBe(200);
+  });
+
+  // W-13. The literals are the point. A case written as
+  // `seedBulks(MAX_LIVE_BULKS - 1)` passes at 3 and at 10 and at 1,000, so it
+  // could never have caught the cap being left where it was; this one names 9
+  // and 10 out loud and fails the moment the constant moves in either
+  // direction. Paired with the case above -- which proves the eviction still
+  // fires AT the cap -- the two together pin FR-BLK-10 to exactly ten.
+  it("nine live bulks are under the cap: creating a tenth evicts nothing", async () => {
+    const seeded = await seedBulks(9);
+
+    const accountLabel = `fx-under-cap-${fx.suffix}`;
+    await fx.call({ durationSeconds: 60, sourceAccountLabel: accountLabel });
+    const provider = await fx.provider({ costPerMinute: 0.5 });
+
+    const res = await request(server)
+      .post("/api/benchmark/bulks")
+      .set("x-actor", fx.actor)
+      .send({
+        name: `tenth bulk ${fx.suffix}`,
+        // M-5/M-16, same reasons as the case above: this is about the cap,
+        // not about the audio channel or how much the caller said.
+        criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
+        providerIds: [provider.id],
+        minDurationSeconds: 30,
+        maxDurationSeconds: 300,
+      });
+    expect(res.status).toBe(201);
+    fx.adoptBulk(res.body.id);
+
+    // Ten live, and every one of the nine is still one of them -- "evicted
+    // nothing" asserted as identity, not as a count, so a create that
+    // evicted the oldest and inserted two could not pass it.
+    const live = await db.select({ id: benchmarkBulksTable.id }).from(benchmarkBulksTable);
+    expect(live).toHaveLength(10);
+    const liveIds = new Set(live.map((b) => b.id));
+    for (const b of seeded) expect(liveIds.has(b.id)).toBe(true);
   });
 });

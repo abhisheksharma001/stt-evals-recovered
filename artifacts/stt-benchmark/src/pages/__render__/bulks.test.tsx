@@ -170,6 +170,30 @@ describe("Bulks", () => {
     api.restore()
   })
 
+  // W-13: the create dialog is the only place the bulk cap is ever stated to a
+  // person, and nothing asserted it -- the sentence read "a 4th bulk" for as
+  // long as the cap was 3 and would have gone on reading it afterwards. The
+  // number is spelled out here rather than imported: the UI copy and the
+  // server constant are two separate things that have to be changed together,
+  // and a test that reads the constant cannot tell you when they drift apart.
+  it("the create dialog names the bulk cap, and names the one the server enforces", async () => {
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/vapi/assistants": [],
+      "GET /api/benchmark/vapi/accounts": [],
+    })
+    renderPage(<Bulks />, { path: "/bulks" })
+    await screen.findAllByText("August sweep")
+
+    fireEvent.click(screen.getByText("New bulk"))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/Creating an 11th bulk evicts the oldest/)).toBeTruthy()
+    expect(within(dialog).queryByText(/a 4th bulk/)).toBeNull()
+
+    expect(api.unmatched).toEqual([])
+    api.restore()
+  })
+
   it("a bulk's shards sit under its own row, and the ad-hoc list keeps none of them", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Bulks />, { path: "/bulks" })

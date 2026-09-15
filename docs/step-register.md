@@ -9086,16 +9086,37 @@ would evict a client's bulk to make room, so the script refuses when
 
 ### W-13 — `MAX_LIVE_BULKS` goes from 3 to 10
 
-**Status:** not started. Spends nothing. Decided by Abhishek 2026-09-14 ("10").
+**Status:** done 2026-09-15. Spent nothing. Decided by Abhishek 2026-09-14 ("10").
+Three of this row's own claims were wrong and are corrected below in place, not
+elsewhere. First: the "Files" line said the eviction test **imports the constant**. It
+did not -- it named `MAX_LIVE_BULKS` in a comment and seeded a literal three bulks,
+resting on "Three of ours guarantee the cap is reached whatever else is present", which
+is true at 3 and false at 10. Left alone, raising the cap would have made that case pass
+or fail on how much junk the shared test database happened to be holding. Second: the
+"Prove it by breaking it" line named a "nine live bulks, a tenth evicts nothing" case.
+No such case existed -- nothing anywhere asserted that FR-BLK-10 leaves bulks alone
+BELOW the cap, only that it evicts at it. Third: "Verify" promised "the Bulks render test
+green with the new copy". `artifacts/stt-benchmark/src/pages/__render__/bulks.test.tsx`
+exists but never asserted that sentence, so the copy could have kept reading "a 4th bulk"
+forever. The real lesson is the general one: **a test written in terms of the constant
+can never pin the constant.** `seedBulks(MAX_LIVE_BULKS - 1)` passes at 3, at 10 and at
+1,000. So the two integration cases were deliberately split -- the eviction case is
+written in terms of `MAX_LIVE_BULKS` and is now cap-agnostic, the new under-cap case is
+written in literal 9s and 10s and is the only thing in the tree that fails when the
+number moves.
 **PR:** one.
 **Depends on:** nothing; **ordered before W-5** so the first daily bulks are not evicted
 on day four.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B and §9 Q7.
 **Files:** `artifacts/api-server/src/lib/bulks.ts` (the constant and its comment),
-`artifacts/api-server/src/routes/__integration__/bulk-eviction.int.test.ts` (imports
-the constant; if any case seeds a literal three, make it seed `MAX_LIVE_BULKS`),
-`artifacts/stt-benchmark/src/pages/Bulks.tsx` (the copy "Creating a 4th bulk evicts the
-oldest (FR-BLK-10)").
+`artifacts/api-server/src/routes/__integration__/bulk-eviction.int.test.ts` (seeded a
+literal three and did **not** import the constant -- now imports it, seeds
+`MAX_LIVE_BULKS`, empties the bulk table in `beforeEach` so both cases start from a
+known count, and gains the under-cap case), `artifacts/stt-benchmark/src/pages/Bulks.tsx`
+(the copy "Creating a 4th bulk evicts the oldest (FR-BLK-10)"),
+`artifacts/stt-benchmark/src/pages/__render__/bulks.test.tsx` (the copy had no assertion
+at all; one case added), and `docs/PRD-v8-watch.md` §5 Part B, whose paragraph still read
+"`MAX_LIVE_BULKS` is **3** ... when a fourth is created ... keeps three days".
 
 **Today:** `MAX_LIVE_BULKS = 3`, chosen in PRD v2 (FR-BLK-10, "max-3 auto-delete") when a
 bulk was a hand-launched thing a person made a few times a month. Eviction is a
@@ -9120,12 +9141,19 @@ pnpm run typecheck
 cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
 pnpm --filter @workspace/stt-benchmark test
 ```
-A pass: the eviction cases green with the new number; the Bulks render test green with
-the new copy.
+A pass, measured 2026-09-15: typecheck clean in all four projects; api-server
+integration **35 files / 208 tests** (was 35 / 207 -- one case added, one case rewritten,
+none removed), `bulk-eviction.int.test.ts` reporting 2 tests; UI **21 files / 204 tests**
+(was 21 / 203), `bulks.test.tsx` reporting 12; api-server unit unchanged at 33 / 252.
 
-**Prove it by breaking it:** after committing, set the constant back to 3; the "nine
-live bulks, a tenth evicts nothing" case fails. Restore with
-`git checkout -- artifacts/api-server/src/lib/bulks.ts`.
+**Prove it by breaking it:** done, after committing. Setting the constant back to 3
+failed **one** integration case -- the new "nine live bulks are under the cap: creating a
+tenth evicts nothing" -- with `expected [ ... ] to have a length of 10 but got 9`: at a
+cap of 3 the tenth create evicts the oldest of the nine. The eviction case above stayed
+green, which is the proof that it is genuinely cap-agnostic rather than accidentally
+tied to the old number. Separately, reverting only the UI string failed exactly one
+render case. Restored with
+`git checkout -- artifacts/api-server/src/lib/bulks.ts artifacts/stt-benchmark/src/pages/Bulks.tsx`.
 
 **Must not:** change what eviction deletes; touch `BULK_COST_THRESHOLD_CENTS` or any
 other constant in the file; make the cap env-tunable (a number nobody re-derives is a

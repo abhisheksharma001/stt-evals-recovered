@@ -293,14 +293,14 @@ the same day twice.
   the person can see is alive. The import script stays as the manual/catch-up path.
 - `benchmark_bulks` gains `watchScheduleId` and `watchDay` (nullable, unique together) so
   the bulk knows it was scheduled and Results can group by day.
-- **The ledger is the history, the bulk is the workbench.** `MAX_LIVE_BULKS` is **3**
-  (`artifacts/api-server/src/lib/bulks.ts`): FR-BLK-10 evicts the oldest bulk — runs,
-  scores, rankings and all — when a fourth is created, so a daily bulk per policy keeps
-  three days of call-level detail. The 30-day line therefore never reads bulks: when a
-  launched bulk settles, the tick copies the day's four T-19 totals per (agent,
-  provider) — `peerFlags`, `words`, `callsScored`, `cleanCalls` — onto the ledger row.
-  **Decided 2026-09-14: the cap goes to 10** (W-13, ordered before W-5). That only
-  lengthens how far back Layer 3 can click; the 30-day line never depended on it.
+- **The ledger is the history, the bulk is the workbench.** `MAX_LIVE_BULKS` is **10**
+  (`artifacts/api-server/src/lib/bulks.ts`, raised from 3 by W-13, shipped 2026-09-15):
+  FR-BLK-10 evicts the oldest bulk — runs, scores, rankings and all — when an eleventh is
+  created, so a daily bulk per policy keeps ten days of call-level detail. The 30-day line
+  therefore never reads bulks: when a launched bulk settles, the tick copies the day's
+  four T-19 totals per (agent, provider) — `peerFlags`, `words`, `callsScored`,
+  `cleanCalls` — onto the ledger row. The cap only says how far back Layer 3 can click;
+  the 30-day line never depended on it.
 
 ### Part C — Three layers, no more
 
@@ -440,7 +440,7 @@ order. Order and dependencies:
 | W-2 | `watch_schedules` table and CRUD | — | nothing |
 | W-3 | the seeded sampler, pure | W-1 | nothing |
 | W-4 | preview/import move from the route into a library function (no behaviour change) | — | nothing |
-| W-13 | `MAX_LIVE_BULKS` 3 → 10 (decided 2026-09-14) — before W-5 so daily bulks keep ten days of call detail | — | nothing |
+| W-13 | `MAX_LIVE_BULKS` 3 → 10 (decided 2026-09-14, shipped 2026-09-15) — before W-5 so daily bulks keep ten days of call detail | — | nothing |
 | W-5 | the ledger and the tick; settled totals on the ledger row | W-2, W-3, W-4 | caps, in production only |
 | W-6 | Orgs layer: overview endpoint, baseline rule, tick bar | W-5 | nothing |
 | W-7 | agent-day layer: per-assistant verdict, "what else happened" strip | W-6, S-AB1 | nothing |

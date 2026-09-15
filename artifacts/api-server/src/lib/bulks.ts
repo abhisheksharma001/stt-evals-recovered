@@ -42,7 +42,18 @@ const BULK_SHARD_CONCURRENCY = envInt("BULK_SHARD_CONCURRENCY", 3, 8);
 // FR-BLK-10: hard cap on live bulks. The oldest bulk is evicted (its runs,
 // results, scores, rankings go with it -- all regenerable); the corpus itself
 // is never touched by eviction.
-export const MAX_LIVE_BULKS = 3;
+//
+// W-13 (PRD v8 Part B, decided 2026-09-14): 3 -> 10. The 3 was chosen in PRD
+// v2, when a bulk was a thing a person launched by hand a few times a month.
+// Part W launches one a DAY, so at 3 the second day of call-level detail is
+// gone by Thursday. Ten gives ten days to click into. It is not the retention
+// policy: the 30-day line lives in the watch ledger, which never reads bulks,
+// so this number only says how far back the workbench goes.
+//
+// Not env-tunable on purpose: the only thing a bigger cap presses on is disk
+// (a bulk's rows are small -- 238 rows ~ 1 MB, measured 2026-08-26), and a
+// number nobody has to re-derive is a number somebody sets to 1,000.
+export const MAX_LIVE_BULKS = 10;
 
 // FR-BLK-5 cost gate, env-tunable. $50 default: at planning prices a
 // 1,000-call x 2min x 7-provider bulk is ~$84, so the default gates exactly
