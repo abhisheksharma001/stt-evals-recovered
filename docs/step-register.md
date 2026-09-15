@@ -8871,13 +8871,12 @@ had not read it.
 
 ### W-5b — `decideTick`, pure
 
-**Status:** not started. Spends nothing — no I/O at all.
+**Status:** done 2026-09-15 (PR #TBD). Spent nothing — no I/O at all.
 **PR:** one.
 **Depends on:** W-5a.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
-**Files:** a new module beside `artifacts/api-server/src/lib/watch-sampler.ts` (plain name:
-watch-scheduler) and its unit test beside
-`artifacts/api-server/src/lib/watch-sampler.test.ts`.
+**Files:** `artifacts/api-server/src/lib/watch-scheduler.ts`,
+`artifacts/api-server/src/lib/watch-scheduler.test.ts`.
 
 **Today:** nothing decides whether a schedule is due.
 
@@ -8897,6 +8896,52 @@ most recent due day THEN it SHALL return `skip`.
 unit test fails — the disabled schedule whose hour has passed.
 
 **Must not:** touch the database; read `Date.now()` (take `now`); return more than one day.
+
+**Shipped shape** (decided while grilling, 2026-09-15 — the row above said
+`{ action: "skip" | "run"; day }` and this is narrower):
+
+```ts
+export type TickSchedule = Pick<WatchScheduleRow, "enabled" | "hourLocal">;
+export type TickDecision =
+  | { action: "skip"; day: null }
+  | { action: "run"; day: string };
+export function localDay(now: Date): string;
+export function decideTick(input: {
+  schedule: TickSchedule; now: Date; ledgerDays: readonly string[];
+}): TickDecision;
+```
+
+Two deliberate narrowings. `day` is `null` on a skip rather than the candidate day, so
+`decision.day` cannot reach `watch_runs.day` without narrowing on `action` first — tsc
+refuses it, and a ledger row claiming a run that never happened is the failure that
+would be hardest to spot. The schedule is a `Pick` rather than the row, so the function
+cannot start reading `sampleSize` or `accountId` and turn "is it due" into "what should
+it run".
+
+**Below the hour is `skip`, not yesterday.** Both readings of the acceptance sentence
+survive "no backfill"; this one was chosen because the ledger row for a day should hold
+calls sampled on that day, and waiting an hour loses nothing.
+
+**Verified 2026-09-15:** `pnpm --filter @workspace/api-server test` → 34 files / 262
+tests (was 33 / 252); typecheck clean in all four projects.
+
+**Break test, run 2026-09-15:** deleted the `if (!schedule.enabled) return SKIP;` line:
+```
+FAIL  src/lib/watch-scheduler.test.ts > decideTick (W-5b) >
+  skips a disabled schedule whose hour has long passed
+AssertionError: expected { action: 'run', day: '2026-09-15' } to deeply equal
+  { action: 'skip', day: null }
+Test Files  1 failed | 33 passed (34)
+     Tests  1 failed | 261 passed (262)
+```
+Exactly one, the one the row predicted. Restored with `git checkout --`.
+
+**Learned:** `hour_local` is local to the *process*, because `watch_schedules` carries no
+timezone column — so every assertion about an hour has to build its dates with
+`new Date(y, m, d, h)` and never from an ISO string, which is UTC. Written the other way
+the same test passes on this machine (UTC+5:30) and fails on CI. The module reads
+`getHours`/`getFullYear` for the same reason, and that rule is what exposed the
+`toISOString` defect now logged in `docs/backlog/good-to-have.md`.
 
 ### W-5c — The tick: import, sample, price, refuse or launch
 
@@ -8929,6 +8974,15 @@ with `confirm: false` — if the bulk comes back `awaiting_confirmation` write
 date (`YYYY-MM-DD`). Two schedules launching on the same day would collide on that name
 and the second would 500. The tick must name a scheduled bulk by day **and** schedule, and
 an integration case must seed two schedules on one day.
+
+**Second half of the same defect, found grilling W-5b, 2026-09-15:** that default name is
+built with `now.toISOString().slice(0, 10)` (`artifacts/api-server/src/lib/bulks.ts:706`),
+which is **UTC**, while `benchmark_bulks.ts:109` documents it as server local time and
+`watch_runs.day` really is local. At UTC+5:30 a tick at the default `hour_local` of **3**
+would write a ledger row for the 15th and name its bulk `2026-09-14` — colliding with a
+hand-made bulk from the day before. The tick must name its bulk from
+`localDay()` (`artifacts/api-server/src/lib/watch-scheduler.ts`), never from
+`toISOString`. Full entry in `docs/backlog/good-to-have.md`.
 
 **Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one ledger row
 SHALL exist and at most one bulk SHALL have been created; WHEN the preview prices above
