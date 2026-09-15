@@ -2841,3 +2841,40 @@ dead rows are redacted or deleted, since that is a data change and Abhishek's ca
 
 **Do not** fix this by truncating `errorMessage` at the edge. The PII is in the database
 column; truncation moves where it leaks, not whether it is stored.
+
+## Found 2026-09-15 (grilling W-5b): a bulk's default name is the UTC date, while the schema says it is the local one
+
+`lib/db/src/schema/benchmark-bulks.ts:109` documents FR-BLK-2's default name as
+"the launch date (YYYY-MM-DD, **server local time**)". The code that produces it,
+`artifacts/api-server/src/lib/bulks.ts:706`, is
+
+```ts
+const name = input.name ?? now.toISOString().slice(0, 10); // FR-BLK-2
+```
+
+`toISOString()` is UTC. This machine runs at UTC+5:30, so every bulk created between
+00:00 and 05:30 local is named with **yesterday's** date. Nothing has broken yet because
+bulks have been launched by hand, in the afternoon.
+
+**Why it matters now:** W-5c's tick launches at `hour_local`, which defaults to **3**
+-- inside the window where the two disagree. The ledger row would say `2026-09-15`
+(`watch_runs.day` is local, `lib/db/src/schema/watch-runs.ts:80`) and its own bulk would
+be called `2026-09-14`. Worse, `benchmark_bulks_name_unique` is on that column: the
+scheduled bulk of the 15th would collide with the hand-made bulk of the 14th and answer
+**500**, for a reason no one would find by reading either file alone.
+
+**Reproduce (no spend, arithmetic only):**
+```
+node -e 'const d=new Date(2026,8,15,3,0);
+console.log("local", d.getFullYear()+"-0"+(d.getMonth()+1)+"-"+d.getDate());
+console.log("name written", d.toISOString().slice(0,10))'
+```
+
+**Worth having, in order:** (a) name a scheduled bulk from `localDay()`
+(`artifacts/api-server/src/lib/watch-scheduler.ts`) and include the schedule, so two
+policies on one day cannot collide either -- this is already required by W-5c;
+(b) decide separately whether FR-BLK-2's hand-launched default follows, which changes a
+user-visible name and is Abhishek's call, not a drive-by.
+
+**Do not** fix it by relaxing `benchmark_bulks_name_unique`. The collision is the
+symptom; two different definitions of "today" in one launch path is the defect.
