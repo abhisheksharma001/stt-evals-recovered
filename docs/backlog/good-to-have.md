@@ -2878,3 +2878,40 @@ user-visible name and is Abhishek's call, not a drive-by.
 
 **Do not** fix it by relaxing `benchmark_bulks_name_unique`. The collision is the
 symptom; two different definitions of "today" in one launch path is the defect.
+
+## Found 2026-09-15 (building W-5c1): `benchmark_bulks` cannot declare a real foreign key to `watch_schedules`
+
+`benchmark_bulks.watch_schedule_id` is a bare `uuid` with no `.references()`,
+and that is forced, not preferred.
+
+The cycle, all three edges real today:
+
+```
+lib/db/src/schema/benchmark-bulks.ts   -- would import -->  watch-schedules.ts
+lib/db/src/schema/watch-schedules.ts   -- imports      -->  bulk-templates.ts   (templateId FK)
+lib/db/src/schema/bulk-templates.ts    -- imports      -->  benchmark-bulks.ts  (import type { BulkSelectionCriteria })
+```
+
+`scripts/check-import-cycles.mjs` counts `import type` as an edge (its matcher
+is `(?:import|export)\s[^;]*?from`), and it is right to: the type import is
+erased at build time, but the file it points at is the same file a value
+import would pull, and one top-level read through a live cycle is a
+`ReferenceError`. Adding the FK makes the guard fail, which is how this was
+found rather than shipped.
+
+**Nothing is broken today.** W-2 ships GET, POST and PATCH for schedules and
+no DELETE — a policy is switched off with `enabled`, never removed — so
+there is no path in production that can leave `watch_schedule_id` pointing at
+a row that is gone. `benchmark_rankings.runId` is a bare uuid for its own
+reasons; this is the same shape for a different one.
+
+**The fix, when someone wants the FK:** move `BulkSelectionCriteria` (and
+`WORTH_BENCHMARKING_ENDED_REASONS`, which sits with it) out of
+`lib/db/src/schema/benchmark-bulks.ts` into its own module — nothing else in
+that file is imported by `bulk-templates.ts`. That cuts the third edge, and
+`benchmark-bulks.ts -> watch-schedules.ts` becomes ordinary. It is a
+mechanical move across every importer of the type, which is why it is an
+entry here and not a line in W-5c1's diff.
+
+Do not fix it by loosening the cycle check. The check has already earned its
+keep once (`lib/scoring` had six cycles, O-88).

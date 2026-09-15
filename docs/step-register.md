@@ -8943,69 +8943,211 @@ the same test passes on this machine (UTC+5:30) and fails on CI. The module read
 `getHours`/`getFullYear` for the same reason, and that rule is what exposed the
 `toISOString` defect now logged in `docs/backlog/good-to-have.md`.
 
-### W-5c — The tick: import, sample, price, refuse or launch
+### W-5c — Split into W-5c1 / W-5c2 / W-5c3 on 2026-09-15, while grilling it
 
-**Status:** not started. **This is the money step of Part W.** In production it launches
-bulks under written caps; in tests it spends nothing.
+**Why the split, in one sentence:** the three parts compile apart, and splitting
+them makes the one change that can actually spend money with nobody watching a
+three-line diff instead of three lines buried in four hundred.
+
+- **W-5c1** — the two columns on `benchmark_bulks` and the creation path that can
+  set them. Spends nothing.
+- **W-5c2** — `runWatchTick()`: the whole import -> sample -> price -> refuse-or-launch
+  body, exported and called by nothing. Spends nothing, because nothing calls it.
+- **W-5c3** — start it in `artifacts/api-server/src/index.ts` behind
+  `WATCH_SCHEDULER=1`. **This is the change that arms it**, and it is the whole PR.
+
+**Three things grilling found that the old W-5c row had wrong or missing, all of
+them now W-5c2's problem:**
+
+1. **`createBulkFromCriteria` launches by itself.** Its last lines are
+   `if (bulk.status === "draft") { await launchBulk(...) }`
+   (`artifacts/api-server/src/lib/bulks.ts`). The old row said "if `draft`,
+   `launchBulk`" as if the tick had to do it. The tick must NOT call `launchBulk`
+   — by the time it holds the result the bulk is already running, and a second
+   call throws `bulk is running, not launchable`. What the tick reads is
+   `result.launched`.
+2. **`watch_schedules` has no `name` column.** "Name the bulk by day and schedule"
+   can only mean the template's name plus the day plus the schedule id, because
+   two schedules may share one template.
+3. **`previewBulkSelection().estimate` is `null` when `providerIds` is empty**, and
+   `estimate.agentCostCents` is `null` when there is no scan history to project
+   from (T-35). A null total is "unknown", never zero: the tick must refuse on it,
+   not launch against a cap it could not check.
+
+### W-5c1 — `benchmark_bulks` learns which schedule and day it belongs to
+
+**Status:** done 2026-09-15. Spent nothing — every bulk the new tests create parks
+at `awaiting_confirmation` over the FR-BLK-5 gate and never launches.
 **PR:** one.
-**Depends on:** W-5a, W-5b, W-3 (`sampleForDay`), W-4 (`previewVapiCalls` /
-`importVapiCalls`).
+**Depends on:** W-5a, W-2.
+**Files:** `lib/db/src/schema/benchmark-bulks.ts`,
+`artifacts/api-server/src/lib/bulks.ts`,
+`artifacts/api-server/src/routes/__integration__/bulk-watch-columns.int.test.ts`.
+
+**Today:** a bulk carries no idea that a schedule made it. Results cannot group a
+day, and nothing but the ledger row stands between a second tick and a second
+bulk for a day already paid for.
+
+**Change:** `watch_schedule_id` (uuid, nullable) and `watch_day`
+(`date(..., { mode: "string" })`, nullable) on `benchmark_bulks`, a unique index
+on the pair, and two optional inputs of the same names on
+`createBulkFromCriteria` which are written straight through. Set them together or
+not at all — the function throws on a half-filled pair before it touches the
+database.
+
+**Acceptance:** WHEN a second bulk is created for a (schedule, day) that already
+has one THEN the creation SHALL fail with `BulkWatchDayConflictError` and exactly
+one bulk SHALL exist for that pair; WHEN two bulks are created with no schedule at
+all THEN both SHALL exist.
+
+**Shipped shape, and the two things that were forced rather than chosen:**
+
+- **`watch_schedule_id` is a bare uuid, not a `.references()`.** Declaring the
+  foreign key makes `benchmark-bulks.ts` import `watch-schedules.ts`, which imports
+  `bulk-templates.ts`, which imports `BulkSelectionCriteria` back from
+  `benchmark-bulks.ts` — a three-file cycle `scripts/check-import-cycles.mjs`
+  refuses, and its matcher counts `import type` as an edge. Nothing in production
+  can dangle the pointer: W-2 ships no DELETE for schedules. The fix that would
+  allow the FK (lift the criteria type into its own module) is in
+  `docs/backlog/good-to-have.md`, not in this diff.
+- **A unique INDEX, not a constraint.** Postgres treats NULLs as distinct, and
+  every bulk a person creates carries two nulls. Under `NULLS NOT DISTINCT`
+  exactly one hand-made bulk could exist in the entire database, and the second
+  would answer 500. That case is a test of its own because it is the failure that
+  would reach production first.
+- **`BulkWatchDayConflictError` is separate from `BulkNameConflictError`**, and
+  `uniqueViolationConstraint(err)` tells the two indexes apart. They want opposite
+  handling: the template launch route retries a name clash under a time-suffixed
+  name, and retrying a watch-day clash under a new name is precisely the
+  double-spend the pair exists to refuse.
+
+**Verify:**
+```
+pnpm run typecheck
+pnpm --filter @workspace/api-server test
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+Measured 2026-09-15: typecheck clean in all four projects; unit 34 files / 262
+tests (unchanged — this step adds no unit test); integration **37 files / 216
+tests**, up from 36 / 211.
+
+**Prove it by breaking it — run twice, after committing:**
+
+(a) delete the `uniqueViolationConstraint` branch in `createBulkFromCriteria`:
+```
+FAIL src/routes/__integration__/bulk-watch-columns.int.test.ts > benchmark_bulks watch columns (W-5c1) >
+  refuses a second bulk for the same schedule and day, under its own error
+AssertionError: expected Error: bulk name "fx-watch-second-bccdfeb... to be an instance of BulkWatchDayConflictError
+Test Files  1 failed | 36 passed (37)
+     Tests  1 failed | 215 passed (216)
+```
+The collision comes back as a NAME clash — the one the launch route retries.
+
+(b) `DROP INDEX benchmark_bulks_watch_schedule_day_unique` on the test database:
+```
+AssertionError: expected undefined to be an instance of BulkWatchDayConflictError
+Test Files  1 failed | 36 passed (37)
+     Tests  1 failed | 215 passed (216)
+```
+`undefined` — nothing threw at all, and the second bulk was created. Restored with
+`pnpm --filter @workspace/db run push`; suite green again at 37 / 216.
+
+**Learned:** the schema push is part of the step, not part of the deploy. The two
+columns had to be pushed to `stt_evals_test` before the integration suite could see
+them and to `stt_evals` before the API could start against them — `drizzle-kit
+push` from `lib/db` with `DATABASE_URL` set per database, additive both times.
+Also: the dev Postgres (`stt-evals-pg`, port 5433) was stopped at the start of this
+step and every database route answered 500 while it was down, which is worth
+recognising on sight rather than debugging as a code fault.
+
+**Must not:** expose either column through the API (no openapi change, no zod
+change, no `serializeBulk` field) — nothing outside the tick has anything to say
+about them yet; change the default bulk name (the `toISOString` defect stays logged
+in `docs/backlog/good-to-have.md` and is W-5c2's to handle); start anything on a
+clock.
+
+### W-5c2 — `runWatchTick`: import, sample, price, refuse or launch
+
+**Status:** not started. **This is the money step of Part W** — but it still spends
+nothing until W-5c3 calls it.
+**PR:** one.
+**Depends on:** W-5c1, W-5b (`decideTick`, `localDay`), W-3 (`sampleForDay`), W-4
+(`previewVapiCalls` / `importVapiCalls`).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
-**Files:** the watch-scheduler module from W-5b, `artifacts/api-server/src/index.ts` (start
-the tick when `WATCH_SCHEDULER=1`), `lib/db/src/schema/benchmark-bulks.ts`
-(`watch_schedule_id`, `watch_day`, nullable, unique together), a new integration file
-beside `artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+**Files:** a new artifacts/api-server/src/lib/watch-tick.ts (plain, not backticked:
+it does not exist yet), and a new
+integration file beside
+`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
 
-**Today:** nothing runs on a clock. `POST /benchmark/bulks` creates a draft (or
-`awaiting_confirmation` over the FR-BLK-5 gate); `launchBulk` starts it. `MAX_LIVE_BULKS`
-is **10** (W-13), so the eleventh bulk evicts the oldest with everything under it.
+**Today:** W-5b can say whether a policy is due; nothing acts on the answer.
 
-**Change:** every 60 s when `WATCH_SCHEDULER=1`, for each schedule W-5b says to run:
-**insert the ledger row first** (a unique violation → another tick won → skip); then
-import that account's last 24 h through W-4 in chunks of 200 (`refused:no_key` if the env
-var is unset); resolve criteria for that window plus `accountLabel`; W-3 sample;
-`previewBulkSelection` with explicit `callIds`; refuse on either cap (monthly = this
-schedule's ledger `estimatedCents` this month + this one); else `createBulkFromCriteria`
-with `confirm: false` — if the bulk comes back `awaiting_confirmation` write
-`held:cost_gate` and stop; if `draft`, `launchBulk` and write `launched`.
+**Change:** `runWatchTick({ now })` — exported, called by nothing. For each enabled
+schedule `decideTick` says to run: **insert the ledger row first** (a unique
+violation means another tick won: stop, write nothing); then import that account's
+last 24 h through W-4 in chunks of 200 (`refused:no_key` when
+`UnknownVapiAccountError` comes back); resolve the template's criteria for that
+window plus `accountLabel`; `sampleForDay`; `previewBulkSelection` with explicit
+`callIds`; refuse on either cap (monthly = this schedule's ledger `estimatedCents`
+this month plus this one) **and on an unknown estimate**; else
+`createBulkFromCriteria` with `confirm: false`, `watchScheduleId` and
+`watchDay: localDay(now)`. Read `result.launched` — do **not** call `launchBulk`,
+the creator already did. `awaiting_confirmation` → `held:cost_gate`.
 
-**Found while grilling W-5, 2026-09-15 — must be handled here:** `benchmark_bulks` carries
-`benchmark_bulks_name_unique` on `name`, and FR-BLK-2 defaults a bulk's name to the launch
-date (`YYYY-MM-DD`). Two schedules launching on the same day would collide on that name
-and the second would 500. The tick must name a scheduled bulk by day **and** schedule, and
-an integration case must seed two schedules on one day.
+**The bulk name must carry the day AND the schedule**, and the day must come from
+`localDay()`, never `toISOString().slice(0, 10)` — both halves of the name defect,
+full entry in `docs/backlog/good-to-have.md`. `watch_schedules` has no `name`
+column, so the name is the template's name plus the day plus the schedule id.
 
-**Second half of the same defect, found grilling W-5b, 2026-09-15:** that default name is
-built with `now.toISOString().slice(0, 10)` (`artifacts/api-server/src/lib/bulks.ts:706`),
-which is **UTC**, while `benchmark_bulks.ts:109` documents it as server local time and
-`watch_runs.day` really is local. At UTC+5:30 a tick at the default `hour_local` of **3**
-would write a ledger row for the 15th and name its bulk `2026-09-14` — colliding with a
-hand-made bulk from the day before. The tick must name its bulk from
-`localDay()` (`artifacts/api-server/src/lib/watch-scheduler.ts`), never from
-`toISOString`. Full entry in `docs/backlog/good-to-have.md`.
-
-**Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one ledger row
-SHALL exist and at most one bulk SHALL have been created; WHEN the preview prices above
-`daily_cap_cents` THEN the row SHALL read `refused:daily_cap` and no bulk SHALL exist; WHEN
-the created bulk is `awaiting_confirmation` THEN the row SHALL read `held:cost_gate` and
-`launchBulk` SHALL NOT be called; WHEN two schedules are due on the same day THEN both
-SHALL create a bulk and neither SHALL fail on the bulk name.
+**Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one
+ledger row SHALL exist and at most one bulk SHALL have been created; WHEN the
+preview prices above `daily_cap_cents` THEN the row SHALL read `refused:daily_cap`
+and no bulk SHALL exist; WHEN the preview returns no estimate THEN the row SHALL
+read `refused:no_estimate` and no bulk SHALL exist; WHEN the created bulk is
+`awaiting_confirmation` THEN the row SHALL read `held:cost_gate`; WHEN two
+schedules are due on the same day THEN both SHALL create a bulk and neither SHALL
+fail on the bulk name.
 
 **Verify:**
 ```
 pnpm --filter @workspace/api-server test
 cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
 ```
-The integration file seeds providers with status `disabled` only (standing rule), so a
-launched bulk has nothing to spend on; the assertions are on ledger rows and bulk rows.
+The integration file seeds providers with status `disabled` only (standing rule), so
+a launched bulk has nothing to spend on; the assertions are on ledger rows and bulk
+rows.
 
 **Prove it by breaking it:** after committing, move the ledger insert to *after* the
 import; the double-tick case fails, because both ticks import.
 
-**Must not:** start without `WATCH_SCHEDULER=1`; run inside the integration suite by
-default; call a provider in any test; seed a `ready` provider; backfill more than one day;
-pass `confirm: true`; write a transcript, a name or a number into `detail`; touch a Vapi
-assistant (D-12).
+**Must not:** call `setInterval` or touch `index.ts` — that is W-5c3, on purpose;
+call a provider in any test; seed a `ready` provider; backfill more than one day;
+pass `confirm: true`; call `launchBulk`; write a transcript, a name or a number into
+`detail`; touch a Vapi assistant (D-12).
+
+### W-5c3 — Arm it: start the tick behind `WATCH_SCHEDULER=1`
+
+**Status:** not started. **This is the PR that lets the system spend money with
+nobody watching.** It is three lines, so that it can be read as three lines.
+**PR:** one.
+**Depends on:** W-5c2.
+**Files:** `artifacts/api-server/src/index.ts`.
+
+**Today:** `grep -c WATCH_SCHEDULER artifacts/api-server/src/index.ts` answers `0`.
+Nothing in this repo runs on a clock.
+
+**Change:** when `process.env.WATCH_SCHEDULER === "1"`, `setInterval(runWatchTick,
+60_000)`, logged once at startup so the log says out loud that the scheduler is on.
+Unset or any other value: nothing starts, and that is also logged once.
+
+**Acceptance:** WHEN the API starts without `WATCH_SCHEDULER=1` THEN no interval
+SHALL be created and no ledger row SHALL ever appear; WHEN it starts with
+`WATCH_SCHEDULER=1` THEN the startup log SHALL say so.
+
+**Verify:** start the API with the flag unset, wait past a minute, and confirm
+`SELECT count(*) FROM watch_runs` is unchanged.
+
+**Must not:** default the flag on; read the flag anywhere but `index.ts`; be merged
+on the same day as W-5c2 without Abhishek having said to arm it.
 
 ### W-5d — Settle: the day's numbers move onto the ledger
 
