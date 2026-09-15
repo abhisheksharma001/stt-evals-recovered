@@ -695,7 +695,7 @@ function CreateBulkDialog() {
           />
           <SelectionPreviewPanel preview={preview} />
           <p className="text-xs text-muted-foreground">
-            Every matched call runs. Creating a 4th bulk evicts the oldest (FR-BLK-10).
+            Every matched call runs. Creating an 11th bulk evicts the oldest (FR-BLK-10).
           </p>
         </div>
         <DialogFooter>
