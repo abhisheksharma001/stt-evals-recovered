@@ -9086,7 +9086,7 @@ would evict a client's bulk to make room, so the script refuses when
 
 ### W-13 — `MAX_LIVE_BULKS` goes from 3 to 10
 
-**Status:** done 2026-09-15. Spent nothing. Decided by Abhishek 2026-09-14 ("10").
+**Status:** done 2026-09-15 (PR #184). Spent nothing. Decided by Abhishek 2026-09-14 ("10").
 Three of this row's own claims were wrong and are corrected below in place, not
 elsewhere. First: the "Files" line said the eviction test **imports the constant**. It
 did not -- it named `MAX_LIVE_BULKS` in a comment and seeded a literal three bulks,
