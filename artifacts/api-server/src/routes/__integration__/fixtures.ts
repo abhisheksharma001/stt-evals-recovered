@@ -22,6 +22,7 @@ import {
   benchmarkScoresTable,
   bulkTemplatesTable,
   db,
+  watchRunsTable,
   watchSchedulesTable,
 } from "@workspace/db";
 
@@ -34,6 +35,9 @@ type ScoreRow = typeof benchmarkScoresTable.$inferSelect;
 type RankingRow = typeof benchmarkRankingsTable.$inferSelect;
 type ScanRow = typeof benchmarkAgentScansTable.$inferSelect;
 type AuditRow = typeof auditLogTable.$inferSelect;
+type TemplateRow = typeof bulkTemplatesTable.$inferSelect;
+type ScheduleRow = typeof watchSchedulesTable.$inferSelect;
+type WatchRunRow = typeof watchRunsTable.$inferSelect;
 
 export class Fixtures {
   readonly suffix = Math.random().toString(16).slice(2, 10);
@@ -48,6 +52,10 @@ export class Fixtures {
   private bulkIds: string[] = [];
   private rankingIds: string[] = [];
   private auditIds: string[] = [];
+  private watchRunIds: string[] = [];
+  /** `bulk_templates.name` is unique, so a second template in the same file
+   *  needs a second name -- same counter trick the builders above use. */
+  private templateCount = 0;
 
   /** Providers get ids no adapter matches, so syncProviderReadiness derives
    *  them straight to "not_configured" and no provider API can ever be hit. */
@@ -209,6 +217,59 @@ export class Fixtures {
     return row;
   }
 
+  /** W-5a: a bulk template, inserted directly rather than through its route.
+   *  `createdByLabel` carries this fixture's actor, which is what cleanup
+   *  already matches templates on. A schedule needs one -- `template_id` is
+   *  NOT NULL. */
+  async template(overrides: Partial<typeof bulkTemplatesTable.$inferInsert> = {}): Promise<TemplateRow> {
+    const [row] = await db
+      .insert(bulkTemplatesTable)
+      .values({
+        name: `fx-template-${this.suffix}-${this.templateCount++}`,
+        selectionCriteria: {},
+        providerIds: [],
+        createdByLabel: this.actor,
+        ...overrides,
+      })
+      .returning();
+    return row;
+  }
+
+  /** W-5a: a watch schedule. Inserted directly, for the same reason as the
+   *  template above: this suite is about the ledger's constraints, and going
+   *  through POST /benchmark/watch-schedules would make a failure there look
+   *  like a failure here. Creates its own template unless given one. */
+  async schedule(overrides: Partial<typeof watchSchedulesTable.$inferInsert> = {}): Promise<ScheduleRow> {
+    const templateId = overrides.templateId ?? (await this.template()).id;
+    const [row] = await db
+      .insert(watchSchedulesTable)
+      .values({
+        templateId,
+        accountId: `fx-account-${this.suffix}`,
+        vertical: "property_management",
+        createdByLabel: this.actor,
+        ...overrides,
+      })
+      .returning();
+    return row;
+  }
+
+  /** W-5a: a ledger row. Tracked by id because it holds a plain (no-cascade)
+   *  reference to its schedule, so cleanup must delete these BEFORE the
+   *  schedules -- see the order in cleanup(). */
+  async watchRun(
+    scheduleId: string,
+    day: string,
+    overrides: Partial<typeof watchRunsTable.$inferInsert> = {},
+  ): Promise<WatchRunRow> {
+    const [row] = await db
+      .insert(watchRunsTable)
+      .values({ scheduleId, day, outcome: "launched", ...overrides })
+      .returning();
+    this.watchRunIds.push(row.id);
+    return row;
+  }
+
   /** FK order matters and is a cycle: results cascade from runs but hold
    *  plain references to calls, scans cascade from calls but hold a PLAIN
    *  (no-cascade) reference to runs -- so a scan blocks its run's delete.
@@ -230,6 +291,13 @@ export class Fixtures {
     // delete on purpose (`onDelete: "set null"` -- a mark is about the agent,
     // not the call), so nothing else here reaches them.
     await db.delete(agentMarksTable).where(eq(agentMarksTable.createdByLabel, this.actor));
+    // W-5a: before the schedules, not after -- a ledger row holds a plain
+    // (no-cascade) reference to its schedule on purpose, so a schedule with
+    // history cannot be deleted out from under it. Tracked by id rather than
+    // by a label column: watch_runs has none, because in production nothing
+    // but the tick ever writes one.
+    if (this.watchRunIds.length)
+      await db.delete(watchRunsTable).where(inArray(watchRunsTable.id, this.watchRunIds));
     // W-2: before the templates, not after -- a schedule holds an FK to the
     // template it watches, so deleting the template first fails the
     // constraint. Schedules are created only through their route, which
