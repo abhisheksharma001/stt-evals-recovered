@@ -8506,7 +8506,8 @@ count-only read instead, adding one if none exists. Do not present a pick as a w
 ## Part W — Watch: a daily sample of real calls, per org, per agent (`docs/PRD-v8-watch.md`)
 
 Written 2026-09-14 from the grill in `docs/PRD-v8-watch.md`. Order: W-0 (done) → W-1 → W-2 →
-W-3 → W-4 → **W-13** → W-5 → W-6 → W-7, then the code surface W-8 → W-9 → W-10 → W-11, and
+W-3 → W-4 → **W-13** → W-5a → W-5b → W-5c → W-5d → W-6 → W-7, then the code surface
+W-8 → W-9 → W-10 → W-11, and
 W-12 (the public calibration set) any time after W-13 — its spend was approved by
 delegation on 2026-09-14 (PRD v8 §9 Q8, D-15) with a $7 ceiling, so it is the receipt for
 the USP and can go early. Each is one PR.
@@ -8524,11 +8525,14 @@ after an explicit "go spend".
 
 Three facts every step below is written against, read from the tree 2026-09-14:
 
-- `MAX_LIVE_BULKS = 3` (`artifacts/api-server/src/lib/bulks.ts`): FR-BLK-10 evicts the
-  oldest bulk — its runs, results, scores and rankings — when a fourth is created. A
-  daily bulk per policy therefore keeps **three days** of call-level detail, no more. W-5
-  makes the ledger, not the bulk, the 30-day history. **Decided 2026-09-14: the cap goes
-  to 10** — W-13, ordered before W-5.
+- `MAX_LIVE_BULKS = 10` (`artifacts/api-server/src/lib/bulks.ts`): FR-BLK-10 evicts the
+  oldest bulk — its runs, results, scores and rankings — when an eleventh is created. A
+  daily bulk per policy therefore keeps **ten days** of call-level detail, no more. W-5d
+  makes the ledger, not the bulk, the 30-day history.
+  *Written 2026-09-14 as "`= 3` … three days … the cap goes to 10 — W-13, ordered before
+  W-5". W-13 shipped on 2026-09-15 and this paragraph was not one of the places it
+  corrected; found while grilling W-5 the same day and corrected here, where the wrong
+  number was written, rather than patched somewhere else.*
 - `createBulkFromCriteria` accepts explicit `callIds` in the criteria (the type in
   `lib/db/src/schema/benchmark-bulks.ts` carries `callIds?: string[]`), so a sampled set
   can be frozen without inventing a new create path.
@@ -8675,7 +8679,7 @@ roster-change one, not the plain determinism one. Second: `lib/scoring/src/verdi
 already carries the same mulberry32 privately, and it is deliberately NOT shared -- that
 copy exists so a statistic is reproducible, this one decides which calls money is spent
 on, and wiring them together would let a bootstrap tweak re-draw every schedule. Third:
-`resolveCriteriaSelection` returns call ids only, with no assistant id, so W-5 owns the
+`resolveCriteriaSelection` returns call ids only, with no assistant id, so W-5c owns the
 join that feeds this function; the sampler declares its own two-field input type rather
 than importing one.
 **PR:** one.
@@ -8754,7 +8758,7 @@ same process would have to do the same, or copy the code.
 serialise. Same return shapes, same errors, same audit rows.
 (Shipped as `importVapiCalls(input, actorLabel, log)` -- the two `req.log.warn` lines
 inside the import path had to keep writing to the request's own logger, and the default
-is the process logger so W-5's tick can call it with no request in hand.)
+is the process logger so W-5c's tick can call it with no request in hand.)
 
 **Acceptance:** WHEN an account this server holds no key for is given to either route
 THEN the response SHALL be 400 with `Unknown or unconfigured Vapi account "<id>".` and no
@@ -8775,58 +8779,151 @@ preview refusal case fails. Restore with
 
 **Must not:** change a response, a status code, or a log line; touch the Vapi client.
 
-### W-5 — The ledger and the tick
+### W-5 — The ledger and the tick — SPLIT into W-5a..W-5d, 2026-09-15
 
-**Status:** not started. Spends nothing in tests; in production it launches bulks under
-written caps.
+W-5 was written as one PR. Grilling it before building showed four things that compile
+and verify apart, so under mystandard §2 they are four steps. The reason to split is not
+size: **W-5c is the first code in this repo that can spend provider money with nobody
+watching**, and landing it in the same diff as a schema migration buries the money path
+in a table definition. Each of the four now has an acceptance sentence that can be broken
+on its own.
+
+The original text's "Today" line said `MAX_LIVE_BULKS` is 3. It is **10** since W-13
+(shipped 2026-09-15); corrected here rather than quietly elsewhere.
+
+Order: W-5a → W-5b → W-5c → W-5d. W-6 depends on W-5d (settled rows), not on W-5a.
+
+### W-5a — The ledger table
+
+**Status:** done 2026-09-15. Spends nothing — it writes nothing; nothing writes to it.
 **PR:** one.
-**Depends on:** W-2, W-3, W-4.
+**Depends on:** W-2 (`watch_schedules`).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
-**Files:** a new schema file (plain name: watch-runs) beside
-`lib/db/src/schema/bulk-templates.ts`; `lib/db/src/schema/benchmark-bulks.ts`
-(`watch_schedule_id`, `watch_day`, nullable, unique together); a new module beside
-`artifacts/api-server/src/lib/run-executor.ts` (plain name: watch-scheduler) with a
-**pure** decision function and its unit test; `artifacts/api-server/src/index.ts` (start
-the tick when `WATCH_SCHEDULER=1`); a new integration file beside
-`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+**Files:** `lib/db/src/schema/watch-runs.ts` (new), `lib/db/src/schema/index.ts`,
+`artifacts/api-server/src/routes/__integration__/fixtures.ts`,
+`artifacts/api-server/src/routes/__integration__/watch-runs.int.test.ts` (new).
+
+**Today:** `watch_schedules` exists and is inert data. Nothing records that a day was
+decided about, so nothing can stop a restarted process re-running a day it already ran.
+
+**Change:** table `watch_runs` — `id`, `schedule_id`, `day` (date, `YYYY-MM-DD` server
+local), `started_at`, `outcome` (text, enum at the API boundary), `detail` jsonb (counts
+and one message: `imported`, `matched`, `sampled`, `shortfall`, `estimatedCents`,
+`error`), `bulk_id`, `totals` jsonb, `updated_at`. **Unique index on
+`(schedule_id, day)`.** Nothing reads or writes it yet.
+
+**The two foreign keys point opposite ways on purpose, and that is the whole step:**
+
+- `schedule_id` — **plain reference, no `ON DELETE`.** W-2 ships GET/POST/PATCH and no
+  DELETE; a schedule is switched off with `enabled`, never removed. So nothing in
+  production can hit this constraint, and what it buys is that the day someone adds a
+  DELETE route, the database refuses until a person decides what happens to that policy's
+  spend history. That decision should cost a migration, not a silent cascade.
+- `bulk_id` — **`ON DELETE SET NULL`.** Bulks are deleted *routinely*: FR-BLK-10 evicts
+  the oldest inside the same transaction that creates the eleventh. A plain reference here
+  would fail that transaction on a foreign-key violation and **every launch at the cap
+  would answer 500** — precisely the M-3c bug, which cost a live launch to find on
+  `benchmark_agent_scans.run_id`. W-13 raised the cap to 10 on 2026-09-15, so the eleventh
+  scheduled day is when this would have bitten. Found by reading the eviction transaction
+  before writing the column, not by shipping it.
+
+**Acceptance:** WHEN a second row is inserted for a `(schedule_id, day)` that already has
+one THEN the database SHALL raise a unique violation and the first row SHALL be unchanged;
+AND WHEN a bulk a ledger row points at is evicted by FR-BLK-10 THEN the create SHALL still
+answer 201 and the ledger row SHALL survive with `bulk_id` null and its `day`, `outcome`,
+`detail` and `totals` intact.
+
+**Verify:**
+```
+pnpm run typecheck
+cd lib/db && DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm push
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+Measured 2026-09-15: typecheck clean in all four projects; integration **36 files / 211
+tests**, up from 35 / 208.
+
+**Prove it by breaking it:** after committing, change `bulk_id`'s
+`{ onDelete: "set null" }` to a plain `.references(() => benchmarkBulksTable.id)`, push
+the schema, and run the suite: the eviction case fails, because `POST /benchmark/bulks`
+answers 500 on a foreign-key violation. Restore, push again.
+
+**Must not:** write a ledger row from anywhere; add a route; start anything on a clock;
+add the `watch_schedule_id` / `watch_day` columns to `benchmark_bulks` — they belong to
+W-5c, where the tick actually writes them and a test can cover them.
+
+**Learned:** the two builders this step added to `fixtures.ts` (`template`, `schedule`)
+first shipped with one fixed name each, and `bulk_templates_name_unique` failed the second
+call in the same file — caught by the suite on the first run, fixed with the same counter
+the older builders already use. The fixture file's convention was right and the new code
+had not read it.
+
+### W-5b — `decideTick`, pure
+
+**Status:** not started. Spends nothing — no I/O at all.
+**PR:** one.
+**Depends on:** W-5a.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part B.
+**Files:** a new module beside `artifacts/api-server/src/lib/watch-sampler.ts` (plain name:
+watch-scheduler) and its unit test beside
+`artifacts/api-server/src/lib/watch-sampler.test.ts`.
+
+**Today:** nothing decides whether a schedule is due.
+
+**Change:** `decideTick({ schedule, now, ledgerDays }) → { action: "skip" | "run"; day }`.
+Run when `schedule.enabled`, `now`'s local hour ≥ `hourLocal`, and `ledgerDays` (the days
+already in the ledger for this schedule) does not contain the **most recent** due day.
+Pure: it takes the ledger days as an argument and reads no clock of its own beyond `now`.
+
+**Acceptance:** WHEN the process has been down for three days THEN `decideTick` SHALL
+return exactly one day, the most recent due one, and never a backfill; WHEN `now`'s local
+hour is below `hourLocal` THEN it SHALL return `skip`; WHEN the ledger already holds the
+most recent due day THEN it SHALL return `skip`.
+
+**Verify:** `pnpm --filter @workspace/api-server test`; typecheck.
+
+**Prove it by breaking it:** after committing, remove the `enabled` clause; exactly one
+unit test fails — the disabled schedule whose hour has passed.
+
+**Must not:** touch the database; read `Date.now()` (take `now`); return more than one day.
+
+### W-5c — The tick: import, sample, price, refuse or launch
+
+**Status:** not started. **This is the money step of Part W.** In production it launches
+bulks under written caps; in tests it spends nothing.
+**PR:** one.
+**Depends on:** W-5a, W-5b, W-3 (`sampleForDay`), W-4 (`previewVapiCalls` /
+`importVapiCalls`).
+**Spec:** `docs/PRD-v8-watch.md` §5 Part B.
+**Files:** the watch-scheduler module from W-5b, `artifacts/api-server/src/index.ts` (start
+the tick when `WATCH_SCHEDULER=1`), `lib/db/src/schema/benchmark-bulks.ts`
+(`watch_schedule_id`, `watch_day`, nullable, unique together), a new integration file
+beside `artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
 
 **Today:** nothing runs on a clock. `POST /benchmark/bulks` creates a draft (or
 `awaiting_confirmation` over the FR-BLK-5 gate); `launchBulk` starts it. `MAX_LIVE_BULKS`
-is 3, so the fourth bulk evicts the oldest with everything under it.
+is **10** (W-13), so the eleventh bulk evicts the oldest with everything under it.
 
-**Change:**
+**Change:** every 60 s when `WATCH_SCHEDULER=1`, for each schedule W-5b says to run:
+**insert the ledger row first** (a unique violation → another tick won → skip); then
+import that account's last 24 h through W-4 in chunks of 200 (`refused:no_key` if the env
+var is unset); resolve criteria for that window plus `accountLabel`; W-3 sample;
+`previewBulkSelection` with explicit `callIds`; refuse on either cap (monthly = this
+schedule's ledger `estimatedCents` this month + this one); else `createBulkFromCriteria`
+with `confirm: false` — if the bulk comes back `awaiting_confirmation` write
+`held:cost_gate` and stop; if `draft`, `launchBulk` and write `launched`.
 
-1. Table `watch_runs`: `id`, `schedule_id`, `day` (date), `started_at`, `outcome` (one of
-   `imported`, `sampled`, `refused:no_calls`, `refused:daily_cap`,
-   `refused:monthly_cap`, `refused:no_key`, `held:cost_gate`, `launched`, `settled`,
-   `failed`), `detail` jsonb (`imported`, `matched`, `sampled`, `shortfall`,
-   `estimatedCents`, `error` — counts and one message, never a transcript), `bulk_id`
-   null, and **`totals` jsonb** — filled at `settled`. **Unique index on
-   `(schedule_id, day)`.** That index *is* the idempotency.
-2. Pure `decideTick({ schedule, now, ledgerRowsForSchedule }) → { action: "skip" | "run",
-   day }`: run when `enabled`, `now.hour ≥ hour_local` in server-local time, and no row
-   exists for the **most recent** due day. Never returns more than one day.
-3. The tick, every 60 s when `WATCH_SCHEDULER=1`: for each schedule with `action: "run"`,
-   **insert the ledger row first** (a unique violation → another tick won → skip); then
-   import the account's last 24 h through W-4 in chunks of 200 (`refused:no_key` if the
-   env var is unset); resolve criteria for that window plus `accountLabel`; W-3 sample;
-   `previewBulkSelection` with explicit `callIds`; refuse on either cap (monthly = this
-   schedule's ledger `estimatedCents` this month + this one); else
-   `createBulkFromCriteria` with `confirm: false` — if the bulk comes back
-   `awaiting_confirmation` write `held:cost_gate` and stop; if `draft`, `launchBulk` and
-   write `launched`.
-4. Settle: on every tick, each `launched` row whose bulk is `complete` or `partial` gets
-   `totals` = the four T-19 numbers per (assistant, provider) — `peerFlags`, `words`,
-   `callsScored`, `cleanCalls`, the same sums `GET /benchmark/trend` computes — and
-   `outcome: settled`. **This is why eviction does not lose the history:** the day's
-   numbers live on the ledger; the bulk is the workbench.
+**Found while grilling W-5, 2026-09-15 — must be handled here:** `benchmark_bulks` carries
+`benchmark_bulks_name_unique` on `name`, and FR-BLK-2 defaults a bulk's name to the launch
+date (`YYYY-MM-DD`). Two schedules launching on the same day would collide on that name
+and the second would 500. The tick must name a scheduled bulk by day **and** schedule, and
+an integration case must seed two schedules on one day.
 
-**Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one ledger
-row SHALL exist and at most one bulk SHALL have been created; WHEN the preview prices
-above `daily_cap_cents` THEN the row SHALL read `refused:daily_cap` and no bulk SHALL
-exist; WHEN the created bulk is `awaiting_confirmation` THEN the row SHALL read
-`held:cost_gate` and `launchBulk` SHALL NOT be called; WHEN the process was down for
-three days THEN on restart it SHALL run at most one day.
+**Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one ledger row
+SHALL exist and at most one bulk SHALL have been created; WHEN the preview prices above
+`daily_cap_cents` THEN the row SHALL read `refused:daily_cap` and no bulk SHALL exist; WHEN
+the created bulk is `awaiting_confirmation` THEN the row SHALL read `held:cost_gate` and
+`launchBulk` SHALL NOT be called; WHEN two schedules are due on the same day THEN both
+SHALL create a bulk and neither SHALL fail on the bulk name.
 
 **Verify:**
 ```
@@ -8836,22 +8933,50 @@ cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@loca
 The integration file seeds providers with status `disabled` only (standing rule), so a
 launched bulk has nothing to spend on; the assertions are on ledger rows and bulk rows.
 
-**Prove it by breaking it:** after committing, drop the unique index in the test schema;
-the double-tick test fails. Restore.
+**Prove it by breaking it:** after committing, move the ledger insert to *after* the
+import; the double-tick case fails, because both ticks import.
 
 **Must not:** start without `WATCH_SCHEDULER=1`; run inside the integration suite by
-default; call a provider in any test; backfill more than one day; pass `confirm: true`;
-write a transcript, a name or a number into `detail`; touch a Vapi assistant (D-12).
+default; call a provider in any test; seed a `ready` provider; backfill more than one day;
+pass `confirm: true`; write a transcript, a name or a number into `detail`; touch a Vapi
+assistant (D-12).
 
-**Decided 2026-09-14: `MAX_LIVE_BULKS` goes to 10 — W-13, ordered before this step.**
-The ledger makes the 30-day line independent of it either way; 10 keeps a working week
-and a half of daily bulks clickable down to the call.
+### W-5d — Settle: the day's numbers move onto the ledger
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** W-5c.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part B.
+**Files:** the watch-scheduler module from W-5b/W-5c; the integration file from W-5c.
+
+**Today:** a `launched` ledger row points at a bulk and holds nothing of its own.
+
+**Change:** on every tick, each `launched` row whose bulk is `complete` or `partial` gets
+`totals` — the four T-19 numbers per (assistant, provider): `peerFlags`, `words`,
+`callsScored`, `cleanCalls`, the same sums `GET /benchmark/trend` computes — and
+`outcome: settled`.
+
+**This is why eviction does not lose the history.** The day's numbers live on the ledger;
+the bulk is the workbench. W-5a already made the ledger survive its bulk's eviction
+detached; this step is what makes that survival worth something.
+
+**Acceptance:** WHEN a launched bulk reaches `complete` THEN its ledger row SHALL read
+`settled` and its `totals` SHALL equal what `GET /benchmark/trend` reports for that bulk;
+WHEN the bulk is then evicted THEN those totals SHALL still be readable from the ledger.
+
+**Verify:** `pnpm --filter @workspace/api-server test`; the integration suite; typecheck.
+
+**Prove it by breaking it:** after committing, skip the `totals` write and set only
+`outcome: settled`; the totals-after-eviction case fails.
+
+**Must not:** re-read the bulk after settling; treat `null` totals as zero; settle a row
+whose bulk is still running.
 
 ### W-6 — Orgs: the first layer
 
 **Status:** not started. Spends nothing.
 **PR:** one.
-**Depends on:** W-5 (settled ledger rows); reads S-AB1's pair verdict when present.
+**Depends on:** W-5d (settled ledger rows); reads S-AB1's pair verdict when present.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1) and Part D; evidence note in §8.
 **Files:** `lib/api-spec/openapi.yaml` (one new read path, `GET /benchmark/watch/overview`),
 the watch route file from W-2, a pure baseline module beside
@@ -8963,7 +9088,7 @@ script's own typecheck of what it generates (T-141's rule).
 
 **Status:** not started. Spends nothing by itself.
 **PR:** one.
-**Depends on:** W-8, W-2 (schedules), W-5 (`run-now` needs the tick function behind a
+**Depends on:** W-8, W-2 (schedules), W-5c (`run-now` needs the tick function behind a
 route: `POST /benchmark/watch-schedules/{id}/run-now`, added here, which calls the same
 function the tick calls and returns the ledger outcome).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part E (2).
@@ -9105,7 +9230,7 @@ written in terms of `MAX_LIVE_BULKS` and is now cap-agnostic, the new under-cap 
 written in literal 9s and 10s and is the only thing in the tree that fails when the
 number moves.
 **PR:** one.
-**Depends on:** nothing; **ordered before W-5** so the first daily bulks are not evicted
+**Depends on:** nothing; **ordered before W-5a** so the first daily bulks are not evicted
 on day four.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B and §9 Q7.
 **Files:** `artifacts/api-server/src/lib/bulks.ts` (the constant and its comment),

@@ -441,11 +441,14 @@ order. Order and dependencies:
 | W-3 | the seeded sampler, pure | W-1 | nothing |
 | W-4 | preview/import move from the route into a library function (no behaviour change) | — | nothing |
 | W-13 | `MAX_LIVE_BULKS` 3 → 10 (decided 2026-09-14, shipped 2026-09-15) — before W-5 so daily bulks keep ten days of call detail | — | nothing |
-| W-5 | the ledger and the tick; settled totals on the ledger row | W-2, W-3, W-4 | caps, in production only |
-| W-6 | Orgs layer: overview endpoint, baseline rule, tick bar | W-5 | nothing |
+| W-5a | the `watch_runs` ledger table: unique `(schedule_id, day)`, and `bulk_id` detaches on eviction | W-2 | nothing |
+| W-5b | `decideTick`, pure: is this schedule due, and for which single day | W-5a | nothing |
+| W-5c | the 60 s tick behind `WATCH_SCHEDULER=1`: import, sample, price, refuse or launch | W-5a, W-5b, W-3, W-4 | caps, in production only |
+| W-5d | settle: the day's four T-19 totals move onto the ledger row | W-5c | nothing |
+| W-6 | Orgs layer: overview endpoint, baseline rule, tick bar | W-5d | nothing |
 | W-7 | agent-day layer: per-assistant verdict, "what else happened" strip | W-6, S-AB1 | nothing |
 | W-8 | SDK generated from the spec | — | nothing |
-| W-9 | CLI, plus the `run-now` route | W-8, W-2, W-5 | nothing by itself |
+| W-9 | CLI, plus the `run-now` route | W-8, W-2, W-5c | nothing by itself |
 | W-10 | MCP server: six reads, one ledger-gated write | W-8, W-9 | nothing by itself |
 | W-11 | Claude Code plugin (new repo) | W-10 | nothing |
 | W-12 | public calibration set — the receipt for §1b | W-13 | **≈ $6.32 once, approved 2026-09-14 by delegation, ceiling $7** |
@@ -492,7 +495,7 @@ changes the named step, nothing else.
 2. **Cap semantics:** "limit of 500" = hard ceiling on `sampleSize` per policy per day.
    *Assumed.* A monthly ceiling exists separately (`monthlyCapCents`, W-2).
 3. **Scheduler placement:** in the API process behind `WATCH_SCHEDULER=1`. *Assumed*
-   (W-5). launchd would need O-79 answered first and doubles the thing to forget.
+   (W-5c). launchd would need O-79 answered first and doubles the thing to forget.
 4. **Client self-serve:** v8 is Ellavox-operated per org; a client login is a later PRD
    behind auth (B-1). *Assumed.*
 5. **Default provider set per watch:** the org's production transcriber plus two
