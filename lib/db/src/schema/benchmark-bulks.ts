@@ -1,4 +1,5 @@
 import {
+  date,
   integer,
   jsonb,
   pgTable,
@@ -142,8 +143,46 @@ export const benchmarkBulksTable = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // W-5c1 (PRD v8 Part B): set by the watch tick and by nothing else. Null
+    // on every bulk a person creates, which is why both columns are nullable
+    // and why the index below is a unique index and not a constraint --
+    // Postgres treats NULLs as distinct, so every hand-made bulk keeps
+    // coexisting with every other.
+    //
+    // A bare uuid, NOT `.references(() => watchSchedulesTable.id)`, and that
+    // is forced rather than preferred: this file would have to import
+    // watch-schedules.ts, which imports bulk-templates.ts, which imports
+    // `BulkSelectionCriteria` back from here -- a three-file cycle that
+    // scripts/check-import-cycles.mjs refuses (its matcher counts `import
+    // type` as an edge, and rightly: one top-level read through a cycle is a
+    // ReferenceError). `benchmark_rankings.runId` is a bare uuid for its own
+    // reasons; this is the same shape for a different one. Nothing in
+    // production can dangle this pointer: W-2 ships GET, POST and PATCH for
+    // schedules and no DELETE -- a policy is switched off with `enabled`,
+    // never removed. Lifting `BulkSelectionCriteria` into its own module
+    // would let the real foreign key be declared; logged in
+    // docs/backlog/good-to-have.md rather than done as a drive-by here.
+    watchScheduleId: uuid("watch_schedule_id"),
+    // The LOCAL calendar day the tick ran for, as "YYYY-MM-DD" -- the same
+    // string `watch_runs.day` holds for that tick, and built by the same
+    // `localDay()` (artifacts/api-server/src/lib/watch-scheduler.ts). Stored
+    // rather than derived from `createdAt`: a tick that decides at 23:59:59
+    // and inserts at 00:00:01 would derive a different day from the one its
+    // own ledger row already carries, and the two would stop matching.
+    watchDay: date("watch_day", { mode: "string" }),
   },
-  (table) => [uniqueIndex("benchmark_bulks_name_unique").on(table.name)],
+  (table) => [
+    uniqueIndex("benchmark_bulks_name_unique").on(table.name),
+    // The second refusal. `watch_runs_schedule_day_unique` already stops a
+    // second tick for the same (schedule, day) before any work happens; this
+    // one stops a second BULK for that pair even if the ledger row were
+    // bypassed -- a bad merge, a manual insert, a future backfill script.
+    // Two independent refusals on the money path, not one.
+    uniqueIndex("benchmark_bulks_watch_schedule_day_unique").on(
+      table.watchScheduleId,
+      table.watchDay,
+    ),
+  ],
 );
 
 export const insertBenchmarkBulkSchema = createInsertSchema(

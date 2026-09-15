@@ -66,6 +66,12 @@ export const BULK_COST_THRESHOLD_CENTS = (() => {
 
 export class BulkSelectionEmptyError extends Error {}
 export class BulkNameConflictError extends Error {}
+/** W-5c1: a bulk already exists for this (watch schedule, local day). Its own
+ *  error rather than a `BulkNameConflictError` because the two want opposite
+ *  handling: a name clash is retried under a suffixed name (the template
+ *  launch route does exactly that), and retrying a watch-day clash under a
+ *  new name is the double-spend the pair exists to refuse. */
+export class BulkWatchDayConflictError extends Error {}
 
 // drizzle wraps driver errors in DrizzleQueryError, so the pg code lives on
 // .cause, not on the thrown error itself (found live: a template's second
@@ -74,6 +80,18 @@ export function isUniqueViolation(err: unknown): boolean {
   const direct = (err as { code?: string }).code;
   const cause = (err as { cause?: { code?: string } }).cause?.code;
   return direct === "23505" || cause === "23505";
+}
+
+/** Which unique index a 23505 hit, or null. Same `.cause` unwrapping as
+ *  above, for the same reason: `benchmark_bulks` now carries two unique
+ *  indexes and a caller that cannot tell them apart would report a
+ *  same-day watch collision as a name clash and retry it. Not exported --
+ *  the only caller that needs it is below, and the errors it produces are
+ *  what the rest of the codebase branches on. */
+function uniqueViolationConstraint(err: unknown): string | null {
+  const direct = (err as { constraint?: string }).constraint;
+  const cause = (err as { cause?: { constraint?: string } }).cause?.constraint;
+  return direct ?? cause ?? null;
 }
 
 /** Resolves a (possibly relative) criteria window to concrete bounds. */
@@ -650,7 +668,23 @@ export async function createBulkFromCriteria(input: {
    * has no floor on file and must keep matching exactly what it matched.
    */
   minCustomerWordsDefault: number | undefined;
+  /**
+   * W-5c1: set by the watch tick (PRD v8 Part B) and by nothing else. Both
+   * or neither -- a bulk that knows its schedule but not its day cannot be
+   * matched to its ledger row, and the unique index treats a half-filled
+   * pair as distinct from every other, so it would refuse nothing.
+   *
+   * `watchDay` is the LOCAL day string from `localDay()`
+   * (`artifacts/api-server/src/lib/watch-scheduler.ts`), never
+   * `toISOString().slice(0, 10)`, which is UTC and would disagree with the
+   * ledger row for every tick between midnight and the UTC offset.
+   */
+  watchScheduleId?: string;
+  watchDay?: string;
 }): Promise<CreateBulkResult> {
+  if ((input.watchScheduleId === undefined) !== (input.watchDay === undefined)) {
+    throw new Error("watchScheduleId and watchDay must be set together");
+  }
   const now = new Date();
   const { min: minDuration, max: maxDuration } = resolveDurationBand(input);
   const shardSize = input.shardSize ?? 50;
@@ -807,10 +841,17 @@ export async function createBulkFromCriteria(input: {
           estimatedAgentCostCents,
           launchedByLabel: input.actorLabel,
           notes: notesLines.length > 0 ? notesLines.join("\n") : null,
+          watchScheduleId: input.watchScheduleId ?? null,
+          watchDay: input.watchDay ?? null,
         })
         .returning();
     } catch (err) {
       if (isUniqueViolation(err)) {
+        if (uniqueViolationConstraint(err) === "benchmark_bulks_watch_schedule_day_unique") {
+          throw new BulkWatchDayConflictError(
+            `a bulk already exists for schedule ${input.watchScheduleId} on ${input.watchDay}`,
+          );
+        }
         throw new BulkNameConflictError(`bulk name "${name}" is already in use`);
       }
       throw err;
