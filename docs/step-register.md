@@ -8871,7 +8871,7 @@ had not read it.
 
 ### W-5b — `decideTick`, pure
 
-**Status:** done 2026-09-15 (PR #TBD). Spent nothing — no I/O at all.
+**Status:** done 2026-09-15 (PR #186). Spent nothing — no I/O at all.
 **PR:** one.
 **Depends on:** W-5a.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
