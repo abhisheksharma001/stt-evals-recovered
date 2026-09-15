@@ -8795,7 +8795,8 @@ Order: W-5a → W-5b → W-5c → W-5d. W-6 depends on W-5d (settled rows), not 
 
 ### W-5a — The ledger table
 
-**Status:** done 2026-09-15. Spends nothing — it writes nothing; nothing writes to it.
+**Status:** done 2026-09-15 (PR #185). Spent nothing — it writes nothing, and nothing
+writes to it.
 **PR:** one.
 **Depends on:** W-2 (`watch_schedules`).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
@@ -8842,10 +8843,21 @@ cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@loca
 Measured 2026-09-15: typecheck clean in all four projects; integration **36 files / 211
 tests**, up from 35 / 208.
 
-**Prove it by breaking it:** after committing, change `bulk_id`'s
-`{ onDelete: "set null" }` to a plain `.references(() => benchmarkBulksTable.id)`, push
-the schema, and run the suite: the eviction case fails, because `POST /benchmark/bulks`
-answers 500 on a foreign-key violation. Restore, push again.
+**Prove it by breaking it:** done 2026-09-15. Changed `bulk_id`'s
+`{ onDelete: "set null" }` to a plain `.references(() => benchmarkBulksTable.id)`, pushed
+the schema, ran the suite:
+
+```
+FAIL  watch-runs.int.test.ts > survives its bulk being evicted, detached rather than deleted
+AssertionError: expected 500 to be 201
+Caused by: error: update or delete on table "benchmark_bulks" violates foreign key
+constraint "watch_runs_bulk_id_benchmark_bulks_id_fk" on table "watch_runs"
+Test Files  1 failed | 35 passed (36)
+Tests  1 failed | 210 passed (211)
+```
+
+Exactly one test, and the other two ledger cases stayed green. Restored, pushed back,
+suite green again.
 
 **Must not:** write a ledger row from anywhere; add a route; start anything on a clock;
 add the `watch_schedule_id` / `watch_day` columns to `benchmark_bulks` — they belong to
