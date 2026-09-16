@@ -9150,25 +9150,59 @@ transcript or name or number in `detail`, no Vapi assistant touched (D-12).
 
 ### W-5c3 — Arm it: start the tick behind `WATCH_SCHEDULER=1`
 
-**Status:** not started. **This is the PR that lets the system spend money with
-nobody watching.** It is three lines, so that it can be read as three lines.
-**PR:** one.
+**Status:** built and held at the PR. **This is the PR that lets the system spend
+money with nobody watching**, so it is one small block in one file, and it is not
+merged until Abhishek says to arm it.
+**PR:** one -- #189, opened 2026-09-17 as a **draft** so the hold is structural and
+not just a sentence in the body. CI green. Merging it is the arming.
 **Depends on:** W-5c2.
 **Files:** `artifacts/api-server/src/index.ts`.
 
 **Today:** `grep -c WATCH_SCHEDULER artifacts/api-server/src/index.ts` answers `0`.
 Nothing in this repo runs on a clock.
 
-**Change:** when `process.env.WATCH_SCHEDULER === "1"`, `setInterval(runWatchTick,
-60_000)`, logged once at startup so the log says out loud that the scheduler is on.
-Unset or any other value: nothing starts, and that is also logged once.
+**Corrected 2026-09-17, while grilling it.** This row used to say the change was
+`setInterval(runWatchTick, 60_000)`. That does not run. Three things were wrong
+with it, all found before a line was written:
+
+1. **It throws on the first tick.** `setInterval` calls its callback with no
+   arguments and `runWatchTick` takes a required `{ now: Date }`, so the bare
+   form is a `TypeError`, not a tick. It needs an arrow wrapper.
+2. **`now` must be built per tick.** The tick derives its local day from it
+   (W-5b's `localDay()`), so a `Date` captured once at boot would keep a
+   long-lived process ticking for the day it started on -- and the ledger row
+   it claims would carry that stale day.
+3. **The rejection must be caught.** `runWatchTick` returns a promise; an
+   unhandled rejection ends the process on Node >= 15, so one failed tick would
+   take the whole API down. A failed tick must log and leave the server up.
+
+**Change:** when `process.env.WATCH_SCHEDULER` is exactly the string `"1"`, start
+an interval at `WATCH_TICK_INTERVAL_MS` (60000, a module constant, deliberately
+not env-tunable -- the only reason to shorten it is to spend faster, and the caps
+are per day) whose callback is an arrow that calls `runWatchTick({ now: new
+Date() })` and catches, logging once at startup that the scheduler is ARMED.
+Any other value, including unset, `0` and `false`: nothing starts, and that is
+logged once too. The equality is against `"1"` and not truthiness precisely
+because `WATCH_SCHEDULER=0` is a truthy string.
+
+**No overlap guard, on purpose.** If a tick runs longer than a minute the next
+one fires while it is still going. That is exactly the race W-5c2's ledger claim
+already refuses: the second tick loses `watch_runs_schedule_day_unique` on the
+insert and stops having done nothing. An in-process boolean would be a second,
+weaker copy of a guarantee the database already gives, and it would be the copy
+that silently stops working the day a second API process exists.
 
 **Acceptance:** WHEN the API starts without `WATCH_SCHEDULER=1` THEN no interval
 SHALL be created and no ledger row SHALL ever appear; WHEN it starts with
 `WATCH_SCHEDULER=1` THEN the startup log SHALL say so.
 
 **Verify:** start the API with the flag unset, wait past a minute, and confirm
-`SELECT count(*) FROM watch_runs` is unchanged.
+`SELECT count(*) FROM watch_runs` is unchanged and the startup log says the
+scheduler is off. **Only half of the acceptance is provable without arming**: the
+"nothing starts" half is what was verified for this PR. The "startup log says so"
+half needs a boot with `WATCH_SCHEDULER=1`, which is the arming itself, so it is
+left for the moment Abhishek says go -- claimed rather than proved would be the
+exact dishonesty this register exists to stop.
 
 **Must not:** default the flag on; read the flag anywhere but `index.ts`; be merged
 on the same day as W-5c2 without Abhishek having said to arm it.
