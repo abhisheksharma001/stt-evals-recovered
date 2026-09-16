@@ -9068,61 +9068,85 @@ clock.
 
 ### W-5c2 — `runWatchTick`: import, sample, price, refuse or launch
 
-**Status:** not started. **This is the money step of Part W** — but it still spends
-nothing until W-5c3 calls it.
+**Status:** done 2026-09-17. Spent nothing: nothing calls it, and every test passes
+a fake Vapi source.
 **PR:** one.
-**Depends on:** W-5c1, W-5b (`decideTick`, `localDay`), W-3 (`sampleForDay`), W-4
-(`previewVapiCalls` / `importVapiCalls`).
+**Depends on:** W-5c1, W-5b, W-3, W-4.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
-**Files:** a new artifacts/api-server/src/lib/watch-tick.ts (plain, not backticked:
-it does not exist yet), and a new
-integration file beside
-`artifacts/api-server/src/routes/__integration__/run-executor-disabled.int.test.ts`.
+**Files:** `artifacts/api-server/src/lib/watch-tick.ts`,
+`artifacts/api-server/src/routes/__integration__/watch-tick.int.test.ts`,
+`artifacts/api-server/src/routes/__integration__/fixtures.ts`,
+`lib/db/src/schema/watch-runs.ts` (the `started` outcome, comment only).
 
 **Today:** W-5b can say whether a policy is due; nothing acts on the answer.
 
-**Change:** `runWatchTick({ now })` — exported, called by nothing. For each enabled
-schedule `decideTick` says to run: **insert the ledger row first** (a unique
-violation means another tick won: stop, write nothing); then import that account's
-last 24 h through W-4 in chunks of 200 (`refused:no_key` when
-`UnknownVapiAccountError` comes back); resolve the template's criteria for that
-window plus `accountLabel`; `sampleForDay`; `previewBulkSelection` with explicit
-`callIds`; refuse on either cap (monthly = this schedule's ledger `estimatedCents`
-this month plus this one) **and on an unknown estimate**; else
-`createBulkFromCriteria` with `confirm: false`, `watchScheduleId` and
-`watchDay: localDay(now)`. Read `result.launched` — do **not** call `launchBulk`,
-the creator already did. `awaiting_confirmation` → `held:cost_gate`.
+**Change:** `runWatchTick({ now, source })` — exported, called by nothing. Per enabled
+schedule `decideTick` says to run: insert the ledger row first with outcome `started`;
+import the account's last 24 h through W-4 in chunks of `WATCH_IMPORT_CHUNK` (200);
+match the template's criteria narrowed to this account, window and agent; `sampleForDay`;
+`previewBulkSelection` on the picks alone; refuse on an unknown estimate or either cap;
+else `createBulkFromCriteria` with `confirm: false`, `watchScheduleId` and
+`watchDay`. The Vapi half is injected and defaults to the real functions.
 
-**The bulk name must carry the day AND the schedule**, and the day must come from
-`localDay()`, never `toISOString().slice(0, 10)` — both halves of the name defect,
-full entry in `docs/backlog/good-to-have.md`. `watch_schedules` has no `name`
-column, so the name is the template's name plus the day plus the schedule id.
+**Shipped shape, and what it corrects:**
 
-**Acceptance:** WHEN two ticks run for the same (schedule, day) THEN exactly one
-ledger row SHALL exist and at most one bulk SHALL have been created; WHEN the
-preview prices above `daily_cap_cents` THEN the row SHALL read `refused:daily_cap`
-and no bulk SHALL exist; WHEN the preview returns no estimate THEN the row SHALL
-read `refused:no_estimate` and no bulk SHALL exist; WHEN the created bulk is
-`awaiting_confirmation` THEN the row SHALL read `held:cost_gate`; WHEN two
-schedules are due on the same day THEN both SHALL create a bulk and neither SHALL
-fail on the bulk name.
+- **`started` is a new outcome**, documented on `watch_runs.outcome`. The row IS the
+  claim on the day, so its first value has to mean "claimed, nothing done yet" rather
+  than borrow the name of a step that has not run. A row still reading `started` means
+  the process died mid-tick, which is worth being able to see.
+- **`launchBulk` is never called.** `createBulkFromCriteria` launches a `draft` itself;
+  the tick reads `result.launched`. The old W-5c row said otherwise.
+- **Only `launched` and `settled` days count against the monthly cap.** Found at
+  self-review: a `refused:daily_cap` row carries the number it refused — that is what
+  makes the refusal arguable later — and counting it as spend would let one expensive
+  refusal eat a month's budget without a cent leaving.
+- **The month window is a half-open date range, not `like(day, "2026-09%")`.** `day` is
+  a real `date` column and Postgres has no `date ~~ text` operator, so the LIKE form
+  passes tsc and throws at runtime, landing as a `failed` ledger row. Found by the
+  tests, 2026-09-17.
+- **`refused:no_estimate`** is a real outcome: a template with no providers prices to
+  `null`, and unknown is not zero.
+- **Fixture schedules now default to `enabled: false`.** `runWatchTick` reads every
+  enabled schedule in the database and integration files run in parallel against one
+  database, so a fixture schedule left enabled is a policy another suite's tick acts
+  on. Cleanup also sweeps the ledger rows and bulks the tick wrote itself, found by the
+  columns it stamps rather than by a test having remembered to adopt them.
 
 **Verify:**
 ```
+pnpm run typecheck
 pnpm --filter @workspace/api-server test
 cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
 ```
-The integration file seeds providers with status `disabled` only (standing rule), so
-a launched bulk has nothing to spend on; the assertions are on ledger rows and bulk
-rows.
+Measured 2026-09-17: typecheck clean ×4; unit 34 files / 262 tests (unchanged — this
+step adds no unit test); integration **38 files / 225 tests**, up from 37 / 216. Run
+twice, same result.
 
-**Prove it by breaking it:** after committing, move the ledger insert to *after* the
-import; the double-tick case fails, because both ticks import.
+**Prove it by breaking it — and the first attempt proved nothing, which is the lesson:**
 
-**Must not:** call `setInterval` or touch `index.ts` — that is W-5c3, on purpose;
-call a provider in any test; seed a `ready` provider; backfill more than one day;
-pass `confirm: true`; call `launchBulk`; write a transcript, a name or a number into
-`detail`; touch a Vapi assistant (D-12).
+Moving the ledger insert to after the work and re-running left the suite **green**. The
+double-tick case was written sequentially, and a tick that starts after the first has
+finished never reaches the insert at all: it reads the ledger, sees the day, and skips
+at `decideTick`. The claim only ever decides a **race**, so the test has to race. The
+case now runs two ticks through `Promise.all`, and with the claim moved after the work:
+```
+FAIL src/routes/__integration__/watch-tick.int.test.ts > runWatchTick (W-5c2) >
+  claims the day before it works, so two ticks at once import once
+AssertionError: expected 2 to be 1
+Test Files  1 failed | 37 passed (38)
+     Tests  1 failed | 224 passed (225)
+```
+`2` is both ticks having imported the same day — the double spend. Restored with
+`git checkout --`; suite green again at 38 / 225.
+
+**Learned:** a test that passes with the guard removed is not a weaker test, it is a
+test of something else. Sequential double-calls prove idempotency of the *read*; only
+concurrent ones prove idempotency of the *write*.
+
+**Must not (held):** no `setInterval`, no `WATCH_SCHEDULER`, no change to
+`index.ts` — that is W-5c3. No provider called in any test, no `ready` provider seeded,
+no real Vapi account id in the test file, no backfill, no `confirm: true`, no
+transcript or name or number in `detail`, no Vapi assistant touched (D-12).
 
 ### W-5c3 — Arm it: start the tick behind `WATCH_SCHEDULER=1`
 

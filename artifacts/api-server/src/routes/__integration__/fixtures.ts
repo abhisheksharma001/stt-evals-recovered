@@ -110,6 +110,13 @@ export class Fixtures {
     this.bulkIds.push(id);
   }
 
+  /** W-5c2: a ledger row `runWatchTick` wrote rather than this file, so
+   *  cleanup still deletes it before its schedule. Duplicates are harmless --
+   *  cleanup deletes by `inArray`. */
+  adoptWatchRun(id: string): void {
+    this.watchRunIds.push(id);
+  }
+
   async run(overrides: Partial<typeof benchmarkRunsTable.$inferInsert> = {}): Promise<RunRow> {
     const [row] = await db
       .insert(benchmarkRunsTable)
@@ -248,6 +255,13 @@ export class Fixtures {
         accountId: `fx-account-${this.suffix}`,
         vertical: "property_management",
         createdByLabel: this.actor,
+        // W-5c2: inert unless a test says otherwise. `runWatchTick` reads
+        // EVERY enabled schedule in the database, and integration files run
+        // in parallel against one database -- so a fixture schedule left
+        // enabled is a policy another suite's tick will act on, writing
+        // ledger rows under it while this suite counts them. Enabled is a
+        // thing a test opts into, in the one file that ticks.
+        enabled: false,
         ...overrides,
       })
       .returning();
@@ -280,6 +294,20 @@ export class Fixtures {
       await db.delete(benchmarkAgentScansTable).where(inArray(benchmarkAgentScansTable.callId, this.callIds));
     if (this.runIds.length) await db.delete(benchmarkRunsTable).where(inArray(benchmarkRunsTable.id, this.runIds));
     if (this.bulkIds.length) await db.delete(benchmarkBulksTable).where(inArray(benchmarkBulksTable.id, this.bulkIds));
+    // W-5c2: and the bulks `runWatchTick` created itself, found by the column
+    // it stamps rather than by a test having remembered to adopt them. Before
+    // the calls below, because deleting the bulk is what cascades its runs,
+    // result cells and scores -- and a surviving result cell holds a plain
+    // reference to a call, which blocks the call's delete.
+    await db.delete(benchmarkBulksTable).where(
+      inArray(
+        benchmarkBulksTable.watchScheduleId,
+        db
+          .select({ id: watchSchedulesTable.id })
+          .from(watchSchedulesTable)
+          .where(eq(watchSchedulesTable.createdByLabel, this.actor)),
+      ),
+    );
     if (this.callIds.length) await db.delete(benchmarkCallsTable).where(inArray(benchmarkCallsTable.id, this.callIds));
     if (this.providerIds.length)
       await db.delete(benchmarkProvidersTable).where(inArray(benchmarkProvidersTable.id, this.providerIds));
@@ -298,6 +326,19 @@ export class Fixtures {
     // but the tick ever writes one.
     if (this.watchRunIds.length)
       await db.delete(watchRunsTable).where(inArray(watchRunsTable.id, this.watchRunIds));
+    // W-5c2: and the rows `runWatchTick` wrote itself. Tracking those by id
+    // means remembering to adopt every one of them in every case, and a case
+    // that fails early never gets there -- so the sweep is by schedule
+    // instead, which cannot be forgotten.
+    await db.delete(watchRunsTable).where(
+      inArray(
+        watchRunsTable.scheduleId,
+        db
+          .select({ id: watchSchedulesTable.id })
+          .from(watchSchedulesTable)
+          .where(eq(watchSchedulesTable.createdByLabel, this.actor)),
+      ),
+    );
     // W-2: before the templates, not after -- a schedule holds an FK to the
     // template it watches, so deleting the template first fails the
     // constraint. Schedules are created only through their route, which
