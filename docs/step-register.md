@@ -9153,7 +9153,8 @@ transcript or name or number in `detail`, no Vapi assistant touched (D-12).
 **Status:** built and held at the PR. **This is the PR that lets the system spend
 money with nobody watching**, so it is one small block in one file, and it is not
 merged until Abhishek says to arm it.
-**PR:** one.
+**PR:** one -- #189, opened 2026-09-17 as a **draft** so the hold is structural and
+not just a sentence in the body. CI green. Merging it is the arming.
 **Depends on:** W-5c2.
 **Files:** `artifacts/api-server/src/index.ts`.
 
