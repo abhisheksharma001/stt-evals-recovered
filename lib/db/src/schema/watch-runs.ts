@@ -87,9 +87,16 @@ export const watchRunsTable = pgTable(
       .defaultNow(),
     // Plain text with the enum enforced at the API boundary, exactly as
     // `benchmark_calls.vertical` and `benchmark_bulks.status` do it. One of:
-    // imported, sampled, refused:no_calls, refused:daily_cap,
-    // refused:monthly_cap, refused:no_key, held:cost_gate, launched, settled,
-    // failed. `refused:` and `held:` are prefixes the UI matches on (W-6
+    // started, imported, sampled, refused:no_calls, refused:no_estimate,
+    // refused:daily_cap, refused:monthly_cap, refused:no_key, held:cost_gate,
+    // launched, settled, failed.
+    //
+    // `started` is what the row is inserted with (W-5c2), before any work:
+    // the row IS the claim on the day, so its first value has to mean
+    // "claimed, nothing done yet" rather than borrow the name of a step that
+    // has not run. Every other value replaces it in the same tick, so a row
+    // left reading `started` means the process died mid-tick -- which is
+    // worth being able to see. `refused:` and `held:` are prefixes the UI matches on (W-6
     // paints a red tick for anything starting `refused:`), so a new reason is
     // a new suffix, never a new shape.
     outcome: text("outcome").notNull(),
