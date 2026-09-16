@@ -9068,7 +9068,7 @@ clock.
 
 ### W-5c2 — `runWatchTick`: import, sample, price, refuse or launch
 
-**Status:** done 2026-09-17. Spent nothing: nothing calls it, and every test passes
+**Status:** done 2026-09-17 (PR #188). Spent nothing: nothing calls it, and every test passes
 a fake Vapi source.
 **PR:** one.
 **Depends on:** W-5c1, W-5b, W-3, W-4.
