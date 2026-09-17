@@ -22,7 +22,21 @@ export type BenchmarkTrend = { bulks: TrendBulk[]; cells: TrendCell[] };
  * that keeps moving; it joins the strip once it settles. */
 const FINISHED_BULK_STATUSES = ["complete", "partial"] as const;
 
-export async function benchmarkTrend(): Promise<BenchmarkTrend> {
+/**
+ * W-5d: with `bulkId`, the same sum over one bulk instead of all of them.
+ *
+ * One function rather than a second one beside it, because the ledger's
+ * totals have to EQUAL what the trend strip reports for that bulk -- and two
+ * copies of a sum are two numbers that drift. Scoping is safe to the cell:
+ * the word basis below is already keyed per bulk (`${bulkId}|${callId}`), so
+ * a bulk's cells do not depend on which other bulks were read with it.
+ *
+ * It is also the difference between a settle costing one bulk's rows and
+ * costing every finished bulk's rows, on a tick that runs every minute.
+ */
+export async function benchmarkTrend(
+  opts: { bulkId?: string } = {},
+): Promise<BenchmarkTrend> {
   const bulkRows = await db
     .select({
       id: benchmarkBulksTable.id,
@@ -32,7 +46,14 @@ export async function benchmarkTrend(): Promise<BenchmarkTrend> {
       completedAt: benchmarkBulksTable.completedAt,
     })
     .from(benchmarkBulksTable)
-    .where(inArray(benchmarkBulksTable.status, [...FINISHED_BULK_STATUSES]));
+    .where(
+      opts.bulkId
+        ? and(
+            inArray(benchmarkBulksTable.status, [...FINISHED_BULK_STATUSES]),
+            eq(benchmarkBulksTable.id, opts.bulkId),
+          )
+        : inArray(benchmarkBulksTable.status, [...FINISHED_BULK_STATUSES]),
+    );
   const bulks: TrendBulk[] = bulkRows.map((b) => ({
     id: b.id,
     name: b.name,

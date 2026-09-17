@@ -9175,18 +9175,54 @@ on the same day as W-5c2 without Abhishek having said to arm it.
 
 ### W-5d — Settle: the day's numbers move onto the ledger
 
-**Status:** not started. Spends nothing.
+**Status:** done. Spends nothing.
 **PR:** one.
 **Depends on:** W-5c.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
-**Files:** the watch-scheduler module from W-5b/W-5c; the integration file from W-5c.
+**Files:** `artifacts/api-server/src/lib/watch-settle.ts` (new),
+`artifacts/api-server/src/lib/trend.ts`, `artifacts/api-server/src/lib/watch-tick.ts`,
+`artifacts/api-server/src/routes/__integration__/watch-settle.int.test.ts` (new).
+
+**Corrected 2026-09-17, while grilling it.** This row used to say the files were "the
+watch-scheduler module from W-5b/W-5c; the integration file from W-5c". Three things were
+wrong with that, all found before a line was written:
+
+1. **Settling cannot live inside `runWatchTick`'s per-schedule loop.** That loop body runs
+   once per schedule per DAY — `decideTick` skips a schedule whose day is already in the
+   ledger, which is every tick after the first. A bulk launched at 03:00 finishes around
+   03:40, so settling from inside the loop would wait for the NEXT day's tick and Layer 1
+   would be a day behind, all day. It is a separate pass, before the loop, over every
+   launched row in the table, with no reference to whose hour it is.
+2. **`benchmarkTrend()` had no bulk scope.** It reads every finished bulk. The acceptance
+   below is per bulk, and a settle that read all of history every minute would be the
+   wrong cost as well as the wrong answer. `benchmarkTrend` now takes an optional
+   `bulkId`; the route passes nothing and is unchanged. One function, not a second sum
+   beside it — two copies of a sum are two numbers that drift. Safe to scope because the
+   word basis inside it is already keyed per bulk as well as per call, so a bulk's cells
+   do not depend on which other bulks were read with it.
+3. **A trend cell is not a `WatchRunTotals`.** The cell carries `accountLabel` and
+   `providerName`, which the ledger keeps neither of, so cells fold down to
+   (assistant, provider). A watch bulk is one account by construction, so nothing folds in
+   practice — the fold is written rather than assumed, because silently keeping the last
+   cell of a pair would be a wrong number rather than a missing one.
 
 **Today:** a `launched` ledger row points at a bulk and holds nothing of its own.
 
-**Change:** on every tick, each `launched` row whose bulk is `complete` or `partial` gets
-`totals` — the four T-19 numbers per (assistant, provider): `peerFlags`, `words`,
-`callsScored`, `cleanCalls`, the same sums `GET /benchmark/trend` computes — and
-`outcome: settled`.
+**Change:** on every tick, before any schedule is looked at, each `launched` row whose
+bulk is `complete` or `partial` gets `totals` — the four T-19 numbers per (assistant,
+provider): `peerFlags`, `words`, `callsScored`, `cleanCalls`, the same sums
+`GET /benchmark/trend` computes — and `outcome: settled`. The pass has its own
+try/catch inside the tick: settling is a read-back, and a broken read-back must not stop
+the policies from running their day.
+
+**The row whose bulk was evicted before anyone settled it stays `launched`, on purpose.**
+Its `bulk_id` is already null, so there is nothing left to read. It is not marked
+`failed` — `launched` is one of the two `SPENDING_OUTCOMES`, and renaming it would
+un-count money that really was spent against the monthly cap. It is not marked `settled`
+with an empty array either, because that says "this day scored nothing", which is a
+different claim from "the numbers were gone before anyone read them". Null totals mean no
+numbers were captured, which is the truth. W-6 must therefore render a null total as
+unknown, never as zero — which its own **Must not** already says.
 
 **This is why eviction does not lose the history.** The day's numbers live on the ledger;
 the bulk is the workbench. W-5a already made the ledger survive its bulk's eviction
@@ -9196,7 +9232,17 @@ detached; this step is what makes that survival worth something.
 `settled` and its `totals` SHALL equal what `GET /benchmark/trend` reports for that bulk;
 WHEN the bulk is then evicted THEN those totals SHALL still be readable from the ledger.
 
-**Verify:** `pnpm --filter @workspace/api-server test`; the integration suite; typecheck.
+**Verify:** `pnpm --filter @workspace/api-server test` — 34 files, 262 tests, unchanged
+(this step adds no unit test; its numbers are only true against a real database).
+`cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration`
+— 39 files / 230 tests, was 38 / 225. `pnpm run typecheck` clean in all four projects.
+Four guards: doc-paths, register-coverage 100 entries, api-routes 67 operations
+(unchanged — this step adds no route), import-cycles clean (107 api-server files, one
+more than before: the new module).
+
+**Measured 2026-09-17.** The word total is per CALL, not per provider cell: two scored
+calls of three words each settle as `words: 6`. The first version of the test asserted 3
+and was wrong — the code was right.
 
 **Prove it by breaking it:** after committing, skip the `totals` write and set only
 `outcome: settled`; the totals-after-eviction case fails.
