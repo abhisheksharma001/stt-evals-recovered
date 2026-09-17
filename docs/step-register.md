@@ -9306,7 +9306,10 @@ children below:**
 ### W-6a — `watchBaseline`, pure
 
 **Status:** done, 2026-09-17. Spends nothing.
-**PR:** one.
+**PR:** one — #191, squash-merged as `6285d5f`, deployed and verified live:
+`/api/healthz` reads `6285d5fa0a19`, `/benchmark/watch/overview` still 404 and
+`check-api-routes` still 67 operations, which is what a step with no route looks
+like. Nothing calls `watchBaseline` yet; W-6b is the first caller.
 **Depends on:** nothing. No route, no UI, no database.
 **Files:** `artifacts/api-server/src/lib/watch-baseline.ts` (new),
 `artifacts/api-server/src/lib/watch-baseline.test.ts` (new),
