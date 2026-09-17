@@ -123,7 +123,21 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-function percentile(sorted: number[], p: number): number {
+/**
+ * Nearest-rank percentile over an ascending array.
+ *
+ * W-6a exports it. The watch baseline band and the bootstrap interval below
+ * have to be the same percentile or the product shows two numbers that
+ * disagree about what "the 5th percentile" means -- nearest-rank and linear
+ * interpolation differ on every sample small enough to matter, which is every
+ * sample the watch draws. One function, not a second one beside it.
+ *
+ * Nearest-rank has a consequence worth stating: at n = 7 (the fewest days the
+ * baseline accepts) `p = 0.05` rounds to index 0 and `p = 0.95` to index 6, so
+ * the band is exactly min..max and "outside it" means a new record. It only
+ * begins trimming at n = 11 on the low end and n = 12 on the high end.
+ */
+export function percentile(sorted: readonly number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))));
   return sorted[idx]!;
