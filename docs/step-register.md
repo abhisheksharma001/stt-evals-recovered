@@ -9175,8 +9175,8 @@ on the same day as W-5c2 without Abhishek having said to arm it.
 
 ### W-5d — Settle: the day's numbers move onto the ledger
 
-**Status:** done. Spends nothing.
-**PR:** one.
+**Status:** done, 2026-09-17. Spends nothing.
+**PR:** one — #190, squash-merged as `7b07d44`, deployed and verified live: `/api/healthz` reads `7b07d44afc35`, `watch_runs` still 0 rows and 0 enabled schedules, so the pass ran over nothing — which is what settling nothing looks like until a schedule is enabled and #189 arms the clock.
 **Depends on:** W-5c.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part B.
 **Files:** `artifacts/api-server/src/lib/watch-settle.ts` (new),
