@@ -9250,52 +9250,179 @@ and was wrong — the code was right.
 **Must not:** re-read the bulk after settling; treat `null` totals as zero; settle a row
 whose bulk is still running.
 
-### W-6 — Orgs: the first layer
+### W-6 — Orgs: the first layer — SPLIT into W-6a / W-6b / W-6c, 2026-09-17, while grilling it
+
+**Status:** split. Spends nothing. This row is a pointer; the work is in W-6a,
+W-6b and W-6c below.
+
+**Why it split.** The row named three things that compile apart and can each be
+proved alone: a pure baseline function, one read endpoint, and one page. Same
+shape as W-5, and split for the same reason — one step is one PR is one win, and
+a step whose break test only exercises one third of it is three steps wearing
+one heading. The row's own **Prove it by breaking it** named only the baseline
+function's unit test, which is the tell.
+
+**Five things grilling found wrong in this row's own text, all corrected in the
+children below:**
+
+1. **The production transcriber must not be resolved live.** The row said "via
+   the same resolution `GET /benchmark/assistants/{assistantId}/transcriber`
+   uses". That resolution is `assistantTranscriberConfig`
+   (`artifacts/api-server/src/lib/assistant-transcriber.ts`), which makes a
+   **live Vapi read per assistant** behind a 10-minute cache. An overview over
+   N agents would fan out to N network reads on a cold cache, and T-168 says
+   every assertion must hold with no VAPI key in the environment — with no key
+   there is no answer at all. `resolveProductionProviderId`
+   (`artifacts/api-server/src/lib/verdict.ts`) already resolves it offline from
+   the `source_transcriber_provider` column the importer stored. W-6b uses
+   that.
+2. **The ledger cannot say which provider was production on a given day.**
+   `watch_runs.totals` is per (assistant, provider) and carries no marker for
+   which of them was in production. Once FR-BLK-10 evicts the bulk, the
+   calls-to-bulk link is gone and it cannot be recovered. The production
+   transcriber is a property of the AGENT, not of the day: resolve it once per
+   agent from the corpus (which eviction never touches —
+   `artifacts/api-server/src/lib/bulks.ts` says so at its eviction comment) and
+   then pick that `providerId` out of each day's `totals`.
+3. **The percentile method was not pinned.** "5th—95th percentile" has at least
+   two common readings and they disagree on every sample small enough to
+   matter. `lib/scoring/src/verdict.ts` already had a private nearest-rank
+   `percentile`; W-6a exports it and uses it, so the band and the bootstrap
+   interval cannot drift apart. Consequence, stated because it is surprising:
+   at n = 7 nearest-rank makes the band exactly min..max, so the first band an
+   agent gets means "a new record". It begins trimming at n = 11 on the low
+   end and n = 12 on the high end.
+4. **"Below 7 prior days" and "fewer than 7 settled days" are different rules.**
+   The Acceptance sentence is the right one: a `refused:` day produced no rate
+   and must not count toward seven. Counting calendar days would let a week of
+   refusals hand an agent a band drawn from one measurement.
+5. **`sourceProvider` does not live on an account.** The row said non-Vapi
+   accounts are "excluded by `sourceProvider`"; that column is on
+   `benchmark_calls`. A watch schedule names one `accountId` and W-3 samples
+   Vapi calls into it, so every ledger row is a Vapi account by construction
+   and the exclusion is moot at this layer. W-12's public set never gets a
+   schedule.
+
+### W-6a — `watchBaseline`, pure
+
+**Status:** done, 2026-09-17. Spends nothing.
+**PR:** one.
+**Depends on:** nothing. No route, no UI, no database.
+**Files:** `artifacts/api-server/src/lib/watch-baseline.ts` (new),
+`artifacts/api-server/src/lib/watch-baseline.test.ts` (new),
+`lib/scoring/src/verdict.ts` (export the existing `percentile`).
+
+**Today:** nothing decides whether an agent's production rate has moved off its
+own normal. The verdict (`lib/scoring/src/verdict.ts`) ranks providers against
+each other on one bulk; nothing compares an agent against its own history.
+
+**Change:** a pure function over settled days. `forming` below
+`MIN_BASELINE_DAYS` (7) measured days, with no band reported at all. Otherwise
+the band is the 5th and 95th nearest-rank percentiles of the trailing days'
+`flagsPer100Words`, and today reads `moved` when it falls strictly outside that
+band **and** that day scored at least `MIN_SHARED_CALLS_FOR_VERDICT` (5,
+`lib/scoring/src/verdict.ts`) calls. Everything else is `steady`. A day with no
+measurement is `steady` with the band still reported — nothing was measured, so
+nothing moved.
+
+**Acceptance:** WHEN fewer than 7 settled days are given THEN the function
+SHALL return `forming` with `low` and `high` null; WHEN today's rate falls
+strictly outside the trailing 5th—95th percentile band and that day scored at
+least 5 calls THEN it SHALL return `moved`; WHEN that same outlying rate scored
+fewer than 5 calls THEN it SHALL return `steady`.
+
+**Verify:** `pnpm --filter @workspace/api-server test`;
+`pnpm --filter @workspace/scoring test`; `pnpm run typecheck`.
+
+**Prove it by breaking it:** after committing, remove the
+`callsScored < MIN_SHARED_CALLS_FOR_VERDICT` clause; exactly one unit test
+fails — *is steady on an outlying day that scored fewer than five calls*.
+
+**Must not:** read the database; call Vapi; turn an absent day into a 0. The
+module cannot distinguish a real 0.0 (a provider that agreed with every peer
+all day, which is a good day and belongs in the band) from a missing one, so
+the caller drops unmeasured days before calling.
+
+**Measured 2026-09-17, while building it.** The band at exactly 7 days is
+min..max under nearest rank, which means the first band an agent gets makes
+"outside" equal "a record". That is the correct conservative direction — it
+under-reports movement rather than crying wolf on day eight — but it is
+surprising enough to be a named test (*trims the extremes once there are enough
+days*) rather than a comment.
+
+### W-6b — `GET /benchmark/watch/overview`
 
 **Status:** not started. Spends nothing.
 **PR:** one.
-**Depends on:** W-5d (settled ledger rows); reads S-AB1's pair verdict when present.
-**Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1) and Part D; evidence note in §8.
-**Files:** `lib/api-spec/openapi.yaml` (one new read path, `GET /benchmark/watch/overview`),
-the watch route file from W-2, a pure baseline module beside
-`artifacts/api-server/src/lib/triage-signals.ts` (plain name: watch-baseline) with its
-unit test, a new page beside `artifacts/stt-benchmark/src/pages/Rankings.tsx` (plain
-name: Orgs), `artifacts/stt-benchmark/src/App.tsx` (route), the sidebar in
-`artifacts/stt-benchmark/src/components/layout.tsx`, and a render test beside
-`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx` using
-`artifacts/stt-benchmark/src/pages/__render__/harness.tsx`.
+**Depends on:** W-5d (settled ledger rows), W-6a (the baseline function); reads
+S-AB1's pair verdict when present.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1) and Part D.
+**Files:** `lib/api-spec/openapi.yaml` (one new read path),
+`artifacts/api-server/src/routes/watch.ts`, and an integration test beside
+`artifacts/api-server/src/routes/__integration__/watch-settle.int.test.ts`.
 
-**Today:** Results shows one bulk or all-time. No screen lists orgs, and no screen shows a
-day-by-day line for an agent.
+**Today:** `artifacts/api-server/src/routes/watch.ts` serves the W-2 CRUD only
+(`POST` and `PATCH` on `/benchmark/watch-schedules`). No route reads the
+ledger.
 
-**Change:** the endpoint returns, per (account, assistant): the production transcriber
-(via the same resolution `GET /benchmark/assistants/{assistantId}/transcriber` uses),
-the last 30 scheduled days from the ledger — each with `day`, `outcome`, `bulkId`, the
-production provider's rate (`peerFlags / words × 100`), its `callsScored`, and the best
-challenger's rate — plus `baseline: forming | steady | moved` from the pure function:
-*moved* when today's production rate lies outside the trailing days' 5th–95th percentile
-**and** `callsScored ≥ MIN_SHARED_CALLS_FOR_VERDICT` (5, `lib/scoring/src/verdict.ts`);
-*forming* below 7 prior days. Accounts that are not Vapi accounts (the public set of
-W-12) are excluded by `sourceProvider`. The page renders the org → agent rows with the
-tick bar (green ran, amber moved or `too_close`, grey no run, red refused/failed with the
-ledger outcome on hover), today's rate vs baseline with its call count, and cost this
-month from the ledger's `estimatedCents`.
+**Change:** per (account, assistant) across the enabled schedules, return: the
+production provider resolved **offline** via `resolveProductionProviderId`
+over that assistant's corpus rows (never `assistantTranscriberConfig`, per
+grill finding 1); the last 30 ledger days, each with `day`, `outcome`,
+`bulkId`, the production provider's `peerFlags / words * 100`, its
+`callsScored`, and the best challenger's rate; and `watchBaseline`'s verdict
+over those days. Days whose `totals` is null contribute an `outcome` and no
+rate.
 
-**Acceptance:** WHEN an agent has fewer than 7 settled days THEN its row SHALL read
-"baseline forming" and SHALL NOT be amber; WHEN today's production rate lies outside the
-trailing 5th–95th percentile with ≥ 5 calls scored THEN the tick SHALL be amber; WHEN a
-day's ledger outcome starts with `refused:` THEN the tick SHALL be red and its hover
-SHALL show that outcome verbatim.
+**Acceptance:** WHEN an agent has 7 or more settled days THEN the response
+SHALL carry a non-null `low` and `high`; WHEN a day's `totals` is null THEN
+that day SHALL carry its `outcome` and no rate field at all, never 0; WHEN no
+VAPI key is set THEN the response SHALL be unchanged (T-168).
 
-**Verify:** `pnpm --filter @workspace/api-server test`;
-`pnpm --filter @workspace/stt-benchmark test`; typecheck.
+**Verify:** `pnpm --filter @workspace/api-server run test:integration`;
+`node scripts/check-api-routes.mjs` shows 68 operations; typecheck.
 
-**Prove it by breaking it:** after committing, remove the `callsScored ≥ 5` clause from the
-baseline function; exactly one unit test fails — the one with four calls scored and an
-outlying rate.
+**Prove it by breaking it:** after committing, make a null-`totals` day emit
+`flagsPer100Words: 0`; exactly one integration case fails.
 
-**Must not:** compute any verdict in the browser (D-13 — the rates and the baseline come
-from the endpoint); render the word "vertical"; show an absent measurement as 0.
+**Must not:** call Vapi at all; compute any verdict in the browser (D-13);
+spend anything.
+
+### W-6c — The Orgs page
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** W-6b.
+**Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1); evidence note in §8 — run
+the `visual-and-research` skill before writing any label, per its own trigger
+list (a new page, and copy for non-technical readers).
+**Files:** a new page beside `artifacts/stt-benchmark/src/pages/Rankings.tsx`
+(plain name: Orgs), `artifacts/stt-benchmark/src/App.tsx` (route),
+`artifacts/stt-benchmark/src/components/layout.tsx` (sidebar), and a render
+test beside `artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`
+using `artifacts/stt-benchmark/src/pages/__render__/harness.tsx`.
+
+**Today:** Results shows one bulk or all-time. No screen lists orgs, and no
+screen shows a day-by-day line for an agent.
+
+**Change:** org — agent rows with the tick bar (green ran, amber moved or
+`too_close`, grey no run, red `refused:`/`failed` with the ledger outcome on
+hover), today's rate against the baseline with its call count, and cost this
+month summed from the ledger's `detail.estimatedCents`.
+
+**Acceptance:** WHEN an agent's baseline reads `forming` THEN its row SHALL
+read "baseline forming" and SHALL NOT be amber; WHEN a day's ledger outcome
+starts with `refused:` THEN that tick SHALL be red and its hover SHALL show
+that outcome verbatim.
+
+**Verify:** `pnpm --filter @workspace/stt-benchmark test`; typecheck.
+
+**Prove it by breaking it:** after committing, make a `forming` row render
+amber; exactly one render test fails.
+
+**Must not:** compute any verdict in the browser (D-13 — the rates and the
+baseline come from W-6b); render the word "vertical"; show an absent
+measurement as 0.
 
 ### W-7 — One agent, one day: the verdict for that agent, and what else happened
 
