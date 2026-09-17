@@ -53,6 +53,7 @@ import {
   resolveCriteriaSelection,
 } from "./bulks";
 import { decideTick, localDay } from "./watch-scheduler";
+import { settleLaunchedRuns } from "./watch-settle";
 import { sampleForDay, type SampleCandidate } from "./watch-sampler";
 import {
   UnknownVapiAccountError,
@@ -127,6 +128,17 @@ export async function runWatchTick(input: {
   const { now } = input;
   const source = input.source ?? REAL_SOURCE;
   const log = input.log ?? logger;
+
+  // W-5d: yesterday's numbers before today's decisions, and outside the loop
+  // below -- that loop runs once per schedule per DAY, so settling from
+  // inside it would leave Layer 1 a day behind. Caught here rather than
+  // allowed to escape: settling is a read-back, and a broken read-back must
+  // not stop the policies from running their day.
+  try {
+    await settleLaunchedRuns({ log });
+  } catch (err) {
+    log.error({ err }, "watch: settle pass failed");
+  }
 
   const schedules = await db
     .select()
