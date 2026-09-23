@@ -9349,7 +9349,12 @@ state. If a run row ever lost its ids, the ledger would say nothing scored.
 The case now gives the run its ids and the ratio check against
 `GET /benchmark/bulks/{bulkId}/verdicts` passes exactly: `rate`, `leaderRate`,
 `leaderProviderId` and `calls` all equal the division of the stored sums.
-**PR:** one.
+**PR:** one — #193, squash-merged as `dd2e3e5`, deployed and verified live:
+`/api/healthz` reads `dd2e3e5650d0-dirty` — the `-dirty` is the uncommitted
+`AGI_Research/` line in `.gitignore` (added with Abhishek's go for the
+research-council run), not a source difference; `git diff --stat HEAD` showed
+that one file. `watch_runs.production` exists on both `stt_evals` and
+`stt_evals_test`; `watch_runs` still 0 rows and 0 enabled schedules.
 **Depends on:** W-5d.
 **Files:** `lib/db/src/schema/watch-runs.ts` (a new jsonb column, `production`),
 `artifacts/api-server/src/lib/verdict.ts` (production's measurement per
