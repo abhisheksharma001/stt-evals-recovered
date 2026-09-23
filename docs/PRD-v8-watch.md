@@ -311,8 +311,10 @@ name, the production transcriber it runs (resolved **offline** from the stored
 `source_transcriber_provider`, never by the live Vapi read behind
 `GET /benchmark/assistants/{assistantId}/transcriber` — corrected 2026-09-17, W-6
 grill), a **30-day tick bar** (one tick
-per scheduled day: green = ran, verdict unchanged; amber = ran, `too_close` or moved
-against baseline; grey = no run; red = refused/failed, with the reason on hover), today's
+per scheduled day: green = ran; amber = today, when the ledger's baseline verdict
+(W-6a/W-6b) reads `moved` — ~~or `too_close`~~ (corrected 2026-09-23, W-6c grill:
+`too_close` is a Layer 2 verdict and is not on the ledger, so Layer 1 never shows it);
+grey = no run; red = refused/failed, with the reason on hover), today's
 rate vs trailing-30-day baseline, and cost this month.
 
 **Corrected 2026-09-23 (W-6b grill).** "Today's rate" is production's **M-8a
@@ -490,6 +492,20 @@ of tiles; Layer 3 reuses the comparison view unchanged.
 **No evidence found for:** a screen that shows a bootstrap noise floor or "too close to
 call" as a first-class state — no product in Mobbin's results does this. The wording from
 S-AB1's spec stands and is not validated by a reference.
+
+**Addendum 2026-09-23 (W-6c, visual-and-research).** Question: how do status pages word a
+per-day tick's hover, and a "not enough history yet" state?
+**Pattern to use:** hover = date, then the outcome, then the count with its denominator
+← [OpenAI Platform service health](https://mobbin.com/screens/fd98bb68-c8c4-446c-a0fc-0e1089003e1c)
+("Feb 26 · 7:00–7:59 AM · 100.00% uptime · (0 / 0 requests)"); the bar's two ends labelled
+"30 days ago … today" ← [Better Stack status](https://mobbin.com/screens/0d34fbf2-e4c4-451c-ad5d-de3cdf409164).
+**Patterns to avoid:** a tick bar with no legend in the page copy — every reference
+carries one line saying what the colours mean.
+**Changes to the plan:** hover text is `<day> · <outcome> · <rate> per 100 words · <n> calls`,
+each part only when present; legend sentence under the page title.
+**No evidence found for:** wording of a forming baseline — Lenny's search
+(`baseline|anomaly|not enough data|insufficient data|collecting data`, 71 hits) returned
+nothing about dashboards; "baseline forming · N of 7 days" is the register's own wording.
 
 ---
 

@@ -2972,3 +2972,9 @@ track — which of two ways is Abhishek's call). Both are in
 and calling it production. That is a different question ("is the best
 alternative drifting?"), and a row labelled production that is not production
 is the one thing Layer 1 must never show.
+
+- **Found 2026-09-23 (grilling W-6c): the watch overview has no agent name.**
+  `GET /benchmark/watch/overview` carries `assistantId` only, and `benchmark_calls`
+  stores no assistant name, so the Orgs page shows the id in mono. A name needs a
+  stored source first (import-time capture from Vapi, or a label on the schedule) —
+  then one field on `WatchOverviewAgent`.
