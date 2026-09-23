@@ -9715,15 +9715,17 @@ and enums only; log an artifact path with a caller id.
 
 ### W-8 — An SDK generated from the spec
 
-**Status:** not started. Spends nothing.
-**PR:** one.
+**Status:** done 2026-09-23. Spent nothing.
+**PR:** one — #198, squash `eed2fc0`.
 **Depends on:** nothing.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part E (1).
-**Files:** `lib/api-spec/orval.config.ts` (a third target, `client: "fetch"`), a new
-workspace package beside `lib/api-client-react` (plain name: api-client) with a
-non-React mutator modelled on `lib/api-client-react/src/custom-fetch.ts`,
-`pnpm-workspace.yaml` if the glob does not already cover it, root `package.json`
-typecheck wiring.
+**Files:** `lib/api-spec/orval.config.ts` (a third target, `client: "fetch"`),
+`lib/api-client/package.json`, `lib/api-client/tsconfig.json`, `lib/api-client/src/index.ts`,
+`lib/api-client/src/custom-fetch.ts` (moved here from the React package),
+`lib/api-client/src/generated/api.ts` (orval output), `lib/api-client-react/src/custom-fetch.ts`
+(now a thin wrapper), `lib/api-client-react/package.json` and `tsconfig.json`
+(depend on and reference the plain package), root `tsconfig.json` (reference),
+`scripts/check-import-cycles.mjs` (one comment line), `pnpm-lock.yaml`.
 
 **Today:** the only generated client is the TanStack one, unusable outside React.
 
@@ -9733,10 +9735,63 @@ runs THEN the new package SHALL export a typed function for it with no hand edit
 
 **Verify:** codegen, then typecheck; `node scripts/check-import-cycles.mjs`.
 
-**Prove it by breaking it:** not applicable — generated code; the proof is the codegen
-script's own typecheck of what it generates (T-141's rule).
+**Grilled 2026-09-23, before code.** Four findings, three of them changes to the
+plan above.
 
-**Must not:** hand-write a request; import React.
+1. *"A non-React mutator modelled on `custom-fetch.ts`"* meant a copy. The file is
+   400 lines and memo F-461 already lists two live defects in it (no timeout, bare
+   `response.text()`); two copies means fixing each twice. So the file **moved** to
+   the plain package and the React package keeps a wrapper at the path orval reads.
+   The wrapper cannot be a bare re-export: orval (`@orval/core` `generateMutator`)
+   greps the file text for `export type ErrorType` / `export type BodyType` and
+   parses the AST for the function's parameter count. A bare re-export parses as a
+   one-parameter mutator. Verified by breaking it (below).
+2. `@orval/fetch` 8.23 lists zod as a fixed dependency (`FETCH_DEPENDENCIES`, for
+   its optional `runtimeValidation`) and emits `import { z as zod } from 'zod'`
+   even when nothing uses it. The React target does not. Not configurable. The
+   package declares `zod: catalog:` for that one import; the alternative was a
+   hand edit of generated output, which the acceptance forbids.
+3. `tsc --build` with composite projects needs a project reference for every
+   cross-package import, or TS6305 "Output file … has not been built from source".
+   `lib/api-client-react/tsconfig.json` gained `references: [../api-client]`; the
+   UI's own tsconfig needed nothing, it resolves through the React package's
+   declarations.
+4. `check-import-cycles.mjs` skips orval output by name in a comment; the new
+   package is named there so the comment stays true. Not added to the walk.
+
+The W-7 orval name collision (zod path schema vs TS query type) does not recur:
+the fetch target has no zod schemas, so `GetBulkVerdictsParams` is one thing.
+
+**Proved.** Codegen + `tsc --build` clean; root `pnpm run typecheck` clean; five guards
+green (69 operations); UI 22 files / 216 tests green (the wrapper sits under every
+hook). React generated output byte-identical before and after the move (`diff`).
+Acceptance clause run literally: a temporary `/benchmark/w8-probe` path added to the
+spec, orval run, `export const w8Probe = async (…): Promise<W8Probe200>` appeared at
+`lib/api-client/src/generated/api.ts:1883` with no hand edit; spec reverted, function
+gone, 69 functions again. Live from Node (`tsx`, outside any React runtime):
+`setBaseUrl("http://localhost:8177")` then `healthCheck()` answered `ok`
+`eb08001f9529-dirty` with 8 providers, and `getBulkTurnSignals(<unknown uuid>)` threw a
+typed `ApiError` with status 404, method GET and the `/api`-prefixed URL. Not proved:
+nothing consumes the package yet; `scripts` cannot import it until W-9 adds the
+dependency (the first smoke attempt failed on exactly that, ERR_MODULE_NOT_FOUND).
+
+**Prove it by breaking it:** the register said "not applicable — generated code". It
+was applicable to the one hand-written claim: the React wrapper's comment says a bare
+re-export changes the hooks. Replaced the wrapper with `export { customFetch, … } from
+"@workspace/api-client"`, ran orval: 628 lines of `lib/api-client-react/src/generated/api.ts`
+changed — every `options?: Parameters<typeof customFetch>[1]` became `options?: RequestInit`,
+the `ErrorType` import and `TError = ErrorType<unknown>` defaults vanished. Restored;
+output identical again.
+
+**Learned.** (1) A mutator file is read by orval as *text and AST*, not as a module —
+so where the code lives and what the file at the configured path looks like are two
+separate decisions. (2) A generator can carry a dependency you never use; declaring it
+beats editing output. (3) The "prove by breaking" clause was wrong to write as
+not-applicable: generated code has no test to break, but every hand-written line
+around it still makes a claim.
+
+**Must not:** hand-write a request; import React. Neither happens: `grep -rl react
+lib/api-client/src` is empty and the only `fetch(` call is the moved mutator's.
 
 ### W-9 — A CLI over the SDK
 
