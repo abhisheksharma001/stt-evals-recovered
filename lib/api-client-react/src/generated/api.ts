@@ -89,6 +89,7 @@ import type {
   VapiPreviewInput,
   VapiPreviewResult,
   VerticalRanking,
+  WatchOverview,
   WatchSchedule,
   WatchScheduleInput,
   WatchSchedulePatch,
@@ -4305,6 +4306,83 @@ export const useLaunchBulkTemplate = <TError = ErrorType<void>,
       > => {
       return useMutation(getLaunchBulkTemplateMutationOptions(options));
     }
+
+export const getGetWatchOverviewUrl = () => {
+
+
+
+
+  return `/api/benchmark/watch/overview`
+}
+
+/**
+ * @summary Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+ */
+export const getWatchOverview = async ( options?: Parameters<typeof customFetch>[1]): Promise<WatchOverview> => {
+
+  return customFetch<WatchOverview>(getGetWatchOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWatchOverviewQueryKey = () => {
+    return [
+    `/api/benchmark/watch/overview`
+    ] as const;
+    }
+
+
+export const getGetWatchOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getWatchOverview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWatchOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWatchOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWatchOverview>>> = ({ signal }) => getWatchOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWatchOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWatchOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getWatchOverview>>>
+export type GetWatchOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+ */
+
+export function useGetWatchOverview<TData = Awaited<ReturnType<typeof getWatchOverview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWatchOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWatchOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListWatchSchedulesUrl = () => {
 

@@ -1912,6 +1912,71 @@ export interface BulkTemplateLaunchInput {
   confirm?: boolean;
 }
 
+export type WatchBaselineState = typeof WatchBaselineState[keyof typeof WatchBaselineState];
+
+
+export const WatchBaselineState = {
+  forming: 'forming',
+  steady: 'steady',
+  moved: 'moved',
+} as const;
+
+export interface WatchBaseline {
+  state: WatchBaselineState;
+  priorDays: number;
+  /** @nullable */
+  low: number | null;
+  /** @nullable */
+  high: number | null;
+}
+
+export interface WatchOverviewDay {
+  day: string;
+  outcome: string;
+  /** @nullable */
+  bulkId: string | null;
+  rate?: number;
+  calls?: number;
+  /** @nullable */
+  leaderProviderId?: string | null;
+  /** @nullable */
+  leaderRate?: number | null;
+}
+
+/**
+ * @nullable
+ */
+export type WatchOverviewAgentProduction = {
+  vendor: string;
+  /** @nullable */
+  model: string | null;
+} | null;
+
+export interface WatchOverviewAgent {
+  scheduleId: string;
+  enabled: boolean;
+  /** @nullable */
+  assistantId: string | null;
+  /** @nullable */
+  production: WatchOverviewAgentProduction;
+  baseline: WatchBaseline;
+  monthEstimatedCents: number;
+  days: WatchOverviewDay[];
+}
+
+export interface WatchOverviewAccount {
+  accountId: string;
+  /** @nullable */
+  accountLabel: string | null;
+  agents: WatchOverviewAgent[];
+}
+
+export interface WatchOverview {
+  today: string;
+  windowStart: string;
+  accounts: WatchOverviewAccount[];
+}
+
 export interface WatchSchedule {
   id: string;
   templateId: string;

@@ -423,7 +423,7 @@ function nextMonthStart(day: string): string {
  *  same: the bulk is parked, nothing has run. Launched and settled days are
  *  the ones that cost money. */
 const SPENDING_OUTCOMES = ["launched", "settled"];
-async function estimatedCentsThisMonth(scheduleId: string, day: string): Promise<number> {
+export async function estimatedCentsThisMonth(scheduleId: string, day: string): Promise<number> {
   const rows = await db
     .select({ detail: watchRunsTable.detail, outcome: watchRunsTable.outcome })
     .from(watchRunsTable)

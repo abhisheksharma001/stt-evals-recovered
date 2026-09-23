@@ -9503,7 +9503,29 @@ days*) rather than a comment.
 
 ### W-6b — `GET /benchmark/watch/overview`
 
-**Status:** not started. Spends nothing.
+**Status:** done, 2026-09-23. Spends nothing.
+
+**Corrected 2026-09-23, while grilling it.** Three things. (1) "Across the
+enabled schedules" became every schedule, with `enabled` on the row: Layer 1
+has to show a switched-off policy greyed rather than make it vanish, and an
+integration fixture must stay `enabled: false` so no other suite's tick acts
+on it — both point the same way. (2) The register's per-day fields
+(`peerFlags / words * 100`) became production's M-8a rate from W-5e's
+`production` column, expressed per 100 compared words so it reads on the same
+scale as the trend strip; `totals` is never the source of a production number
+(finding 6). (3) The response gained `today` and `windowStart` so the page can
+paint grey for days the ledger has no row for without computing a calendar in
+the browser. The production transcriber is the most common
+(`source_transcriber_provider`, `_model`) pair among the agent's own calls, one
+grouped query for the whole screen — never `assistantTranscriberConfig`.
+
+**Files (as built):** `lib/api-spec/openapi.yaml` (`getWatchOverview`, schemas
+`WatchOverview`, `WatchOverviewAccount`, `WatchOverviewAgent`, `WatchBaseline`,
+`WatchOverviewDay`), `artifacts/api-server/src/lib/watch-overview.ts` (new),
+`artifacts/api-server/src/routes/watch.ts`, `artifacts/api-server/src/lib/watch-tick.ts`
+(`estimatedCentsThisMonth` exported — one sum for the cap and the screen),
+`artifacts/api-server/src/routes/__integration__/watch-overview.int.test.ts` (new),
+and the orval-generated `lib/api-zod` and `lib/api-client-react` files.
 **PR:** one.
 **Depends on:** W-5e (production's measurement on the ledger), W-6a (the
 baseline function); reads S-AB1's pair verdict when present. Useful output also

@@ -1150,6 +1150,18 @@ paths:
   # W-2 (PRD v8 Part A): a watch schedule is the policy row -- which template,
   # which Vapi account and agent, how many calls a day, and the spend ceilings.
   # It launches nothing; the tick that reads these rows arrives in W-5.
+  /benchmark/watch/overview:
+    get:
+      operationId: getWatchOverview
+      tags: [benchmark]
+      summary: Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+      responses:
+        "200":
+          description: Watch overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchOverview"
   /benchmark/watch-schedules:
     get:
       operationId: listWatchSchedules
@@ -3209,6 +3221,90 @@ components:
         # Override the auto-generated bulk name (default: template name + date).
         name: { type: string, minLength: 1 }
         confirm: { type: boolean }
+    WatchOverview:
+      type: object
+      required: [today, windowStart, accounts]
+      properties:
+        # Both are local calendar days (`YYYY-MM-DD`), the ledger's own `day`.
+        today: { type: string }
+        windowStart: { type: string }
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchOverviewAccount"
+    WatchOverviewAccount:
+      type: object
+      required: [accountId, accountLabel, agents]
+      properties:
+        # An env-var-derived id; never a key. Label is null when this server
+        # holds no key for the account (T-168): the ledger still reads.
+        accountId: { type: string }
+        accountLabel: { type: ["string", "null"] }
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchOverviewAgent"
+    WatchOverviewAgent:
+      type: object
+      required: [scheduleId, enabled, assistantId, production, baseline, monthEstimatedCents, days]
+      properties:
+        scheduleId: { type: string }
+        enabled: { type: boolean }
+        # null = the calls carried no assistant id, or the schedule has not
+        # run yet and names no agent.
+        assistantId: { type: ["string", "null"] }
+        # The production transcriber, resolved OFFLINE from the corpus rows'
+        # stored source_transcriber_provider / _model -- the most common pair
+        # among this agent's imported calls. Never a live Vapi read. Null
+        # when no call on file says.
+        production:
+          type: ["object", "null"]
+          required: [vendor, model]
+          properties:
+            vendor: { type: string }
+            model: { type: ["string", "null"] }
+        baseline:
+          $ref: "#/components/schemas/WatchBaseline"
+        # Sum of `detail.estimatedCents` over this schedule's launched and
+        # settled days this month -- the same sum the tick checks the monthly
+        # cap against.
+        monthEstimatedCents: { type: number }
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchOverviewDay"
+    WatchBaseline:
+      type: object
+      required: [state, priorDays, low, high]
+      properties:
+        # forming: fewer than 7 settled days with a rate. moved: today's rate
+        # lies strictly outside the trailing days' 5th-95th percentile AND
+        # today scored at least MIN_SHARED_CALLS_FOR_VERDICT calls. Otherwise
+        # steady. Computed by `watchBaseline` (W-6a), never in the browser.
+        state: { type: string, enum: [forming, steady, moved] }
+        priorDays: { type: number }
+        # The band, on the same scale as `WatchOverviewDay.rate`. Null while
+        # forming -- an absent band is never rendered as 0.
+        low: { type: ["number", "null"] }
+        high: { type: ["number", "null"] }
+    WatchOverviewDay:
+      type: object
+      required: [day, outcome, bulkId]
+      properties:
+        day: { type: string }
+        # The ledger outcome verbatim (`refused:` and `held:` are prefixes the
+        # UI matches on; the hover shows the string as is).
+        outcome: { type: string }
+        bulkId: { type: ["string", "null"] }
+        # Present only when the day settled a production measurement for this
+        # agent (W-5e). Absent means "not measured", never 0. `rate` is
+        # production's mismatched words per 100 compared words against the
+        # candidates' consensus (M-8a); `leaderRate` is the best-agreeing
+        # candidate's, over the same calls.
+        rate: { type: number }
+        calls: { type: number }
+        leaderProviderId: { type: ["string", "null"] }
+        leaderRate: { type: ["number", "null"] }
     WatchSchedule:
       type: object
       required: [id, templateId, accountId, vertical, assistantId, sampleSize, dailyCapCents, monthlyCapCents, hourLocal, enabled, createdAt]

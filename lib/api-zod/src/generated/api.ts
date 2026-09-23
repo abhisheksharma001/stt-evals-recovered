@@ -2230,6 +2230,44 @@ export const LaunchBulkTemplateResponse = zod.object({
 
 
 /**
+ * @summary Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+ */
+export const GetWatchOverviewResponse = zod.object({
+  "today": zod.string(),
+  "windowStart": zod.string(),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.string(),
+  "accountLabel": zod.string().nullable(),
+  "agents": zod.array(zod.object({
+  "scheduleId": zod.string(),
+  "enabled": zod.boolean(),
+  "assistantId": zod.string().nullable(),
+  "production": zod.object({
+  "vendor": zod.string(),
+  "model": zod.string().nullable()
+}).nullable(),
+  "baseline": zod.object({
+  "state": zod.enum(['forming', 'steady', 'moved']),
+  "priorDays": zod.number(),
+  "low": zod.number().nullable(),
+  "high": zod.number().nullable()
+}),
+  "monthEstimatedCents": zod.number(),
+  "days": zod.array(zod.object({
+  "day": zod.string(),
+  "outcome": zod.string(),
+  "bulkId": zod.string().nullable(),
+  "rate": zod.number().optional(),
+  "calls": zod.number().optional(),
+  "leaderProviderId": zod.string().nullish(),
+  "leaderRate": zod.number().nullish()
+}))
+}))
+}))
+})
+
+
+/**
  * @summary List watch schedules -- one row per org-or-agent daily-sampling policy (W-2)
  */
 export const ListWatchSchedulesResponseItem = zod.object({
