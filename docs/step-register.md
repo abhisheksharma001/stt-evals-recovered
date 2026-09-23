@@ -9795,8 +9795,8 @@ lib/api-client/src` is empty and the only `fetch(` call is the moved mutator's.
 
 ### W-9 — A CLI over the SDK
 
-**Status:** in progress 2026-09-23. Spends nothing by itself.
-**PR:** one.
+**Status:** done 2026-09-23. Spent nothing.
+**PR:** #199, squash `59aba22`, live `59aba22bd964-dirty` (the -dirty is the uncommitted .gitignore).
 **Depends on:** W-8, W-2 (schedules), W-5c (`run-now` needs the tick function behind a
 route: `POST /benchmark/watch-schedules/{id}/run-now`, added here, which calls the same
 function the tick calls and returns the ledger outcome).
@@ -9852,7 +9852,32 @@ AND a refused run SHALL exit non-zero.
 extraction; the new route file; a smoke run of `orgs`, `watch list` and
 `watch run-now <unknown id>` against the local API.
 
-**Must not:** read any `*_API_KEY`; talk to Vapi or a provider directly.
+**Must not:** read any `*_API_KEY`; talk to Vapi or a provider directly. Verified: the CLI
+reads `process.env.API_BASE_URL` and nothing else; every call goes through the local API.
+
+**Proved.** Typecheck clean; five guards green (check-api-routes: 70 operations); API unit
+277/277; integration 247/247 over 42 files, the tick's own file unchanged and green after
+the extraction; new `watch-run-now.int.test.ts` (4): 404, 409 disabled with no row, 200
+`refused:no_key` with one ledger row and no bulk then 409 on the second run of the same
+day, audit row naming the actor; UI 216/216. Live smoke after deploy: `orgs` (3 accounts,
+env-var names only), `watch list`, `moved`, `verdict <unknown>` → "Bulk not found" exit 1,
+`watch run-now <unknown>` → "Watch schedule not found" exit 1, `agents leasing-dev` → live
+read-only Vapi list. No `run-now` on an enabled schedule was made: the live database holds
+0 schedules, and a real one spends money.
+
+**Prove it by breaking it.** After the commit, `runScheduleDay` was made to return a result
+instead of null on the unique violation. The "second hand run is not a second run"
+assertion failed (`expected 200 to be 409`). Restored. The tick's own file stayed GREEN
+under that break: its idempotency cases go through `decideTick`'s ledger-day skip, not the
+database claim, so the route test is now the only test that exercises the
+`isUniqueViolation` branch.
+
+**Learned.** (1) pnpm 11 forwards a literal `--` to the script, so a usage line written
+`pnpm ... cli -- orgs` fails with `unknown command "--"`; found by the smoke, fixed in the
+docs. (2) The "same function the tick calls" a register row names must exist before the
+row is believed; here it had to be extracted first, and the extraction is what made a
+hand run and a clocked run provably the same body. (3) A hand-triggered launch has an
+actor and the ledger row has no column for one; the audit table already did.
 
 ### W-10 — An MCP server: read tools, and one write that obeys the ledger
 
