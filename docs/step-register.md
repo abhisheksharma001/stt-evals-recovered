@@ -9635,7 +9635,17 @@ measurement as 0.
 ### W-7 — One agent, one day: the verdict for that agent, and what else happened
 
 **Status:** done 2026-09-23. Spends nothing.
-**PR:** one.
+**PR:** #197, squash-merged as `eb08001`, deployed: `/api/healthz` reads `eb08001f9529-dirty`
+(`-dirty` = the uncommitted `.gitignore` line, deploy script exit 1 on the suffix as before).
+Live on bulk `3f134973`: unknown assistant → 400 naming it; unknown bulk → 404; turn-signals
+answers 32 calls, model latency median 806 ms over 115 turns timed on 32 of 32, voice 893 ms,
+interruptions reported on 14 of 32, ended reason on 32 of 32; the response carries no
+`messages`/`transcript` key. Built UI bundle carries the drawer wording. Not opened in a
+browser (UI is Vite :5173, not running, LAN/no auth — F-26/F-27). CI 10 checks green.
+Break test 1 of 243 (above). **Learned:** the seam is a call-site, not a function — a shared
+helper can be neutered in one place and still break two routes, so the break test names the
+line; a null latency needs a denominator beside it or it reads as "fast"; orval gives one
+name to two things on the first path+query operation and the fix is one explicit re-export.
 **Depends on:** W-6; ~~S-AB1 (shares its cell-filtering seam in `bulkVerdicts`)~~ —
 corrected 2026-09-23: S-AB1 is not started (O-194, Abhishek's go), so this step BUILT the
 seam (`scopeCallsToAssistant` in `verdict.ts`, the one place a bulk's calls are narrowed
@@ -9695,7 +9705,9 @@ timed" and SHALL NOT show 0 for the other three; WHEN `assistantId` is given THE
 **Prove it by breaking it:** after committing, remove the assistant filter ~~;~~ — at its
 CALL SITE in `bulkVerdicts` (`scopeCallsToAssistant(unscopedCalls, …)` → `unscopedCalls`),
 because the turn-signals route shares the function and neutering its body fails two tests —
-exactly one integration test fails on `sharedCalls`. Restore with
+exactly one integration test fails on `sharedCalls` (run 2026-09-23: 1 failed of 243, the
+W-7 scope case, on its scoped `callCount` assertion, which comes before `sharedCalls`).
+Restore with
 `git checkout -- artifacts/api-server/src/lib/verdict.ts`.
 
 **Must not:** serialise `messages`, `transcript`, or any text from the artifact — numbers
