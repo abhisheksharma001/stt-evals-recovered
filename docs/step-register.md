@@ -9412,7 +9412,13 @@ short day says why.
 **Files:** `artifacts/api-server/src/lib/watch-tick.ts`,
 `lib/db/src/schema/watch-runs.ts` (one optional field on `WatchRunDetail`, jsonb,
 no push), `artifacts/api-server/src/routes/__integration__/watch-tick.int.test.ts`.
-**PR:** one.
+**PR:** one — #194, squash-merged as `c7a17c9`, deployed and verified live:
+`/api/healthz` reads `c7a17c95040d-dirty` (the `-dirty` is still the
+uncommitted `AGI_Research/` `.gitignore` line, nothing else); `watch_runs` 0
+rows, 0 enabled schedules. Break test: with only the two defaults flipped and
+the channel dropped from the MATCH criteria, exactly the two new cases fail —
+the draw picks ineligible calls — which is the whole reason the row's original
+design was corrected.
 **Depends on:** nothing.
 
 **Today:** `runWatchTick` prices and creates its bulk with
