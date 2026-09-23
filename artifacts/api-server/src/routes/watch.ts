@@ -28,6 +28,7 @@ import {
 import {
   CreateWatchScheduleBody,
   CreateWatchScheduleResponse,
+  GetWatchOverviewResponse,
   ListWatchSchedulesResponse,
   UpdateWatchScheduleBody,
   UpdateWatchScheduleParams,
@@ -38,6 +39,7 @@ import { actorFromRequest, writeAudit } from "../lib/audit";
 import { listVapiAccounts } from "../lib/vapi";
 import { respondInvalid } from "../lib/validation-error";
 import { respondJson } from "../lib/respond";
+import { watchOverview } from "../lib/watch-overview";
 
 const router: IRouter = Router();
 
@@ -70,6 +72,11 @@ function unknownAccountProblem(accountId: string): string | null {
     ? `No Vapi accounts are configured, so "${accountId}" cannot be one. Set VAPI_API_KEY (or VAPI_API_KEY_<LABEL>) on the API server and restart it.`
     : `Unknown Vapi account "${accountId}". Configured accounts: ${known.join(", ")}.`;
 }
+
+// W-6b: Layer 1. Read-only, ledger-only, no Vapi read (see watch-overview.ts).
+router.get("/benchmark/watch/overview", async (_req, res): Promise<void> => {
+  respondJson(res, GetWatchOverviewResponse, await watchOverview());
+});
 
 router.get("/benchmark/watch-schedules", async (_req, res): Promise<void> => {
   const rows = await db
