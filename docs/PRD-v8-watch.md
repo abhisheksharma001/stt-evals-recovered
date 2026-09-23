@@ -307,11 +307,21 @@ the same day twice.
 Evidence note (visual-and-research, 2026-09-14) is in §8. The shape it supports:
 
 **Layer 1 — Orgs.** One row per account, expanding to one row per agent. Each agent row:
-name, the production transcriber it runs (already resolved by
-`GET /benchmark/assistants/{assistantId}/transcriber`), a **30-day tick bar** (one tick
+name, the production transcriber it runs (resolved **offline** from the stored
+`source_transcriber_provider`, never by the live Vapi read behind
+`GET /benchmark/assistants/{assistantId}/transcriber` — corrected 2026-09-17, W-6
+grill), a **30-day tick bar** (one tick
 per scheduled day: green = ran, verdict unchanged; amber = ran, `too_close` or moved
 against baseline; grey = no run; red = refused/failed, with the reason on hover), today's
-rate vs trailing-30-day baseline, and cost this month. Pattern from Better Stack /
+rate vs trailing-30-day baseline, and cost this month.
+
+**Corrected 2026-09-23 (W-6b grill).** "Today's rate" is production's **M-8a
+disagreement** — the Vapi draft's caller turns against the candidates' consensus,
+with the best candidate on the same calls — not a `peerFlags / words` rate.
+Production (Flux on 310 of 362 calls) is streaming-only and never has cells of its
+own, so it never appears in `watch_runs.totals`. The measurement exists only on a
+customer-channel bulk. W-5e settles it onto the ledger; W-5f makes a watch run on
+the caller track. See `docs/backlog/good-to-have.md`, "Found 2026-09-23". Pattern from Better Stack /
 incident.io status pages (§8) — a person reads 36 agents in one screen without a chart.
 
 **Layer 2 — One agent, one day.** The existing verdict sentence for that day's bulk,
