@@ -334,7 +334,7 @@ layers using data already stored — nothing new is collected:
 | layer | signal | source |
 |---|---|---|
 | STT | peer flags per 100 words; entity mismatches; words that split | scores, `GET /benchmark/words-to-watch` |
-| Turn-taking | endpointing latency; assistant interruptions | `prod_endpointing_latency_ms`, `prod_assistant_interruptions` |
+| Turn-taking | endpointing latency; assistant interruptions | ~~`prod_endpointing_latency_ms`~~ `artifact.performanceMetrics.turnLatencies[].endpointingLatency` (per turn, corrected 2026-09-23 in W-7 so all four latencies pool alike), `prod_assistant_interruptions` |
 | LLM | model latency per turn | `artifact.performanceMetrics.turnLatencies[].modelLatency` |
 | Voice | TTS latency per turn | `…voiceLatency` |
 | Outcome | ended reason; success evaluation | `source_ended_reason`, `source_success_evaluation` |
@@ -506,6 +506,17 @@ each part only when present; legend sentence under the page title.
 **No evidence found for:** wording of a forming baseline — Lenny's search
 (`baseline|anomaly|not enough data|insufficient data|collecting data`, 71 hits) returned
 nothing about dashboards; "baseline forming · N of 7 days" is the register's own wording.
+
+**Addendum 2026-09-23 (W-7, visual-and-research).** Question: what does a per-day detail
+drawer look like when the day's numbers come with denominators? Mobbin, web: fal's request
+drawer (screen `5485a50c-1791-4b0c-a147-ee4c478c04ab`) — a right-side panel headed by a phase
+strip with a duration per phase, then a key/value list; the drawer copies that order (verdict
+sentence, then five layer cells). Plain's reporting (`72526f03-b98d-4df9-8c99-27e59a321ccc`)
+shows an unmeasured SLA metric as "N/A · No data", never 0 — the strip's "not timed on any of
+N calls" line. Lenny's: 14 hits for denominator / missing-data wording, none about dashboard
+copy (Forsgren's "are we missing data? was this a bad proxy?" is the closest and is a
+question, not a pattern). No evidence found for the "timed on 7 of 10 calls; 3 not timed by
+Vapi" wording; it follows the step's acceptance line.
 
 ---
 

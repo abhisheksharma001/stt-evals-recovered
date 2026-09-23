@@ -1010,7 +1010,7 @@ paths:
     get:
       operationId: getBulkVerdicts
       tags: [benchmark]
-      summary: T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+      summary: T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
       parameters:
         - name: bulkId
           in: path
@@ -1018,6 +1018,11 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: assistantId
+          in: query
+          description: W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
+          schema:
+            type: string
       responses:
         "200":
           description: One verdict per assistant group in the bulk
@@ -1025,6 +1030,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkVerdicts"
+        "400":
+          description: assistantId names no call in this bulk
+        "404":
+          description: Bulk not found
+  /benchmark/bulks/{bulkId}/turn-signals:
+    get:
+      operationId: getBulkTurnSignals
+      tags: [benchmark]
+      summary: W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assistantId
+          in: query
+          description: Only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Turn signals for the bulk's calls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkTurnSignals"
+        "400":
+          description: assistantId names no call in this bulk
         "404":
           description: Bulk not found
   /benchmark/bulks/{bulkId}/verdict.html:
@@ -3403,3 +3438,93 @@ components:
                 properties:
                   shardIndex: { type: ["number", "null"] }
                   runStatus: { $ref: "#/components/schemas/RunStatus" }
+    # W-7: Layer 2's "what else happened" strip. Everything here is read from
+    # what M-6/M-7a already stored; nothing is collected. A null is a signal
+    # Vapi did not measure on that call -- never rendered as 0.
+    BulkTurnSignals:
+      type: object
+      required: [bulkId, assistantId, calls, summary]
+      properties:
+        bulkId: { type: string }
+        assistantId: { type: ["string", "null"] }
+        calls:
+          type: array
+          items: { $ref: "#/components/schemas/TurnSignalsCall" }
+        summary: { $ref: "#/components/schemas/TurnSignalsSummary" }
+    TurnSignalsCall:
+      type: object
+      required: [callId, turns, assistantInterruptions, toolCalls, endedReason, successEvaluation]
+      properties:
+        callId: { type: string }
+        # null when no artifact is saved for the call or Vapi timed no turn.
+        turns:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/TurnLatency" }
+        assistantInterruptions: { type: ["number", "null"] }
+        toolCalls: { type: ["number", "null"] }
+        endedReason: { type: ["string", "null"] }
+        successEvaluation: { type: ["string", "null"] }
+    TurnLatency:
+      type: object
+      required: [modelMs, voiceMs, transcriberMs, endpointingMs, turnMs]
+      properties:
+        modelMs: { type: ["number", "null"] }
+        voiceMs: { type: ["number", "null"] }
+        transcriberMs: { type: ["number", "null"] }
+        endpointingMs: { type: ["number", "null"] }
+        turnMs: { type: ["number", "null"] }
+    # One pooled latency: the median over every measured turn of every call
+    # that had one, with the two denominators the number must be read against.
+    LatencyPool:
+      type: object
+      required: [medianMs, turns, measuredCalls]
+      properties:
+        medianMs: { type: ["number", "null"] }
+        turns: { type: number }
+        measuredCalls: { type: number }
+    TurnSignalsSummary:
+      type: object
+      required: [totalCalls, stt, turnTaking, llm, voice, outcome]
+      properties:
+        totalCalls: { type: number }
+        stt:
+          type: object
+          required: [transcriberLatency]
+          properties:
+            transcriberLatency: { $ref: "#/components/schemas/LatencyPool" }
+        turnTaking:
+          type: object
+          required: [endpointingLatency, interruptedCalls, interruptions, interruptionsMeasuredCalls]
+          properties:
+            endpointingLatency: { $ref: "#/components/schemas/LatencyPool" }
+            interruptedCalls: { type: number }
+            interruptions: { type: number }
+            interruptionsMeasuredCalls: { type: number }
+        llm:
+          type: object
+          required: [modelLatency]
+          properties:
+            modelLatency: { $ref: "#/components/schemas/LatencyPool" }
+        voice:
+          type: object
+          required: [voiceLatency]
+          properties:
+            voiceLatency: { $ref: "#/components/schemas/LatencyPool" }
+        outcome:
+          type: object
+          required: [endedReasons, endedReasonKnownCalls, successEvaluations, successEvaluationKnownCalls]
+          properties:
+            endedReasons:
+              type: array
+              items: { $ref: "#/components/schemas/ValueCount" }
+            endedReasonKnownCalls: { type: number }
+            successEvaluations:
+              type: array
+              items: { $ref: "#/components/schemas/ValueCount" }
+            successEvaluationKnownCalls: { type: number }
+    ValueCount:
+      type: object
+      required: [value, calls]
+      properties:
+        value: { type: string }
+        calls: { type: number }

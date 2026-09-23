@@ -28,7 +28,11 @@ import {
   GetBulkManifestResponse,
   GetBulkParams,
   GetBulkProviderCorrelationParams,
+  GetBulkTurnSignalsParams,
+  GetBulkTurnSignalsQueryParams,
+  GetBulkTurnSignalsResponse,
   GetBulkVerdictsParams,
+  GetBulkVerdictsQueryParams,
   GetBulkVerdictsResponse,
   GetBulkProviderCorrelationResponse,
   GetBenchmarkTrendResponse,
@@ -55,7 +59,8 @@ import { logger } from "../lib/logger";
 import { bulkProviderCorrelation } from "../lib/provider-correlation";
 import { benchmarkTrend } from "../lib/trend";
 import { clientVolume } from "../lib/volume";
-import { bulkVerdicts } from "../lib/verdict";
+import { bulkTurnSignals } from "../lib/turn-signals";
+import { AssistantNotInBulkError, bulkVerdicts } from "../lib/verdict";
 import { renderVerdictArtefact } from "../lib/verdict-artefact";
 import { buildCommitSha } from "../lib/build-info";
 import { respondInvalid } from "../lib/validation-error";
@@ -621,10 +626,13 @@ router.get("/benchmark/volume", async (req, res): Promise<void> => {
 
 // T-20: the headline verdict per ranking group. Read-time, from the same ok
 // cells the rankings snapshot was built from.
+// W-7: `?assistantId=` narrows the bulk to one agent through the one seam
+// in bulkVerdicts; an id no call carries is 400, not an empty verdict.
 router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> => {
   const params = GetBulkVerdictsParams.safeParse(req.params);
-  if (!params.success) {
-    respondInvalid(res, params.error);
+  const query = GetBulkVerdictsQueryParams.safeParse(req.query);
+  if (!params.success || !query.success) {
+    respondInvalid(res, params.error, query.error);
     return;
   }
   const [bulk] = await db
@@ -635,7 +643,44 @@ router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> 
     res.status(404).json({ error: "Bulk not found" });
     return;
   }
-  respondJson(res, GetBulkVerdictsResponse, await bulkVerdicts(bulk.id));
+  try {
+    respondJson(res, GetBulkVerdictsResponse, await bulkVerdicts(bulk.id, { assistantId: query.data.assistantId }));
+  } catch (err) {
+    if (err instanceof AssistantNotInBulkError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+// W-7: Layer 2's "what else happened" -- per-turn latencies off the saved
+// artifact and the stored call signals, pooled per layer with denominators.
+// Numbers and enums only; the same assistant seam as the verdict above.
+router.get("/benchmark/bulks/:bulkId/turn-signals", async (req, res): Promise<void> => {
+  const params = GetBulkTurnSignalsParams.safeParse(req.params);
+  const query = GetBulkTurnSignalsQueryParams.safeParse(req.query);
+  if (!params.success || !query.success) {
+    respondInvalid(res, params.error, query.error);
+    return;
+  }
+  const [bulk] = await db
+    .select({ id: benchmarkBulksTable.id })
+    .from(benchmarkBulksTable)
+    .where(eq(benchmarkBulksTable.id, params.data.bulkId));
+  if (!bulk) {
+    res.status(404).json({ error: "Bulk not found" });
+    return;
+  }
+  try {
+    respondJson(res, GetBulkTurnSignalsResponse, await bulkTurnSignals(bulk.id, query.data.assistantId));
+  } catch (err) {
+    if (err instanceof AssistantNotInBulkError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
 });
 
 // T-32 (PRD-v4 D.6): the shareable, dated verdict artefact. One

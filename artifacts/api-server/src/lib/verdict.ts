@@ -285,7 +285,35 @@ export async function productionByAssistant(bulkId: string): Promise<WatchRunPro
   return out;
 }
 
-export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
+/** W-7: the route answers 400 with this message; the id is an assistant id,
+ *  never a caller's. */
+export class AssistantNotInBulkError extends Error {
+  constructor(readonly assistantId: string) {
+    super(`assistantId "${assistantId}" names no call in this bulk`);
+    this.name = "AssistantNotInBulkError";
+  }
+}
+
+/**
+ * W-7: the ONE place a bulk's calls are narrowed before anything is computed
+ * from them -- groups, call counts, production, its disagreement and the
+ * verdict all read the scoped list, so "one agent, one day" is one agent
+ * everywhere and the noise floor is that agent's own shared calls. S-AB1's
+ * `providers` filter belongs beside this, on the cells, not somewhere else.
+ * An id no call carries is an error, not an empty verdict: an empty answer
+ * would read as "this agent had a quiet day".
+ */
+export function scopeCallsToAssistant<T extends { sourceAssistantId: string | null }>(
+  calls: T[],
+  assistantId: string | undefined,
+): T[] {
+  if (assistantId === undefined) return calls;
+  const scoped = calls.filter((c) => c.sourceAssistantId === assistantId);
+  if (scoped.length === 0) throw new AssistantNotInBulkError(assistantId);
+  return scoped;
+}
+
+export async function bulkVerdicts(bulkId: string, options: { assistantId?: string } = {}): Promise<BulkVerdicts> {
   const [bulkRow] = await db
     .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
     .from(benchmarkBulksTable)
@@ -307,7 +335,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
   const allCallIds = [...new Set(runs.flatMap((r) => r.callIds))];
   const allProviderIds = [...new Set(runs.flatMap((r) => r.providerIds))];
 
-  const [calls, providers, cells] = await Promise.all([
+  const [unscopedCalls, providers, cells] = await Promise.all([
     allCallIds.length
       ? db
           .select({
@@ -349,6 +377,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       ),
   ]);
 
+  const calls = scopeCallsToAssistant(unscopedCalls, options.assistantId);
   const cellsOnChannel = cells.filter((c) => (c.audioSource ?? "mono") === bulkAudioSource);
 
   // Which providers report per-word confidence: decided from ONE real ok

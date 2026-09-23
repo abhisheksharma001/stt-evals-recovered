@@ -2089,6 +2089,88 @@ export interface BulkManifest {
   runs: BulkManifestRunsItem[];
 }
 
+export interface TurnLatency {
+  /** @nullable */
+  modelMs: number | null;
+  /** @nullable */
+  voiceMs: number | null;
+  /** @nullable */
+  transcriberMs: number | null;
+  /** @nullable */
+  endpointingMs: number | null;
+  /** @nullable */
+  turnMs: number | null;
+}
+
+export interface TurnSignalsCall {
+  callId: string;
+  /** @nullable */
+  turns: TurnLatency[] | null;
+  /** @nullable */
+  assistantInterruptions: number | null;
+  /** @nullable */
+  toolCalls: number | null;
+  /** @nullable */
+  endedReason: string | null;
+  /** @nullable */
+  successEvaluation: string | null;
+}
+
+export interface LatencyPool {
+  /** @nullable */
+  medianMs: number | null;
+  turns: number;
+  measuredCalls: number;
+}
+
+export interface ValueCount {
+  value: string;
+  calls: number;
+}
+
+export type TurnSignalsSummaryStt = {
+  transcriberLatency: LatencyPool;
+};
+
+export type TurnSignalsSummaryTurnTaking = {
+  endpointingLatency: LatencyPool;
+  interruptedCalls: number;
+  interruptions: number;
+  interruptionsMeasuredCalls: number;
+};
+
+export type TurnSignalsSummaryLlm = {
+  modelLatency: LatencyPool;
+};
+
+export type TurnSignalsSummaryVoice = {
+  voiceLatency: LatencyPool;
+};
+
+export type TurnSignalsSummaryOutcome = {
+  endedReasons: ValueCount[];
+  endedReasonKnownCalls: number;
+  successEvaluations: ValueCount[];
+  successEvaluationKnownCalls: number;
+};
+
+export interface TurnSignalsSummary {
+  totalCalls: number;
+  stt: TurnSignalsSummaryStt;
+  turnTaking: TurnSignalsSummaryTurnTaking;
+  llm: TurnSignalsSummaryLlm;
+  voice: TurnSignalsSummaryVoice;
+  outcome: TurnSignalsSummaryOutcome;
+}
+
+export interface BulkTurnSignals {
+  bulkId: string;
+  /** @nullable */
+  assistantId: string | null;
+  calls: TurnSignalsCall[];
+  summary: TurnSignalsSummary;
+}
+
 export type ListBenchmarkCallsParams = {
 vertical?: Vertical;
 status?: CallStatus;
@@ -2138,6 +2220,20 @@ accountLabel: string;
 
 export type ListBulksParams = {
 status?: BulkStatus;
+};
+
+export type GetBulkVerdictsParams = {
+/**
+ * W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
+ */
+assistantId?: string;
+};
+
+export type GetBulkTurnSignalsParams = {
+/**
+ * Only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
+ */
+assistantId?: string;
 };
 
 export type ListAgentScansParams = {

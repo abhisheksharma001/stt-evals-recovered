@@ -84,3 +84,36 @@ export function readProductionSignals(artifact: unknown): ProductionSignals {
     prodToolCalls: countToolCalls(source.messages),
   };
 }
+
+/** W-7: one timed turn. A field Vapi did not time is null, never 0. */
+export type TurnLatency = {
+  modelMs: number | null;
+  voiceMs: number | null;
+  transcriberMs: number | null;
+  endpointingMs: number | null;
+  turnMs: number | null;
+};
+
+/**
+ * W-7: the per-turn numbers the averages above were made from. Same object,
+ * same two callers' shape. Null when the artifact carries no turn at all --
+ * the 21 of 100 with an empty array (header) -- so a call Vapi never timed
+ * cannot be told apart from a fast one by accident. Only the five latency
+ * numbers leave this function; a turn carries nothing else worth reading.
+ */
+export function readTurnLatencies(artifact: unknown): TurnLatency[] | null {
+  const source = record(artifact);
+  if (!source) return null;
+  const metrics = record(source.performanceMetrics);
+  if (!metrics || !Array.isArray(metrics.turnLatencies) || metrics.turnLatencies.length === 0) return null;
+  return metrics.turnLatencies.map((turn) => {
+    const t = record(turn) ?? {};
+    return {
+      modelMs: measuredLatency(t.modelLatency),
+      voiceMs: measuredLatency(t.voiceLatency),
+      transcriberMs: measuredLatency(t.transcriberLatency),
+      endpointingMs: measuredLatency(t.endpointingLatency),
+      turnMs: measuredLatency(t.turnLatency),
+    };
+  });
+}

@@ -235,6 +235,50 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     expect(group).toHaveProperty("productionDisagreement", null);
   });
 
+  // W-7: one agent's verdict is computed over ONLY that agent's calls, so
+  // the noise floor's paired sample is its own. Six calls for a1 and two for
+  // a2 on two providers: the whole org shares 8, a1 alone shares 6, and a2
+  // alone is under the five-call floor.
+  it("scopes the verdict to one assistant when asked, and refuses an id the bulk does not have", async () => {
+    const a = await fx.provider({ name: `fx-a-${fx.suffix}`, model: "x" });
+    const b = await fx.provider({ name: `fx-b-${fx.suffix}`, model: "x" });
+    const org = `fx-org-w7-${fx.suffix}`;
+    const a1 = `fx-w7-a1-${fx.suffix}`;
+    const a2 = `fx-w7-a2-${fx.suffix}`;
+    const calls = [];
+    for (let i = 0; i < 8; i += 1) calls.push(await fx.call({ sourceAccountLabel: org, sourceAssistantId: i < 6 ? a1 : a2 }));
+    const bulk = await fx.bulk({ providerIds: [a.id, b.id] });
+    const run = await fx.run({ bulkId: bulk.id, callIds: calls.map((c) => c.id), providerIds: [a.id, b.id], callCount: 8 });
+    for (const [i, call] of calls.entries()) {
+      const cellA = await fx.result(run.id, call.id, a.id, { hypothesisTranscript: "alpha beta gamma delta epsilon" });
+      await fx.score(cellA.id, { peerFlagCount: i % 2 });
+      const cellB = await fx.result(run.id, call.id, b.id, { hypothesisTranscript: "alpha beta gamma delta epsilon" });
+      await fx.score(cellB.id, { peerFlagCount: 2 });
+    }
+
+    const whole = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    expect(whole.status).toBe(200);
+    expect(whole.body.groups).toHaveLength(1);
+    expect(whole.body.groups[0]).toMatchObject({ callCount: 8, assistantIds: [a1, a2] });
+    expect(whole.body.groups[0].verdict.noiseFloor.sharedCalls).toBe(8);
+
+    const one = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`).query({ assistantId: a1 });
+    expect(one.status).toBe(200);
+    expect(one.body.groups).toHaveLength(1);
+    expect(one.body.groups[0]).toMatchObject({ callCount: 6, assistantIds: [a1] });
+    expect(one.body.groups[0].verdict.noiseFloor.sharedCalls).toBe(6);
+
+    const few = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`).query({ assistantId: a2 });
+    expect(few.status).toBe(200);
+    expect(few.body.groups[0]).toMatchObject({ callCount: 2, assistantIds: [a2] });
+    expect(few.body.groups[0].verdict).toMatchObject({ decision: "too_few_calls", noiseFloor: null });
+
+    // An id no call carries is an error, not a quiet day.
+    const none = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`).query({ assistantId: "fx-nobody" });
+    expect(none.status).toBe(400);
+    expect(none.body.error).toContain("fx-nobody");
+  });
+
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
     const unknown = await request(server).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts");
     expect(unknown.status).toBe(404);

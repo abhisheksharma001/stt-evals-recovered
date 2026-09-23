@@ -9634,16 +9634,43 @@ measurement as 0.
 
 ### W-7 — One agent, one day: the verdict for that agent, and what else happened
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-23. Spends nothing.
 **PR:** one.
-**Depends on:** W-6; S-AB1 (shares its cell-filtering seam in `bulkVerdicts`).
+**Depends on:** W-6; ~~S-AB1 (shares its cell-filtering seam in `bulkVerdicts`)~~ —
+corrected 2026-09-23: S-AB1 is not started (O-194, Abhishek's go), so this step BUILT the
+seam (`scopeCallsToAssistant` in `verdict.ts`, the one place a bulk's calls are narrowed
+before anything is computed). S-AB1 adds its `providers` filter on the cells beside it;
+nothing of S-AB1 was pre-empted.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 2).
 **Files:** `artifacts/api-server/src/lib/verdict.ts` (`bulkVerdicts` gains an
-`assistantId` filter beside S-AB1's `providers`), `lib/api-spec/openapi.yaml` (the
+`assistantId` filter ~~beside S-AB1's `providers`~~), `lib/api-spec/openapi.yaml` (the
 `assistantId` query parameter on `/benchmark/bulks/{bulkId}/verdicts`, and one new read
 path for turn signals), `artifacts/api-server/src/lib/production-signals.ts` (a second
 reader for `turnLatencies`), the Orgs page from W-6 (a day drawer), a new integration
 case beside `artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts`.
+Added on the way: `artifacts/api-server/src/lib/turn-signals.ts` (the loader) and
+`turn-signals-summary.ts` (the pooled half, database-free so a unit test holds it — the
+`call-disagreement-aggregate.ts` pattern), `routes/__integration__/turn-signals.int.test.ts`,
+`lib/api-zod/src/index.ts` (one explicit re-export, see grilling), and one line in
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx` (the generated hook gained a
+`params` argument).
+
+**Grilled 2026-09-23, before code.** Four things the row had wrong or open:
+(1) The dependency above — the seam did not exist and the step that would make it is
+waiting on a decision, so this step makes it. (2) "Each with a measured/not-measured flag":
+a null IS the flag, by M-7a's rule (0 is a measurement, null is "Vapi did not measure
+this"); no boolean beside it. (3) Turn-taking reads endpointing per TURN off the artifact,
+not the stored per-call average (`prod_endpointing_latency_ms`), so all four latencies pool
+the same way with the same denominators; the PRD table said the column and is corrected.
+(4) The filter narrows the bulk's CALLS, not only the verdict cells, so `callCount`,
+`assistantIds`, production and its disagreement scope with the verdict — "one agent"
+everywhere in the response, not one agent in one field. Also found: this is the first
+operation in the spec with both a path and a query parameter, and orval's two outputs then
+export one name (`GetBulkVerdictsParams`) for two things — the zod path schema and the
+TypeScript query type — which fails the codegen typecheck (TS2308). Resolved with one
+explicit re-export in `lib/api-zod/src/index.ts`; the comment there says when to add a line.
+The drawer shows the verdict sentence and the strip; the head-to-head pair the PRD lists for
+Layer 2 waits for S-AB1–3 and is not in the drawer.
 
 **Today:** `bulkVerdicts` groups by org (`sourceAccountLabel`) and lists `assistantIds`
 inside the group; there is no per-assistant verdict. The saved artifact's
@@ -9665,8 +9692,10 @@ timed" and SHALL NOT show 0 for the other three; WHEN `assistantId` is given THE
 
 **Verify:** typecheck; the integration suite; the render test.
 
-**Prove it by breaking it:** after committing, remove the assistant filter; exactly one
-integration test fails on `sharedCalls`. Restore with
+**Prove it by breaking it:** after committing, remove the assistant filter ~~;~~ — at its
+CALL SITE in `bulkVerdicts` (`scopeCallsToAssistant(unscopedCalls, …)` → `unscopedCalls`),
+because the turn-signals route shares the function and neutering its body fails two tests —
+exactly one integration test fails on `sharedCalls`. Restore with
 `git checkout -- artifacts/api-server/src/lib/verdict.ts`.
 
 **Must not:** serialise `messages`, `transcript`, or any text from the artifact — numbers
