@@ -13,9 +13,9 @@
 // Fixtures are typed as the generated response types -- typecheck is the
 // contract check.
 import { afterEach, describe, expect, it } from "vitest"
-import { cleanup, screen, waitFor } from "@testing-library/react"
-import type { WatchOverview, WatchOverviewAgent, WatchOverviewDay } from "@workspace/api-client-react"
-import Orgs, { calendarDays, tickTone } from "../Orgs"
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
+import type { BulkTurnSignals, BulkVerdicts, LatencyPool, WatchOverview, WatchOverviewAgent, WatchOverviewDay } from "@workspace/api-client-react"
+import Orgs, { calendarDays, latencyLines, tickTone } from "../Orgs"
 import { installBrowserShims, renderPage, stubApi, type StubRoutes } from "./harness"
 
 installBrowserShims()
@@ -174,5 +174,145 @@ describe("tick rules", () => {
     expect(calendarDays("2026-09-21", "2026-09-23")).toEqual(["2026-09-21", "2026-09-22", "2026-09-23"])
     expect(calendarDays(WINDOW_START, TODAY)).toHaveLength(30)
     expect(calendarDays(TODAY, WINDOW_START)).toEqual([])
+  })
+})
+
+// W-7: the day drawer. Both halves are asked scoped to the agent, and the
+// strip's latency cells carry the acceptance line -- "timed on 7 of 10" --
+// with no 0 standing in for the three calls Vapi did not time.
+const BULK = `bulk-${TODAY}`
+
+function verdictsFor(sentence: string): BulkVerdicts {
+  return {
+    bulkId: BULK,
+    providers: [{ id: "deepgram-nova-3", name: "Deepgram Nova-3" }],
+    groups: [
+      {
+        clientLabel: "Rush Clinics",
+        assistantIds: ["asst-rush-1"],
+        callCount: 10,
+        vertical: "rush",
+        production: { vendor: "deepgram", model: "flux-general-en", coverage: 10, total: 10 },
+        productionDisagreement: null,
+        verdict: {
+          decision: "too_close",
+          winnerProviderId: null,
+          runnerUpProviderId: "b",
+          leaderProviderId: "deepgram-nova-3",
+          marginPct: null,
+          vsProductionPct: null,
+          productionProviderId: null,
+          productionIsLeader: false,
+          evidenceCalls: 10,
+          provisional: false,
+          callsToSettle: 12,
+          noiseFloor: { sharedCalls: 10, difference: 0.3, ci95: [-0.2, 0.8], withinNoise: true },
+          confidenceComparable: { reporting: 1, total: 2 },
+          rates: [],
+          sentence,
+        },
+      },
+    ],
+  }
+}
+
+const pool = (medianMs: number | null, turns: number, measuredCalls: number): LatencyPool => ({ medianMs, turns, measuredCalls })
+
+function signalsFor(over: Partial<BulkTurnSignals["summary"]>): BulkTurnSignals {
+  return {
+    bulkId: BULK,
+    assistantId: "asst-rush-1",
+    calls: [],
+    summary: {
+      totalCalls: 10,
+      stt: { transcriberLatency: pool(378, 31, 7) },
+      turnTaking: { endpointingLatency: pool(120.4, 31, 7), interruptedCalls: 3, interruptions: 5, interruptionsMeasuredCalls: 10 },
+      llm: { modelLatency: pool(412, 31, 7) },
+      voice: { voiceLatency: pool(96, 31, 7) },
+      outcome: {
+        endedReasons: [{ value: "customer-ended-call", calls: 8 }, { value: "assistant-ended-call", calls: 1 }],
+        endedReasonKnownCalls: 9,
+        successEvaluations: [{ value: "true", calls: 6 }],
+        successEvaluationKnownCalls: 6,
+      },
+      ...over,
+    },
+  }
+}
+
+async function openToday(extra: StubRoutes) {
+  const api = stubApi({ ...routes(overview([agent({})])), ...extra })
+  const view = renderPage(<Orgs />, { path: "/orgs" })
+  await waitFor(() => expect(view.container.querySelector("[aria-busy]")).toBeNull())
+  fireEvent.click(view.container.querySelector(`[data-day="${TODAY}"]`) as HTMLElement)
+  await waitFor(() => expect(screen.getByTestId("day-drawer")).toBeTruthy())
+  await waitFor(() => expect(view.container.ownerDocument.querySelectorAll("[data-testid=strip-cell]")).toHaveLength(5))
+  return { api, view, doc: view.container.ownerDocument }
+}
+
+describe("Orgs day drawer", () => {
+  it("asks both halves scoped to the agent and reads the strip with denominators, never a 0 for an untimed call", async () => {
+    const { api, doc } = await openToday({
+      [`GET /api/benchmark/bulks/${BULK}/verdicts`]: verdictsFor("Too close to call on 10 calls."),
+      [`GET /api/benchmark/bulks/${BULK}/turn-signals`]: signalsFor({}),
+    })
+    try {
+      expect(api.unmatched).toEqual([])
+      // Scoped to the agent, once each. Stub keys match on the path; the
+      // query is what `calls` records.
+      expect(api.calls.filter((c) => c.includes("/verdicts"))).toEqual([`GET /api/benchmark/bulks/${BULK}/verdicts?assistantId=asst-rush-1`])
+      expect(api.calls.filter((c) => c.includes("/turn-signals"))).toEqual([`GET /api/benchmark/bulks/${BULK}/turn-signals?assistantId=asst-rush-1`])
+      expect(screen.getByTestId("day-verdict").textContent).toBe("Too close to call on 10 calls.")
+      expect(screen.getByText("model 412 ms median over 31 turns")).toBeTruthy()
+      expect(screen.getAllByText("timed on 7 of 10 calls; 3 not timed by Vapi")).toHaveLength(4)
+      expect(screen.getByText("interrupted on 3 of 10 calls")).toBeTruthy()
+      expect(screen.getByText("customer-ended-call on 8 of 9 · 1 unknown")).toBeTruthy()
+      expect(screen.getByText("true on 6 of 6 · 4 unknown")).toBeTruthy()
+      expect(screen.getByText("2.1 per 100 words · 10 calls")).toBeTruthy()
+      expect(doc.body.textContent).not.toMatch(/\b0 ms/)
+    } finally {
+      api.restore()
+    }
+  })
+
+  it("says a layer was not timed at all rather than showing a number", async () => {
+    const { api, doc } = await openToday({
+      [`GET /api/benchmark/bulks/${BULK}/verdicts`]: verdictsFor("s"),
+      [`GET /api/benchmark/bulks/${BULK}/turn-signals`]: signalsFor({
+        llm: { modelLatency: pool(null, 0, 0) },
+        turnTaking: { endpointingLatency: pool(null, 0, 0), interruptedCalls: 0, interruptions: 0, interruptionsMeasuredCalls: 0 },
+        outcome: { endedReasons: [], endedReasonKnownCalls: 0, successEvaluations: [], successEvaluationKnownCalls: 0 },
+      }),
+    })
+    try {
+      expect(screen.getByText("model not timed")).toBeTruthy()
+      expect(screen.getAllByText("not timed on any of 10 calls")).toHaveLength(2)
+      expect(screen.getByText("interruptions not reported on any of 10 calls")).toBeTruthy()
+      expect(screen.getByText("ended reason not on file")).toBeTruthy()
+      expect(doc.body.textContent).not.toMatch(/\b0 ms|on 0 of/)
+    } finally {
+      api.restore()
+    }
+  })
+
+  it("opens nothing for a day with no bulk behind it", async () => {
+    const { api, view } = await rendered(
+      overview([agent({ days: [{ day: "2026-09-20", outcome: "refused:daily_cap", bulkId: null }, settled(TODAY, 2.1, 10)] })]),
+    )
+    try {
+      expect((view.container.querySelector('[data-day="2026-09-20"]') as HTMLElement).tagName).toBe("SPAN")
+      expect((view.container.querySelector(`[data-day="${TODAY}"]`) as HTMLElement).tagName).toBe("BUTTON")
+      fireEvent.click(view.container.querySelector('[data-day="2026-09-20"]') as HTMLElement)
+      expect(screen.queryByTestId("day-drawer")).toBeNull()
+      expect(api.calls.filter((c) => c.includes("/verdicts") || c.includes("/turn-signals"))).toEqual([])
+    } finally {
+      api.restore()
+    }
+  })
+
+  it("latencyLines: a median with its denominators, or the honest absence", () => {
+    expect(latencyLines(pool(412.4, 31, 7), 10, "turns")).toEqual({ value: "412 ms median over 31 turns", denominator: "timed on 7 of 10 calls; 3 not timed by Vapi" })
+    expect(latencyLines(pool(90, 4, 2), 2, "turns")).toEqual({ value: "90 ms median over 4 turns", denominator: "timed on 2 of 2 calls" })
+    expect(latencyLines(pool(null, 0, 0), 3, "turns")).toEqual({ value: "not timed", denominator: "not timed on any of 3 calls" })
   })
 })

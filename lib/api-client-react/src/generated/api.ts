@@ -50,6 +50,7 @@ import type {
   BulkTemplate,
   BulkTemplateInput,
   BulkTemplateLaunchInput,
+  BulkTurnSignals,
   BulkVerdicts,
   CacheAudioResult,
   CallComparison,
@@ -59,6 +60,8 @@ import type {
   EnableProviderModelInput,
   EnableProviderModelResult,
   GetAssistantSignalsParams,
+  GetBulkTurnSignalsParams,
+  GetBulkVerdictsParams,
   GetCallDisagreementParams,
   GetClientVolumeParams,
   GetWordsToWatchParams,
@@ -3785,20 +3788,29 @@ export function useGetBulkProviderCorrelation<TData = Awaited<ReturnType<typeof 
 
 
 
-export const getGetBulkVerdictsUrl = (bulkId: string,) => {
+export const getGetBulkVerdictsUrl = (bulkId: string,
+    params?: GetBulkVerdictsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/benchmark/bulks/${bulkId}/verdicts`
+  return stringifiedParams.length > 0 ? `/api/benchmark/bulks/${bulkId}/verdicts?${stringifiedParams}` : `/api/benchmark/bulks/${bulkId}/verdicts`
 }
 
 /**
- * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
  */
-export const getBulkVerdicts = async (bulkId: string, options?: Parameters<typeof customFetch>[1]): Promise<BulkVerdicts> => {
+export const getBulkVerdicts = async (bulkId: string,
+    params?: GetBulkVerdictsParams, options?: Parameters<typeof customFetch>[1]): Promise<BulkVerdicts> => {
 
-  return customFetch<BulkVerdicts>(getGetBulkVerdictsUrl(bulkId),
+  return customFetch<BulkVerdicts>(getGetBulkVerdictsUrl(bulkId,params),
   {
     ...options,
     method: 'GET'
@@ -3811,23 +3823,25 @@ export const getBulkVerdicts = async (bulkId: string, options?: Parameters<typeo
 
 
 
-export const getGetBulkVerdictsQueryKey = (bulkId: string,) => {
+export const getGetBulkVerdictsQueryKey = (bulkId: string,
+    params?: GetBulkVerdictsParams,) => {
     return [
-    `/api/benchmark/bulks/${bulkId}/verdicts`
+    `/api/benchmark/bulks/${bulkId}/verdicts`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetBulkVerdictsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetBulkVerdictsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(bulkId: string,
+    params?: GetBulkVerdictsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetBulkVerdictsQueryKey(bulkId);
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkVerdictsQueryKey(bulkId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkVerdicts>>> = ({ signal }) => getBulkVerdicts(bulkId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkVerdicts>>> = ({ signal }) => getBulkVerdicts(bulkId,params, { signal, ...requestOptions });
 
 
 
@@ -3841,15 +3855,105 @@ export type GetBulkVerdictsQueryError = ErrorType<void>
 
 
 /**
- * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
  */
 
 export function useGetBulkVerdicts<TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(
- bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ bulkId: string,
+    params?: GetBulkVerdictsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetBulkVerdictsQueryOptions(bulkId,options)
+  const queryOptions = getGetBulkVerdictsQueryOptions(bulkId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBulkTurnSignalsUrl = (bulkId: string,
+    params?: GetBulkTurnSignalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/bulks/${bulkId}/turn-signals?${stringifiedParams}` : `/api/benchmark/bulks/${bulkId}/turn-signals`
+}
+
+/**
+ * @summary W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+ */
+export const getBulkTurnSignals = async (bulkId: string,
+    params?: GetBulkTurnSignalsParams, options?: Parameters<typeof customFetch>[1]): Promise<BulkTurnSignals> => {
+
+  return customFetch<BulkTurnSignals>(getGetBulkTurnSignalsUrl(bulkId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBulkTurnSignalsQueryKey = (bulkId: string,
+    params?: GetBulkTurnSignalsParams,) => {
+    return [
+    `/api/benchmark/bulks/${bulkId}/turn-signals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetBulkTurnSignalsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkTurnSignals>>, TError = ErrorType<void>>(bulkId: string,
+    params?: GetBulkTurnSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkTurnSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkTurnSignalsQueryKey(bulkId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkTurnSignals>>> = ({ signal }) => getBulkTurnSignals(bulkId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bulkId !== null && bulkId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBulkTurnSignals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBulkTurnSignalsQueryResult = NonNullable<Awaited<ReturnType<typeof getBulkTurnSignals>>>
+export type GetBulkTurnSignalsQueryError = ErrorType<void>
+
+
+/**
+ * @summary W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+ */
+
+export function useGetBulkTurnSignals<TData = Awaited<ReturnType<typeof getBulkTurnSignals>>, TError = ErrorType<void>>(
+ bulkId: string,
+    params?: GetBulkTurnSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkTurnSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBulkTurnSignalsQueryOptions(bulkId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

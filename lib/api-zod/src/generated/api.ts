@@ -1853,10 +1853,14 @@ export const GetBulkProviderCorrelationResponse = zod.object({
 
 
 /**
- * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
  */
 export const GetBulkVerdictsParams = zod.object({
   "bulkId": zod.string().uuid()
+})
+
+export const GetBulkVerdictsQueryParams = zod.object({
+  "assistantId": zod.string().optional().describe('W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.')
 })
 
 export const getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Min = 2;
@@ -1920,6 +1924,83 @@ export const GetBulkVerdictsResponse = zod.object({
   "sentence": zod.string()
 }).describe('T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. R-1: the words are the call\'s -- one basis shared by every provider on it, so a wordier provider does not buy a lower rate. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.')
 }))
+})
+
+
+/**
+ * @summary W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+ */
+export const GetBulkTurnSignalsParams = zod.object({
+  "bulkId": zod.string().uuid()
+})
+
+export const GetBulkTurnSignalsQueryParams = zod.object({
+  "assistantId": zod.string().optional().describe('Only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.')
+})
+
+export const GetBulkTurnSignalsResponse = zod.object({
+  "bulkId": zod.string(),
+  "assistantId": zod.string().nullable(),
+  "calls": zod.array(zod.object({
+  "callId": zod.string(),
+  "turns": zod.array(zod.object({
+  "modelMs": zod.number().nullable(),
+  "voiceMs": zod.number().nullable(),
+  "transcriberMs": zod.number().nullable(),
+  "endpointingMs": zod.number().nullable(),
+  "turnMs": zod.number().nullable()
+})).nullable(),
+  "assistantInterruptions": zod.number().nullable(),
+  "toolCalls": zod.number().nullable(),
+  "endedReason": zod.string().nullable(),
+  "successEvaluation": zod.string().nullable()
+})),
+  "summary": zod.object({
+  "totalCalls": zod.number(),
+  "stt": zod.object({
+  "transcriberLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+})
+}),
+  "turnTaking": zod.object({
+  "endpointingLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+}),
+  "interruptedCalls": zod.number(),
+  "interruptions": zod.number(),
+  "interruptionsMeasuredCalls": zod.number()
+}),
+  "llm": zod.object({
+  "modelLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+})
+}),
+  "voice": zod.object({
+  "voiceLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+})
+}),
+  "outcome": zod.object({
+  "endedReasons": zod.array(zod.object({
+  "value": zod.string(),
+  "calls": zod.number()
+})),
+  "endedReasonKnownCalls": zod.number(),
+  "successEvaluations": zod.array(zod.object({
+  "value": zod.string(),
+  "calls": zod.number()
+})),
+  "successEvaluationKnownCalls": zod.number()
+})
+})
 })
 
 

@@ -1,7 +1,17 @@
 import * as React from "react"
-import { useGetWatchOverview, type WatchBaseline, type WatchOverviewAgent, type WatchOverviewDay } from "@workspace/api-client-react"
+import {
+  useGetBulkTurnSignals,
+  useGetBulkVerdicts,
+  useGetWatchOverview,
+  type LatencyPool,
+  type TurnSignalsSummary,
+  type WatchBaseline,
+  type WatchOverviewAgent,
+  type WatchOverviewDay,
+} from "@workspace/api-client-react"
 import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { cn, formatCents } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -61,7 +71,102 @@ const TONE_CLASS: Record<TickTone, string> = {
   bad: "bg-destructive",
 }
 
-function TickBar({ agent, days, today }: { agent: WatchOverviewAgent; days: string[]; today: string }) {
+// ---------------------------------------------------------------------------
+// W-7: Layer 2, one agent on one day. A tick whose ledger row carries a
+// bulkId opens a drawer: the verdict sentence for that bulk scoped to the
+// agent, then the five-layer strip (STT · turn-taking · LLM · voice ·
+// outcome). Every number arrives pooled from the server with its
+// denominators; the lines below only choose words. A call Vapi did not time
+// is a denominator, never a 0 -- the acceptance line of the step.
+// Pattern: fal's request drawer on Mobbin (a phase strip with durations over
+// a key/value list) and Plain's "N/A · No data" for an unmeasured metric.
+// ---------------------------------------------------------------------------
+
+/** The two lines of a latency cell. Pure, so the test can hold the rule. */
+export function latencyLines(pool: LatencyPool, totalCalls: number, unit: string): { value: string; denominator: string } {
+  if (pool.measuredCalls === 0 || pool.medianMs === null) {
+    return { value: "not timed", denominator: `not timed on any of ${totalCalls} calls` }
+  }
+  const untimed = totalCalls - pool.measuredCalls
+  return {
+    value: `${Math.round(pool.medianMs)} ms median over ${pool.turns} ${unit}`,
+    denominator: `timed on ${pool.measuredCalls} of ${totalCalls} calls${untimed > 0 ? `; ${untimed} not timed by Vapi` : ""}`,
+  }
+}
+
+/** One outcome value with how many calls carried it, and how many are unknown. */
+export function outcomeLine(values: { value: string; calls: number }[], knownCalls: number, totalCalls: number, what: string): string {
+  if (knownCalls === 0) return `${what} not on file`
+  const top = values[0]
+  const unknown = totalCalls - knownCalls
+  return `${top.value} on ${top.calls} of ${knownCalls}${unknown > 0 ? ` · ${unknown} unknown` : ""}`
+}
+
+type StripCell = { layer: string; lines: string[] }
+
+export function stripCells(summary: TurnSignalsSummary, day: WatchOverviewDay): StripCell[] {
+  const n = summary.totalCalls
+  const stt = typeof day.rate === "number" ? `${day.rate.toFixed(1)} per 100 words${typeof day.calls === "number" ? ` · ${day.calls} calls` : ""}` : "production not measured"
+  const transcriber = latencyLines(summary.stt.transcriberLatency, n, "turns")
+  const endpointing = latencyLines(summary.turnTaking.endpointingLatency, n, "turns")
+  const model = latencyLines(summary.llm.modelLatency, n, "turns")
+  const voice = latencyLines(summary.voice.voiceLatency, n, "turns")
+  const asked = summary.turnTaking.interruptionsMeasuredCalls
+  const interruptions =
+    asked === 0
+      ? `interruptions not reported on any of ${n} calls`
+      : `interrupted on ${summary.turnTaking.interruptedCalls} of ${asked} calls${n - asked > 0 ? ` · ${n - asked} not asked` : ""}`
+  return [
+    { layer: "STT", lines: [stt, `transcriber ${transcriber.value}`, transcriber.denominator] },
+    { layer: "Turn-taking", lines: [`endpointing ${endpointing.value}`, endpointing.denominator, interruptions] },
+    { layer: "LLM", lines: [`model ${model.value}`, model.denominator] },
+    { layer: "Voice", lines: [`TTS ${voice.value}`, voice.denominator] },
+    {
+      layer: "Outcome",
+      lines: [
+        outcomeLine(summary.outcome.endedReasons, summary.outcome.endedReasonKnownCalls, n, "ended reason"),
+        outcomeLine(summary.outcome.successEvaluations, summary.outcome.successEvaluationKnownCalls, n, "success evaluation"),
+      ],
+    },
+  ]
+}
+
+function DayDrawer({ agent, day, bulkId, onClose }: { agent: WatchOverviewAgent; day: WatchOverviewDay; bulkId: string; onClose: () => void }) {
+  const params = agent.assistantId ? { assistantId: agent.assistantId } : undefined
+  const verdicts = useGetBulkVerdicts(bulkId, params)
+  const signals = useGetBulkTurnSignals(bulkId, params)
+  const sentence = verdicts.isLoading
+    ? "loading the verdict…"
+    : verdicts.error
+      ? "the verdict could not be loaded"
+      : (verdicts.data?.groups[0]?.verdict.sentence ?? "no verdict for this day")
+  return (
+    <Sheet open onOpenChange={(open) => { if (!open) onClose() }}>
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md" data-testid="day-drawer">
+        <SheetHeader>
+          <SheetTitle className="font-mono text-base">{agent.assistantId ?? "all agents"} · {day.day}</SheetTitle>
+          <SheetDescription>{day.outcome}</SheetDescription>
+        </SheetHeader>
+        <p className="mt-4 text-sm" data-testid="day-verdict">{sentence}</p>
+        <div className="mt-6 space-y-4">
+          {signals.isLoading && <p className="text-sm text-muted-foreground" aria-busy="true">loading what else happened…</p>}
+          {signals.error && <p className="text-sm text-destructive">what else happened could not be loaded</p>}
+          {signals.data &&
+            stripCells(signals.data.summary, day).map((cell) => (
+              <div key={cell.layer} data-testid="strip-cell" className="border-t border-border pt-3">
+                <p className="font-mono text-[10px] uppercase tracking-[0.09em] text-muted-foreground">{cell.layer}</p>
+                {cell.lines.map((line, i) => (
+                  <p key={i} className={cn("text-sm", i > 0 && "text-muted-foreground")}>{line}</p>
+                ))}
+              </div>
+            ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function TickBar({ agent, days, today, onOpen }: { agent: WatchOverviewAgent; days: string[]; today: string; onOpen: (day: WatchOverviewDay) => void }) {
   const byDay = new Map(agent.days.map((d) => [d.day, d]))
   return (
     <div className="flex flex-col gap-1">
@@ -69,14 +174,22 @@ function TickBar({ agent, days, today }: { agent: WatchOverviewAgent; days: stri
         {days.map((day) => {
           const entry = byDay.get(day)
           const tone = tickTone(entry, day === today, agent.baseline.state)
-          return (
-            <span
+          const className = cn("h-5 w-[7px] rounded-[2px]", TONE_CLASS[tone])
+          const title = hoverText(day, entry)
+          // Only a day with a bulk behind it has a Layer 2 to open.
+          return entry?.bulkId ? (
+            <button
               key={day}
+              type="button"
               data-day={day}
               data-tone={tone}
-              title={hoverText(day, entry)}
-              className={cn("h-5 w-[7px] rounded-[2px]", TONE_CLASS[tone])}
+              title={title}
+              aria-label={title}
+              onClick={() => onOpen(entry)}
+              className={cn(className, "hover:ring-2 hover:ring-ring")}
             />
+          ) : (
+            <span key={day} data-day={day} data-tone={tone} title={title} className={className} />
           )
         })}
       </div>
@@ -104,6 +217,7 @@ function baselineLine(b: WatchBaseline): { text: string; moved: boolean } {
 }
 
 function AgentRow({ agent, days, today }: { agent: WatchOverviewAgent; days: string[]; today: string }) {
+  const [open, setOpen] = React.useState<WatchOverviewDay | null>(null)
   const baseline = baselineLine(agent.baseline)
   const production = agent.production
     ? `runs ${agent.production.vendor}${agent.production.model ? ` ${agent.production.model}` : ""}`
@@ -125,7 +239,8 @@ function AgentRow({ agent, days, today }: { agent: WatchOverviewAgent; days: str
         </div>
         <p className="text-xs text-muted-foreground">{production}</p>
       </div>
-      <TickBar agent={agent} days={days} today={today} />
+      <TickBar agent={agent} days={days} today={today} onOpen={setOpen} />
+      {open?.bulkId && <DayDrawer agent={agent} day={open} bulkId={open.bulkId} onClose={() => setOpen(null)} />}
       <div className="space-y-1 text-sm">
         <p>{todayLine(agent, today)}</p>
         <p className={cn(baseline.moved ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>{baseline.text}</p>
