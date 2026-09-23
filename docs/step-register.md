@@ -9321,7 +9321,34 @@ Bug log: `docs/backlog/good-to-have.md`, "Found 2026-09-23 (grilling W-6b)".
 
 ### W-5e — Settle production's own measurement onto the ledger
 
-**Status:** not started. Spends nothing.
+**Status:** done, 2026-09-23. Spends nothing.
+
+**Corrected 2026-09-23, while grilling it.** Two things the row's own text had
+loose. (1) M-8a's sum groups by ACCOUNT (`clientLabel`), listing assistants
+inside the group; the ledger needs it per AGENT, so the per-assistant loader
+filters calls by `sourceAssistantId` before calling the same sum. (2) The
+verdicts route's `productionDisagreement` shape is pinned by `openapi.yaml`
+(`required: [rate, leaderProviderId, leaderRate, calls, totalCalls]`), so the
+sums could not be added to that object without touching the spec. The sum
+moved into `productionDisagreementSums` and the route's function became a
+one-line wrapper that divides — one loop, two readers, spec unchanged.
+
+**The loader is a second, lighter query set, and that is deliberate.**
+`bulkVerdicts` loads scores, raw outputs and word bases for the whole verdict;
+settling needs only the bulk's channel, the calls' drafts and assistant ids,
+and the on-channel cells' transcripts. Two loaders, one sum: the arithmetic
+cannot drift, and a settle does not pay for a verdict.
+
+**Measured 2026-09-23, while building it.** The first integration case came
+back with `production: []` on a bulk that plainly had cells. Cause: both
+readers walk `benchmark_runs.callIds`, and the fixture's `run()` defaults that
+list to empty. Not a code defect — a real run always carries its call ids — but
+worth a sentence: a settle over a run with no `callIds` settles `[]`, which
+reads as "measured nothing", and there is no separate "could not measure"
+state. If a run row ever lost its ids, the ledger would say nothing scored.
+The case now gives the run its ids and the ratio check against
+`GET /benchmark/bulks/{bulkId}/verdicts` passes exactly: `rate`, `leaderRate`,
+`leaderProviderId` and `calls` all equal the division of the stored sums.
 **PR:** one.
 **Depends on:** W-5d.
 **Files:** `lib/db/src/schema/watch-runs.ts` (a new jsonb column, `production`),

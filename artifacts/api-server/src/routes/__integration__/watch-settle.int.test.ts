@@ -11,7 +11,7 @@
 // "launched", so the pair is easy to create by accident.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
-import { db, pool, watchRunsTable, benchmarkBulksTable, type WatchRunTotals } from "@workspace/db";
+import { db, pool, watchRunsTable, benchmarkBulksTable, type WatchRunTotals, type WatchRunProduction } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
@@ -28,6 +28,9 @@ let settledRunId: string;
 let settledBulkId: string;
 let runningRunId: string;
 let orphanRunId: string;
+/** W-5e: a customer-channel bulk whose production measurement must settle. */
+let customerRunId: string;
+let customerBulkId: string;
 
 const readRun = async (id: string) => {
   const [row] = await db.select().from(watchRunsTable).where(eq(watchRunsTable.id, id)).limit(1);
@@ -64,6 +67,45 @@ beforeAll(async () => {
 
   // A day whose bulk was evicted before anyone copied its numbers.
   orphanRunId = (await fx.watchRun(scheduleId, "2026-09-15", { bulkId: null })).id;
+
+  // W-5e: a finished bulk on the caller track. Two calls whose Vapi draft has
+  // caller turns, three candidates each (M-8a needs three voters), one
+  // candidate off by a word on every call. Production's draft matches the
+  // majority on both, so its disagreement is 0 of the compared words and
+  // the leader is one of the two agreeing candidates.
+  const customerAssistant = `fx-asst-prod-${fx.suffix}`;
+  const draft = "AI: hello there\nUser: alpha beta gamma epsilon";
+  const c1 = await fx.call({ sourceAccountLabel: account, sourceAssistantId: customerAssistant, draftTranscript: draft });
+  const c2 = await fx.call({ sourceAccountLabel: account, sourceAssistantId: customerAssistant, draftTranscript: draft });
+  const cands = [
+    await fx.provider({ name: `fx prod cand a ${fx.suffix}` }),
+    await fx.provider({ name: `fx prod cand b ${fx.suffix}` }),
+    await fx.provider({ name: `fx prod cand c ${fx.suffix}` }),
+  ];
+  const customerBulk = await fx.bulk({
+    status: "complete",
+    completedAt: new Date("2026-09-14T04:00:00.000Z"),
+    selectionCriteria: { resolvedCallIds: [], requireCustomerAudio: true },
+  });
+  customerBulkId = customerBulk.id;
+  // The run's callIds are what both readers (bulkVerdicts and the settle
+  // loader) walk; the fixture default is an empty list.
+  const customerRun = await fx.run({
+    bulkId: customerBulk.id,
+    purpose: "batch",
+    callIds: [c1.id, c2.id],
+    providerIds: cands.map((c) => c.id),
+  });
+  for (const call of [c1, c2]) {
+    for (const [i, cand] of cands.entries()) {
+      const r = await fx.result(customerRun.id, call.id, cand.id, {
+        audioSource: "customer",
+        hypothesisTranscript: i === 2 ? "alpha beta gamma delta" : "alpha beta gamma epsilon",
+      });
+      await fx.score(r.id, { peerFlagCount: i === 2 ? 1 : 0 });
+    }
+  }
+  customerRunId = (await fx.watchRun(scheduleId, "2026-09-14", { bulkId: customerBulk.id })).id;
 
   await settleLaunchedRuns();
 });
@@ -135,3 +177,42 @@ describe("W-5d settle", () => {
     expect((row.totals as WatchRunTotals[])[0].callsScored).toBe(2);
   });
 });
+
+describe("W-5e settle production", () => {
+  it("settles production's measurement per agent as sums whose ratio is the rate GET /benchmark/bulks/{bulkId}/verdicts reports", async () => {
+    const row = await readRun(customerRunId);
+    expect(row.outcome).toBe("settled");
+    const production = row.production as WatchRunProduction[];
+    expect(production).toHaveLength(1);
+    const p = production[0]!;
+    expect(p.assistantId).toBe(`fx-asst-prod-${fx.suffix}`);
+    expect(p.calls).toBe(2);
+    expect(p.totalCalls).toBe(2);
+    expect(p.comparedWords).toBeGreaterThan(0);
+    expect(p.mismatchWords).toBe(0);
+    expect(p.leaderProviderId).not.toBeNull();
+    expect(p.leaderComparedWords).toBeGreaterThan(0);
+
+    const res = await request(server).get(`/api/benchmark/bulks/${customerBulkId}/verdicts`);
+    expect(res.status).toBe(200);
+    const group = res.body.groups.find((g: { assistantIds: string[] }) => g.assistantIds.includes(p.assistantId as string));
+    expect(group).toBeDefined();
+    expect(group.productionDisagreement).not.toBeNull();
+    expect(group.productionDisagreement.rate).toBe(p.mismatchWords / p.comparedWords);
+    expect(group.productionDisagreement.leaderProviderId).toBe(p.leaderProviderId);
+    expect(group.productionDisagreement.leaderRate).toBe(p.leaderMismatchWords / p.leaderComparedWords);
+    expect(group.productionDisagreement.calls).toBe(p.calls);
+  });
+
+  it("settles [] on a mono bulk, never a zero rate", async () => {
+    const row = await readRun(settledRunId);
+    expect(row.outcome).toBe("settled");
+    expect(row.production).toEqual([]);
+  });
+
+  it("leaves production null on a row whose bulk is still running", async () => {
+    const row = await readRun(runningRunId);
+    expect(row.production).toBeNull();
+  });
+});
+
