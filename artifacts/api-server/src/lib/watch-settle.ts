@@ -41,6 +41,7 @@ import {
   type WatchRunTotals,
 } from "@workspace/db";
 import { benchmarkTrend } from "./trend";
+import { productionByAssistant } from "./verdict";
 import { logger } from "./logger";
 import type { Logger } from "pino";
 
@@ -105,13 +106,17 @@ export async function settleLaunchedRuns(
     }
 
     const totals = foldCellsToTotals(trend.cells);
+    // W-5e: production's own day, per agent, from the same bulk in the same
+    // update. Flux never has a cell, so it is never in `totals`; this is the
+    // only place its number survives the bulk. `[]` on a mono bulk.
+    const production = await productionByAssistant(row.bulkId);
     await db
       .update(watchRunsTable)
-      .set({ outcome: "settled", totals })
+      .set({ outcome: "settled", totals, production })
       .where(eq(watchRunsTable.id, row.watchRunId));
 
     log.info(
-      { watchRunId: row.watchRunId, bulkId: row.bulkId, pairs: totals.length },
+      { watchRunId: row.watchRunId, bulkId: row.bulkId, pairs: totals.length, productionAgents: production.length },
       "watch: settled",
     );
     settled.push({ watchRunId: row.watchRunId, bulkId: row.bulkId, pairs: totals.length });
