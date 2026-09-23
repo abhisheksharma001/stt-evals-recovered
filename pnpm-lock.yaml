@@ -706,6 +706,9 @@ importers:
 
   scripts:
     dependencies:
+      '@workspace/api-client':
+        specifier: workspace:*
+        version: link:../lib/api-client
       '@workspace/scoring':
         specifier: workspace:*
         version: link:../lib/scoring

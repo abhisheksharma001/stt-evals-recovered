@@ -9795,24 +9795,62 @@ lib/api-client/src` is empty and the only `fetch(` call is the moved mutator's.
 
 ### W-9 — A CLI over the SDK
 
-**Status:** not started. Spends nothing by itself.
+**Status:** in progress 2026-09-23. Spends nothing by itself.
 **PR:** one.
 **Depends on:** W-8, W-2 (schedules), W-5c (`run-now` needs the tick function behind a
 route: `POST /benchmark/watch-schedules/{id}/run-now`, added here, which calls the same
 function the tick calls and returns the ledger outcome).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part E (2).
-**Files:** `scripts/src/import-vapi-calls.ts` (folded in as `import`), a new entry file
-beside it (plain name: stt-evals), `scripts/package.json`.
+**Files:** `scripts/src/stt-evals.ts` (new entry, subcommands),
+`scripts/src/import-vapi-calls.ts` (becomes the `import` subcommand, over the SDK),
+`scripts/package.json`, `scripts/tsconfig.json`, `lib/api-spec/openapi.yaml`,
+`artifacts/api-server/src/lib/watch-tick.ts`, `artifacts/api-server/src/routes/watch.ts`,
+`artifacts/api-server/src/routes/__integration__/watch-run-now.int.test.ts` (new).
 
 **Change:** subcommands `orgs`, `agents <org>`, `watch list|create|run-now <id>`,
-`verdict <bulkId> [--assistant <id>] [--providers a,b]`, `moved [--days 30]`,
-`import` (today's flags). Reads `API_BASE_URL` only.
+`verdict <bulkId> [--assistant <id>]`, `moved`, `import` (today's flags). Reads
+`API_BASE_URL` only.
+
+**Grilled 2026-09-23, before code.** Five things the row above got wrong or left open:
+
+1. **"The same function the tick calls" did not exist.** `runWatchTick` runs EVERY enabled
+   schedule and asks `decideTick` whether the hour has come; there was no per-schedule
+   entry. The loop body (claim the day in `watch_runs`, run it, write the outcome) is
+   extracted into `runScheduleDay`, and the tick calls it. The route calls the same
+   function with `day = localDay(now)` and no hour check — "now" is the hour. One body,
+   two callers, so the cost gate cannot drift between them.
+2. **What `run-now` refuses, and how.** The tick skips silently; a human deserves a
+   sentence. Unknown id → 404. Disabled schedule → 409, no ledger row: the off switch
+   stays an off switch, enable it first. Day already in the ledger → 409 naming the
+   existing outcome: a second row for the same day is exactly the double-tick the claim
+   exists to prevent. Everything else → 200 with the ledger row verbatim
+   (`outcome`, `detail`, `bulkId`), including every `refused:*` — the refusal IS the
+   answer. The CLI exits 0 only on `launched`.
+3. **This is the first HTTP surface that runs the tick, while #189 (arming) is still
+   held.** It is the same class as the existing Launch button (`POST /benchmark/bulks`
+   spends with no auth today), one human-triggered day for one schedule through the same
+   caps, and the API binds 127.0.0.1 unless `HOST` says otherwise (M-3). The integration
+   test can prove the route without Vapi: a fixture schedule whose `accountId` has no env
+   var behind it comes back `refused:no_key` before any network call. The live database
+   holds 0 schedules, so the live smoke of `run-now` can only answer 404.
+4. **`orgs` has no entity behind it.** An org is a configured Vapi account
+   (`listVapiAccounts`); `agents <org>` is `listVapiAssistants({ accountId })`, a live
+   read-only Vapi call that costs nothing. `moved` is `getWatchOverview()` filtered to
+   `baseline.state === "moved"`; the overview is fixed at 30 days, so the row's
+   `--days 30` flag would have been a lie and is dropped. `verdict --providers` is
+   dropped too: `GET /bulks/{id}/verdicts` takes `assistantId` only.
+5. **`API_BASE_URL` meant two things.** The importer's documented value is
+   `http://localhost:8177/api`; the SDK's generated paths already carry `/api`
+   (`setBaseUrl("http://localhost:8177")`). The CLI strips one trailing `/api` so the
+   documented value keeps working, and says so in `--help`.
 
 **Acceptance:** WHEN `watch run-now <id>` is called THEN the same cost gate and ledger
 SHALL apply as to the scheduler AND the command SHALL print the ledger outcome verbatim
 AND a refused run SHALL exit non-zero.
 
-**Verify:** typecheck; a smoke run of `orgs` against the local API.
+**Verify:** typecheck; the tick's own integration file unchanged and green after the
+extraction; the new route file; a smoke run of `orgs`, `watch list` and
+`watch run-now <unknown id>` against the local API.
 
 **Must not:** read any `*_API_KEY`; talk to Vapi or a provider directly.
 

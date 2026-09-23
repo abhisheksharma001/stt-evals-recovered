@@ -2459,6 +2459,30 @@ export const UpdateWatchScheduleResponse = zod.object({
 
 
 /**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const RunWatchScheduleNowParams = zod.object({
+  "scheduleId": zod.string().uuid()
+})
+
+export const RunWatchScheduleNowResponse = zod.object({
+  "scheduleId": zod.string(),
+  "day": zod.string(),
+  "outcome": zod.string(),
+  "bulkId": zod.string().nullable(),
+  "detail": zod.object({
+  "imported": zod.number().optional(),
+  "matched": zod.number().optional(),
+  "sampled": zod.number().optional(),
+  "shortfall": zod.number().optional(),
+  "noCustomerAudio": zod.number().optional(),
+  "estimatedCents": zod.number().optional(),
+  "error": zod.string().optional()
+})
+})
+
+
+/**
  * @summary Immutable run manifest -- frozen corpus + provider config + scoring version snapshot (RUN-01, P2-T1)
  */
 export const GetBenchmarkRunManifestParams = zod.object({

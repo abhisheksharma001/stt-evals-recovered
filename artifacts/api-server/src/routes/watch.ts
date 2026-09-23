@@ -17,11 +17,12 @@
 //   * a `templateId` with no template behind it. The FK would refuse it too,
 //     but as a 500 with a constraint name in it; a caller deserves the
 //     sentence, not the constraint.
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   bulkTemplatesTable,
   db,
+  watchRunsTable,
   watchSchedulesTable,
   type WatchScheduleRow,
 } from "@workspace/db";
@@ -30,6 +31,8 @@ import {
   CreateWatchScheduleResponse,
   GetWatchOverviewResponse,
   ListWatchSchedulesResponse,
+  RunWatchScheduleNowParams,
+  RunWatchScheduleNowResponse,
   UpdateWatchScheduleBody,
   UpdateWatchScheduleParams,
   UpdateWatchScheduleResponse,
@@ -40,6 +43,8 @@ import { listVapiAccounts } from "../lib/vapi";
 import { respondInvalid } from "../lib/validation-error";
 import { respondJson } from "../lib/respond";
 import { watchOverview } from "../lib/watch-overview";
+import { localDay } from "../lib/watch-scheduler";
+import { runScheduleDay } from "../lib/watch-tick";
 
 const router: IRouter = Router();
 
@@ -197,6 +202,62 @@ router.patch("/benchmark/watch-schedules/:scheduleId", async (req, res): Promise
     afterState: serializeSchedule(schedule),
   });
   respondJson(res, UpdateWatchScheduleResponse, serializeSchedule(schedule));
+});
+
+// W-9: one schedule's day, now. The same claim, cost gate and ledger the
+// scheduler uses -- `runScheduleDay` is the tick's own loop body -- with the
+// hour check replaced by the operator saying so. What the tick skips in
+// silence is refused here with a sentence: a disabled schedule stays off
+// (409, no ledger row), and a day already in the ledger is not run twice
+// (409, naming the outcome on file). Every other answer is the ledger row
+// verbatim, refusals included, because the refusal is the answer.
+router.post("/benchmark/watch-schedules/:scheduleId/run-now", async (req, res): Promise<void> => {
+  const params = RunWatchScheduleNowParams.safeParse(req.params);
+  if (!params.success) {
+    respondInvalid(res, params.error);
+    return;
+  }
+
+  const [schedule] = await db
+    .select()
+    .from(watchSchedulesTable)
+    .where(eq(watchSchedulesTable.id, params.data.scheduleId))
+    .limit(1);
+  if (!schedule) {
+    res.status(404).json({ error: "Watch schedule not found" });
+    return;
+  }
+  if (!schedule.enabled) {
+    res.status(409).json({ error: "Watch schedule is disabled. Enable it first; run-now does not override the off switch." });
+    return;
+  }
+
+  const now = new Date();
+  const day = localDay(now);
+  const actorLabel = actorFromRequest(req);
+  const result = await runScheduleDay({ schedule, day, now });
+  if (!result) {
+    const [existing] = await db
+      .select({ outcome: watchRunsTable.outcome })
+      .from(watchRunsTable)
+      .where(and(eq(watchRunsTable.scheduleId, schedule.id), eq(watchRunsTable.day, day)))
+      .limit(1);
+    res.status(409).json({
+      error: `Day ${day} is already in the ledger for this schedule (outcome: ${existing?.outcome ?? "unknown"}). One row per schedule per day; it is not run twice.`,
+    });
+    return;
+  }
+
+  // The ledger row has no actor column -- the tick has none to give. A hand
+  // run does, and "who launched this day" is worth one audit row.
+  await writeAudit({
+    entityType: "watch_schedule",
+    entityId: schedule.id,
+    actorLabel,
+    action: "run_now",
+    afterState: result,
+  });
+  respondJson(res, RunWatchScheduleNowResponse, result);
 });
 
 export default router;
