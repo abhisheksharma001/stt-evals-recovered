@@ -9526,7 +9526,16 @@ grouped query for the whole screen — never `assistantTranscriberConfig`.
 (`estimatedCentsThisMonth` exported — one sum for the cap and the screen),
 `artifacts/api-server/src/routes/__integration__/watch-overview.int.test.ts` (new),
 and the orval-generated `lib/api-zod` and `lib/api-client-react` files.
-**PR:** one.
+**PR:** one — #195, squash-merged as `1678a96`, deployed and verified live:
+`/api/healthz` reads `1678a962f4a1-dirty` (the `-dirty` is still the
+uncommitted `AGI_Research/` `.gitignore` line); live
+`GET /api/benchmark/watch/overview` answers `today 2026-09-23, windowStart
+2026-08-25, accounts 0, agents 0` — no schedule exists yet, so the screen's
+data is an empty list, which is what an empty ledger looks like. Break test
+measured: making an unmeasured day emit `rate: 0` failed TWO of five cases,
+the register-named one and the baseline case, because the phantom zero also
+became a prior day and shrank the band — the stronger reason "absent is not
+zero" is a rule and not a style.
 **Depends on:** W-5e (production's measurement on the ledger), W-6a (the
 baseline function); reads S-AB1's pair verdict when present. Useful output also
 needs W-5f, but W-6b is correct without it — a mono day simply has no rate.
