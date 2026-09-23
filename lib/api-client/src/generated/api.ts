@@ -83,6 +83,7 @@ import type {
   VapiPreviewResult,
   VerticalRanking,
   WatchOverview,
+  WatchRunNowResult,
   WatchSchedule,
   WatchScheduleInput,
   WatchSchedulePatch,
@@ -1623,6 +1624,30 @@ export const updateWatchSchedule = async (scheduleId: string,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(watchSchedulePatch)
+  }
+);}
+
+
+
+export const getRunWatchScheduleNowUrl = (scheduleId: string,) => {
+
+
+
+
+  return `/api/benchmark/watch-schedules/${scheduleId}/run-now`
+}
+
+/**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const runWatchScheduleNow = async (scheduleId: string, options?: Parameters<typeof customFetch>[1]): Promise<WatchRunNowResult> => {
+
+  return customFetch<WatchRunNowResult>(getRunWatchScheduleNowUrl(scheduleId),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

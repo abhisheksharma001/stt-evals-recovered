@@ -1977,6 +1977,25 @@ export interface WatchOverview {
   accounts: WatchOverviewAccount[];
 }
 
+export type WatchRunNowResultDetail = {
+  imported?: number;
+  matched?: number;
+  sampled?: number;
+  shortfall?: number;
+  noCustomerAudio?: number;
+  estimatedCents?: number;
+  error?: string;
+};
+
+export interface WatchRunNowResult {
+  scheduleId: string;
+  day: string;
+  outcome: string;
+  /** @nullable */
+  bulkId: string | null;
+  detail: WatchRunNowResultDetail;
+}
+
 export interface WatchSchedule {
   id: string;
   templateId: string;

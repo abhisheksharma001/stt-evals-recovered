@@ -85,6 +85,8 @@ export type WatchTickResult = {
   scheduleId: string;
   day: string;
   outcome: string;
+  /** `watch_runs.detail` as written: counts and one message (W-9 prints it). */
+  detail: WatchRunDetail;
   bulkId: string | null;
 };
 
@@ -159,57 +161,82 @@ export async function runWatchTick(input: {
       ledgerDays: ledgerDays.map((r) => r.day),
     });
     if (decision.action === "skip") continue;
-    const day = decision.day;
 
-    // THE CLAIM. First write, before any work. A second tick for this pair
-    // bounces off watch_runs_schedule_day_unique here and stops, having done
-    // nothing -- not after importing a day it is about to discard.
-    let runId: string;
-    try {
-      const [row] = await db
-        .insert(watchRunsTable)
-        .values({ scheduleId: schedule.id, day, outcome: "started" })
-        .returning({ id: watchRunsTable.id });
-      runId = row.id;
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        log.info({ scheduleId: schedule.id, day }, "watch: another tick already claimed this day");
-        continue;
-      }
-      throw err;
-    }
-
-    let settlement: Settlement;
-    try {
-      settlement = await runOneSchedule({ schedule, day, now, source });
-    } catch (err) {
-      // Counts and messages only. `detail` is read by the UI and dumped in
-      // logs, and the corpus's PII rules do not stop at the corpus.
-      const message = err instanceof Error ? err.message : String(err);
-      log.error({ err, scheduleId: schedule.id, day }, "watch: tick failed");
-      settlement = { outcome: "failed", detail: { error: message }, bulkId: null };
-    }
-
-    await db
-      .update(watchRunsTable)
-      .set({
-        outcome: settlement.outcome,
-        detail: settlement.detail,
-        bulkId: settlement.bulkId,
-      })
-      .where(eq(watchRunsTable.id, runId));
-
-    results.push({
-      scheduleId: schedule.id,
-      day,
-      outcome: settlement.outcome,
-      bulkId: settlement.bulkId,
-    });
+    const result = await runScheduleDay({ schedule, day: decision.day, now, source, log });
+    if (result) results.push(result);
   }
   return results;
 }
 
 type ScheduleRow = typeof watchSchedulesTable.$inferSelect;
+
+/**
+ * One schedule, one day: claim it, run it, write it down. The tick calls
+ * this once per due schedule; the W-9 `run-now` route calls it for the
+ * schedule the operator named, with `day = localDay(now)` and no hour check.
+ * One body for both, so the cost gate cannot drift between the clock and the
+ * hand.
+ *
+ * Returns null when the day was already in the ledger -- the claim below lost
+ * -- so the caller can say so instead of reporting a run that never happened.
+ */
+export async function runScheduleDay(input: {
+  schedule: ScheduleRow;
+  day: string;
+  now: Date;
+  source?: WatchTickSource;
+  log?: Logger;
+}): Promise<WatchTickResult | null> {
+  const { schedule, day, now } = input;
+  const source = input.source ?? REAL_SOURCE;
+  const log = input.log ?? logger;
+
+  // THE CLAIM. First write, before any work. A second tick for this pair
+  // bounces off watch_runs_schedule_day_unique here and stops, having done
+  // nothing -- not after importing a day it is about to discard.
+  let runId: string;
+  try {
+    const [row] = await db
+      .insert(watchRunsTable)
+      .values({ scheduleId: schedule.id, day, outcome: "started" })
+      .returning({ id: watchRunsTable.id });
+    runId = row.id;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      log.info({ scheduleId: schedule.id, day }, "watch: another tick already claimed this day");
+      return null;
+    }
+    throw err;
+  }
+
+  let settlement: Settlement;
+  try {
+    settlement = await runOneSchedule({ schedule, day, now, source });
+  } catch (err) {
+    // Counts and messages only. `detail` is read by the UI and dumped in
+    // logs, and the corpus's PII rules do not stop at the corpus.
+    const message = err instanceof Error ? err.message : String(err);
+    log.error({ err, scheduleId: schedule.id, day }, "watch: tick failed");
+    settlement = { outcome: "failed", detail: { error: message }, bulkId: null };
+  }
+
+  await db
+    .update(watchRunsTable)
+    .set({
+      outcome: settlement.outcome,
+      detail: settlement.detail,
+      bulkId: settlement.bulkId,
+    })
+    .where(eq(watchRunsTable.id, runId));
+
+  return {
+    scheduleId: schedule.id,
+    day,
+    outcome: settlement.outcome,
+    detail: settlement.detail,
+    bulkId: settlement.bulkId,
+  };
+}
 
 async function runOneSchedule(input: {
   schedule: ScheduleRow;

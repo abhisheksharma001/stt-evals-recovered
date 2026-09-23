@@ -93,6 +93,7 @@ import type {
   VapiPreviewResult,
   VerticalRanking,
   WatchOverview,
+  WatchRunNowResult,
   WatchSchedule,
   WatchScheduleInput,
   WatchSchedulePatch,
@@ -4706,6 +4707,77 @@ export const useUpdateWatchSchedule = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateWatchScheduleMutationOptions(options));
+    }
+
+export const getRunWatchScheduleNowUrl = (scheduleId: string,) => {
+
+
+
+
+  return `/api/benchmark/watch-schedules/${scheduleId}/run-now`
+}
+
+/**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const runWatchScheduleNow = async (scheduleId: string, options?: Parameters<typeof customFetch>[1]): Promise<WatchRunNowResult> => {
+
+  return customFetch<WatchRunNowResult>(getRunWatchScheduleNowUrl(scheduleId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunWatchScheduleNowMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWatchScheduleNow>>, TError,{scheduleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runWatchScheduleNow>>, TError,{scheduleId: string}, TContext> => {
+
+const mutationKey = ['runWatchScheduleNow'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runWatchScheduleNow>>, {scheduleId: string}> = (props) => {
+          const {scheduleId} = props ?? {};
+
+          return  runWatchScheduleNow(scheduleId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunWatchScheduleNowMutationResult = NonNullable<Awaited<ReturnType<typeof runWatchScheduleNow>>>
+
+    export type RunWatchScheduleNowMutationError = ErrorType<void>
+
+    /**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const useRunWatchScheduleNow = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWatchScheduleNow>>, TError,{scheduleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runWatchScheduleNow>>,
+        TError,
+        {scheduleId: string},
+        TContext
+      > => {
+      return useMutation(getRunWatchScheduleNowMutationOptions(options));
     }
 
 export const getGetBenchmarkRunManifestUrl = (runId: string,) => {

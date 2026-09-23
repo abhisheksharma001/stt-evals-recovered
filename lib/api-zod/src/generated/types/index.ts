@@ -202,6 +202,8 @@ export * from './watchOverviewAccount';
 export * from './watchOverviewAgent';
 export * from './watchOverviewAgentProduction';
 export * from './watchOverviewDay';
+export * from './watchRunNowResult';
+export * from './watchRunNowResultDetail';
 export * from './watchSchedule';
 export * from './watchScheduleInput';
 export * from './watchSchedulePatch';

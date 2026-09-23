@@ -1259,6 +1259,29 @@ paths:
           description: Invalid body or unknown Vapi account
         "404":
           description: Schedule not found
+  /benchmark/watch-schedules/{scheduleId}/run-now:
+    post:
+      operationId: runWatchScheduleNow
+      tags: [benchmark]
+      summary: W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The ledger row this call wrote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchRunNowResult"
+        "404":
+          description: Schedule not found
+        "409":
+          description: Schedule disabled, or today is already in the ledger for it
   /benchmark/runs/{runId}/manifest:
     get:
       operationId: getBenchmarkRunManifest
@@ -3340,6 +3363,28 @@ components:
         calls: { type: number }
         leaderProviderId: { type: ["string", "null"] }
         leaderRate: { type: ["number", "null"] }
+    WatchRunNowResult:
+      type: object
+      required: [scheduleId, day, outcome, bulkId, detail]
+      properties:
+        scheduleId: { type: string }
+        day: { type: string }
+        # The ledger outcome verbatim, the same strings `WatchOverviewDay.outcome`
+        # carries: launched, held:cost_gate, refused:<reason>, failed.
+        outcome: { type: string }
+        bulkId: { type: ["string", "null"] }
+        # `watch_runs.detail` as written: counts and one message, never a
+        # transcript or a call id.
+        detail:
+          type: object
+          properties:
+            imported: { type: number }
+            matched: { type: number }
+            sampled: { type: number }
+            shortfall: { type: number }
+            noCustomerAudio: { type: number }
+            estimatedCents: { type: number }
+            error: { type: string }
     WatchSchedule:
       type: object
       required: [id, templateId, accountId, vertical, assistantId, sampleSize, dailyCapCents, monthlyCapCents, hourLocal, enabled, createdAt]
