@@ -9716,7 +9716,7 @@ and enums only; log an artifact path with a caller id.
 ### W-8 — An SDK generated from the spec
 
 **Status:** done 2026-09-23. Spent nothing.
-**PR:** one — #198, squash `eed2fc0`.
+**PR:** one — #198, squash `eed2fc0`, live `c622555ff238-dirty` (the `-dirty` is the uncommitted `.gitignore`).
 **Depends on:** nothing.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part E (1).
 **Files:** `lib/api-spec/orval.config.ts` (a third target, `client: "fetch"`),
