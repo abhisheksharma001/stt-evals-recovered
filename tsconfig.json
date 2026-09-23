@@ -7,6 +7,9 @@
       "path": "./lib/db"
     },
     {
+      "path": "./lib/api-client"
+    },
+    {
       "path": "./lib/api-client-react"
     },
     {

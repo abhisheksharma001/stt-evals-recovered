@@ -23,7 +23,7 @@
 // is the same failure this script exists to prevent. Widening the .ts filter
 // to .tsx is NOT enough on its own and would make it worse by making the lie
 // look thorough; the alias has to be resolved first. Backlog 2026-09-09.
-// lib/api-zod and lib/api-client-react are orval output, so a cycle there is
+// lib/api-zod, lib/api-client and lib/api-client-react are orval output, so a cycle there is
 // not a thing a person can fix by editing the file.
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
