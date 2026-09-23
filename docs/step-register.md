@@ -9587,7 +9587,18 @@ assistant id in mono; a name needs a source first (backlog). (3) Ledger outcomes
 the outcome on hover. (4) No screen creates a schedule yet, so the empty state says
 "No agent is under watch yet." and links nowhere. Evidence pass (visual-and-research,
 2026-09-23) in `docs/PRD-v8-watch.md` §8 addendum: hover copy = date · outcome · count.
-**PR:** one.
+**PR:** one — #196, squash-merged as `623a06c`, deployed: `/api/healthz` reads
+`623a06cdaf21-dirty` (the `-dirty` is still the uncommitted `AGI_Research/`
+`.gitignore` line); the built UI bundle carries the `/orgs` route and the
+page copy (`dist/public/assets/Orgs-*.js`). Not looked at in a browser: the UI
+is a second process (Vite on :5173, memo F-27) and it was not running, and it
+binds the LAN with no auth (F-26), so it was not started for this. Render
+test 8 cases; break test (a forming baseline painted amber) fails exactly
+"reads 'baseline forming' and paints no amber tick".
+**Learned:** a Layer 1 tick can only show what the ledger holds — `too_close`
+lives in `bulkVerdicts` and never reaches the overview, so "amber" is one
+tick (today, `moved`), not a per-day judgement; and the overview has no agent
+name because nothing stores one (backlog).
 **Depends on:** W-6b.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1); evidence note in §8 — run
 the `visual-and-research` skill before writing any label, per its own trigger
