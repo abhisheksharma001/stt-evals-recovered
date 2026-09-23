@@ -20,6 +20,7 @@ const Setup = React.lazy(() => import("@/pages/Setup"))
 const Bulks = React.lazy(() => import("@/pages/Bulks"))
 const Results = React.lazy(() => import("@/pages/Rankings"))
 const Landing = React.lazy(() => import("@/pages/Landing"))
+const Orgs = React.lazy(() => import("@/pages/Orgs"))
 
 function PageSkeleton() {
   return (
@@ -44,6 +45,7 @@ const KNOWN_ROUTES = new Set([
   "/bulks",
   "/runs",
   "/results",
+  "/orgs",
   "/setup",
   "/providers",
   "/sources",
@@ -68,6 +70,7 @@ export default function App() {
           {path === "/corpus" && <Corpus />}
           {(path === "/bulks" || path === "/runs") && <Bulks />}
           {path === "/results" && <Results />}
+          {path === "/orgs" && <Orgs />}
           {path === "/setup" && <Setup />}
           {path === "/providers" && <Setup defaultTab="providers" />}
           {path === "/sources" && <Setup defaultTab="sources" />}

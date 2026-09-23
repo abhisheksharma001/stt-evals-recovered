@@ -8,6 +8,7 @@ import {
   AudioLines,
   Layers,
   BarChart3,
+  Building2,
   Settings2,
 } from "lucide-react"
 import { getHealthCheckQueryKey, useHealthCheck } from "@workspace/api-client-react"
@@ -227,6 +228,7 @@ export function Sidebar() {
         <div className="flex flex-col gap-px pt-2">
           <SidebarItem href="/" icon={LayoutGrid} label="Overview" />
           <SidebarItem href="/results" icon={BarChart3} label="Results" />
+          <SidebarItem href="/orgs" icon={Building2} label="Orgs" />
           <SidebarItem href="/corpus" icon={Database} label="Calls" />
           <SidebarItem href="/bulks" icon={Layers} label="Bulks" />
           <SidebarItem href="/setup" icon={Settings2} label="Setup" />

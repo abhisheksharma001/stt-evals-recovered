@@ -9575,7 +9575,18 @@ spend anything.
 
 ### W-6c — The Orgs page
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-23. Spends nothing.
+**Grilled 2026-09-23, before code.** Four findings, each corrected in place:
+(1) `too_close` is a Layer 2 verdict from `bulkVerdicts` and is on neither the ledger
+nor the overview, so it cannot colour a Layer 1 tick without the browser computing a
+verdict (D-13) — amber is exactly one tick: today, when W-6b's baseline reads `moved`;
+prior days are never re-judged in the browser (PRD Part C corrected). (2) The overview
+carries no agent *name* — `benchmark_calls` has no name column — so the row shows the
+assistant id in mono; a name needs a source first (backlog). (3) Ledger outcomes are
+`launched` / `settled` / `failed` / `refused:*` only; `launched` is green (it ran) with
+the outcome on hover. (4) No screen creates a schedule yet, so the empty state says
+"No agent is under watch yet." and links nowhere. Evidence pass (visual-and-research,
+2026-09-23) in `docs/PRD-v8-watch.md` §8 addendum: hover copy = date · outcome · count.
 **PR:** one.
 **Depends on:** W-6b.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1); evidence note in §8 — run
@@ -9590,8 +9601,9 @@ using `artifacts/stt-benchmark/src/pages/__render__/harness.tsx`.
 **Today:** Results shows one bulk or all-time. No screen lists orgs, and no
 screen shows a day-by-day line for an agent.
 
-**Change:** org — agent rows with the tick bar (green ran, amber moved or
-`too_close`, grey no run, red `refused:`/`failed` with the ledger outcome on
+**Change:** org — agent rows with the tick bar (green ran, amber = today when
+the server's baseline reads `moved` (~~or `too_close`~~ — not on the ledger, grill
+finding 1), grey no run, red `refused:`/`failed` with the ledger outcome on
 hover), today's rate against the baseline with its call count, and cost this
 month summed from the ledger's `detail.estimatedCents`.
 
