@@ -42,6 +42,10 @@ export type WatchRunDetail = {
   sampled?: number;
   /** matched - sampled when the day had fewer calls than `sampleSize`. */
   shortfall?: number;
+  /** W-5f: calls the window matched but that have no `<id>.customer.audio`
+   *  on file, so they could not go into a caller-track bulk. Counted before
+   *  the draw, so `matched` is the eligible number and a short day says why. */
+  noCustomerAudio?: number;
   /** What the preview priced the bulk at, in cents, before any cap decision. */
   estimatedCents?: number;
   /** One message, for a `failed` or `refused:` row. Counts and messages only:

@@ -202,6 +202,10 @@ export function resolveDurationBand(input: {
 // where callers have always imported them from.
 export type { SelectionExclusion };
 
+/** The exclusion bucket for a call with no `<id>.customer.audio` on file.
+ *  Named once: the watch tick (W-5f) reads it back out of `excluded`. */
+export const NO_CUSTOMER_AUDIO_BUCKET = "no customer-channel audio on file";
+
 export type ResolvedCriteriaSelection = ResolvedCriteriaCallIds & {
   /** Calls that passed the "who" filters (vertical / assistant / account) or
    *  were explicitly picked -- the pool the exclusions are counted against. */
@@ -451,7 +455,7 @@ export async function resolveCriteriaSelection(
       else excludedNoCustomerAudio += 1;
     }
     if (excludedNoCustomerAudio > 0) {
-      buckets.set("no customer-channel audio on file", excludedNoCustomerAudio);
+      buckets.set(NO_CUSTOMER_AUDIO_BUCKET, excludedNoCustomerAudio);
     }
   } else {
     for (const c of runnable) callIds.push(c.id);

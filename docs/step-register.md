@@ -9390,10 +9390,28 @@ update; exactly the case that reads it back fails.
 **Must not:** change any number `GET /benchmark/bulks/{bulkId}/verdicts` returns
 today; spend anything.
 
-### W-5f — A watch runs on the caller track — BLOCKED on Abhishek
+### W-5f — A watch runs on the caller track
 
-**Status:** blocked on a decision. Spends nothing to build; changes what a watch
-would spend once armed.
+**Status:** done, 2026-09-23 — Abhishek chose (a) on 2026-09-23. Spends nothing to
+build; changes what a watch would spend once armed.
+
+**Corrected 2026-09-23, while grilling it.** "The tick passes `true`" was not
+enough on its own. The tick draws its sample (W-3) BEFORE it prices, and the
+customer-audio filter in `resolveCriteriaSelection` runs at pricing and
+creation, on explicit picks. Flipping only the two `requireCustomerAudioDefault`
+flags would let the sampler pick calls with no caller track, then have the
+freeze silently drop them — a day could report `sampled: 10` and launch a bulk of
+6, or of 0, with `matched` still counting the ineligible calls. So the effective
+value (`template.selectionCriteria.requireCustomerAudio ?? true`) is set on the
+MATCH criteria too, before the draw: the sampler only ever sees eligible calls,
+`matched` is the eligible count, and the number the ledger says it sampled is
+the number the bulk froze. The calls the window matched but that lack
+`<id>.customer.audio` are counted into a new `detail.noCustomerAudio`, so a
+short day says why.
+
+**Files:** `artifacts/api-server/src/lib/watch-tick.ts`,
+`lib/db/src/schema/watch-runs.ts` (one optional field on `WatchRunDetail`, jsonb,
+no push), `artifacts/api-server/src/routes/__integration__/watch-tick.int.test.ts`.
 **PR:** one.
 **Depends on:** nothing.
 
@@ -9413,8 +9431,17 @@ at all (finding 7).
   say `requireCustomerAudio: true`, and the tick stays as it is. Stricter, but
   both existing templates would be refused and have to be re-saved.
 
-**Acceptance (for (a)):** WHEN the tick prices or creates a bulk from a template
-with no `requireCustomerAudio` on file THEN the frozen criteria SHALL say `true`.
+**Acceptance:** WHEN the tick prices or creates a bulk from a template with no
+`requireCustomerAudio` on file THEN the frozen criteria SHALL say `true`; WHEN
+the window's calls have no customer audio on file THEN the tick SHALL refuse
+`no_calls` with `detail.noCustomerAudio` equal to their count, and create nothing.
+
+**Verify:** `pnpm --filter @workspace/api-server run test:integration` with
+`TEST_DATABASE_URL`; typecheck.
+
+**Prove it by breaking it:** after committing, drop `requireCustomerAudio` from
+the match criteria (leave the two defaults); the no-audio case fails because a
+bulk gets created from ineligible picks.
 
 **Must not:** change the hand template-launch route's default.
 
