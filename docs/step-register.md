@@ -9303,6 +9303,89 @@ children below:**
    and the exclusion is moot at this layer. W-12's public set never gets a
    schedule.
 
+**Two more things, found 2026-09-23 while grilling W-6b — both block W-6b as
+written:**
+
+6. **The ledger holds no production rate.** Finding 2 above assumed production
+   would be one of the providers in `totals`. It is not: Flux (production on 310
+   of 362 Vapi calls) is streaming-only, `disabled`, and has zero result rows
+   ever. Production is measured by M-8a's `productionDisagreement`
+   (`artifacts/api-server/src/lib/verdict.ts`) on a different scale, at read
+   time, and W-5d did not settle it. New step W-5e.
+7. **A watch bulk runs on the mono mix, where that measurement is null by
+   design.** `runWatchTick` passes `requireCustomerAudioDefault: false`, and both
+   templates in the dev DB have no opinion on file. New step W-5f, blocked on
+   Abhishek.
+
+Bug log: `docs/backlog/good-to-have.md`, "Found 2026-09-23 (grilling W-6b)".
+
+### W-5e — Settle production's own measurement onto the ledger
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** W-5d.
+**Files:** `lib/db/src/schema/watch-runs.ts` (a new jsonb column, `production`),
+`artifacts/api-server/src/lib/verdict.ts` (production's measurement per
+assistant, returning SUMS), `artifacts/api-server/src/lib/watch-settle.ts`, and
+`artifacts/api-server/src/routes/__integration__/watch-settle.int.test.ts`.
+
+**Today:** settling copies `totals` only. `productionDisagreement` is computed
+per bulk group at read time and returns rates, so it can neither survive
+eviction nor be pooled across days.
+
+**Change:** at settle, compute M-8a's measurement per assistant over the bulk's
+on-channel calls and store, per assistant, `{ assistantId, calls,
+mismatchWords, comparedWords, leaderProviderId, leaderMismatchWords,
+leaderComparedWords }` — sums, not rates, so W-6b can pool days. Same function
+the verdict uses, refactored to return sums; the verdict's rates become a
+division of them. An assistant with no measurable call has **no entry**, and a
+mono bulk settles `production: []` alongside its totals. A new nullable
+column rather than a change to `WatchRunTotals`, because a totals entry is a
+provider that ran and production never runs here.
+
+**Acceptance:** WHEN a customer-channel bulk settles THEN each assistant with a
+measurable call SHALL carry sums whose ratio equals the `productionDisagreement.rate`
+`GET /benchmark/bulks/{bulkId}/verdicts` reports for that bulk; WHEN a mono bulk
+settles THEN `production` SHALL be `[]`, never a zero rate.
+
+**Verify:** `pnpm run typecheck`; `pnpm --filter @workspace/api-server test`;
+the integration suite with `TEST_DATABASE_URL`; drizzle push to the dev DB and
+a live column check.
+
+**Prove it by breaking it:** after committing, drop `production` from the settle
+update; exactly the case that reads it back fails.
+
+**Must not:** change any number `GET /benchmark/bulks/{bulkId}/verdicts` returns
+today; spend anything.
+
+### W-5f — A watch runs on the caller track — BLOCKED on Abhishek
+
+**Status:** blocked on a decision. Spends nothing to build; changes what a watch
+would spend once armed.
+**PR:** one.
+**Depends on:** nothing.
+
+**Today:** `runWatchTick` prices and creates its bulk with
+`requireCustomerAudioDefault: false`, the template-launch route's rule ("a saved
+template keeps matching what it matched"). That rule protects a person comparing
+a template against last month's hand bulks. A watch compares only against its
+own earlier days, and without the caller track it produces no production number
+at all (finding 7).
+
+**The decision, with a recommendation:**
+- **(a) recommended — the tick passes `true`.** A watch that has never run has no
+  history to keep matching. Calls with no `<id>.customer.audio` drop out of the
+  sample under their own named bucket, so a day can sample fewer calls than
+  `sampleSize` and say why.
+- (b) `POST /benchmark/watch-schedules` refuses a template whose criteria do not
+  say `requireCustomerAudio: true`, and the tick stays as it is. Stricter, but
+  both existing templates would be refused and have to be re-saved.
+
+**Acceptance (for (a)):** WHEN the tick prices or creates a bulk from a template
+with no `requireCustomerAudio` on file THEN the frozen criteria SHALL say `true`.
+
+**Must not:** change the hand template-launch route's default.
+
 ### W-6a — `watchBaseline`, pure
 
 **Status:** done, 2026-09-17. Spends nothing.
@@ -9357,8 +9440,9 @@ days*) rather than a comment.
 
 **Status:** not started. Spends nothing.
 **PR:** one.
-**Depends on:** W-5d (settled ledger rows), W-6a (the baseline function); reads
-S-AB1's pair verdict when present.
+**Depends on:** W-5e (production's measurement on the ledger), W-6a (the
+baseline function); reads S-AB1's pair verdict when present. Useful output also
+needs W-5f, but W-6b is correct without it — a mono day simply has no rate.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part C (Layer 1) and Part D.
 **Files:** `lib/api-spec/openapi.yaml` (one new read path),
 `artifacts/api-server/src/routes/watch.ts`, and an integration test beside
@@ -9369,24 +9453,26 @@ S-AB1's pair verdict when present.
 ledger.
 
 **Change:** per (account, assistant) across the enabled schedules, return: the
-production provider resolved **offline** via `resolveProductionProviderId`
-over that assistant's corpus rows (never `assistantTranscriberConfig`, per
-grill finding 1); the last 30 ledger days, each with `day`, `outcome`,
-`bulkId`, the production provider's `peerFlags / words * 100`, its
-`callsScored`, and the best challenger's rate; and `watchBaseline`'s verdict
-over those days. Days whose `totals` is null contribute an `outcome` and no
-rate.
+production transcriber's vendor and model, read **offline** from that
+assistant's corpus rows (never `assistantTranscriberConfig`, per grill finding
+1); the last 30 ledger days, each with `day`, `outcome`, `bulkId`, and — from
+W-5e's `production` — production's disagreement rate (`mismatchWords /
+comparedWords`), its `calls`, and the leader's rate over the same calls; and
+`watchBaseline`'s verdict over those days, with `calls` standing in for
+`callsScored`. Days with no `production` entry for the agent contribute an
+`outcome` and no rate. (Corrected 2026-09-23: the row previously read
+production's rate out of `totals`, where it never is — finding 6.)
 
 **Acceptance:** WHEN an agent has 7 or more settled days THEN the response
-SHALL carry a non-null `low` and `high`; WHEN a day's `totals` is null THEN
-that day SHALL carry its `outcome` and no rate field at all, never 0; WHEN no
+SHALL carry a non-null `low` and `high`; WHEN a day has no `production` entry for
+the agent THEN that day SHALL carry its `outcome` and no rate field at all, never 0; WHEN no
 VAPI key is set THEN the response SHALL be unchanged (T-168).
 
 **Verify:** `pnpm --filter @workspace/api-server run test:integration`;
 `node scripts/check-api-routes.mjs` shows 68 operations; typecheck.
 
-**Prove it by breaking it:** after committing, make a null-`totals` day emit
-`flagsPer100Words: 0`; exactly one integration case fails.
+**Prove it by breaking it:** after committing, make a day with no `production`
+entry emit a rate of 0; exactly one integration case fails.
 
 **Must not:** call Vapi at all; compute any verdict in the browser (D-13);
 spend anything.

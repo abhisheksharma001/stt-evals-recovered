@@ -2915,3 +2915,60 @@ entry here and not a line in W-5c1's diff.
 
 Do not fix it by loosening the cycle check. The check has already earned its
 keep once (`lib/scoring` had six cycles, O-88).
+
+## Found 2026-09-23 (grilling W-6b): the ledger holds no production rate, and a watch bulk usually cannot produce one
+
+Layer 1's headline number is "today's **production** rate vs its baseline"
+(`docs/PRD-v8-watch.md` Part C). Two separate things stop it existing.
+
+**1. `watch_runs.totals` never contains production.** W-5d settles the trend
+cells (`peerFlags / words` per provider that RAN). Production is Deepgram Flux
+on 310 of the 362 Vapi calls in the corpus, and Flux is streaming-only:
+`deepgram-flux-general-en` is `disabled` and has **0** rows in
+`benchmark_provider_call_results`, ever. So for ~86 % of agents there is no
+production entry in any day's `totals`, and there never will be.
+
+Production is measured another way already — M-8a's `productionDisagreement`
+(`artifacts/api-server/src/lib/verdict.ts`): the caller turns of the Vapi draft
+held as a non-voting candidate against the candidates' consensus, with the
+best candidate measured over exactly the same calls so the two numbers share a
+scale. It is computed per bulk **at read time** and W-5d did not copy it, so it
+dies with the bulk on eviction exactly like the totals would have.
+
+**2. On a mono bulk that measurement is null by design, and watch bulks are
+mono.** M-8a returns null unless the bulk ran on the customer channel (on the
+mix, the candidates heard both speakers and the draft's turns are the caller
+alone, ~70 % "disagreement" for no reason). `runWatchTick` creates its bulk
+with `requireCustomerAudioDefault: false` (`artifacts/api-server/src/lib/watch-tick.ts`),
+inherited on purpose from the template-launch route, so a template with no
+opinion on file runs on the mix. Both templates in the dev database have no
+opinion on file:
+
+```
+docker exec stt-evals-pg psql -U postgres -d stt_evals -c \
+  "select name, selection_criteria->'requireCustomerAudio' from bulk_templates"
+-> weekly lindenwood heights chek         | (null)
+   last 14 days — all accounts (fallback) | (null)
+```
+
+A watch on either would spend every day and produce a Layer 1 row with no
+production rate, silently, forever.
+
+**Reproduce (no spend):**
+```
+docker exec stt-evals-pg psql -U postgres -d stt_evals -c \
+  "select source_transcriber_provider, source_transcriber_model, count(*)
+     from benchmark_calls where source_provider='vapi' group by 1,2"
+docker exec stt-evals-pg psql -U postgres -d stt_evals -c \
+  "select provider_id, count(*) from benchmark_provider_call_results group by 1"
+```
+
+**Worth having, in order:** W-5e (settle production's measurement onto the
+ledger per agent, as sums so days pool) and W-5f (a watch runs on the caller
+track — which of two ways is Abhishek's call). Both are in
+`docs/step-register.md`.
+
+**Do not** fix it by tracking the best candidate's `peerFlags / words` instead
+and calling it production. That is a different question ("is the best
+alternative drifting?"), and a row labelled production that is not production
+is the one thing Layer 1 must never show.
