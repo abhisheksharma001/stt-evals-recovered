@@ -26,10 +26,26 @@ import {
 import { runWatchTick, type WatchTickSource } from "../../lib/watch-tick";
 import { UnknownVapiAccountError } from "../../lib/vapi-import";
 import { Fixtures } from "./fixtures";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+// W-5f: the caller track lives on disk as `<callId>.customer.audio` in the
+// process's audio cache (same seam customer-channel.int.test.ts uses). Fixture
+// call ids are random uuids, so nothing here can touch a real caller's file,
+// and every file written is removed in afterAll.
+const CACHE_DIR = path.join(process.cwd(), "audio-cache");
+const writtenAudio: string[] = [];
+async function putCustomerAudio(callId: string): Promise<void> {
+  await fs.mkdir(CACHE_DIR, { recursive: true });
+  const file = path.join(CACHE_DIR, `${callId}.customer.audio`);
+  await fs.writeFile(file, Buffer.from("RIFF"));
+  writtenAudio.push(file);
+}
 
 const fx = new Fixtures();
 
 afterAll(async () => {
+  await Promise.all(writtenAudio.map((f) => fs.rm(f, { force: true })));
   await fx.cleanup();
   await pool.end();
 });
@@ -91,24 +107,31 @@ async function policy(opts: {
   dailyCapCents?: number;
   monthlyCapCents?: number;
   calls?: number;
+  /** W-5f: leave `requireCustomerAudio` off the template, as both saved
+   *  templates in the dev DB have it, so the tick's own default decides. */
+  noChannelOpinion?: boolean;
 }) {
   const accountId = `fx-account-${fx.suffix}-${policyCount++}`;
   const accountLabel = labelForAccount(accountId);
   const provider = await fx.provider({ costPerMinute: opts.costPerMinute });
+  const callIds: string[] = [];
   for (let i = 0; i < (opts.calls ?? 3); i += 1) {
-    await fx.call({
+    const call = await fx.call({
       durationSeconds: 120,
       sourceAccountLabel: accountLabel,
       sourceStartedAt: new Date(NOW.getTime() - 60 * 60 * 1000),
       sourceAssistantId: `fx-agent-${i % 2}`,
     });
+    callIds.push(call.id);
   }
   const template = await fx.template({
     providerIds: [provider.id],
     minDurationSeconds: 0,
     // The fixture calls carry no draft transcript, so an inherited M-16 floor
     // would empty the selection and turn every case below into no_calls.
-    selectionCriteria: { requireCustomerAudio: false, minCustomerWords: 0 },
+    selectionCriteria: opts.noChannelOpinion
+      ? { minCustomerWords: 0 }
+      : { requireCustomerAudio: false, minCustomerWords: 0 },
   });
   const schedule = await fx.schedule({
     templateId: template.id,
@@ -121,7 +144,7 @@ async function policy(opts: {
     dailyCapCents: opts.dailyCapCents ?? 100,
     monthlyCapCents: opts.monthlyCapCents ?? 3000,
   });
-  return { schedule, template, provider, accountId, accountLabel };
+  return { schedule, template, provider, accountId, accountLabel, callIds };
 }
 
 async function ledgerFor(scheduleId: string) {
@@ -294,6 +317,38 @@ describe("runWatchTick (W-5c2)", () => {
 
     const [result] = await runWatchTick({ now: NOW, source: quietSource().source });
     expect(result.outcome).toBe("refused:no_calls");
+    expect(await bulksFor(schedule.id)).toHaveLength(0);
+  });
+
+  it("runs on the caller track when the template has no opinion on file, and says how many calls lacked it", async () => {
+    // W-5f (a). Three in-window calls, two with a caller track. The sampler
+    // must draw from the two, not the three: matched is the eligible count,
+    // the third is named in detail.noCustomerAudio, and the frozen criteria
+    // say the channel out loud.
+    const { schedule, callIds } = await policy({ costPerMinute: 0.01, noChannelOpinion: true });
+    await putCustomerAudio(callIds[0]!);
+    await putCustomerAudio(callIds[1]!);
+
+    const [result] = await runWatchTick({ now: NOW, source: quietSource().source });
+    expect(result.outcome).toBe("launched");
+
+    const [bulk] = await bulksFor(schedule.id);
+    expect(bulk.selectionCriteria.requireCustomerAudio).toBe(true);
+    expect(bulk.selectionCriteria.callIds?.slice().sort()).toEqual([callIds[0], callIds[1]].sort());
+
+    const [row] = await ledgerFor(schedule.id);
+    expect(row.detail?.matched).toBe(2);
+    expect(row.detail?.sampled).toBe(2);
+    expect(row.detail?.noCustomerAudio).toBe(1);
+  });
+
+  it("refuses a day whose calls have no caller track, and creates nothing", async () => {
+    const { schedule } = await policy({ costPerMinute: 0.01, noChannelOpinion: true });
+
+    const [result] = await runWatchTick({ now: NOW, source: quietSource().source });
+    expect(result.outcome).toBe("refused:no_calls");
+    const [row] = await ledgerFor(schedule.id);
+    expect(row.detail?.noCustomerAudio).toBe(3);
     expect(await bulksFor(schedule.id)).toHaveLength(0);
   });
 

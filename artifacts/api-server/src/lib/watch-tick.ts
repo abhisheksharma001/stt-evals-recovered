@@ -48,6 +48,7 @@ import {
 import {
   BulkNameConflictError,
   createBulkFromCriteria,
+  NO_CUSTOMER_AUDIO_BUCKET,
   isUniqueViolation,
   previewBulkSelection,
   resolveCriteriaSelection,
@@ -272,8 +273,17 @@ async function runOneSchedule(input: {
   //    filters, narrowed to this account, this window and (when the policy
   //    names one) this agent. `lastNDays` is dropped rather than left to
   //    re-resolve: the window this tick ran is the window it reports.
+  // W-5f (Abhishek, 2026-09-23, option a): a watch runs on the caller track
+  // unless its template says otherwise. Decided HERE, before the draw, and
+  // not only at pricing: the sampler must only ever see calls that can go
+  // into the bulk, or the ledger would say it sampled ten and the freeze
+  // would quietly keep six. A template with no opinion on file gets `true`
+  // -- a watch that has never run has no earlier numbers to keep matching,
+  // which is the reason the hand template-launch route keeps `false`.
+  const requireCustomerAudio = template.selectionCriteria.requireCustomerAudio ?? true;
   const matchCriteria: BulkSelectionCriteria = {
     ...template.selectionCriteria,
+    requireCustomerAudio,
     accountLabel: preview.accountLabel,
     assistantIds: schedule.assistantId
       ? [schedule.assistantId]
@@ -288,10 +298,11 @@ async function runOneSchedule(input: {
     template.maxDurationSeconds ?? null,
     now,
   );
+  const noCustomerAudio = matched.excluded.find((e) => e.bucket === NO_CUSTOMER_AUDIO_BUCKET)?.count ?? 0;
   if (matched.callIds.length === 0) {
     return {
       outcome: "refused:no_calls",
-      detail: { imported, matched: 0, sampled: 0 },
+      detail: { imported, matched: 0, sampled: 0, noCustomerAudio },
       bulkId: null,
     };
   }
@@ -321,6 +332,7 @@ async function runOneSchedule(input: {
     matched: matched.callIds.length,
     sampled: picked.length,
     shortfall,
+    noCustomerAudio,
   };
   // Reachable: `sample_size` is an ordinary integer column and a policy set
   // to 0 draws nothing. A bulk of no calls is not a smaller bulk, it is a
@@ -334,7 +346,7 @@ async function runOneSchedule(input: {
   //    number priced here is the number that gets frozen.
   const bulkCriteria: BulkSelectionCriteria = {
     callIds: picked,
-    requireCustomerAudio: template.selectionCriteria.requireCustomerAudio,
+    requireCustomerAudio,
     minCustomerWords: template.selectionCriteria.minCustomerWords,
   };
   const priced = await previewBulkSelection({
@@ -342,10 +354,11 @@ async function runOneSchedule(input: {
     providerIds: template.providerIds,
     minDurationSeconds: template.minDurationSeconds,
     maxDurationSeconds: template.maxDurationSeconds ?? null,
-    // The same two answers the creation below passes, for the same reason the
-    // template launch route passes them: a template saved before M-5/M-16 has
-    // no opinion on file and must keep matching what it matched.
-    requireCustomerAudioDefault: false,
+    // The channel is already explicit on `bulkCriteria` (W-5f), so this
+    // default never decides anything; it is `true` so the answer would be the
+    // same if it ever did. M-16's floor keeps the template-launch route's
+    // rule: no opinion on file means no floor.
+    requireCustomerAudioDefault: true,
     minCustomerWordsDefault: undefined,
   });
   if (!priced.estimate) {
@@ -465,7 +478,9 @@ async function createBulkWithName(input: {
       // day and a real bill, and a scheduler has nobody to ask.
       confirm: false,
       actorLabel: WATCH_ACTOR_LABEL,
-      requireCustomerAudioDefault: false,
+      // W-5f: explicit on `criteria` already; `true` so preview and creation
+      // answer alike if a caller ever passes criteria without it.
+      requireCustomerAudioDefault: true,
       minCustomerWordsDefault: undefined,
       watchScheduleId: schedule.id,
       watchDay: day,
