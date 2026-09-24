@@ -9905,6 +9905,50 @@ with the seven tools listed.
 **Must not:** be imported by `artifacts/api-server`; carry or print a key; add a tool that
 creates or patches a Vapi assistant (D-12).
 
+**Grilled 2026-09-25, before code.** Six things the row had wrong or unsaid:
+
+1. **`get_call_disagreement` named the wrong endpoint.** The name matches
+   `getCallDisagreement`, which is a bulk-scoped list of numbers (one per call, no
+   text). The PRD and the acceptance clause both mean *one call's disagreeing spans*,
+   which is `listDisagreementSpans(callId)`. The tool takes a `callId` and calls that.
+   Its response also carries `referenceWords` and `referenceWordStartMs`: the reference
+   provider's **whole transcript**, word by word. The acceptance says "only the
+   disagreeing spans", so the tool drops those two arrays and returns the rest verbatim
+   (`callId`, `runId`, `referenceProviderId`, `unavailableReason`, `spans`).
+2. **The acceptance was false against `words-to-watch` as it exists.** `heardAs` and
+   `alternatives[].text` are single transcript words; `kind: number` is a digit string
+   from a caller's mouth. Without them the tool says nothing. Corrected acceptance: no
+   read tool SHALL return transcript text beyond what its endpoint already returns, and
+   only two endpoints return any: `words-to-watch` (single words) and
+   `disagreement-spans` (spans with their short context).
+3. **Where the text goes.** A tool result is read by whatever model runs the coding
+   agent, so words and spans leave the machine to that vendor. Same class as the judge
+   sending transcripts to OpenAI, and the same open item: the vendor verification
+   record in `docs/data-governance.md` §4.2 is Abhishek's. Said here, not hidden.
+4. **stdout is the transport.** Over stdio every byte on stdout is protocol. The grill
+   assumed `pnpm run` puts its `> @workspace/mcp-server start` banner on stdout; measured
+   2026-09-25 with pnpm 11.1.2 piped, it does not -- stdout carried JSON only, with and
+   without `--silent`. The documented command keeps `--silent` (costs nothing) and
+   `claude mcp add` points at `tsx` directly, no wrapper. The proof is raw JSON-RPC piped
+   through the process. Nothing in the package or in `@workspace/api-client` writes to
+   `console.log`.
+5. **Money.** `watch_run_now` is the first surface where a model's tool call, not a
+   person's click, reaches the cost gate. It goes through the W-9 route (same claim,
+   caps, ledger), the tool description says it spends, and it is annotated as not
+   read-only so the host asks the person before running it. No extra "confirm" argument:
+   not in the spec, and the host's prompt is the right place.
+6. **The cycle walker cannot see this boundary.** `check-import-cycles.mjs` follows
+   relative specifiers only; `@workspace/mcp-server` is a package import. A new one-file
+   check (`scripts/check-mcp-boundary.mjs`) greps `artifacts/` for the package name and
+   fails on a hit. Wired into `package.json` and CI beside the other checks.
+
+Also: `@modelcontextprotocol/sdk` 1.30.1 was published 2026-09-23 16:06Z, past the
+workspace's one-day release quarantine. `list_orgs` prints `id`, `label`, `envVar` only,
+as the CLI does. Tests: one file in the package drives the server in-process (SDK
+`Client` over `InMemoryTransport`) against a throwaway `http.createServer` that plays the
+API, so the real fetch path runs and no database is needed; the live proof is raw
+JSON-RPC over stdio against the running API, then `claude mcp add` and `claude mcp list`.
+
 ### W-11 — A Claude Code plugin that installs the server and three skills
 
 **Status:** not started. Spends nothing.
