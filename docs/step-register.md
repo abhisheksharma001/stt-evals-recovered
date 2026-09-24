@@ -9881,14 +9881,47 @@ actor and the ledger row has no column for one; the audit table already did.
 
 ### W-10 — An MCP server: read tools, and one write that obeys the ledger
 
-**Status:** not started. Spends nothing by itself.
-**PR:** one.
+**Status:** done 2026-09-25. Spent nothing.
+**PR:** #200, squash `2688da0`, live `2688da070380-dirty` (the -dirty is the uncommitted
+.gitignore; the API itself did not change in this PR).
 **Depends on:** W-8, W-9 (the `run-now` route).
 **Spec:** `docs/PRD-v8-watch.md` §5 Part E (3); `docs/integration-strategy.md` (MCP is
 never in the runtime path — this server is a *client* of the API).
-**Files:** a new workspace package beside `lib/api-client-react` (plain name:
-mcp-server) on the official MCP TypeScript SDK over stdio; `scripts/check-import-cycles.mjs`
-or a new one-line check that `artifacts/api-server` never imports it.
+**Files:** `lib/mcp-server/src/server.ts` (the seven tools), `lib/mcp-server/src/index.ts`
+(stdio entry, one env var), `lib/mcp-server/src/server.test.ts`, `lib/mcp-server/package.json`,
+`lib/mcp-server/tsconfig.json`, `scripts/check-mcp-boundary.mjs`, `package.json`,
+`tsconfig.json`, `.github/workflows/ci.yml`.
+
+**Proved:** typecheck clean; eight guards green (70 operations). Package test, 9 cases:
+the SDK `Client` over `InMemoryTransport` against a throwaway `http.createServer` playing
+the API, so `customFetch` really runs; the seven names, six `readOnlyHint`, `keyFingerprint`
+absent from `list_orgs`, `referenceWords` absent from `get_call_disagreement`,
+`x-actor: stt-evals-mcp` on the wire, `refused:daily_cap` back verbatim with no bulk POST,
+a 409 back as a tool error carrying the server's sentence. CI one job green with both new
+steps in the log. Live, raw JSON-RPC piped through the process against the running API:
+`tools/list` seven; `list_orgs` three accounts, env-var names only; `watch_run_now` on an
+unknown id → `isError` "Watch schedule not found"; `get_moved` empty; every stdout line
+JSON, with and without `pnpm --silent`. `claude mcp add stt-evals -s local` → Connected.
+
+**Prove-by-breaking:** return the spans response unstripped → `expected { callId:
+'call-1', …(6) } to not have property "referenceWords"`. A `// import
+"@workspace/mcp-server";` line under `artifacts/api-server/src` → the boundary check exits
+1 naming the file and line. Both restored.
+
+**Not done:** no `watch_run_now` on a real enabled schedule (none exist live; a real one
+spends). After the deploy, Docker Desktop's daemon stopped answering (socket `_ping`
+times out, 0% CPU) and Postgres lives in it, so every DB-backed route stalled and
+`get_words_to_watch` / `get_verdict` could not be re-run live post-deploy; `tools/list`
+and `claude mcp get` still fine. Not caused by this PR (the API code did not change);
+not restarted by me -- Abhishek's machine, his call. One earlier stdio run (six messages,
+immediate EOF, through `pnpm --silent`) returned three of five and hung; three retries
+returned all five. Seen once.
+
+**Learned:** the grill's stdout claim about pnpm was wrong and the pipe proved it
+(finding 4, corrected in place). A "no transcript text" acceptance has to be checked
+against the endpoints' actual shapes: `words-to-watch` is made of words and
+`disagreement-spans` carries the whole reference transcript beside the spans. The
+boundary a cycle walker cannot see (a package import) needs its own one-file check.
 
 **Change:** tools `list_orgs`, `list_agents`, `get_verdict`, `get_moved`,
 `get_words_to_watch`, `get_call_disagreement` (read), and `watch_run_now` (write, via the
