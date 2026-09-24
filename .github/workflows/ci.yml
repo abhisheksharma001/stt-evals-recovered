@@ -59,6 +59,12 @@ jobs:
       - name: Check import cycles
         run: node scripts/check-import-cycles.mjs
 
+      # W-10: the MCP server is a client of the API, never imported by a
+      # deployable artifact. The cycle walker follows relative imports only,
+      # so this is its own grep.
+      - name: Check MCP server stays out of artifacts
+        run: node scripts/check-mcp-boundary.mjs
+
       # T-120: every backticked repo path in the live docs exists.
       - name: Check doc paths
         run: bash scripts/check-doc-paths.sh
@@ -103,6 +109,11 @@ jobs:
 
       - name: Unit tests (stt-providers parsers)
         run: pnpm --filter @workspace/stt-providers test
+
+      # W-10: the MCP server driven in-process against a throwaway HTTP
+      # server that plays the API. No database, no network, no spend.
+      - name: Unit tests (mcp-server)
+        run: pnpm --filter @workspace/mcp-server test
 
       # T-121: pure logic under the web app's src/lib (chip buckets, catalog
       # age, retention state) in node, no DOM. T-182..T-186: the pages

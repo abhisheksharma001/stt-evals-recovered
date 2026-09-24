@@ -16,6 +16,9 @@
       "path": "./lib/api-zod"
     },
     {
+      "path": "./lib/mcp-server"
+    },
+    {
       "path": "./lib/scoring"
     },
     {
