@@ -10054,10 +10054,83 @@ before any repo exists.
 
 ### W-12 — The public calibration set: does the no-gold rank agree with gold WER?
 
-**Status:** not started. **Spends ≈ $6.32** once (all seven ready providers). The spend
-was **approved by delegation on 2026-09-14** ("u decide" — PRD v8 §9 Q8, decision D-15)
-with a hard **$7 ceiling** the script enforces; a second run is a new decision.
-**PR:** one.
+**Status:** grilled 2026-09-25, in progress as **two PRs** (W-12a importer, W-12b method
+check -- the split is finding 6 below). **Spends ≈ $6.32** once (all seven ready providers).
+The spend was **approved by delegation on 2026-09-14** ("u decide" — PRD v8 §9 Q8, decision
+D-15) with a hard **$7 ceiling** the script enforces; a second run is a new decision. The
+launch itself still waits for a fresh "go spend" from Abhishek on the day, after the dry run
+has printed the minutes and the price.
+
+**Grilled 2026-09-25 -- nine things the row above had wrong or missing, read from the tree:**
+
+1. **`POST /benchmark/calls` cannot take what the Change line sends it.** `BenchmarkCallInput`
+   accepts label, vertical, durationSeconds, hardCases, entityNotes, entityReferences,
+   audioObjectPath -- no `goldTranscript`, no `sourceProvider`, no `sourceAccountLabel`, no
+   `sourceCallId`. Only the Vapi importer ever sets the source columns, and they are the
+   whole exclusion mechanism (finding 5). Gold could go by PATCH; the source fields have no
+   API path at all. W-12a adds the four as optional input fields, `sourceProvider` restricted
+   to the enum `[pipecat]` so nobody can forge a Vapi provenance through the manual route,
+   and the existing unique index `(sourceProvider, sourceCallId)` becomes the once-only
+   guard: a second create of the same `sample_id` is a 409, not a duplicate.
+2. **There is no audio upload.** The server only ever downloads from a Vapi URL
+   (`getOrCacheAudioBytes` falls back to `resolveFreshRecordingUrl`, which is Vapi-only). The
+   script therefore writes the clip itself, as `<callId>.audio` and
+   `<callId>.customer.audio` (0600), into the running server's cache directory --
+   `process.cwd()/audio-cache` of the API process, which is
+   `artifacts/api-server/audio-cache` here (1,256 files, 1.9 GB on 2026-09-25); the script
+   takes `--cache-dir` for any other layout. A pipecat call whose file is missing fails its
+   cell loudly (the Vapi fallback throws), it does not silently run on nothing.
+3. **`durationSeconds` is an integer column and the create route rounds it.** The dry run
+   prints the exact minutes from the dataset's own `duration_seconds` (the 159.9 the row
+   promises) and, beside it, the rounded sum the server will price the bulk from, so the two
+   numbers can differ by a few seconds without anyone thinking the estimate moved.
+4. **The `Vertical` enum is hand-spelled in seven places, not "openapi only" as memo F-573
+   said.** `lib/api-spec/openapi.yaml`, `lib/scoring/src/core.ts` (the `ScoreInput` union),
+   `lib/scoring/src/parse-score-input.ts` (`VERTICALS`), the cast at
+   `artifacts/api-server/src/lib/run-executor.ts`, `scripts/src/stt-evals.ts` (`VERTICALS`,
+   Vapi import only), `artifacts/stt-benchmark/src/pages/Import.tsx` and `Corpus.tsx`
+   dropdowns, `artifacts/api-server/src/rehearsal-scale.ts`. W-12a touches the first four only.
+   The Corpus page needs nothing: its list filter is by org label (S-6), so "Public: Pipecat
+   1k" becomes a filter option by itself, and its vertical dropdown is the hand-register
+   dialog, where `public_benchmark` must not be offered. The Vapi import CLI, the Import
+   page and the rehearsal deliberately keep the three client verticals -- a Vapi import must
+   never be labelled `public_benchmark`.
+5. **"W-6 excludes by `sourceProvider`" was already corrected once (W-6 row, item 5,
+   F-679) and is still wrong here.** Nothing in the tree filters on `sourceProvider`. The
+   real exclusion is: client verdicts and trends group per bulk by `sourceAccountLabel`,
+   watch bulks select by the `accountLabel` criterion, and the watch overview is per
+   schedule. So the public calls stay out of every client view **because** they carry
+   `sourceAccountLabel = "Public: Pipecat 1k"` and never get a schedule -- which is why
+   finding 1 is a blocker, not a nicety. They **will** appear in the all-time Results view,
+   words-to-watch and proxy-agreement as their own plainly labelled group, which is not a
+   client view and is the point.
+6. **No per-provider WER aggregate, no "Method check" storage, no Spearman.** WER is stored
+   per cell (`benchmark_scores.wer`); the verdict endpoint returns `flagsPer100Words` per
+   provider but no WER; `lib/scoring/src/rank-agreement.ts` has Kendall tau-b (per call,
+   all-time, behind `GET /benchmark/proxy-agreement`), not Spearman over providers; Rankings
+   has nowhere to put a dated number. The method check needs a new read endpoint over the
+   public bulk (per-provider pooled gold WER, pooled flags per 100 words, Spearman over the
+   ready providers) and a Results line. That cannot be proved live until the bulk has run
+   (≈ 2.7 h wall-clock, Cartesia), so it is **W-12b**, its own PR, written while the bulk
+   runs and verified on its numbers. W-12a is the importer, the schema, the dry run and the
+   launch.
+7. **The rows API hands audio as `cached-assets` URLs, `audio/wav`, 1,000 of them.** The
+   dataset is unchanged since 2026-02-09 (1,000 rows, mean 9.593 s, no licence field,
+   re-checked 2026-09-25). Unauthenticated rate limits are not published, so the script
+   retries with backoff and honours an optional `HF_TOKEN` (env var name only, never
+   printed). Disk: ≈ 307 MB of clips, written twice (mono + customer) ≈ 614 MB; 303 GB free.
+8. **The server's own cost gate does not stop this bulk.** `BULK_COST_THRESHOLD_CENTS` is
+   5,000, so a $6.32 bulk is created as `draft` with no confirmation step. The $7 ceiling
+   lives in the script only, priced from the live provider list at dry-run time, and the
+   script also refuses when `GET /benchmark/bulks` already shows `MAX_LIVE_BULKS` live bulks
+   (3 of 10 today) or a bulk named "Public: Pipecat 1k" exists.
+9. **The script is resumable, and that is what makes "once" safe.** It lists existing
+   `public_benchmark` calls first and skips every `sample_id` already in the corpus, and it
+   writes a missing cache file for a call that exists without one. A crash at clip 400 is
+   re-run, not re-imported; the bulk is created only when all 1,000 calls exist with both
+   files.
+
+**PR:** two (W-12a, W-12b).
 **Depends on:** W-13 (so the calibration bulk evicts no client bulk).
 **Spec:** `docs/PRD-v8-watch.md` §1d and §5 Part F.
 **Files:** a new script beside `scripts/src/import-vapi-calls.ts` (plain name:

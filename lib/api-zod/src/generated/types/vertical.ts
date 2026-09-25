@@ -13,4 +13,5 @@ export const Vertical = {
   rush: 'rush',
   property_management: 'property_management',
   trucking: 'trucking',
+  public_benchmark: 'public_benchmark',
 } as const;

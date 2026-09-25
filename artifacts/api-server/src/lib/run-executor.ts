@@ -1165,7 +1165,7 @@ async function runCell(
     if (hasGold) {
       const scored = score({
         callId: call.id,
-        vertical: call.vertical as "rush" | "property_management" | "trucking",
+        vertical: call.vertical as "rush" | "property_management" | "trucking" | "public_benchmark",
         providerId: provider.id,
         goldTranscript: call.goldTranscript ?? "",
         hypothesisTranscript: result.hypothesisTranscript,

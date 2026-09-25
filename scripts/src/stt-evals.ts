@@ -36,6 +36,7 @@ import {
   type Vertical,
 } from "@workspace/api-client";
 import { runImport } from "./import-vapi-calls";
+import { runPublicSet } from "./import-public-set";
 
 const USAGE = `usage: stt-evals <command>
 
@@ -49,6 +50,7 @@ const USAGE = `usage: stt-evals <command>
   verdict <bulkId> [--assistant=<id>]
   moved
   import --vertical=... [--account=...] [--limit=N] [--start=YYYY-MM-DD] [--end=YYYY-MM-DD] [--assistant-id=...] [--apply]
+  public-set [--apply --go-spend] [--cache-dir=<dir>] [--limit=N]   (W-12: spends; dry run without both flags)
 
 env: API_BASE_URL (default http://localhost:8177; a trailing /api is stripped)`;
 
@@ -181,6 +183,8 @@ async function main(argv: string[]): Promise<number> {
     case "import":
       await runImport(rest);
       return 0;
+    case "public-set":
+      return await runPublicSet(rest);
     case undefined:
     case "help":
     case "--help":

@@ -41,6 +41,7 @@ export * from './auditLogEntry';
 export * from './benchmarkCall';
 export * from './benchmarkCallAudioCacheLastOutcome';
 export * from './benchmarkCallInput';
+export * from './benchmarkCallInputSourceProvider';
 export * from './benchmarkCallUpdate';
 export * from './benchmarkDashboard';
 export * from './benchmarkDashboardLatestFinishedBulk';
