@@ -10054,8 +10054,25 @@ before any repo exists.
 
 ### W-12 — The public calibration set: does the no-gold rank agree with gold WER?
 
-**Status:** grilled 2026-09-25, in progress as **two PRs** (W-12a importer, W-12b method
-check -- the split is finding 6 below). **Spends ≈ $6.32** once (all seven ready providers).
+**Status:** **W-12a done 2026-09-25 (PR #202, squash `475af66`, deployed, dry run verified
+live); W-12b (method check) next; the launch waits for "go spend".** Grilled 2026-09-25, split
+into **two PRs** (W-12a importer, W-12b method check -- the split is finding 6 below).
+
+**W-12a, shipped:** `scripts/src/import-public-set.ts` (`stt-evals public-set`), its unit test,
+vitest + a CI step for `scripts`; `POST /benchmark/calls` takes optional `goldTranscript`,
+`sourceProvider` (enum `pipecat`), `sourceCallId`, `sourceAccountLabel`, all three provenance
+fields together or not at all (review finding, fixed before merge), duplicate source id = 409;
+`Vertical` gains `public_benchmark` in the four places finding 4 names. Dry run against the
+deployed server, 2026-09-25: `clips: 1000  minutes: 159.9 (exact)  159.7 (after per-call
+rounding)`, seven ready providers at $0.0395/min summed, `estimate $6.32 (ceiling $7.00)`,
+`live bulks: 3/10`, bulk absent, 0 public calls; verdict `dry-run`; afterwards still 3 bulks,
+0 public calls, 1,256 cache files -- it created nothing. Prove-by-breaking: dropping the
+`--go-spend` half of the gate fails the unit test (`expected 'go' to be 'dry-run'`).
+**Learned:** the deployed process takes `PORT` from the shell that started it, not from
+`.env` -- the first restart died with `PORT environment variable is required`; a second
+instance of the server on another port would run the recovery sweep and the scheduler
+against the same database, so pre-merge live checks that need new server code wait for the
+deploy instead. Spent nothing. **Spends ≈ $6.32** once (all seven ready providers).
 The spend was **approved by delegation on 2026-09-14** ("u decide" — PRD v8 §9 Q8, decision
 D-15) with a hard **$7 ceiling** the script enforces; a second run is a new decision. The
 launch itself still waits for a fresh "go spend" from Abhishek on the day, after the dry run
