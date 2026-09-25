@@ -1676,7 +1676,10 @@ components:
           items: { type: string }
     Vertical:
       type: string
-      enum: [rush, property_management, trucking]
+      # W-12: public_benchmark is the Pipecat calibration set (D-15). It is a
+      # method check, never a client vertical: the Vapi importer and the
+      # Import page do not offer it.
+      enum: [rush, property_management, trucking, public_benchmark]
     CallStatus:
       type: string
       enum: [needs_review, ready_for_gold, gold_in_review, ready_to_run, archived]
@@ -1795,6 +1798,15 @@ components:
           type: array
           items: { $ref: "#/components/schemas/EntityReference" }
         audioObjectPath: { type: string }
+        # W-12: a public-set clip arrives with its human-reviewed gold and its
+        # provenance. `sourceProvider` is an enum on purpose -- the manual
+        # route must not be able to forge a Vapi provenance -- and
+        # (sourceProvider, sourceCallId) is unique, so the same sample_id
+        # created twice is a 409, not a second corpus row.
+        goldTranscript: { type: string }
+        sourceProvider: { type: string, enum: [pipecat] }
+        sourceCallId: { type: string, minLength: 1 }
+        sourceAccountLabel: { type: string, minLength: 1 }
     BenchmarkCallUpdate:
       type: object
       properties:

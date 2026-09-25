@@ -139,6 +139,7 @@ export const Vertical = {
   rush: 'rush',
   property_management: 'property_management',
   trucking: 'trucking',
+  public_benchmark: 'public_benchmark',
 } as const;
 
 export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
@@ -265,6 +266,13 @@ export interface BenchmarkCall {
   createdAt: string;
 }
 
+export type BenchmarkCallInputSourceProvider = typeof BenchmarkCallInputSourceProvider[keyof typeof BenchmarkCallInputSourceProvider];
+
+
+export const BenchmarkCallInputSourceProvider = {
+  pipecat: 'pipecat',
+} as const;
+
 export interface BenchmarkCallInput {
   /** @minLength 2 */
   label: string;
@@ -275,6 +283,12 @@ export interface BenchmarkCallInput {
   entityNotes?: string;
   entityReferences?: EntityReference[];
   audioObjectPath?: string;
+  goldTranscript?: string;
+  sourceProvider?: BenchmarkCallInputSourceProvider;
+  /** @minLength 1 */
+  sourceCallId?: string;
+  /** @minLength 1 */
+  sourceAccountLabel?: string;
 }
 
 export interface BenchmarkCallUpdate {

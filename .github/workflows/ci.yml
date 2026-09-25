@@ -106,6 +106,8 @@ jobs:
       # fixtures. No API keys required or used.
       - name: Unit tests (scoring)
         run: pnpm --filter @workspace/scoring test
+      - name: Unit tests (scripts)
+        run: pnpm --filter @workspace/scripts test
 
       - name: Unit tests (stt-providers parsers)
         run: pnpm --filter @workspace/stt-providers test

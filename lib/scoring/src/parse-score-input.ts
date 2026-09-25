@@ -13,7 +13,7 @@
 
 import type { ScoreInput } from "./core";
 
-const VERTICALS = ["rush", "property_management", "trucking"] as const;
+const VERTICALS = ["rush", "property_management", "trucking", "public_benchmark"] as const;
 const REQUIRED_STRINGS = [
   "callId",
   "providerId",

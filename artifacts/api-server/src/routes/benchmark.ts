@@ -27,6 +27,7 @@ import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/
 import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantSignals } from "../lib/assistant-signals";
 import { proxyAgreement } from "../lib/proxy-agreement";
+import { isUniqueViolation } from "../lib/bulks";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
 import { respondVapiError } from "../lib/vapi-error-response";
 import { BLANK_APPROVER_MESSAGE, trimmedApproverLabel } from "../lib/approver-label";
@@ -333,22 +334,42 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
     return;
   }
 
-  const [call] = await db
-    .insert(benchmarkCallsTable)
-    .values({
-      label: parsed.data.label,
-      vertical: parsed.data.vertical,
-      durationSeconds: Math.round(parsed.data.durationSeconds),
-      hardCases: parsed.data.hardCases ?? [],
-      entityNotes: parsed.data.entityNotes,
-      entityReferences: parsed.data.entityReferences ?? [],
-      audioObjectPath: parsed.data.audioObjectPath,
-      // De-id gate removed 2026-08-27 per Abhishek: a call is runnable the
-      // moment it exists, so it lands ready_to_run rather than waiting on a
-      // review step that no longer gates anything.
-      status: "ready_to_run",
-    })
-    .returning();
+  let call: typeof benchmarkCallsTable.$inferSelect;
+  try {
+    [call] = await db
+      .insert(benchmarkCallsTable)
+      .values({
+        label: parsed.data.label,
+        vertical: parsed.data.vertical,
+        durationSeconds: Math.round(parsed.data.durationSeconds),
+        hardCases: parsed.data.hardCases ?? [],
+        entityNotes: parsed.data.entityNotes,
+        entityReferences: parsed.data.entityReferences ?? [],
+        audioObjectPath: parsed.data.audioObjectPath,
+        // W-12: a public-set clip brings its own human-reviewed gold and its
+        // provenance. Omitted, the column defaults keep the manual call
+        // exactly as before ("manual", no source id, no account label).
+        goldTranscript: parsed.data.goldTranscript,
+        ...(parsed.data.sourceProvider ? { sourceProvider: parsed.data.sourceProvider } : {}),
+        sourceCallId: parsed.data.sourceCallId,
+        sourceAccountLabel: parsed.data.sourceAccountLabel,
+        // De-id gate removed 2026-08-27 per Abhishek: a call is runnable the
+        // moment it exists, so it lands ready_to_run rather than waiting on a
+        // review step that no longer gates anything.
+        status: "ready_to_run",
+      })
+      .returning();
+  } catch (err) {
+    // (sourceProvider, sourceCallId) is unique: the same upstream clip
+    // registered twice is a conflict the caller can act on, not a 500.
+    if (isUniqueViolation(err)) {
+      res.status(409).json({
+        error: `A call from ${parsed.data.sourceProvider} with source id "${parsed.data.sourceCallId}" is already in the corpus.`,
+      });
+      return;
+    }
+    throw err;
+  }
 
   await writeAudit({
     entityType: "call",

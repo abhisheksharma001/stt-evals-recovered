@@ -68,14 +68,14 @@ export const GetBenchmarkDashboardResponse = zod.object({
  * @summary List approved benchmark calls
  */
 export const ListBenchmarkCallsQueryParams = zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']).optional()
 })
 
 export const ListBenchmarkCallsResponseItem = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -123,9 +123,11 @@ export const createBenchmarkCallBodyLabelMin = 2;
 
 
 
+
+
 export const CreateBenchmarkCallBody = zod.object({
   "label": zod.string().min(createBenchmarkCallBodyLabelMin),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number().min(1),
   "hardCases": zod.array(zod.string()).optional(),
   "entityNotes": zod.string().optional(),
@@ -133,13 +135,17 @@ export const CreateBenchmarkCallBody = zod.object({
   "type": zod.enum(['ro_number', 'unit_number', 'vin', 'phone_number', 'name', 'address', 'load_number', 'city']),
   "value": zod.string()
 })).optional(),
-  "audioObjectPath": zod.string().optional()
+  "audioObjectPath": zod.string().optional(),
+  "goldTranscript": zod.string().optional(),
+  "sourceProvider": zod.enum(['pipecat']).optional(),
+  "sourceCallId": zod.string().min(1).optional(),
+  "sourceAccountLabel": zod.string().min(1).optional()
 })
 
 export const CreateBenchmarkCallResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -330,7 +336,7 @@ export const GetBenchmarkCallParams = zod.object({
 export const GetBenchmarkCallResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -396,7 +402,7 @@ export const UpdateBenchmarkCallBody = zod.object({
 export const UpdateBenchmarkCallResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -703,7 +709,7 @@ export const AttestBenchmarkCallDeidBody = zod.object({
 export const AttestBenchmarkCallDeidResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -816,7 +822,7 @@ export const importVapiCallsBodyVapiCallIdsMax = 200;
 
 export const ImportVapiCallsBody = zod.object({
   "accountId": zod.string().min(1),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "vapiCallIds": zod.array(zod.string()).min(1).max(importVapiCallsBodyVapiCallIdsMax)
 })
 
@@ -1226,7 +1232,7 @@ export const ListBenchmarkRankingsQueryParams = zod.object({
 
 export const ListBenchmarkRankingsResponseItem = zod.object({
   "runId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable().describe('Null buckets into the \"Other\" group (a manually-added call with no Vapi assistant).'),
   "assistantLabel": zod.string().describe('Resolved live from Vapi at read time; \"Unassigned (no assistant ID captured at import)\" when assistantId is null.'),
   "providerId": zod.string(),
@@ -1345,7 +1351,7 @@ export const ListBulksResponseItem = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1407,7 +1413,7 @@ export const createBulkBodyMaxDurationSecondsMin = 0;
 export const CreateBulkBody = zod.object({
   "name": zod.string().min(1).optional(),
   "criteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1451,7 +1457,7 @@ export const CreateBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1507,7 +1513,7 @@ export const previewBulkSelectionBodyMaxDurationSecondsMin = 0;
 
 export const PreviewBulkSelectionBody = zod.object({
   "criteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1580,7 +1586,7 @@ export const GetBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1675,7 +1681,7 @@ export const LaunchBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1734,7 +1740,7 @@ export const RetryBulkFailedResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1793,7 +1799,7 @@ export const CancelBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2040,7 +2046,7 @@ export const GetBulkManifestResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2105,7 +2111,7 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2162,7 +2168,7 @@ export const createBulkTemplateBodyMaxDurationSecondsMin = 0;
 export const CreateBulkTemplateBody = zod.object({
   "name": zod.string().min(1),
   "criteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2204,7 +2210,7 @@ export const CreateBulkTemplateResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2276,7 +2282,7 @@ export const LaunchBulkTemplateResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2355,7 +2361,7 @@ export const ListWatchSchedulesResponseItem = zod.object({
   "id": zod.string(),
   "templateId": zod.string(),
   "accountId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable(),
   "sampleSize": zod.number(),
   "dailyCapCents": zod.number(),
@@ -2386,7 +2392,7 @@ export const createWatchScheduleBodyHourLocalMax = 23;
 export const CreateWatchScheduleBody = zod.object({
   "templateId": zod.string().uuid(),
   "accountId": zod.string().min(1),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().min(1).nullish(),
   "sampleSize": zod.number().min(1).max(createWatchScheduleBodySampleSizeMax).optional(),
   "dailyCapCents": zod.number().min(1).optional(),
@@ -2399,7 +2405,7 @@ export const CreateWatchScheduleResponse = zod.object({
   "id": zod.string(),
   "templateId": zod.string(),
   "accountId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable(),
   "sampleSize": zod.number(),
   "dailyCapCents": zod.number(),
@@ -2431,7 +2437,7 @@ export const updateWatchScheduleBodyHourLocalMax = 23;
 
 
 export const UpdateWatchScheduleBody = zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "accountId": zod.string().min(1).optional(),
   "assistantId": zod.string().min(1).nullish(),
   "sampleSize": zod.number().min(1).max(updateWatchScheduleBodySampleSizeMax).optional(),
@@ -2445,7 +2451,7 @@ export const UpdateWatchScheduleResponse = zod.object({
   "id": zod.string(),
   "templateId": zod.string(),
   "accountId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable(),
   "sampleSize": zod.number(),
   "dailyCapCents": zod.number(),
