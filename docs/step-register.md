@@ -9984,23 +9984,73 @@ JSON-RPC over stdio against the running API, then `claude mcp add` and `claude m
 
 ### W-11 — A Claude Code plugin that installs the server and three skills
 
-**Status:** not started. Spends nothing.
-**PR:** one, in a new repository (plain name: ellavox/stt-evals-plugin); one line in
-`docs/HANDOFF.md` here.
+**Status:** done 2026-09-25. Spent nothing on providers (the two `claude -p` acceptance
+runs cost $0.40 and $0.52 of Claude tokens).
+**PR:** #201 here, squash `dd06b35` (the `docs/HANDOFF.md` bullet). The plugin itself is a
+local git repo at `~/gh-projects/stt-evals-plugin`, commits `3ebeff6`, `a603b40`, `d06e220`
+(0.1.1), **not pushed anywhere**: the `ellavox` GitHub org in the spec does not exist
+(404 for both org and user on 2026-09-25), so the owner (new org, or
+abhisheksharma001) is Abhishek's call. Installed from the local path at local scope
+for this project.
 **Depends on:** W-10.
 **Spec:** `docs/PRD-v8-watch.md` §5 Part E (4).
+**Files (plugin repo, paths there, not here):** .claude-plugin/plugin.json, .claude-plugin/marketplace.json
+(marketplace `stt-evals-plugin`, plugin `stt-evals`), `.mcp.json`, bin/serve.sh,
+skills/verdict/SKILL.md, skills/where-stt-failed/SKILL.md,
+skills/add-provider-adapter/SKILL.md, `README.md`.
 
-**Change:** a marketplace repo with a plugin manifest, a `.mcp.json` pointing at the W-10
-server, and three skills: *read the verdict for an org*, *find where STT failed on a
-call*, *add a provider adapter* (the template is
-`lib/stt-providers/src/adapters/elevenlabs.ts`, 95 lines). Install path is the one Vapi's
-own plugin uses: `/plugin marketplace add <owner/repo>`, `/plugin install`.
+**Grilled 2026-09-25, before code.** (1) The spec's repo owner does not exist on GitHub;
+built locally, push held. (2) The W-10 server is not published, so `.mcp.json` cannot
+name it by package: bin/serve.sh (`${CLAUDE_PLUGIN_ROOT}`) resolves `STT_EVALS_REPO`
+(default `~/gh-projects/stt-evals-recovered`) and execs the repo's own `tsx`; a missing
+checkout exits 1 with the env-var name on stderr, stdout stays the transport. The
+plugin env carries only `API_BASE_URL` (`${STT_EVALS_API_BASE_URL:-http://localhost:8177}`).
+(3) No tool lists bulks or calls, so *read the verdict* needs a bulk id and *where STT
+failed* a call id from the user. The first draft told the agent to `curl` the local API
+for them; review caught that `BenchmarkCall` carries `goldTranscript` and
+`draftTranscript`, a side door around the server's stripping. Removed; both skills now
+say "MCP tools only, never curl". Backlog: numbers-only `list_bulks` / `list_calls`
+tools on the W-10 server. (4) "Add a provider adapter" is eight places, not one file:
+adapter, `providerRegistry` (order matters per vendor), `index.ts` export,
+`default-providers.ts` row, `VENDOR_CONCURRENCY_OVERRIDES`, `timed-words.ts` +
+`provider-confidence.ts` vendor branches, `parsers.test.ts`, the env var name. The
+skill lists them in that order. (5) The plugin's server and the W-10 local-scope entry
+from `claude mcp add` expose the same seven tools under different prefixes
+(`mcp__plugin_stt-evals_stt-evals__*` vs `mcp__stt-evals__*`); the first acceptance run
+picked the local one and my allow-list named the plugin's, so it answered "blocked".
+Rerun with the local entry removed, then restored. (6) The installed copy is pinned by
+version under `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`; a content
+change without a version bump is not picked up by `claude plugin update`. Bumped to
+0.1.1.
 
-**Acceptance:** WHEN installed THEN `/plugin` SHALL list the three skills and the MCP
-server AND a fresh session SHALL answer "did STT move for <org> this week" from the read
-tools alone.
+**Proved:** `claude plugin validate --strict` passes for the marketplace manifest, the
+plugin manifest and `skills/`. `claude plugin details stt-evals@stt-evals-plugin`: Skills
+(3) add-provider-adapter, verdict, where-stt-failed; MCP servers (1) stt-evals; ~297
+always-on tokens. `claude mcp list`: `plugin:stt-evals:stt-evals` Connected. Launcher
+over raw stdio: initialize ok, `tools/list` = the seven W-10 names, stderr empty. A fresh
+`claude -p "did STT move for Default this week?"` with only the plugin's tools allowed
+answered from `get_moved` + `list_orgs` + `list_agents` alone: "nothing moved" over
+2026-08-27..2026-09-25, `moved: []`, no bulk launched, 7 turns, 27 s. It added two honest
+caveats (30-day band is not a week-by-week view; the tool does not say which agents are
+watched). CI on #201: 1 job green. Reviewer: the two `curl` findings above, fixed.
 
-**Must not:** carry any key in the plugin env; ship a skill that writes to Vapi.
+**Prove it by breaking it:** `STT_EVALS_REPO=/nonexistent bin/serve.sh` → exit 1,
+"stt-evals plugin: no MCP server under /nonexistent/lib/mcp-server. Set STT_EVALS_REPO
+to your stt-evals checkout and run 'pnpm install' there." on stderr, nothing on stdout.
+
+**Not done:** no push (owner undecided); no LICENSE file (Abhishek's choice for a public
+repo); the old 0.1.0 cache copy still sits beside 0.1.1 on disk (harmless); the W-10
+local-scope `stt-evals` entry still coexists with the plugin's server, so a session in
+this project sees each tool twice until one is removed
+(`claude mcp remove stt-evals -s local`). Docker Desktop hung twice more during this
+step (`_ping` timing out, then answering minutes later); the acceptance run landed in a
+gap.
+
+**Learned:** a skill that offers "read-only curl" as a fallback undoes the server's
+data boundary; the boundary lives in the tools, so the skills must stay inside them.
+`${VAR:-default}` expands in a plugin `.mcp.json` `env`, and `${CLAUDE_PLUGIN_ROOT}` in
+`command`. A marketplace can be added from a local path, so a plugin is provable
+before any repo exists.
 
 ### W-12 — The public calibration set: does the no-gold rank agree with gold WER?
 
