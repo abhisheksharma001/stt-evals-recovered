@@ -86,6 +86,14 @@ describe("POST /api/benchmark/calls", () => {
       .send({ ...body, sourceProvider: "vapi", sourceCallId: `forged-${fx.suffix}` });
     expect(forged.status).toBe(400);
     expect(forged.body.error).toMatch(/sourceProvider/);
+
+    // Provenance is all-or-nothing: a source id on its own would land as
+    // ("manual", id) and collide with the next call that names the same id.
+    const partial = await request(server)
+      .post("/api/benchmark/calls")
+      .send({ label: `fx-partial-${fx.suffix}`, vertical: "rush", durationSeconds: 5, sourceCallId: `lone-${fx.suffix}` });
+    expect(partial.status).toBe(400);
+    expect(partial.body.error).toMatch(/together/);
   });
 
   it("refuses a call with no label and an unknown vertical, naming the field", async () => {

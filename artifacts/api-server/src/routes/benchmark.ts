@@ -334,6 +334,19 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
     return;
   }
 
+  // W-12: provenance is all-or-nothing. A source id without its provider
+  // would land as ("manual", id) and collide with the next manual call that
+  // names the same id; a provider without an id would defeat the once-only
+  // guard the unique index gives the importer.
+  const provenance = [parsed.data.sourceProvider, parsed.data.sourceCallId, parsed.data.sourceAccountLabel];
+  const given = provenance.filter((v) => v !== undefined).length;
+  if (given !== 0 && given !== provenance.length) {
+    res.status(400).json({
+      error: "sourceProvider, sourceCallId and sourceAccountLabel must be given together or not at all.",
+    });
+    return;
+  }
+
   let call: typeof benchmarkCallsTable.$inferSelect;
   try {
     [call] = await db
