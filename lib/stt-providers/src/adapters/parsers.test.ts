@@ -242,6 +242,7 @@ describe("reduceCartesiaTranscript", () => {
         { message: { type: "transcript", is_final: false, text: "load" }, receivedAtMs: 1300 },
         { message: { type: "transcript", is_final: true, text: "load number" }, receivedAtMs: 1800 },
         { message: { type: "transcript", is_final: true, text: "four four one two" }, receivedAtMs: 2400 },
+        { message: { type: "flush_done" }, receivedAtMs: 2600 },
       ],
       1000,
     );
@@ -257,6 +258,17 @@ describe("reduceCartesiaTranscript", () => {
     );
     expect(result.transcript).toBeNull();
     expect(result.errorMessage).toBe("invalid encoding");
+  });
+
+  // R-25: the 16 truncated rows of 2026-08-24 had final text and a clean
+  // 1000 close, and no flush_done. That shape must fail, not score.
+  it("fails a stream that closed without flush_done, even with final text in hand", () => {
+    const result = reduceCartesiaTranscript(
+      [{ message: { type: "transcript", is_final: true, text: "load number" }, receivedAtMs: 1800 }],
+      1000,
+    );
+    expect(result.transcript).toBeNull();
+    expect(result.errorMessage).toMatch(/without flush_done/);
   });
 
   it("returns null transcript (not empty string) when nothing final ever arrived", () => {
@@ -286,6 +298,7 @@ describe("reduceCartesiaTranscript", () => {
       [
         { message: { type: "transcript", is_final: true, text: "load number" }, receivedAtMs: 1800 },
         { message: { type: "transcript", is_final: true, text: "" }, receivedAtMs: 2600 },
+        { message: { type: "flush_done" }, receivedAtMs: 2700 },
       ],
       1000,
     );

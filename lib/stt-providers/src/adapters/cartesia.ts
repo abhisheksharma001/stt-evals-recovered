@@ -17,13 +17,14 @@ import type { FailureClass } from "../failure-class";
 //
 // Docs: https://docs.cartesia.ai/api-reference/stt/stt
 //
-// UNVERIFIED (flag per provider-matrix.md convention -- confirm with a real
-// key before trusting): the exact close/finalize handshake. The docs show
-// the client can send text commands "finalize" (flush remaining audio, get
-// a final transcript) or "close", but not the precise sequence/timing the
-// server expects. This implementation sends "finalize" once all audio is
-// sent, then waits for the connection to go quiet (IDLE_CLOSE_MS) before
-// sending "close" itself -- reasonable given the docs, not confirmed live.
+// The close/finalize handshake: this implementation sends "finalize" once
+// all audio is sent, then waits for the connection to go quiet
+// (IDLE_CLOSE_MS) before sending "close" itself. R-25 (2026-09-10) measured
+// it on every stored Cartesia row, and R-25a re-checked it 2026-09-26: the server acks "finalize" with
+// `flush_done`, and the `done` ack to "close" never arrives, because we hang
+// up first. So `flush_done` -- not `done`, and not the close code, which is
+// 1000 on every row -- is the one sign the transcript is complete, and
+// reduceCartesiaTranscript fails a stream that never received it.
 
 const PROVIDER_ID = "cartesia-ink-whisper";
 const API_KEY_ENV_VAR = "CARTESIA_API_KEY";
@@ -170,8 +171,10 @@ export function reduceCartesiaTranscript(
   // our own timer.
   let lastFinalMs: number | null = null;
   let errorMessage: string | null = null;
+  let flushDone = false;
 
   for (const { message, receivedAtMs } of events) {
+    if (message.type === "flush_done") flushDone = true;
     if (message.type === "error") {
       const m = message as Extract<CartesiaMessage, { type: "error" }>;
       errorMessage = m.message ?? m.title ?? `Cartesia error (${m.error_code ?? "unknown"})`;
@@ -189,6 +192,18 @@ export function reduceCartesiaTranscript(
   }
 
   if (errorMessage) return { transcript: null, firstPartialMs, lastFinalMs, errorMessage };
+  // R-25: without the flush_done ack the socket closed before Cartesia sent
+  // its last segments, and the text so far is a truncated transcript. Found
+  // live on 16 rows of 2026-08-24, scored as ok. Fail it instead: retryable
+  // as `unknown`, since nothing observed here says which side hung up.
+  if (!flushDone) {
+    return {
+      transcript: null,
+      firstPartialMs,
+      lastFinalMs,
+      errorMessage: "Cartesia closed without flush_done, so the transcript may be truncated -- safe to retry.",
+    };
+  }
   return {
     transcript: finals.join(" ").trim() || null,
     firstPartialMs,
