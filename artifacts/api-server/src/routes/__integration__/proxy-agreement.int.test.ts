@@ -197,4 +197,38 @@ describe("GET /api/benchmark/proxy-agreement", () => {
     expect(res.body.judgePicks).toBe(2);
     expect(res.body.judgeTop1Agreement).toBeCloseTo(0.5, 10);
   });
+
+  // W-12a2: a public calibration clip has a gold (from the dataset) and no
+  // draft, so without the source filter it passes every "a person wrote this"
+  // rule. It must leave every figure exactly where it was.
+  it("leaves every figure unchanged when a public pipecat call is scored", async () => {
+    const before = await request(server).get("/api/benchmark/proxy-agreement");
+    expect(before.status).toBe(200);
+
+    const batchRun = await fx.run({ purpose: "batch" });
+    const scanRun = await fx.run({ purpose: "agent_scan" });
+    const p1 = await fx.provider();
+    const p2 = await fx.provider();
+    const pub = await fx.call({
+      sourceProvider: "pipecat",
+      sourceCallId: `fx-pipecat-${fx.suffix}`,
+      goldTranscript: "gold that shipped with the public dataset",
+      draftTranscript: null,
+    });
+    for (const [provider, wer, flags] of [
+      [p1, 0.1, 5],
+      [p2, 0.2, 1],
+    ] as const) {
+      const cell = await fx.result(batchRun.id, pub.id, provider.id);
+      await fx.score(cell.id, { wer, peerFlagCount: flags });
+    }
+    // A judge pick on it too, so judgePicks is guarded as well as the ranks.
+    const scanCell = await fx.result(scanRun.id, pub.id, p1.id);
+    await fx.score(scanCell.id, { wer: 0.1 });
+    await fx.scan(pub.id, { runId: scanRun.id, status: "flagged", agentPickResultId: scanCell.id });
+
+    const after = await request(server).get("/api/benchmark/proxy-agreement");
+    expect(after.status).toBe(200);
+    expect(after.body).toEqual(before.body);
+  });
 });
