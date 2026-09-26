@@ -120,6 +120,31 @@ export function gate(input: {
   return { action: "go", reason: "importing and launching" };
 }
 
+/** W-12a3: where a public clip's audio lives. The executor refuses any call
+ * whose `audioObjectPath` is empty before it ever reads the disk cache
+ * (artifacts/api-server/src/lib/run-executor.ts), so a clip with its file on
+ * disk and no path fails every cell. The value is a marker naming the clip's
+ * source, never fetched: the audio is read from the cache the import wrote.
+ * artifacts/api-server/src/backfill-w12a3-public-audio-path.ts writes the
+ * same string for calls imported before this existed. */
+export function publicAudioPath(sampleId: string): string {
+  return `hf://datasets/${DATASET}/${sampleId}`;
+}
+
+/** The create-call body for one clip. Pure, so the test can see every field. */
+export function callFor(clip: Clip) {
+  return {
+    label: `pipecat ${clip.sampleId.slice(0, 8)}`,
+    vertical: VERTICAL,
+    durationSeconds: clip.durationSeconds,
+    goldTranscript: clip.transcription,
+    audioObjectPath: publicAudioPath(clip.sampleId),
+    sourceProvider: SOURCE_PROVIDER,
+    sourceCallId: clip.sampleId,
+    sourceAccountLabel: ACCOUNT_LABEL,
+  };
+}
+
 export function cents(n: number): string {
   return `$${(n / 100).toFixed(2)}`;
 }
@@ -266,15 +291,7 @@ export async function runPublicSet(argv: string[]): Promise<number> {
   for (const [i, clip] of clips.entries()) {
     let call = bySample.get(clip.sampleId);
     if (!call) {
-      call = await createBenchmarkCall({
-        label: `pipecat ${clip.sampleId.slice(0, 8)}`,
-        vertical: VERTICAL,
-        durationSeconds: clip.durationSeconds,
-        goldTranscript: clip.transcription,
-        sourceProvider: SOURCE_PROVIDER,
-        sourceCallId: clip.sampleId,
-        sourceAccountLabel: ACCOUNT_LABEL,
-      });
+      call = await createBenchmarkCall(callFor(clip));
       bySample.set(clip.sampleId, call);
       created++;
     }

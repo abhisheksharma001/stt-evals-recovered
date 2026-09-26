@@ -10297,6 +10297,50 @@ on `labelledCalls`. Restore.
 **Must not:** change the three existing conditions; change the shape of the response;
 touch `proxy-agreement-aggregate.ts` (the arithmetic is right, the scope was wrong).
 
+### W-12a3 — A public clip carries an audio path, so the executor runs it
+
+**Status:** **done 2026-09-26** (this PR). Learned: the launch reached the executor and
+failed all 7,000 cells in two seconds -- "Call has no audioObjectPath to send to a
+provider." (`artifacts/api-server/src/lib/run-executor.ts:635`, a guard that runs before
+the cache is read). Spend $0. The W-12a tests stopped at the import; nothing ran one clip
+end to end. The new integration test does.
+
+**PR:** one.
+**Depends on:** W-12a.
+**Research:** none.
+**Serves:** Part F -- the launch Abhishek approved must be able to run.
+**Files:** `scripts/src/import-public-set.ts` (+ its test),
+`artifacts/api-server/src/backfill-w12a3-public-audio-path.ts` (new),
+`artifacts/api-server/src/routes/__integration__/public-audio-path.int.test.ts` (new),
+`docs/runbooks/pending-backfills.md`.
+**Today:** 1,000 pipecat calls with `audio_object_path` NULL and their audio in
+artifacts/api-server/audio-cache (gitignored); bulk `4fee349b` failed.
+**Change:** the importer's create body (`callFor`) sets
+`audioObjectPath = hf://datasets/pipecat-ai/stt-benchmark-data/<sample id>` -- a marker
+naming the source, never fetched. A one-off backfill writes the same string on pipecat
+calls whose path is NULL, one audit row each, dry run by default. The executor is not
+changed.
+**Acceptance:** WHEN a run holds a pipecat call whose path is the marker and whose audio is
+in the cache THEN the executor SHALL hand the cached bytes to the provider and record the
+cell `ok`.
+**Verify:** `pnpm run typecheck`; `scripts/src/import-public-set.test.ts` (callFor sets the
+marker); `public-audio-path.int.test.ts` (marker call ok with the cached bytes; a no-path
+call still fails with the old message); integration suite green. Then live: backfill dry
+run reads 1000, `--apply` fills 1000, a second dry run reads 0.
+**Prove it by breaking it:** after committing, drop `audioObjectPath` from `callFor`; the
+unit test fails. Restore.
+**Must not:** spend anything or launch or retry a bulk (the retry is the approved W-12
+spend, run after merge); change `run-executor.ts`; touch a non-pipecat call's path.
+
+### W-12a4 — The bulk estimate stops pricing a judge that will not run
+
+**Status:** open, written 2026-09-26. Not blocking the W-12 retry.
+**Why:** bulk `4fee349b` shows `estimatedCostCents` 1210 = STT 631 + judge 579, but W-12a1
+skips the judge for pipecat calls. See `docs/backlog/good-to-have.md`, "the bulk's server
+estimate counts a judge that never runs".
+**Research:** needs reading where `estimatedAgentCostCents` is computed before the row can
+name its file -- written as a full row when it is next.
+
 ### W-12b — Method check: does the no-gold rank agree with gold WER?
 
 **Status:** open, written 2026-09-26. Depends on the launch for its live proof. Spends

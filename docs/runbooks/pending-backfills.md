@@ -62,6 +62,15 @@ audit row per call is written with actor `backfill-m1-clear-draft-gold`,
 carrying both transcripts before and after — a restore is a copy of the draft
 back into gold.
 
+## W-12a3 (2026-09-26) — give the 1,000 public clips an audio path
+
+The W-12 import left `audio_object_path` NULL on every pipecat call, so the executor
+refused all of them. `backfill-w12a3-public-audio-path.ts` writes
+`hf://datasets/pipecat-ai/stt-benchmark-data/<source_call_id>` on pipecat calls whose path
+is NULL (never a Vapi call), one audit row each with actor
+`backfill-w12a3-public-audio-path`. Dry run by default; `--apply` writes; a second run
+finds 0. The marker is never fetched -- the executor reads the cached file.
+
 ## Run it
 
 ```bash
