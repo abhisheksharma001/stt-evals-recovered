@@ -8638,8 +8638,9 @@ exactly the new case, `expected 6 to be 8`. Restored with
 `git checkout -- artifacts/api-server/src/lib/verdict.ts`.
 
 **Byte-identical unfiltered:** live bulk `3f134973`'s unfiltered response was saved before
-the change (3,904 bytes, md5 `824492357d41e7c8101c640d46f1b730`) and is compared after
-deploy.
+the change (3,904 bytes, md5 `824492357d41e7c8101c640d46f1b730`). After the deploy of
+`d8c04af` it came back **byte-identical**. Live pair `elevenlabs-scribe,assemblyai-universal`:
+Land And Apartment `too_close` over 31 shared calls; one id answers 400.
 
 > **What was learned.** *The seam was already named.* W-7's comment beside
 > `scopeCallsToAssistant` said where S-AB1's filter belonged, so the change was one
@@ -8649,7 +8650,8 @@ deploy.
 
 ### S-AB2 — Results lets you pick the two providers
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-27. Spent nothing. **Default pair corrected before building** --
+see "As built" below.
 **PR:** one.
 **Depends on:** S-AB1.
 **Spec:** `docs/feature-head-to-head.md`.
@@ -8688,6 +8690,35 @@ cd artifacts/stt-benchmark && pnpm vitest run src/pages/__render__/results.test.
 
 **Must not:** re-derive a winner client-side; render a pair verdict in All-time mode;
 change the all-providers table's existing sort or ranks; touch `computeVerdict`.
+
+**As built, 2026-09-27.** The Change paragraph's default -- "A = rank 1, B = rank 2 ... the
+default agrees with the existing banner by construction" -- is **wrong**: the cards rank on
+the composite and the verdict on flags per 100 words (R-2), and rank is per assistant while
+the pickers are per page. Abhishek chose (2026-09-27): start on the verdict's own
+`leaderProviderId` / `runnerUpProviderId` for the bulk's biggest org. Spec corrected in
+`docs/feature-head-to-head.md`. Otherwise as written: pickers list the bulk's ranking-row
+providers, picking the other side's provider swaps them, each org section gets a "Head to
+head" box fed only by S-AB1's `?providers=` call (one per org, as the org's own verdict box),
+rows outside the pair are dimmed, and the pickers and box are absent All-time. The render
+harness gained `byQuery()` so one path can answer by query string; two existing tests were
+scoped to the org's own verdict box, which is what they were about.
+
+A pass, 2026-09-27: typecheck clean in all four projects; `results.test.tsx` **39** (one
+new); UI suite **22 files / 219 tests**. Live, in a browser on the dev server against API
+`d8c04af1fbe6`: the Pipecat 1k bulk opens on AssemblyAI vs Gladia, "Too close to call",
+331 calls both ran; 2 rows in the pair, 5 dimmed.
+
+**Prove it by breaking it:** done, after committing. Sending the pair request without
+`providers` failed exactly the new case: `expected 'Head to head: ...' to contain '7 calls
+both ran'`. Restored with `git checkout -- artifacts/stt-benchmark/src/pages/Rankings.tsx`.
+
+**Not covered by a test:** the swap when one picker is set to the other's value -- Radix
+Select is not driven in jsdom anywhere in this suite. Checked by reading the four-line
+`pickPair`.
+
+> **What was learned.** *"By construction" is a claim, so check it.* The step asserted the
+> default could not disagree with the banner. One read of R-2 showed the two rank on
+> different quantities -- the same finding that has R-2 blocked.
 
 ---
 

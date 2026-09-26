@@ -27,7 +27,7 @@ import type {
   VerticalRanking,
 } from "@workspace/api-client-react"
 import Results from "../Rankings"
-import { installBrowserShims, renderPage, reply, stubApi, type StubRoutes } from "./harness"
+import { byQuery, installBrowserShims, renderPage, reply, stubApi, type StubRoutes } from "./harness"
 
 installBrowserShims()
 afterEach(cleanup)
@@ -589,6 +589,63 @@ describe("Results", () => {
     expect(html).not.toContain("decision-grade")
   })
 
+  // S-AB2. The pair starts on the verdict's own leader and runner-up, asks the
+  // server for their head-to-head verdict, and shows that verdict's own
+  // sentence and shared-call count -- 7 here, where the whole bulk's is 12, so
+  // a pair box fed the unfiltered verdict cannot pass. A third provider is
+  // there to be dimmed.
+  it("compares the verdict's top two head to head from the server, and drops the pickers all-time", async () => {
+    const pairVerdicts: BulkVerdicts = {
+      ...verdicts,
+      groups: [
+        {
+          ...verdicts.groups[0]!,
+          verdict: {
+            ...verdicts.groups[0]!.verdict,
+            decision: "too_close",
+            winnerProviderId: null,
+            marginPct: null,
+            noiseFloor: { sharedCalls: 7, difference: 0.1, ci95: [-0.3, 0.5], withinNoise: true },
+            sentence: "Deepgram Nova-3 and Gladia Solaria are too close to call on 7 shared calls.",
+          },
+        },
+      ],
+    }
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/rankings": [
+        ...rankings,
+        row({ providerId: "elevenlabs-scribe", providerName: "ElevenLabs Scribe", rank: 3 }),
+      ],
+      "GET /api/benchmark/bulks/bulk-1/verdicts": byQuery((q) =>
+        q.get("providers") === "deepgram-nova-3,gladia-solaria" ? pairVerdicts : verdicts,
+      ),
+    })
+    renderPage(<Results />, { path: "/results" })
+
+    // One box per org section, as the org's own verdict box; the Default org's
+    // is the one with a group in the pair response.
+    const boxes = await screen.findAllByTestId("pair-verdict")
+    const box = boxes.find((b) => b.closest('[data-testid="org-section"]')?.textContent?.includes("Default"))!
+    expect(box).toBeTruthy()
+    expect(box.textContent).toContain("Head to head: Deepgram Nova-3 vs Gladia Solaria")
+    expect(box.textContent).toContain("7 calls both ran")
+    expect(box.textContent).toContain("too close to call on 7 shared calls")
+    expect(api.calls.some((c) => decodeURIComponent(c).includes("/verdicts?providers=deepgram-nova-3,gladia-solaria"))).toBe(true)
+    expect(screen.getByTestId("pair-pickers")).toBeTruthy()
+
+    const dimmed = document.querySelectorAll('[data-in-pair="false"]')
+    expect(dimmed.length).toBeGreaterThan(0)
+    for (const r of dimmed) expect(r.textContent).toContain("ElevenLabs Scribe")
+
+    fireEvent.click(screen.getByText("All-time combined"))
+    await waitFor(() => expect(screen.queryByTestId("pair-pickers")).toBeNull())
+    expect(screen.queryByTestId("pair-verdict")).toBeNull()
+    expect(document.querySelectorAll("[data-in-pair]").length).toBe(0)
+    expect(api.unmatched.filter((u) => u.includes("/verdicts"))).toEqual([])
+    api.restore()
+  })
+
   it("the org banner carries the evidence count once, and the card does not repeat it", async () => {
     stubApi(baseRoutes)
     renderPage(<Results />, { path: "/results" })
@@ -602,7 +659,11 @@ describe("Results", () => {
     // Every org section gets a verdict box, including the unassigned
     // bucket (whose box says it has no verdict), so this asks: exactly one
     // of them carries the count, and it carries it once.
-    const orgBanners = screen.getAllByTestId("group-verdict-headline")
+    // S-AB2's head-to-head box is a different verdict with its own count, so
+    // it is left out: this asks about the org's own verdict only.
+    const orgBanners = screen
+      .getAllByTestId("group-verdict-headline")
+      .filter((b) => !b.closest('[data-testid="pair-verdict"]'))
     const carrying = orgBanners.filter((b) => /12 calls scored/.test(b.textContent ?? ""))
     expect(carrying.length).toBe(1)
     expect(within(carrying[0]!).getAllByText(/12 calls scored/).length).toBe(1)
@@ -859,7 +920,7 @@ describe("Results", () => {
     const box = screen.getByTestId("production-disagreement").parentElement!
     const kids = [...box.children]
     expect(kids.indexOf(screen.getByTestId("production-disagreement"))).toBeLessThan(
-      kids.indexOf(screen.getByTestId("group-verdict-headline")),
+      kids.indexOf(within(box).getByTestId("group-verdict-headline")),
     )
     api.restore()
   })
