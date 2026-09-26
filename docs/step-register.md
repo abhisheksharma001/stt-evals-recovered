@@ -6048,7 +6048,7 @@ decision on re-running them.
 
 ### R-25a — A Cartesia stream that never got `flush_done` fails instead of scoring
 
-**Status:** done 2026-09-26.
+**Status:** done 2026-09-26 (PR #213).
 **PR:** one.
 **Depends on:** R-25.
 **Files:** `lib/stt-providers/src/adapters/cartesia.ts`,
