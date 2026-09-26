@@ -55,7 +55,12 @@ describe("GET /api/benchmark/method-check", () => {
     const running = await request(server).get("/api/benchmark/method-check");
     expect(running.body).toEqual({ state: "not_run" });
 
+    // A cancelled bulk carries a completedAt too, and it did not finish.
     const completedAt = new Date("2026-09-26T19:00:00.000Z");
+    await db.update(benchmarkBulksTable).set({ status: "cancelled", completedAt }).where(eq(benchmarkBulksTable.id, bulk.id));
+    const cancelled = await request(server).get("/api/benchmark/method-check");
+    expect(cancelled.body).toEqual({ state: "not_run" });
+
     await db.update(benchmarkBulksTable).set({ status: "complete", completedAt }).where(eq(benchmarkBulksTable.id, bulk.id));
 
     const res = await request(server).get("/api/benchmark/method-check");
