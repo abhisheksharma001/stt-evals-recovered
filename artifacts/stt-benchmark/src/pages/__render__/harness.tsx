@@ -124,7 +124,9 @@ export function reply(status: number, body?: unknown): StubReply {
  * Route table. Keys are `"<METHOD> <pathname>"` -- for example
  * `"GET /api/benchmark/dashboard"`. A key may end in `*` to match by prefix,
  * which is how id-bearing paths (`/api/benchmark/bulks/<uuid>`) are covered.
- * Query strings never take part in matching; assert on `api.calls` instead.
+ * Query strings never take part in matching; assert on `api.calls` instead --
+ * or, when one path must answer differently by query (S-AB2's pair verdict),
+ * make the reply a {@link byQuery} function of the request's search params.
  */
 export type StubRoutes = Record<string, StubReply>
 
@@ -145,6 +147,13 @@ export type StubbedApi = {
    */
   bodyFor(methodAndPath: string): unknown
   restore(): void
+}
+
+const BY_QUERY = Symbol.for("stt-evals.stub-by-query")
+
+/** A reply chosen from the request's query string. */
+export function byQuery(pick: (params: URLSearchParams) => StubReply): StubReply {
+  return { [BY_QUERY]: pick }
 }
 
 function matchRoute(routes: StubRoutes, key: string): StubReply | undefined {
@@ -184,7 +193,11 @@ export function stubApi(routes: StubRoutes): StubbedApi {
       }
     }
 
-    const matched = matchRoute(routes, `${method} ${url.pathname}`)
+    const route = matchRoute(routes, `${method} ${url.pathname}`)
+    const matched =
+      typeof route === "object" && route !== null && BY_QUERY in route
+        ? (route as { [BY_QUERY]: (p: URLSearchParams) => StubReply })[BY_QUERY](url.searchParams)
+        : route
     if (matched === undefined) {
       unmatched.push(`${method} ${url.pathname}`)
       return new Response(JSON.stringify({ error: `no stub for ${method} ${url.pathname}` }), {
