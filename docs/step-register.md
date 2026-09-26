@@ -10304,6 +10304,10 @@ failed all 7,000 cells in two seconds -- "Call has no audioObjectPath to send to
 provider." (`artifacts/api-server/src/lib/run-executor.ts:635`, a guard that runs before
 the cache is read). Spend $0. The W-12a tests stopped at the import; nothing ran one clip
 end to end. The new integration test does.
+Live 2026-09-26: backfill filled 1000 (second dry run 0), API redeployed to `c005cef`,
+retry-failed on bulk `4fee349b` -- the failed cells were class `unknown`, which
+`isRetryableFailureClass` retries, so all 7,000 were eligible; cells went `ok` on every
+provider within a minute, judge scans 0.
 
 **PR:** one.
 **Depends on:** W-12a.

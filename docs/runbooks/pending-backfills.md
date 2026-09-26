@@ -71,6 +71,10 @@ is NULL (never a Vapi call), one audit row each with actor
 `backfill-w12a3-public-audio-path`. Dry run by default; `--apply` writes; a second run
 finds 0. The marker is never fetched -- the executor reads the cached file.
 
+**Applied 2026-09-26 with Abhishek's go** (merge of #206, then "next"). Dry run read
+1000, `--apply` filled 1000 with 1000 audit rows, a second dry run read 0; no Vapi call
+carries an `hf://` path. API redeployed to `c005cef`, then bulk `4fee349b` retried.
+
 ## Run it
 
 ```bash
