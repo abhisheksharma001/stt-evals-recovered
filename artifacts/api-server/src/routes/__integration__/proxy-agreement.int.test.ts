@@ -223,9 +223,13 @@ describe("GET /api/benchmark/proxy-agreement", () => {
       await fx.score(cell.id, { wer, peerFlagCount: flags });
     }
     // A judge pick on it too, so judgePicks is guarded as well as the ranks.
-    const scanCell = await fx.result(scanRun.id, pub.id, p1.id);
-    await fx.score(scanCell.id, { wer: 0.1 });
-    await fx.scan(pub.id, { runId: scanRun.id, status: "flagged", agentPickResultId: scanCell.id });
+    // Two candidates: a pick among one is not measurable and would not move
+    // the figure even with the filter missing.
+    const picked = await fx.result(scanRun.id, pub.id, p1.id);
+    await fx.score(picked.id, { wer: 0.1 });
+    const other = await fx.result(scanRun.id, pub.id, p2.id);
+    await fx.score(other.id, { wer: 0.2 });
+    await fx.scan(pub.id, { runId: scanRun.id, status: "flagged", agentPickResultId: picked.id });
 
     const after = await request(server).get("/api/benchmark/proxy-agreement");
     expect(after.status).toBe(200);
