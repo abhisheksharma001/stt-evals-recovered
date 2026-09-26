@@ -525,7 +525,20 @@ export async function estimateBulkCostCents(
 // T-01 (2026-08-28): reads micro-cents from the scan table (the column it
 // used to read was integer cents and never held a value). Returns whole
 // CENTS, because a bulk-level estimate is a budget figure a person reads.
-export async function estimateBulkAgentCostCents(callCount: number): Promise<number | null> {
+//
+// W-12a4 (2026-09-26): only calls the judge can reach are counted. A public
+// calibration clip (sourceProvider "pipecat") never goes to the judge
+// (W-12a1, agent-verify.ts), so pricing it inflated bulk 4fee349b's estimate
+// by $5.79 for a judge that never ran.
+export async function estimateBulkAgentCostCents(callIds: string[]): Promise<number | null> {
+  const judgeable =
+    callIds.length === 0
+      ? []
+      : await db
+          .select({ sourceProvider: benchmarkCallsTable.sourceProvider })
+          .from(benchmarkCallsTable)
+          .where(inArray(benchmarkCallsTable.id, callIds));
+  const callCount = judgeable.filter((c) => c.sourceProvider !== "pipecat").length;
   if (callCount === 0) return 0;
   const scans = await db
     .select({ status: benchmarkAgentScansTable.status, judgeCostMicrocents: benchmarkAgentScansTable.judgeCostMicrocents })
@@ -588,7 +601,7 @@ export async function previewBulkSelection(input: {
   let estimate: BulkPreviewResult["estimate"] = null;
   if (providerIds.length > 0) {
     const sttCostCents = await estimateBulkCostCents(selection.callIds, providerIds);
-    const agentCostCents = await estimateBulkAgentCostCents(selection.callIds.length);
+    const agentCostCents = await estimateBulkAgentCostCents(selection.callIds);
     // A null agent estimate is "unknown", not zero; the total is then STT
     // only and the response says so via the null.
     const totalCostCents = sttCostCents + (agentCostCents ?? 0);
@@ -738,7 +751,7 @@ export async function createBulkFromCriteria(input: {
     callIds,
     input.providerIds,
   );
-  const estimatedAgentCostCents = await estimateBulkAgentCostCents(callIds.length);
+  const estimatedAgentCostCents = await estimateBulkAgentCostCents(callIds);
   const estimatedCostCents = estimatedSttCostCents + (estimatedAgentCostCents ?? 0);
   const overThreshold = estimatedCostCents > BULK_COST_THRESHOLD_CENTS;
   const name = input.name ?? now.toISOString().slice(0, 10); // FR-BLK-2

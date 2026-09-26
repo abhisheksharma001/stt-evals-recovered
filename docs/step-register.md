@@ -10370,12 +10370,27 @@ shards end `cancelled` with no new cells); integration suite green.
 
 ### W-12a4 — The bulk estimate stops pricing a judge that will not run
 
-**Status:** open, written 2026-09-26. Not blocking the W-12 retry.
-**Why:** bulk `4fee349b` shows `estimatedCostCents` 1210 = STT 631 + judge 579, but W-12a1
-skips the judge for pipecat calls. See `docs/backlog/good-to-have.md`, "the bulk's server
-estimate counts a judge that never runs".
-**Research:** needs reading where `estimatedAgentCostCents` is computed before the row can
-name its file -- written as a full row when it is next.
+**Status:** **done 2026-09-26.** Learned while building: one function,
+`estimateBulkAgentCostCents` in `artifacts/api-server/src/lib/bulks.ts`, feeds both the
+preview dialog and the frozen launch estimate, and it took only a call COUNT, so it could not
+tell a public clip from a client call. It now takes the call ids and counts only the ones
+whose `sourceProvider` is not `pipecat`, the same rule W-12a1 applies in
+`artifacts/api-server/src/lib/agent-verify.ts`. A selection with nothing judgeable is priced
+at 0 (known), not null (no history). Bulk `4fee349b`'s stored estimate was frozen at launch
+and is not rewritten.
+**PR:** one.
+**Depends on:** W-12a1.
+**Research:** none (the file is named above; it was the open question in the first draft).
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (`estimateBulkAgentCostCents` and its two
+callers), `artifacts/api-server/src/routes/__integration__/bulk-preview-cancel.int.test.ts`.
+**Today:** bulk `4fee349b` showed `estimatedCostCents` 1210 = STT 631 + judge 579, but the
+judge never ran on its pipecat calls.
+**Change:** pass the call ids, not their count, and leave pipecat calls out of the count.
+**Acceptance:** WHEN a bulk preview selects only public calibration calls THEN its estimate
+SHALL read `agentCostCents` 0 and a total equal to the STT cost.
+**Verify:** `pnpm run typecheck`; the new preview case plus the integration suite green.
+**Prove it by breaking it:** count every call again; the new case fails. Restore.
+**Must not:** change the judge itself, the STT estimate, or a stored bulk's frozen estimate.
 
 ### W-12b — Method check: does the no-gold rank agree with gold WER?
 
