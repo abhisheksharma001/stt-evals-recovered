@@ -6623,7 +6623,7 @@ shape.
 
 ### R-36 — A job that may already be billed stops being submitted twice (B-86)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#160, `48c7eb7`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing — and is entirely about not spending.
 **Depends on:** R-35.
 **Files:** `lib/stt-providers/src/types.ts`,
@@ -6675,7 +6675,7 @@ deliberately, and named so nobody "completes" the fix by wrapping it too.
 
 ### R-37 — An infinite price stops being a valid price (B-95)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#161, `d6a6526`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing.
 **Depends on:** R-35.
 **Files:** `lib/api-spec/openapi.yaml`, the generated clients,
@@ -6719,7 +6719,7 @@ provider price could reach; change `minimum`.
 
 ### R-38 — "No results yet" and "no such run" stop being the same answer (B-79)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#162, `1f2a68f`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing.
 **Depends on:** R-35.
 **Files:** `artifacts/api-server/src/routes/benchmark.ts`, `lib/api-spec/openapi.yaml`,
@@ -6788,7 +6788,7 @@ covering B-24 or B-21, which are about the same file and remain live.
 
 ### R-40 — A cell that was tried once stops claiming it was tried three times (B-71), and B-68 is split
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#163, `2d4013e`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing.
 **Depends on:** R-35.
 **Files:** `artifacts/api-server/src/lib/run-executor.ts`,
@@ -6846,7 +6846,7 @@ outcomes break the retry loop.
 
 ### R-41 — A version-gated node flag stops failing as "bad option" (B-67)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#164, `1e31d06`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing.
 **Depends on:** R-34.
 **Files:** `artifacts/api-server/package.json`, `package.json`,
@@ -6887,7 +6887,7 @@ declare an `engines.node` floor at least as high as the flag requires.
 
 ### R-42 — "We do not know how long this call was" stops being recorded as one second (B-98)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#165, `f224179`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing.
 **Depends on:** R-35.
 **Files:** `artifacts/api-server/src/routes/benchmark.ts`,
@@ -6930,7 +6930,7 @@ change and wants a worktree; change what `durationSecondsOf` returns.
 
 ### R-43 — The scoring CLI stops exploding somewhere else (B-63)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#166, `39476fa`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing.
 **Depends on:** R-34.
 **Files:** `scripts/src/stt-score.ts`,
@@ -6992,7 +6992,7 @@ normalisation in this step.
 
 ### R-44 — The executor stops trusting the id list it was handed (B-84 and B-97)
 
-**Status:** open.
+**Status:** **done 2026-09-09** (#167, `be0294b`). This line read "open" until 2026-09-26: the PR wrote the row and never flipped it (see `docs/backlog/good-to-have.md`, "register statuses left open").
 **PR:** one. Spends nothing, and is mostly about not spending.
 **Depends on:** R-35.
 **Files:** `artifacts/api-server/src/lib/run-executor.ts`,

@@ -1,3 +1,13 @@
+## Found 2026-09-26 (picking the next step): register statuses left open
+
+Expected: a merged step reads `done` in `docs/step-register.md`. Seen: R-36, R-37, R-38,
+R-40, R-41, R-42, R-43 and R-44 all read "open" although each merged on 2026-09-09
+(#160 to #167, every merge commit an ancestor of `main`). Each PR wrote its row with
+status open and nothing flipped it; `scripts/check-register-coverage.mjs` (R-47) counts
+bug dispositions, not step statuses, so it could not see this. Nearly cost a rebuild of
+R-36. Fixed in the same docs PR that found it. Lesson: before building a register step,
+search merged PRs for its id.
+
 ## Found 2026-09-26 (W-12 cap): cancelling a bulk does not stop a retry-failed in flight
 
 Expected: Abhishek capped bulk `4fee349b` at 2,000 cells; the bulk was cancelled at 1,984
