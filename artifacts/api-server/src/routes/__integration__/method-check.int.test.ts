@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { benchmarkBulksTable, db, pool } from "@workspace/db";
+import { benchmarkBulksTable, benchmarkRunsTable, db, pool } from "@workspace/db";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
 
@@ -29,7 +29,7 @@ describe("GET /api/benchmark/method-check", () => {
     expect(res.body).toEqual({ state: "not_run" });
   });
 
-  it("sends not_run while the bulk is still running, then the figure once it has finished", async () => {
+  it("sends not_run while the bulk runs or drains, then the figure once every shard has stopped", async () => {
     const bulk = await fx.bulk({ name: BULK_NAME, status: "running" });
     const run = await fx.run({ purpose: "batch", bulkId: bulk.id });
     const agentRun = await fx.run({ purpose: "agent_scan", bulkId: bulk.id });
@@ -55,13 +55,16 @@ describe("GET /api/benchmark/method-check", () => {
     const running = await request(server).get("/api/benchmark/method-check");
     expect(running.body).toEqual({ state: "not_run" });
 
-    // A cancelled bulk carries a completedAt too, and it did not finish.
+    // A cancelled bulk is stamped completedAt at once, while a shard still
+    // drains its in-flight cells: nothing is read until every shard stops.
     const completedAt = new Date("2026-09-26T19:00:00.000Z");
     await db.update(benchmarkBulksTable).set({ status: "cancelled", completedAt }).where(eq(benchmarkBulksTable.id, bulk.id));
-    const cancelled = await request(server).get("/api/benchmark/method-check");
-    expect(cancelled.body).toEqual({ state: "not_run" });
+    await db.update(benchmarkRunsTable).set({ status: "running" }).where(eq(benchmarkRunsTable.id, shard2.id));
+    const draining = await request(server).get("/api/benchmark/method-check");
+    expect(draining.body).toEqual({ state: "not_run" });
 
-    await db.update(benchmarkBulksTable).set({ status: "complete", completedAt }).where(eq(benchmarkBulksTable.id, bulk.id));
+    // Every shard stopped: the capped bulk is measured (Abhishek 2026-09-26).
+    await db.update(benchmarkRunsTable).set({ status: "cancelled" }).where(eq(benchmarkRunsTable.id, shard2.id));
 
     const res = await request(server).get("/api/benchmark/method-check");
     expect(res.status).toBe(200);

@@ -74,3 +74,22 @@ describe("aggregateMethodCheck", () => {
     expect(aggregateMethodCheck([])).toEqual({ providers: [], n: 0, rho: null, pOneSided: null, verdict: "not_measurable" });
   });
 });
+
+describe("wholeCallRows", () => {
+  it("drops a call some provider never finished, so every provider is pooled over the same clips", () => {
+    // c2 is the cut shard: only a and b reached it. Counted, c's pooled WER
+    // would come from c1 alone while a and b carry c2's hard clip too.
+    const figures = aggregateMethodCheck([
+      cell("c1", "a", 1, 1),
+      cell("c1", "b", 2, 2),
+      cell("c1", "c", 3, 3),
+      cell("c2", "a", 50, 1),
+      cell("c2", "b", 50, 2),
+    ]);
+    expect(figures.providers.map((p) => [p.providerId, p.wer, p.calls])).toEqual([
+      ["a", 0.01, 1],
+      ["b", 0.02, 1],
+      ["c", 0.03, 1],
+    ]);
+  });
+});

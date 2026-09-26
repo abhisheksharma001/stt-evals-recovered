@@ -27,9 +27,14 @@ import { aggregateMethodCheck, type MethodCheckFigures, type MethodCheckRow } fr
  *  names the bulk. Copied, not imported across packages. */
 export const METHOD_CHECK_BULK_NAME = "Public: Pipecat 1k";
 
-/** Same set words-to-watch.ts and assistant-signals.ts read: "partial" is a
- *  finished bulk with some failed cells, and its ok cells are still evidence. */
-const FINISHED_BULK_STATUSES: readonly string[] = ["complete", "partial"];
+/** "partial" is a finished bulk with some failed cells (the set
+ *  words-to-watch.ts reads). "cancelled" joins it here only (Abhishek
+ *  2026-09-26: the W-12 bulk was capped at 2,000 cells by cancelling it); the
+ *  cut leaves half-run calls, which aggregateMethodCheck drops. */
+const FINISHED_BULK_STATUSES: readonly string[] = ["complete", "partial", "cancelled"];
+/** A cancelled bulk is stamped completedAt at once while cells already in
+ *  flight still finish, and peer flags are written only when a shard stops. */
+const STILL_GOING_RUN_STATUSES: readonly string[] = ["queued", "running"];
 
 export type MethodCheck =
   | { state: "not_run" }
@@ -47,9 +52,10 @@ export async function methodCheck(): Promise<MethodCheck> {
   if (!bulk || !FINISHED_BULK_STATUSES.includes(bulk.status) || !bulk.completedAt) return { state: "not_run" };
 
   const runs = await db
-    .select({ id: benchmarkRunsTable.id })
+    .select({ id: benchmarkRunsTable.id, status: benchmarkRunsTable.status })
     .from(benchmarkRunsTable)
     .where(and(eq(benchmarkRunsTable.bulkId, bulk.id), eq(benchmarkRunsTable.purpose, "batch")));
+  if (runs.some((r) => STILL_GOING_RUN_STATUSES.includes(r.status))) return { state: "not_run" };
   const cells =
     runs.length === 0
       ? []

@@ -50,12 +50,31 @@ export function methodCheckVerdict(rho: number | null, pOneSided: number | null)
 }
 
 /**
- * One ordering per provider over the whole public bulk, both lower-is-better:
- * pooled gold WER and pooled peer flags per 100 words. A provider enters the
- * comparison only when it carries both; one that is missing either is left
- * out of n rather than given a zero.
+ * Whole calls only (Abhishek 2026-09-26, when the W-12 bulk was capped at
+ * 2,000 cells): a call counts only when every provider seen in the rows has a
+ * cell on it. Pooling each provider over a different set of clips would rank
+ * the clips, not the providers -- a cut bulk leaves its last shard's calls
+ * half-run.
  */
-export function aggregateMethodCheck(rows: readonly MethodCheckRow[]): MethodCheckFigures {
+export function wholeCallRows(rows: readonly MethodCheckRow[]): MethodCheckRow[] {
+  const providerCount = new Set(rows.map((r) => r.providerId)).size;
+  const providersByCall = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const set = providersByCall.get(row.callId) ?? new Set<string>();
+    set.add(row.providerId);
+    providersByCall.set(row.callId, set);
+  }
+  return rows.filter((r) => providersByCall.get(r.callId)!.size === providerCount);
+}
+
+/**
+ * One ordering per provider over the public bulk's whole calls, both
+ * lower-is-better: pooled gold WER and pooled peer flags per 100 words. A
+ * provider enters the comparison only when it carries both; one that is
+ * missing either is left out of n rather than given a zero.
+ */
+export function aggregateMethodCheck(allRows: readonly MethodCheckRow[]): MethodCheckFigures {
+  const rows = wholeCallRows(allRows);
   const basis = callWordBasis(rows.map((r) => ({ callId: r.callId, words: r.words })));
 
   const byProvider = new Map<string, MethodCheckRow[]>();
