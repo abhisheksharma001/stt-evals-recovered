@@ -2307,6 +2307,10 @@ export type GetBulkVerdictsParams = {
  * W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
  */
 assistantId?: string;
+/**
+ * S-AB1 -- comma-separated, exactly two distinct provider ids this bulk ran. Each group's verdict is computed over only those two providers' cells, so the noise floor counts only calls both scored; everything else in the response is unchanged. 400 for anything but two such ids.
+ */
+providers?: string;
 };
 
 export type GetBulkTurnSignalsParams = {

@@ -1886,7 +1886,8 @@ export const GetBulkVerdictsParams = zod.object({
 })
 
 export const GetBulkVerdictsQueryParams = zod.object({
-  "assistantId": zod.string().optional().describe('W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.')
+  "assistantId": zod.string().optional().describe('W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.'),
+  "providers": zod.string().optional().describe('S-AB1 -- comma-separated, exactly two distinct provider ids this bulk ran. Each group\'s verdict is computed over only those two providers\' cells, so the noise floor counts only calls both scored; everything else in the response is unchanged. 400 for anything but two such ids.')
 })
 
 export const getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Min = 2;
