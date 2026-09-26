@@ -7769,13 +7769,12 @@ the existing cell (that is R-55b); change what a `null` transcript does.
 
 ### R-55b — Score the one existing empty-transcript cell
 
-**Status:** open. Next.
+**Status:** done 2026-09-27, applied to the dev database the same day.
 **PR:** one.
 **Depends on:** R-55.
 **Decision:** Abhishek, 2026-09-26 -- score it as a miss; no re-run, no spend.
-**Files:** a one-off backfill script in the project's pattern
-(`artifacts/api-server/src/backfill-*.ts`: dry run by default, `--apply`, audit row,
-idempotent).
+**Files:** new file `artifacts/api-server/src/backfill-r55b-score-empty-transcript.ts`
+(the project's backfill pattern: dry run by default, `--apply`, audit row, idempotent).
 
 **Today:** result `07e4f6e3` (AssemblyAI, run `6e88dfeb`, bulk `4fee349b`) is `ok` with an
 empty transcript and no score row. Retry will never reach it, so R-55 alone does not fix it.
@@ -7788,6 +7787,24 @@ and the bulk's ranking rows (`computeHybridFlagsForRun`, `computeRankingsForBulk
 second run SHALL add nothing AND no provider SHALL be called.
 
 **Must not:** re-run the cell; call any provider or the judge; change any other cell.
+
+**Verify, as run 2026-09-27** (`pnpm --filter @workspace/api-server exec tsx
+--env-file-if-exists=.env ./src/backfill-r55b-score-empty-transcript.ts [--apply]`):
+- typecheck clean in all four projects; `scripts/backup-db.sh` first.
+- dry run: **1** cell, `07e4f6e3`, AssemblyAI, run `6e88dfeb`. `--apply`: scored it, WER 1;
+  flags and bulk `4fee349b` rankings recomputed. Second `--apply`: 0 cells, nothing written.
+- md5 of every result row: identical before and after (no result row changed); md5 of every
+  score and ranking row outside bulk `4fee349b`: identical. Score rows 2944 -> 2945; `ok`
+  cells with no score 1 -> **0**. One audit row.
+- `GET /api/benchmark/method-check` before -> after: whole clips **294 -> 295**; rho 0.786,
+  p 0.024, `agrees`, unchanged. AssemblyAI pooled WER 0.0317 -> 0.0318.
+
+**Prove it by breaking it:** not run -- a one-off script already applied; the second run
+writing nothing was shown directly against real data.
+
+> **What was learned.** *A dropped cell drops the whole clip.* The method check pools only
+> clips every provider finished, so one unscored AssemblyAI cell quietly removed a clip
+> from all seven providers' figures, not just AssemblyAI's.
 
 ## Part A — Setup page
 
