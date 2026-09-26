@@ -1,3 +1,17 @@
+## Found 2026-09-26 (W-12 cap): cancelling a bulk does not stop a retry-failed in flight
+
+Expected: Abhishek capped bulk `4fee349b` at 2,000 cells; the bulk was cancelled at 1,984
+ok cells (up to 16 in flight may finish) so the total could not pass 2,000. Seen: cells
+kept landing -- 2,311 ok, $2.02 by `benchmark_scores.cost_microcents`, about 25 cents past
+the cap -- until the API process was stopped at 17:50. Cause: `retryBulkFailedCells`
+(`artifacts/api-server/src/lib/bulks.ts`) hands its shard list to
+`drainWithConcurrency`, which starts the next shard as each finishes. Those shards were
+status `failed`, not `queued`, so `cancelBulk` neither flipped them nor signalled them; it
+only cancels `queued` runs and signals `running` ones. Second hazard found on the way out:
+`recoverInterruptedRuns` resumes every `queued`/`running` run at boot, so the API could not
+be restarted until the three interrupted shards were set `cancelled` by hand (3 audit rows,
+actor `manual-w12-cap-2000`). Fix: W-12a5.
+
 ## Found 2026-09-26 (W-12 launch): every public clip failed -- no audio_object_path
 
 Expected: after "go spend", bulk `4fee349b` "Public: Pipecat 1k" transcribes 1,000 clips on

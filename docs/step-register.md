@@ -10336,6 +10336,30 @@ unit test fails. Restore.
 **Must not:** spend anything or launch or retry a bulk (the retry is the approved W-12
 spend, run after merge); change `run-executor.ts`; touch a non-pipecat call's path.
 
+### W-12a5 — Cancelling a bulk also stops a retry-failed that is still starting shards
+
+**Status:** open, logged 2026-09-26 (see `docs/backlog/good-to-have.md`, W-12 cap).
+**PR:** one.
+**Depends on:** nothing.
+**Research:** none.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (`retryBulkFailedCells`, `cancelBulk`),
+a new case in the bulk cancel integration test.
+**Today:** `retryBulkFailedCells` queues the bulk's failed shards in `drainWithConcurrency`;
+`cancelBulk` only cancels `queued` runs and signals `running` ones, so a shard still
+waiting in the retry's list starts after the cancel and spends.
+**Change:** before each queued shard starts, the retry's worker re-reads the bulk and skips
+the shard when the bulk is `cancelled` (writing the shard `cancelled`, as `cancelBulk` does
+for queued ones).
+**Acceptance:** WHEN a bulk is cancelled while retry-failed still holds shards it has not
+started THEN no further shard of that bulk SHALL start and no further cell SHALL be written
+`ok` or `failed`.
+**Verify:** `pnpm run typecheck`; the new integration case (retry a bulk with more failed
+shards than `BULK_SHARD_CONCURRENCY`, cancel after the first starts, assert the later
+shards end `cancelled` with no new cells); integration suite green.
+**Prove it by breaking it:** remove the re-read; the new case fails. Restore.
+**Must not:** call a provider in the test (fixture provider ids match no adapter); change
+`recoverInterruptedRuns`.
+
 ### W-12a4 — The bulk estimate stops pricing a judge that will not run
 
 **Status:** open, written 2026-09-26. Not blocking the W-12 retry.
@@ -10347,7 +10371,14 @@ name its file -- written as a full row when it is next.
 
 ### W-12b — Method check: does the no-gold rank agree with gold WER?
 
-**Status:** built 2026-09-26 (this PR); live proof waits on bulk `4fee349b` finishing.
+**Status:** **done 2026-09-26** (#208, `87dfc6d`, deployed). Live: bulk `4fee349b` capped
+at Abhishek's 2,000 cells (cancelled; 2,311 ok cells landed, $2.02 -- see W-12a5), so
+the check reads a cancelled bulk once no shard is queued or running, on whole calls only
+(every provider finished the clip): 294 clips, 7 providers, **Spearman ρ 0.79, exact
+one-sided p = 0.024, verdict agrees**; `/results` shows the same line. The same four
+providers lead both orders; the biggest mismatch is openai-gpt-4o-transcribe (5th on WER,
+last on flags). Three cut shards had no peer flags (they are written when a shard stops);
+`computeHybridFlagsForRun` filled them, free.
 Learned while building: `benchmark_scores.wer` is filled on the public cells (they have
 gold) and `detail.edits` carries the error and gold-word counts, so pooled WER needs no
 re-scoring; peer flags are written only when a shard run finishes
