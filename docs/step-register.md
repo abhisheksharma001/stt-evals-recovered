@@ -7724,7 +7724,7 @@ before), integration **198** (193 before), typecheck clean, 7 structural checks 
 
 ### R-55 — An `ok` cell whose transcript is empty gets scored, not dropped
 
-**Status:** done 2026-09-26.
+**Status:** done 2026-09-26 (PR #215).
 **PR:** one.
 **Depends on:** nothing.
 **Decision:** Abhishek, 2026-09-26 -- "heard nothing" is scored as a miss, not failed and
