@@ -15,6 +15,7 @@ import {
   type BulkVerdicts,
   useGetCallDisagreement,
   getGetCallDisagreementQueryKey,
+  useGetMethodCheck,
 } from "@workspace/api-client-react"
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
@@ -1060,6 +1061,8 @@ export default function Rankings() {
         ))
       )}
 
+      <MethodCheckSection />
+
       {/* T-88: the supporting evidence, folded. T-18 correlation qualifies
           the votes above; T-23 trend is the one chart on the page -- kept,
           once, here (the per-assistant copies inside every card were
@@ -1085,5 +1088,40 @@ export default function Rankings() {
         </details>
       )}
     </div>
+  )
+}
+
+/**
+ * W-12b (PRD Part F): the one check that the gold-free order tracks the truth.
+ * On the public Pipecat set every clip came with a gold transcript, so there
+ * the providers can be ordered two ways -- by pooled peer-flag rate (what this
+ * page ranks by) and by pooled gold WER -- and the two orders compared.
+ * Absent is not zero: before the bulk has finished there is no number at all.
+ */
+function MethodCheckSection() {
+  const { data } = useGetMethodCheck()
+  if (!data) return null
+
+  let line: string
+  if (data.state !== "measured") {
+    line = "Method check not run yet"
+  } else {
+    const measured = data.completedAt ? new Date(data.completedAt).toISOString().slice(0, 10) : "date unknown"
+    line =
+      data.verdict === "not_measurable" || data.rho == null || data.pOneSided == null
+        ? `Spearman ρ not measurable across ${data.n ?? 0} providers (fewer than 3, or one order entirely tied), measured ${measured}`
+        : `Spearman ρ ${data.rho.toFixed(2)} across ${data.n} providers (p = ${data.pOneSided.toFixed(3)}) -- ${data.verdict}, measured ${measured}`
+  }
+
+  return (
+    <section className="space-y-1 rounded-lg border border-border px-4 py-3" data-testid="method-check">
+      <h2 className="text-sm font-medium text-foreground">Method check</h2>
+      <p className="text-sm text-foreground" data-testid="method-check-line">{line}</p>
+      {data.state === "measured" && (
+        <p className="text-xs text-muted-foreground">
+          16 kHz mic audio, English, one public set. Checks the method, not any client's numbers.
+        </p>
+      )}
+    </section>
   )
 }

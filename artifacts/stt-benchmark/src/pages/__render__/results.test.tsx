@@ -22,6 +22,7 @@ import type {
   Bulk,
   BulkDetail,
   BulkVerdicts,
+  MethodCheck,
   Provider,
   VerticalRanking,
 } from "@workspace/api-client-react"
@@ -254,6 +255,8 @@ const baseRoutes: StubRoutes = {
   // U-1b: every assistant card asks what has been marked on it. Empty by
   // default so the other assertions here see the page they were written for.
   "GET /api/benchmark/agent-marks": [],
+  // W-12b: the method check reads the public set, not this page's bulk.
+  "GET /api/benchmark/method-check": { state: "not_run" },
 }
 
 describe("Results", () => {
@@ -1036,6 +1039,43 @@ describe("Results", () => {
     // arrow on the page.
     const allDirections = Array.from(document.querySelectorAll('[aria-label="lower is better"]'))
     expect(allDirections.length).toBeGreaterThan(0)
+    api.restore()
+  })
+})
+
+// W-12b: the method check. Two states, and the one that must not print a
+// number is the one that matters.
+describe("Results method check", () => {
+  it("says the check has not run, and shows no number, before the public bulk finishes", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+    const line = await screen.findByTestId("method-check-line")
+    expect(line.textContent).toBe("Method check not run yet")
+    expect(screen.getByTestId("method-check").textContent).not.toMatch(/ρ|\d/)
+    api.restore()
+  })
+
+  it("shows rho, its exact p, the verdict word, the date and the caveat once measured", async () => {
+    const measured: MethodCheck = {
+      state: "measured",
+      bulkId: "4fee349b-e8a2-4865-890c-7643e6b5bdda",
+      completedAt: "2026-09-26T19:04:00.000Z",
+      providers: [],
+      n: 7,
+      rho: 5 / 7,
+      pOneSided: 222 / 5040,
+      verdict: "agrees",
+    }
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/method-check": measured })
+    renderPage(<Results />, { path: "/results" })
+    await waitFor(() =>
+      expect(screen.getByTestId("method-check-line").textContent).toBe(
+        "Spearman ρ 0.71 across 7 providers (p = 0.044) -- agrees, measured 2026-09-26",
+      ),
+    )
+    expect(screen.getByTestId("method-check").textContent).toContain(
+      "16 kHz mic audio, English, one public set. Checks the method, not any client's numbers.",
+    )
     api.restore()
   })
 })

@@ -10347,8 +10347,13 @@ name its file -- written as a full row when it is next.
 
 ### W-12b — Method check: does the no-gold rank agree with gold WER?
 
-**Status:** open, written 2026-09-26. Depends on the launch for its live proof. Spends
-nothing itself (it only reads).
+**Status:** built 2026-09-26 (this PR); live proof waits on bulk `4fee349b` finishing.
+Learned while building: `benchmark_scores.wer` is filled on the public cells (they have
+gold) and `detail.edits` carries the error and gold-word counts, so pooled WER needs no
+re-scoring; peer flags are written only when a shard run finishes
+(`computeHybridFlagsForRun`, `artifacts/api-server/src/lib/run-executor.ts`), so a running bulk shows
+none. `completedAt` travels as a Date (the api-zod schemas coerce). "Finished" is
+`complete` or `partial`, the same set `words-to-watch.ts` reads.
 
 **Decided by Abhishek 2026-09-26:** Spearman as the PRD says (not the existing Kendall
 tau-b); the screen shows the number **and** a plain verdict. Order: this row is written,

@@ -126,6 +126,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProxyAgreement"
+  /benchmark/method-check:
+    get:
+      operationId: getMethodCheck
+      tags: [benchmark]
+      summary: >-
+        W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold
+        transcript, does ordering the providers by pooled peer-flag rate (the gold-free
+        ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho
+        on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word.
+        state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not
+        finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+      responses:
+        "200":
+          description: The method check, or not_run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MethodCheck"
   /benchmark/assistants/{assistantId}/transcriber:
     get:
       operationId: getAssistantTranscriber
@@ -3003,6 +3021,31 @@ components:
         kendallTau:
           type: ["number", "null"]
           description: "Mean Kendall tau-b over the contributing calls, -1 to 1. Null when n is 0."
+    MethodCheck:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [measured, not_run] }
+        bulkId: { type: string, format: uuid }
+        completedAt: { type: string, format: date-time }
+        providers:
+          type: array
+          items:
+            type: object
+            required: [providerId, wer, flagsPer100Words, calls]
+            properties:
+              providerId: { type: string }
+              wer: { type: number, description: "Pooled gold WER: total errors / total gold words." }
+              flagsPer100Words: { type: number, description: "Pooled peer flags per 100 words on the call word basis." }
+              calls: { type: integer }
+        n: { type: integer, description: "Providers that carried both a WER and a flag rate." }
+        rho:
+          type: ["number", "null"]
+          description: "Spearman rho, -1 to 1. Null when fewer than 3 providers or one side is entirely tied."
+        pOneSided:
+          type: ["number", "null"]
+          description: "Exact one-sided permutation p-value. Null when rho is null."
+        verdict: { type: string, enum: [agrees, weak, disagrees, not_measurable] }
     BulkVerdicts:
       type: object
       required: [bulkId, providers, groups]
