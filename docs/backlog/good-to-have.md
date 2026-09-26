@@ -1,3 +1,22 @@
+## Found 2026-09-26 (W-12 launch): every public clip failed -- no audio_object_path
+
+Expected: after "go spend", bulk `4fee349b` "Public: Pipecat 1k" transcribes 1,000 clips on
+seven providers. Seen: all 7,000 cells failed in two seconds with "Call has no
+audioObjectPath to send to a provider." `scripts/src/import-public-set.ts` wrote each clip
+into the audio cache but never set `audio_object_path`, and the executor refuses an empty
+path before it reads the cache (`artifacts/api-server/src/lib/run-executor.ts:635`). Spend:
+$0 (the bulk's `actualCost` is 0; no provider was called). W-12a's tests covered the gate
+and the import, never one clip through the executor. Fix: W-12a3 -- **fixed 2026-09-26**
+(importer writes an `hf://` marker; backfill fills the 1,000 already imported).
+
+## Found 2026-09-26 (W-12 launch): the bulk's server estimate counts a judge that never runs
+
+Expected: the bulk's estimate matches the script's $6.32. Seen: `estimatedCostCents` 1210
+= `estimatedSttCostCents` 631 + `estimatedAgentCostCents` 579. W-12a1 skips the judge for
+pipecat calls, but the bulk estimate still prices it, so the Bulks page shows $12.10 for a
+run whose ceiling is $7. Real spend is the STT part only. Not blocking the retry (the
+script's own gate priced STT only, and D-15's approval was for that). Fix: W-12a4 (open).
+
 
 ## Found 2026-09-26 (W-12b write-up): the public-set launch would buy unpriced judge calls
 

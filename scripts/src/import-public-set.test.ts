@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CEILING_CENTS, MAX_LIVE_BULKS, gate, planFor } from "./import-public-set";
+import { CEILING_CENTS, MAX_LIVE_BULKS, callFor, gate, planFor } from "./import-public-set";
 
 const seven = [
   { id: "assemblyai-universal", costPerMinute: 0.006 },
@@ -51,5 +51,21 @@ describe("gate", () => {
 
   it("refuses before it dry-runs: a too-expensive plan is never reported as a dry run", () => {
     expect(gate({ ...ok, apply: false, goSpend: false, estimateCents: 900 }).action).toBe("refuse");
+  });
+});
+
+describe("callFor", () => {
+  it("gives every clip an audioObjectPath, so the executor does not refuse it (W-12a3)", () => {
+    const body = callFor({
+      sampleId: "0a1b2c3d-sample",
+      durationSeconds: 9.4,
+      transcription: "hello there",
+      audioUrl: "https://example.invalid/clip.wav",
+    });
+    // The marker names the source; it is never fetched (the audio is in the cache).
+    expect(body.audioObjectPath).toBe("hf://datasets/pipecat-ai/stt-benchmark-data/0a1b2c3d-sample");
+    expect(body.sourceProvider).toBe("pipecat");
+    expect(body.sourceCallId).toBe("0a1b2c3d-sample");
+    expect(body.goldTranscript).toBe("hello there");
   });
 });
