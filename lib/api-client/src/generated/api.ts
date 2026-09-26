@@ -64,6 +64,7 @@ import type {
   ListBulksParams,
   ListDisagreementSpansParams,
   ListVapiAssistantsParams,
+  MethodCheck,
   PlanTask,
   PreviewAgentMarksParams,
   Provider,
@@ -264,6 +265,30 @@ export const getGetProxyAgreementUrl = () => {
 export const getProxyAgreement = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProxyAgreement> => {
 
   return customFetch<ProxyAgreement>(getGetProxyAgreementUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getGetMethodCheckUrl = () => {
+
+
+
+
+  return `/api/benchmark/method-check`
+}
+
+/**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+export const getMethodCheck = async ( options?: Parameters<typeof customFetch>[1]): Promise<MethodCheck> => {
+
+  return customFetch<MethodCheck>(getGetMethodCheckUrl(),
   {
     ...options,
     method: 'GET'

@@ -1710,6 +1710,53 @@ export interface ProxyAgreement {
   kendallTau: number | null;
 }
 
+export type MethodCheckState = typeof MethodCheckState[keyof typeof MethodCheckState];
+
+
+export const MethodCheckState = {
+  measured: 'measured',
+  not_run: 'not_run',
+} as const;
+
+export type MethodCheckProvidersItem = {
+  providerId: string;
+  /** Pooled gold WER: total errors / total gold words. */
+  wer: number;
+  /** Pooled peer flags per 100 words on the call word basis. */
+  flagsPer100Words: number;
+  calls: number;
+};
+
+export type MethodCheckVerdict = typeof MethodCheckVerdict[keyof typeof MethodCheckVerdict];
+
+
+export const MethodCheckVerdict = {
+  agrees: 'agrees',
+  weak: 'weak',
+  disagrees: 'disagrees',
+  not_measurable: 'not_measurable',
+} as const;
+
+export interface MethodCheck {
+  state: MethodCheckState;
+  bulkId?: string;
+  completedAt?: string;
+  providers?: MethodCheckProvidersItem[];
+  /** Providers that carried both a WER and a flag rate. */
+  n?: number;
+  /**
+     * Spearman rho, -1 to 1. Null when fewer than 3 providers or one side is entirely tied.
+     * @nullable
+     */
+  rho?: number | null;
+  /**
+     * Exact one-sided permutation p-value. Null when rho is null.
+     * @nullable
+     */
+  pOneSided?: number | null;
+  verdict?: MethodCheckVerdict;
+}
+
 export type BulkVerdictsProvidersItem = {
   id: string;
   name: string;

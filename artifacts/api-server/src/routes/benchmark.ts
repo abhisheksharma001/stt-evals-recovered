@@ -26,6 +26,7 @@ import { getProviderAdapter, listProviderAdapters, providerIdForModel, vendorOf,
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantSignals } from "../lib/assistant-signals";
+import { methodCheck } from "../lib/method-check";
 import { proxyAgreement } from "../lib/proxy-agreement";
 import { isUniqueViolation } from "../lib/bulks";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
@@ -65,6 +66,7 @@ import {
   GetWordsToWatchResponse,
   GetAssistantSignalsQueryParams,
   GetAssistantSignalsResponse,
+  GetMethodCheckResponse,
   GetProxyAgreementResponse,
   ListBenchmarkCallsResponse,
   ListBenchmarkProvidersResponse,
@@ -431,6 +433,11 @@ router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
 // leave nothing to measure.
 router.get("/benchmark/proxy-agreement", async (_req, res): Promise<void> => {
   respondJson(res, GetProxyAgreementResponse, await proxyAgreement());
+});
+
+// W-12b: the gold-free ranking held against gold WER on the public set.
+router.get("/benchmark/method-check", async (_req, res): Promise<void> => {
+  respondJson(res, GetMethodCheckResponse, await methodCheck());
 });
 
 // T-87: which words keep splitting the providers, per bulk / assistant.

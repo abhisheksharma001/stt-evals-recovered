@@ -232,6 +232,26 @@ export const GetProxyAgreementResponse = zod.object({
 
 
 /**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+export const GetMethodCheckResponse = zod.object({
+  "state": zod.enum(['measured', 'not_run']),
+  "bulkId": zod.string().uuid().optional(),
+  "completedAt": zod.coerce.date().optional(),
+  "providers": zod.array(zod.object({
+  "providerId": zod.string(),
+  "wer": zod.number().describe('Pooled gold WER: total errors \/ total gold words.'),
+  "flagsPer100Words": zod.number().describe('Pooled peer flags per 100 words on the call word basis.'),
+  "calls": zod.number().int()
+})).optional(),
+  "n": zod.number().int().optional().describe('Providers that carried both a WER and a flag rate.'),
+  "rho": zod.number().nullish().describe('Spearman rho, -1 to 1. Null when fewer than 3 providers or one side is entirely tied.'),
+  "pOneSided": zod.number().nullish().describe('Exact one-sided permutation p-value. Null when rho is null.'),
+  "verdict": zod.enum(['agrees', 'weak', 'disagrees', 'not_measurable']).optional()
+})
+
+
+/**
  * @summary T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
  */
 export const GetAssistantTranscriberParams = zod.object({

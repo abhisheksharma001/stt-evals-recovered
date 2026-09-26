@@ -74,6 +74,7 @@ import type {
   ListBulksParams,
   ListDisagreementSpansParams,
   ListVapiAssistantsParams,
+  MethodCheck,
   PlanTask,
   PreviewAgentMarksParams,
   Provider,
@@ -656,6 +657,83 @@ export function useGetProxyAgreement<TData = Awaited<ReturnType<typeof getProxyA
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProxyAgreementQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMethodCheckUrl = () => {
+
+
+
+
+  return `/api/benchmark/method-check`
+}
+
+/**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+export const getMethodCheck = async ( options?: Parameters<typeof customFetch>[1]): Promise<MethodCheck> => {
+
+  return customFetch<MethodCheck>(getGetMethodCheckUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMethodCheckQueryKey = () => {
+    return [
+    `/api/benchmark/method-check`
+    ] as const;
+    }
+
+
+export const getGetMethodCheckQueryOptions = <TData = Awaited<ReturnType<typeof getMethodCheck>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMethodCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMethodCheckQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMethodCheck>>> = ({ signal }) => getMethodCheck({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMethodCheck>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMethodCheckQueryResult = NonNullable<Awaited<ReturnType<typeof getMethodCheck>>>
+export type GetMethodCheckQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+
+export function useGetMethodCheck<TData = Awaited<ReturnType<typeof getMethodCheck>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMethodCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMethodCheckQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
