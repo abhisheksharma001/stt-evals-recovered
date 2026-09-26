@@ -10,7 +10,8 @@ status `failed`, not `queued`, so `cancelBulk` neither flipped them nor signalle
 only cancels `queued` runs and signals `running` ones. Second hazard found on the way out:
 `recoverInterruptedRuns` resumes every `queued`/`running` run at boot, so the API could not
 be restarted until the three interrupted shards were set `cancelled` by hand (3 audit rows,
-actor `manual-w12-cap-2000`). Fix: W-12a5.
+actor `manual-w12-cap-2000`). Fix: W-12a5 -- **fixed 2026-09-26**: the retry re-reads the
+bulk before each shard and marks the shard cancelled instead of running it.
 
 ## Found 2026-09-26 (W-12 launch): every public clip failed -- no audio_object_path
 

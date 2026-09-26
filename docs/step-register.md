@@ -10338,7 +10338,15 @@ spend, run after merge); change `run-executor.ts`; touch a non-pipecat call's pa
 
 ### W-12a5 — Cancelling a bulk also stops a retry-failed that is still starting shards
 
-**Status:** open, logged 2026-09-26 (see `docs/backlog/good-to-have.md`, W-12 cap).
+**Status:** **done 2026-09-26** (see `docs/backlog/good-to-have.md`, W-12 cap).
+Learned while building: the waiting shards were never `queued` -- a retry picks `failed`
+and `complete` shards, which `cancelBulk` does not touch and the executor's status gate
+admits -- so the fix lives in the retry's worker, not in `cancelBulk`. The test
+(`artifacts/api-server/src/routes/__integration__/bulk-cancel-retry.int.test.ts`) pins
+timing with a row lock instead of a sleep: it holds FOR UPDATE on the first three shards, so
+the fourth waits in the drain until after the cancel. It is a new file rather than a case in
+the cancel route test, because it calls the executor and needs that file's safety header.
+`launchBulk` needs no change: its shards are `queued`, which `cancelBulk` already stops.
 **PR:** one.
 **Depends on:** nothing.
 **Research:** none.
