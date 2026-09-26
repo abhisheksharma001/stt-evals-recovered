@@ -471,7 +471,7 @@ order. Order and dependencies:
 | W-11 | Claude Code plugin (new repo) | W-10 | nothing |
 | W-12 | public calibration set — the receipt for §1b | W-13 | **≈ $6.32 once, approved 2026-09-14 by delegation, ceiling $7** |
 | W-12a1 | the AI judge never runs on a public calibration call (found 2026-09-26: it was unpriced, outside the $7 ceiling) — **done 2026-09-26** | W-12a | nothing |
-| W-12a2 | public clips stay out of the M-18 "human gold" agreement figure | W-12a | nothing |
+| W-12a2 | public clips stay out of the M-18 "human gold" agreement figure — **done 2026-09-26** | W-12a | nothing |
 | W-12b | method check: Spearman ρ + exact permutation p + verdict word on Results | W-12a1, W-12a2, the launch | nothing (reads only) |
 
 ## 8. Evidence — daily watch, org → agent → call

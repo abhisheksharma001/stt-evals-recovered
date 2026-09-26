@@ -10257,7 +10257,12 @@ Vapi calls are judged; delete or rewrite any existing scan row.
 
 ### W-12a2 — Public clips stay out of the "human gold" agreement figure
 
-**Status:** open, written 2026-09-26. **Must ship before the W-12 launch.** Spends nothing.
+**Status:** done 2026-09-26. `labelledCall` got the fourth condition; the header's scope
+list says why. Learned: a judge pick with a single candidate is not measurable, so the
+first seed left `judgePicks` unmoved even with the filter removed -- the break test caught
+that the test was weaker than it read. The seed now has two candidates, and removing the
+condition moves all six figures (labelledCalls 6->7, n 2->3, tau 0->-0.33, top-1 0.5->0.33,
+judgePicks 2->3, judge top-1 0.5->0.67).
 
 **Why this exists (found 2026-09-26, logged in `docs/backlog/good-to-have.md`):**
 `GET /benchmark/proxy-agreement` (M-18, M-20) counts a call as labelled when its gold is

@@ -15,7 +15,7 @@ Expected (W-12 finding 5): public calls appear in proxy-agreement "as their own 
 labelled group". Seen: `labelledCall` in `artifacts/api-server/src/lib/proxy-agreement.ts:48`
 has no grouping and no source filter; a pipecat call (gold, no draft) counts as a
 person-written gold. After the launch ~1,000 public clips would outweigh the calls a human
-checked. Fix: W-12a2. W-12 finding 5's sentence is corrected in its own row by W-12a2's
+checked. Fix: W-12a2 -- **fixed 2026-09-26**. W-12 finding 5's sentence is corrected in its own row by W-12a2's
 "Why this exists".
 
 ## Found 2026-09-10 (R-43): a number word and its digits score as a total miss
