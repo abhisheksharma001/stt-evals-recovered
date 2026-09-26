@@ -1,3 +1,15 @@
+## Found 2026-09-26 (R-25b): one `ok` cell has no score row
+
+Expected: every `ok` cell has a `benchmark_scores` row -- R-26 measured 0 exceptions of 769
+on 2026-09-10, and `alreadyOk` in `artifacts/api-server/src/lib/run-executor.ts` skips
+`ok` cells on every retry, so an unscored one is billed and invisible to every ranking for
+good. Seen: result `07e4f6e3` (AssemblyAI, run `6e88dfeb`, bulk `4fee349b` "Public: Pipecat
+1k"), written 11:42:00 UTC -- a minute after that bulk's retry-failed began, and long
+before the API was stopped at 12:20 UTC, so the known kill does not explain it. Cause not
+investigated. Reproduce: `ok` rows left-joined to `benchmark_scores` where the score is
+null. Worth: find how a live, un-killed process left it unscored before trusting R-26's
+"latent only" reading.
+
 ## Found 2026-09-26 (picking the next step): register statuses left open
 
 Expected: a merged step reads `done` in `docs/step-register.md`. Seen: R-36, R-37, R-38,
