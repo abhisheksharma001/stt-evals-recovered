@@ -5541,7 +5541,7 @@ fixes is a triage nobody can check.
 | B-18 documented base URL doubles `/api` | **live** | `deploy-web.yml:13` documents the value **with** `/api`; `lib/api-client-react/src/custom-fetch.ts:29` strips trailing slashes and nothing else |
 | B-19 diacritics stripped from entities | **live** | `lib/scoring/src/core.ts:223-231`: NFKC, upper, `[^A-Z0-9]` — no NFD, no `\p{M}`. `"CAFÉ"` normalises to `"CAF"` |
 | B-20 boundary-less entity substring match | **live** | `lib/scoring/src/core.ts:349` `normalizedHypothesis.includes(normalized)` |
-| B-21 Cartesia truncation returns `ok` | **live** | `lib/stt-providers/src/adapters/cartesia.ts:471` — the close handler still keys only on `!finalizeSent`, so a 1006 after finalize is not an error |
+| B-21 Cartesia truncation returns `ok` | **fixed 2026-09-26 (R-25a)** | a stream with no `flush_done` now fails in `reduceCartesiaTranscript` (`lib/stt-providers/src/adapters/cartesia.ts`); the 16 old rows are R-25b |
 | B-22 presigned URL frozen per run | **fixed** | T-7 (`run-executor.ts:516-526`): audio is warmed to a disk cache once per **call** and the bytes are read back per cell; the frozen per-run URL Map is gone |
 
 **Score: 10 live, 2 narrowed, 3 moot, 1 fixed, 1 live-but-reduced.** Two thirds of a
@@ -5985,9 +5985,9 @@ when the lost audit row is the half that cannot be retried.
 
 ### R-25 — B-21 is real, and both the register's fix and the vendor's docs would get it wrong
 
-**Status:** open — the fix is known and grounded; shipping it changes 16 existing rows,
-so it needs a go on what happens to them.
-**PR:** none yet.
+**Status:** split 2026-09-26 into R-25a (the gate, done) and R-25b (the 16 rows).
+Abhishek's decision, 2026-09-26: **mark the 16 failed, no re-run.**
+**PR:** see R-25a and R-25b.
 **Depends on:** R-22.
 **Files:** none changed. Measurement only.
 
@@ -6034,7 +6034,85 @@ parse at all. Logged to `docs/backlog/good-to-have.md`, not fixed in this step.
 **Must not:** gate on `done`; gate on the close code; change those 16 rows without a
 decision on re-running them.
 
+> **Corrected 2026-09-26 (R-25a).** "9.9% of ok rows" read as a live rate. It is not:
+> the 16 are 16 of the 17 `ok` rows written between 15:10 and 15:34 UTC on 2026-08-24,
+> the afternoon the two close-handler bugs in `cartesia.ts` were found and fixed. From
+> 15:38 that day to 2026-09-26, **0 of 417** `ok` rows lack `flush_done`. The gate is still
+> right -- nothing else stops an idle close after `finalize` from scoring a cut transcript
+> -- but the 16 are the old bug, not a recurring one. The "24 rows do not parse" below
+> and "double-encoded" below also did not reproduce: on 2026-09-26, **0 of the 451**
+> non-empty Cartesia `raw_output` values fail to parse or decode to a string (the column
+> is `text`; the backlog entry is corrected).
+
 ---
+
+### R-25a — A Cartesia stream that never got `flush_done` fails instead of scoring
+
+**Status:** done 2026-09-26.
+**PR:** one.
+**Depends on:** R-25.
+**Files:** `lib/stt-providers/src/adapters/cartesia.ts`,
+`lib/stt-providers/src/adapters/parsers.test.ts`.
+
+**Today:** `reduceCartesiaTranscript` returns `ok` text for any stream with a final
+segment. A socket that closes after `finalize` but before Cartesia's `flush_done` ack
+scores the partial text as a good transcript.
+
+**Change:** the reducer notes `flush_done`; with no vendor `error` frame and no
+`flush_done`, it returns a null transcript and an error. `transcribe` already maps a
+reducer error with no socket class to `unknown`, which is retryable. The header's
+UNVERIFIED handshake note is replaced by what R-25 measured.
+
+**Acceptance:** WHEN a Cartesia stream closes with final text but no `flush_done` THEN the
+cell SHALL be `failed` with class `unknown`, AND every stored `ok` row that has
+`flush_done` SHALL still reduce to `ok`.
+
+**Verify:**
+```
+pnpm run typecheck
+pnpm --filter "./lib/stt-providers" exec vitest run
+```
+A pass, 2026-09-26: typecheck clean; stt-providers **7 files / 129 tests** (was 128).
+Replayed through the new reducer, read-only, every stored Cartesia `ok` row on the dev
+database: **16 of 433 would fail, all 2026-08-24; the other 417 stay ok.**
+
+**Prove it by breaking it:** done, after committing. Turning the `!flushDone` branch off
+failed exactly one case, "fails a stream that closed without flush_done, even with final
+text in hand". Restored with `git checkout -- lib/stt-providers/src/adapters/cartesia.ts`.
+
+**Must not:** gate on `done` or the close code; touch any stored row (that is R-25b); change
+the idle-close timing.
+
+> **What was learned.** *Date the evidence before you size the bug.* "9.9% of rows" was
+> true and still misleading: every one of the 16 sat in a 24-minute window before an
+> earlier fix. One `GROUP BY created_at` turned a live defect rate into a closed incident
+> plus a cheap guard.
+
+---
+
+### R-25b — The 16 truncated Cartesia rows of 2026-08-24 read failed, not ok
+
+**Status:** open. Next.
+**PR:** one.
+**Depends on:** R-25a.
+**Decision:** Abhishek, 2026-09-26 -- mark failed, **no re-run** (no Cartesia spend).
+**Files:** to be named in the step (a one-off, idempotent data script, or a migration --
+choose the project's existing pattern for data fixes).
+
+**Today:** 16 `benchmark_provider_call_results` rows (provider `cartesia-ink-whisper`,
+`status = 'ok'`, created 2026-08-24 15:10-15:34 UTC, `raw_output` has no `flush_done`),
+each with a `benchmark_scores` row, so they count in rankings.
+
+**Change:** set those 16 to `failed`, `failure_class = 'unknown'`, the same error message
+R-25a writes, and `hypothesis_transcript = null`; delete their score rows so rankings stop
+reading them. Select them by the same rule R-25a applies, not by id list, and print the
+count before writing -- it must be 16.
+
+**Acceptance:** WHEN the fix runs THEN exactly 16 Cartesia rows SHALL change from `ok` to
+`failed` AND no other row SHALL change AND a second run SHALL change nothing.
+
+**Must not:** re-run any cell or call Cartesia; touch non-Cartesia rows; delete result rows
+(only their scores).
 
 ### R-26 — A cell that was paid for but never scored stops being invisible (B-6)
 

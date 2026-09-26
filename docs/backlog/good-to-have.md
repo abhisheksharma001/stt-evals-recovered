@@ -162,6 +162,12 @@ column has to `JSON.parse` a value the schema types as an object, and a reader t
 not will silently see no fields — which is exactly what the first pass of the R-25 probe
 did, and it reported "no events recorded" for every row before the shape was checked.
 
+> **Corrected 2026-09-26 (R-25a): neither half reproduces.** The column is `text`, not
+> jsonb (`\d benchmark_provider_call_results`). Of the 451 non-empty Cartesia values, one
+> `JSON.parse` gives an object on 435 and the JSON literal `null` on 16; **0 fail to parse
+> and 0 are double-encoded.** The 2026-09-10 figures most likely came from how that probe
+> exported the column, not from the data. Nothing to fix; kept for the record.
+
 Worth: find the write site, store the object, and decide what to do about the 24. Not
 urgent — nothing in the product reads this column today; the cost is paid by whoever
 next tries to answer a question from it.
