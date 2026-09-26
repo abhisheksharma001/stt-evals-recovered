@@ -10055,7 +10055,9 @@ before any repo exists.
 ### W-12 — The public calibration set: does the no-gold rank agree with gold WER?
 
 **Status:** **W-12a done 2026-09-25 (PR #202, squash `475af66`, deployed, dry run verified
-live); W-12b (method check) next; the launch waits for "go spend".** Grilled 2026-09-25, split
+live); 2026-09-26: two pre-launch blockers found and stepped (W-12a1 judge spend, W-12a2
+proxy-agreement scope), W-12b written as its own row below. Order: W-12a1 -> W-12a2 -> "go
+spend" launch -> W-12b.** Grilled 2026-09-25, split
 into **two PRs** (W-12a importer, W-12b method check -- the split is finding 6 below).
 
 **W-12a, shipped:** `scripts/src/import-public-set.ts` (`stt-evals public-set`), its unit test,
@@ -10197,6 +10199,159 @@ baseline (W-6 excludes by `sourceProvider`; the `accountLabel` criterion keeps i
 of every template); be created while `MAX_LIVE_BULKS` live bulks exist — FR-BLK-10
 would evict a client's bulk to make room, so the script refuses when
 `GET /benchmark/bulks` shows the cap.
+
+### W-12a1 — The AI judge never runs on a public calibration call
+
+**Status:** open, written 2026-09-26. **Must ship before the W-12 launch.** Spends nothing.
+Decided by Abhishek 2026-09-26: skip the judge for public clips, do not price it in.
+
+**Why this exists (found 2026-09-26 while writing W-12b, logged in
+`docs/backlog/good-to-have.md`):** every completed run -- bulk or ad-hoc -- calls
+`runAutoAgentVerificationForRun` (`artifacts/api-server/src/lib/run-executor.ts:824`),
+which sends each call whose candidates got flagged to a paid OpenAI judge
+(`artifacts/api-server/src/lib/agent-verify.ts`, `verifyCallWithAgent`). The W-12 script's
+estimate and its $7 ceiling (`scripts/src/import-public-set.ts`) price the seven STT
+providers only. Launched as written, up to 1,000 judge calls would ride along, unpriced
+and outside the ceiling D-15 approved. The method check needs gold WER and peer-flag rate
+only; the judge adds nothing to it.
+
+**PR:** one.
+**Depends on:** W-12a.
+**Research:** none.
+**Serves:** Part F's money rule -- "the spend is approved once, with a ceiling".
+**Files:** `artifacts/api-server/src/lib/agent-verify.ts` (the `rows` query inside
+`runAutoAgentVerificationForRun`), a new integration file in
+`artifacts/api-server/src/routes/__integration__/` (plain name:
+agent-verify-public.int.test.ts).
+**Today:** the `rows` query selects every `ok` result of the run with a hypothesis; nothing
+looks at the call's `sourceProvider`. A run over calls with `sourceProvider = 'pipecat'`
+reaches `verifyCallWithAgent` for every flagged call.
+**Change:** join `benchmarkCallsTable` in that query and add
+`ne(benchmarkCallsTable.sourceProvider, "pipecat")` to its `where`, so public calls never
+enter `byCallId`. Log one info line with the count skipped
+(`"W-12a1: public calibration calls never go to the judge"`), same style as the T-45 skip
+line below it. Do not touch `verifyCallWithAgent` itself -- a person can still scan a
+single call by hand.
+**Acceptance:** WHEN a run completes whose calls all carry `sourceProvider = 'pipecat'`
+THEN the executor SHALL write zero `benchmark_agent_scans` rows for them and make zero
+judge calls; AND WHEN the same run holds one Vapi call THEN that call SHALL still be
+verified.
+**Verify:** `pnpm run typecheck`; the new integration case (seed one pipecat call and one
+vapi call in one run, stub `judgeCandidates` with `vi.mock` on
+`artifacts/api-server/src/lib/agent.ts` -- no integration test stubs the judge yet;
+`pool-error.int.test.ts` is the only `vi.mock` user, copy its pattern -- call
+`runAutoAgentVerificationForRun`, assert scans exist for the vapi call only); the whole
+`pnpm --filter @workspace/api-server run test:integration 2>&1 | tee /tmp/int.log` green
+(F-51: read the log, not a tail).
+**Prove it by breaking it:** after committing, remove the `ne(...)` clause; the pipecat
+assertion fails, the vapi assertion still passes. Restore.
+**Must not:** make a real OpenAI call in any test (stub `judgeCandidates`); change which
+Vapi calls are judged; delete or rewrite any existing scan row.
+
+### W-12a2 — Public clips stay out of the "human gold" agreement figure
+
+**Status:** open, written 2026-09-26. **Must ship before the W-12 launch.** Spends nothing.
+
+**Why this exists (found 2026-09-26, logged in `docs/backlog/good-to-have.md`):**
+`GET /benchmark/proxy-agreement` (M-18, M-20) counts a call as labelled when its gold is
+non-empty and differs from its draft (`labelledCall`,
+`artifacts/api-server/src/lib/proxy-agreement.ts:48`). A pipecat call has gold and no
+draft, so all 1,000 would qualify. Today the figure rests on the calls a person actually
+transcribed; after the launch it would be ~1,000 public clips and would silently stop
+meaning "checked by a human". W-12 finding 5 expected public calls to show up there "as
+their own plainly labelled group" -- no such grouping exists in that endpoint. The
+public set gets its own figure in W-12b instead.
+
+**PR:** one.
+**Depends on:** W-12a.
+**Research:** none.
+**Serves:** §1b -- the receipt must not be mixed into the number it is a check on.
+**Files:** `artifacts/api-server/src/lib/proxy-agreement.ts`,
+`artifacts/api-server/src/routes/__integration__/proxy-agreement.int.test.ts`.
+**Today:** `labelledCall` has three conditions (gold not null, gold not empty, gold
+distinct from draft). No condition on `sourceProvider`.
+**Change:** add a fourth condition to `labelledCall`:
+`ne(benchmarkCallsTable.sourceProvider, "pipecat")`. It feeds every query in the file
+(labelled count, WER rows, judge picks), so one line covers M-18 and M-20. Update the
+file's header "Scope rules" list with one bullet saying why.
+**Acceptance:** WHEN a pipecat call with gold and scored cells exists THEN
+`GET /api/benchmark/proxy-agreement` SHALL return the same `labelledCalls`, `n`,
+`kendallTau` and `judgePicks` as without it.
+**Verify:** `pnpm run typecheck`; a new case in `proxy-agreement.int.test.ts` that seeds a
+pipecat call with gold and two scored cells and asserts the response equals the response
+before the seed; integration suite green via `tee` as in W-12a1.
+**Prove it by breaking it:** after committing, drop the new condition; the new case fails
+on `labelledCalls`. Restore.
+**Must not:** change the three existing conditions; change the shape of the response;
+touch `proxy-agreement-aggregate.ts` (the arithmetic is right, the scope was wrong).
+
+### W-12b — Method check: does the no-gold rank agree with gold WER?
+
+**Status:** open, written 2026-09-26. Depends on the launch for its live proof. Spends
+nothing itself (it only reads).
+
+**Decided by Abhishek 2026-09-26:** Spearman as the PRD says (not the existing Kendall
+tau-b); the screen shows the number **and** a plain verdict. Order: this row is written,
+W-12a1 and W-12a2 ship, then Abhishek says "go spend", the bulk runs (~2.7 h, Cartesia),
+and this step is built and verified on its real numbers.
+
+**Research:** answered in `docs/research.md` R-1 (confidence high): the cutoff is not a
+fixed number. With n = 7 and no ties, ρ ≥ 5/7 (0.714) has a one-sided chance probability
+of 0.044 (computed exactly over all 5,040 orderings, 2026-09-26; matches the published
+Zar table, one-tailed α 0.05 = 0.714). Ties change that probability, and ties are the
+normal case here (see the header of `lib/scoring/src/rank-agreement.ts`), so the code
+computes the exact permutation p-value on the real ranks instead of comparing to 0.714.
+
+**PR:** one.
+**Depends on:** W-12a1, W-12a2, and the Pipecat bulk completed.
+**Serves:** §1b / Part F -- "If the ranks agree, 1b is a claim with a receipt."
+**Files:** `lib/scoring/src/rank-agreement.ts` (+ its test), a new lib file beside
+`artifacts/api-server/src/lib/proxy-agreement.ts` (plain name: method-check.ts, pure
+half + db half split the same way as proxy-agreement / proxy-agreement-aggregate),
+`artifacts/api-server/src/routes/benchmark.ts` (one GET route beside the proxy-agreement
+one), `lib/api-spec/openapi.yaml` (+ `pnpm --filter @workspace/api-spec run codegen`),
+`artifacts/stt-benchmark/src/pages/Rankings.tsx` (the Results page, route `/results`),
+`docs/scoring-policy.md` (one paragraph: what the method check measures and does not).
+**Today:** nothing computes Spearman. Per-cell WER is stored in `benchmark_scores.wer`;
+per-provider pooled flags per 100 words come from `pooledRate` in
+`lib/scoring/src/verdict.ts`. The Results page has no "Method check" line.
+**Change:**
+1. `spearmanRho(a, b)` in `rank-agreement.ts`: both inputs are scores where lower is
+   better; ranks are tie-averaged (mid-ranks); ρ = Pearson correlation of the two rank
+   vectors. Null when fewer than 3 providers or either side is all tied (same rule as
+   `kendallTauB`: a call-site must drop it, never fall back).
+2. `spearmanPermutationP(a, b)`: exact one-sided p = share of all n! orderings of `b`'s
+   ranks whose ρ against `a`'s ranks is ≥ the observed ρ. Refuse (throw) above n = 9
+   (9! = 362,880 is still instant; beyond that nobody has specified an approximation).
+3. `methodCheck()` (db half): the bulk named `Public: Pipecat 1k` (constant from W-12a's
+   `ACCOUNT_LABEL`; copy the string, do not import across packages), its `ok` batch cells,
+   per ready provider: pooled gold WER (sum of errors / sum of gold words, not a mean of
+   means) and pooled flags per 100 words via `pooledRate`. Returns
+   `{ bulkId, completedAt, providers: [{ providerId, wer, flagsPer100Words, calls }], n,
+   rho, pOneSided, verdict }` or `{ state: "not_run" }` when the bulk does not exist or
+   is not complete. Absent is not zero: no bulk means `not_run`, never ρ = 0.
+4. Verdict, pure: `agrees` when ρ > 0 and p < 0.05; `weak` when ρ > 0 and p ≥ 0.05;
+   `disagrees` when ρ ≤ 0; `not_measurable` when ρ is null.
+5. `GET /api/benchmark/method-check`, openapi entry, codegen.
+6. Results page: one line under a "Method check" heading --
+   "Spearman ρ 0.xx across N providers (p = 0.0xx) -- agrees | weak | disagrees, measured
+   <completedAt date>" -- then the caveat line from Part F: "16 kHz mic audio, English,
+   one public set. Checks the method, not any client's numbers." `not_run` renders
+   "Method check not run yet", never a number.
+**Acceptance:** WHEN the Pipecat bulk has completed THEN `/results` SHALL show the
+Spearman ρ between pooled gold WER and pooled peer-flag rate across its providers, its
+exact one-sided p, the verdict word and the completion date; AND WHEN no such bulk exists
+THEN it SHALL show "Method check not run yet" and no number.
+**Verify:** `pnpm run typecheck`; unit tests for `spearmanRho` (identical order = 1,
+reversed = -1, a known tied case worked by hand) and `spearmanPermutationP` (n = 7, no
+ties, ρ = 5/7 gives p = 222/5040 ≈ 0.0440); an integration case for the route in both
+states; a render test for both lines; then live: `curl -s localhost:8177/api/benchmark/method-check`
+after the bulk, and the numbers on `/results` match it.
+**Prove it by breaking it:** after committing, make `spearmanRho` skip tie-averaging
+(ordinal ranks); the tied-case unit test fails. Restore.
+**Must not:** spend anything or start a run; read or show a single transcript or clip
+(D-15: aggregate arithmetic only); put the public bulk into any client verdict, trend or
+overview; approximate p with a t-distribution; render ρ when the state is `not_run`.
 
 ### W-13 — `MAX_LIVE_BULKS` goes from 3 to 10
 
