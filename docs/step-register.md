@@ -7722,6 +7722,73 @@ before), integration **198** (193 before), typecheck clean, 7 structural checks 
 `artifacts/api-server/src/routes/__integration__/riskiest-endpoints.int.test.ts`,
 `scripts/check-response-edge.mjs`
 
+### R-55 — An `ok` cell whose transcript is empty gets scored, not dropped
+
+**Status:** done 2026-09-26.
+**PR:** one.
+**Depends on:** nothing.
+**Decision:** Abhishek, 2026-09-26 -- "heard nothing" is scored as a miss, not failed and
+not left alone.
+**Files:** `artifacts/api-server/src/lib/run-executor.ts`,
+new file `artifacts/api-server/src/routes/__integration__/run-executor-empty-transcript.int.test.ts`.
+
+**Today:** `runCell` saves the adapter's result, then returns before scoring when
+`!result.hypothesisTranscript`. An empty string is falsy, so a provider that succeeds and
+hears nothing leaves an `ok` cell with **no score row**: absent from every ranking, and
+skipped for good by every retry (`alreadyOk`). Found live: result `07e4f6e3`, AssemblyAI,
+bulk `4fee349b`, a 1-second public clip whose gold is one word; the six other providers
+each heard a word. It is the only such cell in the database. This is not R-26's crash
+window -- no process died; the code path is ordinary.
+
+**Change:** gate on `hypothesisTranscript == null` instead. `score()` already handles an
+empty hypothesis correctly (probed: gold "word" vs "" gives WER 1, one deletion).
+
+**Acceptance:** WHEN a provider returns `ok` with an empty transcript THEN the cell SHALL be
+saved `ok` AND carry exactly one score row with every reference word a deletion.
+
+**Verify:**
+```
+pnpm run typecheck
+pnpm --filter @workspace/api-server test
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+A pass, 2026-09-26: typecheck clean in all four projects; api-server unit **37 files / 284
+tests**; integration **47 files / 257 tests** (one new file, one new case).
+
+**Prove it by breaking it:** done, after committing. Putting `!result.hypothesisTranscript`
+back failed exactly the new case: `expected [] to have a length of 1 but got +0`. Restored
+with `git checkout -- artifacts/api-server/src/lib/run-executor.ts`.
+
+**Must not:** call any provider (the test registers a stub adapter the way
+`artifacts/api-server/src/rehearsal-scale.ts` does, and stubs the judge to throw); touch
+the existing cell (that is R-55b); change what a `null` transcript does.
+
+> **What was learned.** *Empty is an answer.* `!text` reads as "no transcript" and quietly
+> also means "a transcript of nothing" -- and the one provider that heard nothing was the
+> one the rankings never saw miss.
+
+### R-55b — Score the one existing empty-transcript cell
+
+**Status:** open. Next.
+**PR:** one.
+**Depends on:** R-55.
+**Decision:** Abhishek, 2026-09-26 -- score it as a miss; no re-run, no spend.
+**Files:** a one-off backfill script in the project's pattern
+(`artifacts/api-server/src/backfill-*.ts`: dry run by default, `--apply`, audit row,
+idempotent).
+
+**Today:** result `07e4f6e3` (AssemblyAI, run `6e88dfeb`, bulk `4fee349b`) is `ok` with an
+empty transcript and no score row. Retry will never reach it, so R-55 alone does not fix it.
+
+**Change:** select every `ok` cell with an empty transcript and no score row (expect 1),
+write its score row the way `runCell` now would, then recompute that run's hybrid flags
+and the bulk's ranking rows (`computeHybridFlagsForRun`, `computeRankingsForBulk`).
+
+**Acceptance:** WHEN the backfill runs THEN exactly one score row SHALL be added AND a
+second run SHALL add nothing AND no provider SHALL be called.
+
+**Must not:** re-run the cell; call any provider or the judge; change any other cell.
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

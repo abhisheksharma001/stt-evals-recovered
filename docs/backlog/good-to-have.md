@@ -10,6 +10,11 @@ investigated. Reproduce: `ok` rows left-joined to `benchmark_scores` where the s
 null. Worth: find how a live, un-killed process left it unscored before trusting R-26's
 "latent only" reading.
 
+> **Cause found 2026-09-26 (R-55):** not a crash. AssemblyAI returned `ok` with an empty
+> transcript on a 1-second clip, and `runCell` skipped scoring on `!hypothesisTranscript`,
+> which an empty string satisfies. R-26's reading stands; this is a separate path. Fixed
+> in R-55; the existing cell is R-55b.
+
 ## Found 2026-09-26 (picking the next step): register statuses left open
 
 Expected: a merged step reads `done` in `docs/step-register.md`. Seen: R-36, R-37, R-38,
