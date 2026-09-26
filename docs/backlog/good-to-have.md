@@ -30,7 +30,9 @@ Expected: the bulk's estimate matches the script's $6.32. Seen: `estimatedCostCe
 = `estimatedSttCostCents` 631 + `estimatedAgentCostCents` 579. W-12a1 skips the judge for
 pipecat calls, but the bulk estimate still prices it, so the Bulks page shows $12.10 for a
 run whose ceiling is $7. Real spend is the STT part only. Not blocking the retry (the
-script's own gate priced STT only, and D-15's approval was for that). Fix: W-12a4 (open).
+script's own gate priced STT only, and D-15's approval was for that). Fix: W-12a4 --
+**fixed 2026-09-26**: the judge estimate counts only non-pipecat calls. Bulk `4fee349b`'s
+stored estimate is frozen at launch and still reads $12.10.
 
 
 ## Found 2026-09-26 (W-12b write-up): the public-set launch would buy unpriced judge calls
