@@ -1,4 +1,23 @@
 
+## Found 2026-09-26 (W-12b write-up): the public-set launch would buy unpriced judge calls
+
+Expected: the W-12 launch spends ≈ $6.32, capped at $7 by `scripts/src/import-public-set.ts`.
+Seen: every completed run calls `runAutoAgentVerificationForRun`
+(`artifacts/api-server/src/lib/run-executor.ts:824`), which sends each flagged call to the
+paid OpenAI judge (`artifacts/api-server/src/lib/agent-verify.ts`). Nothing excludes
+`sourceProvider = 'pipecat'`, and the script prices STT providers only -- so up to 1,000
+judge calls would ride along outside the ceiling. Found by reading, before any spend.
+Fix: W-12a1 (skip the judge for public calls; decided by Abhishek 2026-09-26).
+
+## Found 2026-09-26 (W-12b write-up): public gold would flood the M-18 agreement figure
+
+Expected (W-12 finding 5): public calls appear in proxy-agreement "as their own plainly
+labelled group". Seen: `labelledCall` in `artifacts/api-server/src/lib/proxy-agreement.ts:48`
+has no grouping and no source filter; a pipecat call (gold, no draft) counts as a
+person-written gold. After the launch ~1,000 public clips would outweigh the calls a human
+checked. Fix: W-12a2. W-12 finding 5's sentence is corrected in its own row by W-12a2's
+"Why this exists".
+
 ## Found 2026-09-10 (R-43): a number word and its digits score as a total miss
 
 Measured while verifying the stt-score CLI:

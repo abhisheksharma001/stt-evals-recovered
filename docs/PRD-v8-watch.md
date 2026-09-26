@@ -398,6 +398,12 @@ mean 9.59 s, measured 2026-09-14) ≈ **$6.32**; Cartesia's real-time adapter al
 - report **rank agreement** between the two (Spearman over 7 providers) on the Results
   page under a "Method check" line, with the date.
 
+The verdict word is decided by the exact one-sided permutation p-value on the real
+(tied) ranks, not a fixed cutoff: **agrees** at ρ > 0 and p < 0.05, **weak** at ρ > 0 and
+p ≥ 0.05, **disagrees** at ρ ≤ 0 (decided 2026-09-26; for 7 untied providers p < 0.05
+means ρ ≥ 5/7). Public calls never go to the paid AI judge and never enter the M-18
+human-gold figure (W-12a1, W-12a2).
+
 If the ranks agree, 1b is a claim with a receipt. If they do not, the flag threshold gets
 tuned on this set before anything is sold. This also answers the "standard benchmark"
 thought: we do not compete with the leaderboards; we **borrow one to check our method**
@@ -464,6 +470,9 @@ order. Order and dependencies:
 | W-10 | MCP server: six reads, one ledger-gated write | W-8, W-9 | nothing by itself |
 | W-11 | Claude Code plugin (new repo) | W-10 | nothing |
 | W-12 | public calibration set — the receipt for §1b | W-13 | **≈ $6.32 once, approved 2026-09-14 by delegation, ceiling $7** |
+| W-12a1 | the AI judge never runs on a public calibration call (found 2026-09-26: it was unpriced, outside the $7 ceiling) | W-12a | nothing |
+| W-12a2 | public clips stay out of the M-18 "human gold" agreement figure | W-12a | nothing |
+| W-12b | method check: Spearman ρ + exact permutation p + verdict word on Results | W-12a1, W-12a2, the launch | nothing (reads only) |
 
 ## 8. Evidence — daily watch, org → agent → call
 
