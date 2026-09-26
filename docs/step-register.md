@@ -6092,12 +6092,13 @@ the idle-close timing.
 
 ### R-25b — The 16 truncated Cartesia rows of 2026-08-24 read failed, not ok
 
-**Status:** open. Next.
+**Status:** done 2026-09-26, applied to the dev database the same day.
 **PR:** one.
 **Depends on:** R-25a.
 **Decision:** Abhishek, 2026-09-26 -- mark failed, **no re-run** (no Cartesia spend).
-**Files:** to be named in the step (a one-off, idempotent data script, or a migration --
-choose the project's existing pattern for data fixes).
+**Files:** new file `artifacts/api-server/src/backfill-r25b-cartesia-truncated.ts`
+(the project's one-off backfill pattern: dry run by default, `--apply`, audit row per
+change, idempotent).
 
 **Today:** 16 `benchmark_provider_call_results` rows (provider `cartesia-ink-whisper`,
 `status = 'ok'`, created 2026-08-24 15:10-15:34 UTC, `raw_output` has no `flush_done`),
@@ -6113,6 +6114,37 @@ count before writing -- it must be 16.
 
 **Must not:** re-run any cell or call Cartesia; touch non-Cartesia rows; delete result rows
 (only their scores).
+
+**Also done, because deleting the scores alone would leave the two runs wrong:** the
+affected runs (`ae62c097`, `eeee7e7f`, both standalone) get the free passes a finishing
+run makes -- `computeHybridFlagsForRun`, since the other providers' peer flags were
+computed against the truncated text, and `computeRankingsForRun`.
+
+**Verify, as run 2026-09-26** (`pnpm --filter @workspace/api-server exec tsx
+--env-file-if-exists=.env ./src/backfill-r25b-cartesia-truncated.ts [--apply]`):
+- typecheck clean in all four projects.
+- `scripts/backup-db.sh` first (stt-evals-2026-09-26.dump, 5.3M).
+- dry run: 433 ok Cartesia cells, 0 unreadable, **16 to fail**, runs `ae62c097`, `eeee7e7f`.
+- `--apply`: failed 16; flags and rankings recomputed for both runs. Second `--apply`:
+  417 ok, **0 to fail, nothing written**.
+- md5 of every result row outside those runs' Cartesia cells, every score row outside the
+  two runs, and every ranking row outside them: **identical before and after**. Status
+  counts moved exactly 16, ok 2961 -> 2945, failed 3958 -> 3974.
+- 16 audit rows (`backfill-r25b-cartesia-truncated`); all 16 cells `failed` / `unknown` /
+  null transcript with R-25a's message; 0 score rows left on them. The two runs' ranking
+  rows went from 6 to 5: `ae62c097` had only its 2 truncated Cartesia cells, so Cartesia
+  no longer ranks there.
+
+**Prove it by breaking it:** not run. This is a one-off script already applied; the
+guard that matters -- a second run writes nothing -- was shown directly above, against the
+real data, rather than by mutation.
+
+> **What was learned.** *A cell is never alone.* The step was written as "16 rows to
+> failed", and doing only that would have been wrong: the other providers' peer flags in
+> the same two runs were computed against the truncated text, and the runs' stored
+> rankings from the scores being deleted -- both would have gone on serving the old
+> answer. Mapping what reads a row before writing it found both. Also found in passing: one `ok` cell with no score row, logged
+> in the bug log and not touched here.
 
 ### R-26 — A cell that was paid for but never scored stops being invisible (B-6)
 
