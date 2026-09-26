@@ -1031,6 +1031,20 @@ export async function retryBulkFailedCells(
   // T-6 fix: same shard-concurrency cap as launchBulk -- a full-bulk retry
   // must not re-fire every shard at once either.
   void drainWithConcurrency(toRetry, BULK_SHARD_CONCURRENCY, async (run) => {
+    // W-12a5: these shards are "failed" or "complete", not "queued", so
+    // cancelBulk cannot stop the ones still waiting in this list and the
+    // executor's status gate lets them in. Re-read the bulk before each one.
+    const [current] = await db
+      .select({ status: benchmarkBulksTable.status })
+      .from(benchmarkBulksTable)
+      .where(eq(benchmarkBulksTable.id, bulkId));
+    if (current?.status === "cancelled") {
+      await db
+        .update(benchmarkRunsTable)
+        .set({ status: "cancelled", completedAt: new Date() })
+        .where(eq(benchmarkRunsTable.id, run.id));
+      return;
+    }
     await executeBenchmarkRun(run.id, actorLabel).catch((err) => {
       logger.error({ err, runId: run.id, bulkId }, "bulk retry run crashed");
     });
