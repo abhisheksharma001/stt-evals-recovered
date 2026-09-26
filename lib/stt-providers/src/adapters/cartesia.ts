@@ -19,8 +19,8 @@ import type { FailureClass } from "../failure-class";
 //
 // The close/finalize handshake: this implementation sends "finalize" once
 // all audio is sent, then waits for the connection to go quiet
-// (IDLE_CLOSE_MS) before sending "close" itself. R-25 (2026-09-26) confirmed
-// it against every stored Cartesia row: the server acks "finalize" with
+// (IDLE_CLOSE_MS) before sending "close" itself. R-25 (2026-09-10) measured
+// it on every stored Cartesia row, and R-25a re-checked it 2026-09-26: the server acks "finalize" with
 // `flush_done`, and the `done` ack to "close" never arrives, because we hang
 // up first. So `flush_done` -- not `done`, and not the close code, which is
 // 1000 on every row -- is the one sign the transcript is complete, and
