@@ -7,7 +7,7 @@ Seen: every completed run calls `runAutoAgentVerificationForRun`
 paid OpenAI judge (`artifacts/api-server/src/lib/agent-verify.ts`). Nothing excludes
 `sourceProvider = 'pipecat'`, and the script prices STT providers only -- so up to 1,000
 judge calls would ride along outside the ceiling. Found by reading, before any spend.
-Fix: W-12a1 (skip the judge for public calls; decided by Abhishek 2026-09-26).
+Fix: W-12a1 (skip the judge for public calls; decided by Abhishek 2026-09-26) -- **fixed 2026-09-26**.
 
 ## Found 2026-09-26 (W-12b write-up): public gold would flood the M-18 agreement figure
 

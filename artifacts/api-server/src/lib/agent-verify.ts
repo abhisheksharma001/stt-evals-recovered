@@ -378,16 +378,33 @@ export async function runAutoAgentVerificationForRun(
   } = {},
 ): Promise<void> {
   const rows = await db
-    .select({ result: benchmarkProviderCallResultsTable, provider: benchmarkProvidersTable })
+    .select({
+      result: benchmarkProviderCallResultsTable,
+      provider: benchmarkProvidersTable,
+      sourceProvider: benchmarkCallsTable.sourceProvider,
+    })
     .from(benchmarkProviderCallResultsTable)
     .innerJoin(benchmarkProvidersTable, eq(benchmarkProvidersTable.id, benchmarkProviderCallResultsTable.providerId))
+    .innerJoin(benchmarkCallsTable, eq(benchmarkCallsTable.id, benchmarkProviderCallResultsTable.callId))
     .where(and(eq(benchmarkProviderCallResultsTable.runId, runId), eq(benchmarkProviderCallResultsTable.status, "ok")));
 
+  // W-12a1: a public calibration clip (W-12a, sourceProvider "pipecat") never
+  // goes to the judge. The W-12 launch's estimate and $7 ceiling price the STT
+  // providers only, and the method check needs gold WER and flag rates, not a
+  // judge pick. Filtered here rather than in the SQL so the skip can be counted.
   const byCallId = new Map<string, typeof rows>();
+  const publicSkipped = new Set<string>();
   for (const row of rows) {
+    if (row.sourceProvider === "pipecat") {
+      publicSkipped.add(row.result.callId);
+      continue;
+    }
     if (!row.result.hypothesisTranscript) continue;
     if (!byCallId.has(row.result.callId)) byCallId.set(row.result.callId, []);
     byCallId.get(row.result.callId)!.push(row);
+  }
+  if (publicSkipped.size > 0) {
+    logger.info({ runId, skipped: publicSkipped.size }, "W-12a1: public calibration calls never go to the judge");
   }
   if (byCallId.size === 0) return;
 
