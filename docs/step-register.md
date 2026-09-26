@@ -10202,7 +10202,14 @@ would evict a client's bulk to make room, so the script refuses when
 
 ### W-12a1 — The AI judge never runs on a public calibration call
 
-**Status:** open, written 2026-09-26. **Must ship before the W-12 launch.** Spends nothing.
+**Status:** done 2026-09-26. Learned: (1) `sourceProvider` is NOT NULL (default "manual"), so a
+`ne()` could never have dropped a null-source call -- but the filter went into the JS loop, not the
+SQL `where`, because a row the SQL drops cannot be counted for the skip log line. Same effect.
+(2) Proved by breaking it: with the check removed, the pipecat call got a `flagged` scan (a paid
+judge call) and the test failed on exactly that assertion. (3) `vi.mock` of `../../lib/agent`
+with `importOriginal` is now the pattern for stubbing the judge in an integration test.
+(4) The integration suite needs `TEST_DATABASE_URL` set in the shell (memo fixtures); 43 files /
+249 tests green.
 Decided by Abhishek 2026-09-26: skip the judge for public clips, do not price it in.
 
 **Why this exists (found 2026-09-26 while writing W-12b, logged in
