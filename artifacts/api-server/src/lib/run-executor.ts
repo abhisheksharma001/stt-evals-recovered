@@ -1133,7 +1133,12 @@ async function runCell(
       return "ok";
     }
 
-    if (result.status !== "ok" || !result.hypothesisTranscript) {
+    // R-55: an empty transcript is an answer ("heard nothing"), not a missing
+    // one, and it is scored -- every reference word a deletion. Gating on
+    // `!hypothesisTranscript` left such a cell `ok` with no score: out of every
+    // ranking, and skipped by every retry. Found live 2026-09-26 on a 1-second
+    // public clip AssemblyAI returned empty while six providers heard a word.
+    if (result.status !== "ok" || result.hypothesisTranscript == null) {
       return "failed";
     }
 
