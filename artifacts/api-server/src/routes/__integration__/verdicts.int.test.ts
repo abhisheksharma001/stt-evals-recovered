@@ -279,6 +279,48 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     expect(none.body.error).toContain("fx-nobody");
   });
 
+  // S-AB1. c is the cleanest provider but ran on only 6 of the 8 calls, so the
+  // whole bulk's top two are c and a over 6 shared calls. Asked about a and b,
+  // the verdict is theirs alone: all 8 calls, both of them scored.
+  it("computes the verdict over exactly the two providers asked about, and refuses any other ask", async () => {
+    const a = await fx.provider({ name: `fx-ab-a-${fx.suffix}`, model: "x" });
+    const b = await fx.provider({ name: `fx-ab-b-${fx.suffix}`, model: "x" });
+    const c = await fx.provider({ name: `fx-ab-c-${fx.suffix}`, model: "x" });
+    const org = `fx-org-ab-${fx.suffix}`;
+    const calls = [];
+    for (let i = 0; i < 8; i += 1) calls.push(await fx.call({ sourceAccountLabel: org }));
+    const bulk = await fx.bulk({ providerIds: [a.id, b.id, c.id] });
+    const run = await fx.run({ bulkId: bulk.id, callIds: calls.map((x) => x.id), providerIds: [a.id, b.id, c.id], callCount: 8 });
+    for (const [i, call] of calls.entries()) {
+      const cellA = await fx.result(run.id, call.id, a.id, { hypothesisTranscript: "alpha beta gamma delta epsilon" });
+      await fx.score(cellA.id, { peerFlagCount: i % 2 });
+      const cellB = await fx.result(run.id, call.id, b.id, { hypothesisTranscript: "alpha beta gamma delta epsilon" });
+      await fx.score(cellB.id, { peerFlagCount: 2 });
+      if (i < 6) {
+        const cellC = await fx.result(run.id, call.id, c.id, { hypothesisTranscript: "alpha beta gamma delta epsilon" });
+        await fx.score(cellC.id, { peerFlagCount: 0 });
+      }
+    }
+
+    const whole = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    expect(whole.status).toBe(200);
+    expect(whole.body.groups[0].verdict.noiseFloor.sharedCalls).toBe(6);
+
+    const pair = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`).query({ providers: `${a.id},${b.id}` });
+    expect(pair.status).toBe(200);
+    expect(pair.body.groups[0].verdict.noiseFloor.sharedCalls).toBe(8);
+    // Only the verdict narrows: the group and the bulk's provider list are the whole bulk's.
+    expect(pair.body.groups[0].callCount).toBe(whole.body.groups[0].callCount);
+    expect(pair.body.providers).toEqual(whole.body.providers);
+
+    for (const bad of [a.id, `${a.id},${b.id},${c.id}`, `${a.id},${a.id}`, `${a.id},fx-not-in-bulk`]) {
+      const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`).query({ providers: bad });
+      expect(res.status, bad).toBe(400);
+      expect(res.body.groups).toBeUndefined();
+      expect(res.body.error).toContain(bad);
+    }
+  });
+
   it("answers 404 for an unknown bulk and a sentence for a malformed id", async () => {
     const unknown = await request(server).get("/api/benchmark/bulks/00000000-0000-4000-8000-000000000000/verdicts");
     expect(unknown.status).toBe(404);

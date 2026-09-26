@@ -60,7 +60,7 @@ import { bulkProviderCorrelation } from "../lib/provider-correlation";
 import { benchmarkTrend } from "../lib/trend";
 import { clientVolume } from "../lib/volume";
 import { bulkTurnSignals } from "../lib/turn-signals";
-import { AssistantNotInBulkError, bulkVerdicts } from "../lib/verdict";
+import { AssistantNotInBulkError, ProvidersNotInBulkError, bulkVerdicts } from "../lib/verdict";
 import { renderVerdictArtefact } from "../lib/verdict-artefact";
 import { buildCommitSha } from "../lib/build-info";
 import { respondInvalid } from "../lib/validation-error";
@@ -644,9 +644,13 @@ router.get("/benchmark/bulks/:bulkId/verdicts", async (req, res): Promise<void> 
     return;
   }
   try {
-    respondJson(res, GetBulkVerdictsResponse, await bulkVerdicts(bulk.id, { assistantId: query.data.assistantId }));
+    respondJson(
+      res,
+      GetBulkVerdictsResponse,
+      await bulkVerdicts(bulk.id, { assistantId: query.data.assistantId, providers: query.data.providers }),
+    );
   } catch (err) {
-    if (err instanceof AssistantNotInBulkError) {
+    if (err instanceof AssistantNotInBulkError || err instanceof ProvidersNotInBulkError) {
       res.status(400).json({ error: err.message });
       return;
     }

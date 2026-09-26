@@ -1041,6 +1041,11 @@ paths:
           description: W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
           schema:
             type: string
+        - name: providers
+          in: query
+          description: S-AB1 -- comma-separated, exactly two distinct provider ids this bulk ran. Each group's verdict is computed over only those two providers' cells, so the noise floor counts only calls both scored; everything else in the response is unchanged. 400 for anything but two such ids.
+          schema:
+            type: string
       responses:
         "200":
           description: One verdict per assistant group in the bulk
@@ -1049,7 +1054,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/BulkVerdicts"
         "400":
-          description: assistantId names no call in this bulk
+          description: assistantId names no call in this bulk, or providers is not exactly two distinct providers in it
         "404":
           description: Bulk not found
   /benchmark/bulks/{bulkId}/turn-signals:

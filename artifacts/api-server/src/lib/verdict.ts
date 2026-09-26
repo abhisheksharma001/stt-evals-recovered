@@ -294,6 +294,33 @@ export class AssistantNotInBulkError extends Error {
   }
 }
 
+export class ProvidersNotInBulkError extends Error {
+  constructor(readonly providers: string) {
+    super(`providers must name exactly two distinct providers in this bulk; got "${providers}"`);
+    this.name = "ProvidersNotInBulkError";
+  }
+}
+
+/**
+ * S-AB1: the verdict asked about exactly two providers. Only the cells handed
+ * to computeVerdict are narrowed -- groups, call counts and production stay as
+ * the whole bulk has them -- so the noise floor is those two providers' own
+ * shared calls. Anything but two distinct ids the bulk ran is an error, never
+ * a quietly different question.
+ */
+export function scopeCellsToProviders<T extends { providerId: string }>(
+  cells: T[],
+  providers: string | undefined,
+  bulkProviderIds: string[],
+): T[] {
+  if (providers === undefined) return cells;
+  const ids = [...new Set(providers.split(",").map((id) => id.trim()))];
+  if (ids.length !== 2 || ids.some((id) => !bulkProviderIds.includes(id))) {
+    throw new ProvidersNotInBulkError(providers);
+  }
+  return cells.filter((c) => ids.includes(c.providerId));
+}
+
 /**
  * W-7: the ONE place a bulk's calls are narrowed before anything is computed
  * from them -- groups, call counts, production, its disagreement and the
@@ -313,7 +340,10 @@ export function scopeCallsToAssistant<T extends { sourceAssistantId: string | nu
   return scoped;
 }
 
-export async function bulkVerdicts(bulkId: string, options: { assistantId?: string } = {}): Promise<BulkVerdicts> {
+export async function bulkVerdicts(
+  bulkId: string,
+  options: { assistantId?: string; providers?: string } = {},
+): Promise<BulkVerdicts> {
   const [bulkRow] = await db
     .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
     .from(benchmarkBulksTable)
@@ -330,10 +360,13 @@ export async function bulkVerdicts(bulkId: string, options: { assistantId?: stri
     .select({ id: benchmarkRunsTable.id, callIds: benchmarkRunsTable.callIds, providerIds: benchmarkRunsTable.providerIds })
     .from(benchmarkRunsTable)
     .where(eq(benchmarkRunsTable.bulkId, bulkId));
-  if (runs.length === 0) return { bulkId, providers: [], groups: [] };
   const runIds = runs.map((r) => r.id);
   const allCallIds = [...new Set(runs.flatMap((r) => r.callIds))];
   const allProviderIds = [...new Set(runs.flatMap((r) => r.providerIds))];
+  // S-AB1: checked once up front, so a bad pair is refused even when no group
+  // ever reaches computeVerdict -- an empty bulk included.
+  scopeCellsToProviders([], options.providers, allProviderIds);
+  if (runs.length === 0) return { bulkId, providers: [], groups: [] };
 
   const [unscopedCalls, providers, cells] = await Promise.all([
     allCallIds.length
@@ -448,9 +481,11 @@ export async function bulkVerdicts(bulkId: string, options: { assistantId?: stri
       productionProviderId = resolveProductionProviderId(vendor, model || null, providers);
     }
 
-    const verdictCells: VerdictCell[] = cellsOnChannel
-      .filter((c) => groupCallIds.has(c.callId))
-      .map((c) => ({
+    const verdictCells: VerdictCell[] = scopeCellsToProviders(
+      cellsOnChannel.filter((c) => groupCallIds.has(c.callId)),
+      options.providers,
+      allProviderIds,
+    ).map((c) => ({
         callId: c.callId,
         providerId: c.providerId,
         peerFlagCount: c.peerFlagCount,

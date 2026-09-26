@@ -8573,7 +8573,7 @@ apply to more than one assistant per request.
 
 ### S-AB1 — The verdict can be asked about exactly two providers
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-27. Spent nothing.
 **PR:** one.
 **Depends on:** nothing.
 **Spec:** `docs/feature-head-to-head.md`.
@@ -8620,6 +8620,30 @@ between the filtered and unfiltered call. Restore with `git checkout -- <file>`.
 **Must not:** call any STT or judge provider; write to any table; change the response
 when `providers` is absent; accept one id or three; silently drop an id that is not in
 the bulk.
+
+**As built, 2026-09-27.** `scopeCellsToProviders` sits beside `scopeCallsToAssistant` in
+`artifacts/api-server/src/lib/verdict.ts` and narrows only the cells handed to
+`computeVerdict`; groups, call counts, production and the bulk's provider list stay the
+whole bulk's. The pair is checked once before the empty-bulk early return, so an empty
+bulk refuses a bad pair too. `ProvidersNotInBulkError` answers 400 through the same branch
+as W-7's `AssistantNotInBulkError`.
+
+A pass, 2026-09-27: typecheck clean in all four projects; api-server unit 284, integration
+**47 files / 258 tests** (one new case: 6 shared calls unfiltered vs 8 for the asked pair;
+400 for one id, three ids, a duplicate, and an id not in the bulk); UI 218;
+`check:api-routes`, `check:response-edge`, `check:doc-paths` clean.
+
+**Prove it by breaking it:** done, after committing. Returning the cells unfiltered failed
+exactly the new case, `expected 6 to be 8`. Restored with
+`git checkout -- artifacts/api-server/src/lib/verdict.ts`.
+
+**Byte-identical unfiltered:** live bulk `3f134973`'s unfiltered response was saved before
+the change (3,904 bytes, md5 `824492357d41e7c8101c640d46f1b730`) and is compared after
+deploy.
+
+> **What was learned.** *The seam was already named.* W-7's comment beside
+> `scopeCallsToAssistant` said where S-AB1's filter belonged, so the change was one
+> function and one argument, not a second path through the verdict.
 
 ---
 
