@@ -176,6 +176,50 @@ describe("Setup", () => {
   // seeing it for the first time cannot tell them apart. Both captions have
   // to be readable with no hovering, clicking or expanding -- note the model
   // list itself is a <details> and is collapsed on first render.
+  // S-3 review: every live Deepgram row is a group BASE (label `<name>-general`
+  // with domain variants), so its `disable` sits inside the group's <summary>.
+  // The click must send the PATCH without toggling the group open, and the
+  // group's "enabled here" count must not count a switched-off row.
+  it("disables a base model from inside its group header without opening the group", async () => {
+    const grouped: ProviderModelList = {
+      ...models,
+      vendors: models.vendors.map((v) =>
+        v.vendor !== "deepgram"
+          ? v
+          : {
+              ...v,
+              models: [
+                { ...v.models[0]!, apiModel: "nova-3", label: "nova-3-general", providerId: "deepgram-nova-3", enabled: true, rowStatus: "ready" },
+                { apiModel: "nova-3-medical", label: "nova-3-medical", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-3-medical", enabled: false, rowStatus: null },
+                { apiModel: "nova-2", label: "nova-2-general", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-2", enabled: true, rowStatus: "disabled" },
+                { apiModel: "nova-2-meeting", label: "nova-2-meeting", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-2-meeting", enabled: false, rowStatus: null },
+              ],
+            },
+      ),
+    }
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/providers/models": grouped,
+      "PATCH /api/benchmark/providers/deepgram-nova-3": providers[0],
+    })
+    renderPage(<Setup />, { path: "/setup" })
+
+    // Two rows exist, one switched off: the count says 1, not 2.
+    expect(await screen.findByText(/4 models offered · 1 enabled here/)).toBeTruthy()
+    const summaries = [...document.querySelectorAll("details details > summary, details summary")].filter((el) =>
+      el.textContent?.includes("nova-3"),
+    )
+    const header = summaries.find((el) => el.querySelector("button")) as HTMLElement
+    expect(header).toBeTruthy()
+    const group = header.closest("details") as HTMLDetailsElement
+    expect(group.open).toBe(false)
+
+    fireEvent.click(within(header).getByText("disable"))
+    await waitFor(() => expect(api.bodyFor("PATCH /api/benchmark/providers/deepgram-nova-3")).toEqual({ disabled: true }))
+    expect(group.open).toBe(false)
+    api.restore()
+  })
+
   it("says what the catalogue is and what the cards are, without anything being opened", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Setup />, { path: "/setup" })

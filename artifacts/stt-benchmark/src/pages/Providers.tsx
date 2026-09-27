@@ -316,7 +316,7 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
       )}
       {vendor.models.length > 1 && (
         <details className="text-[11px] text-muted-foreground">
-          <summary className="cursor-pointer hover:text-foreground">{vendor.models.length} models offered · {vendor.models.filter((m) => m.enabled).length} enabled here</summary>
+          <summary className="cursor-pointer hover:text-foreground">{vendor.models.length} models offered · {vendor.models.filter((m) => m.enabled && m.rowStatus !== "disabled").length} enabled here</summary>
           <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto pl-1">
             {groupByBaseEngine(vendor.models).map(({ base, variants }) =>
               variants.length === 0 ? (
@@ -630,6 +630,9 @@ function DisableToggle({ providerId, status }: { providerId: string; status: str
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListBenchmarkProvidersQueryKey() })
+        // S-3: the catalog list above now shows each row's on/off state, so it
+        // has to hear about this toggle too, or the two disagree until reload.
+        queryClient.invalidateQueries({ queryKey: getListProviderModelsQueryKey() })
         toast({ title: isDisabled ? "Provider re-enabled" : "Provider disabled", description: "Historical results are kept (FR-P3)." })
       },
       onError: () => {
