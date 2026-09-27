@@ -3772,7 +3772,12 @@ criteria object saved before this step resolves to (correction 5).
 
 ### M-17 — A daily import so nothing crosses the 14-day cliff again
 
-**Status:** `blocked` — the script is written; the launchd agent is **not** installed.
+**Status:** unblocked 2026-09-28 — Abhishek: **install it, with a per-night cap he sets on the
+Setup page** ("Nightly import: max calls per night", 0 = off, stored in app settings, read by
+the 03:00 job). Measured 2026-09-28: the corpus is 1,376 calls — 362 client (Vapi), 1,000
+public, 14 other — so ~252 a night would grow the client set by about 70 % a night uncapped.
+To be stepped as the setting (API), the Setup control (UI), the script reading it, and the
+install. (Was: `blocked` — the script is written; the launchd agent is **not** installed.)
 **Correction, same day, before this row was pushed:** this line first read "and
 deliberately never run". It ran. A break-test mutation deleted the script's `jq` guard
 and re-ran the script with `jq` still on `PATH`, so it went straight past the guard and
@@ -4245,8 +4250,9 @@ column; change the composite weights.
 
 ### R-2 — One quantity ranks both surfaces
 
-**Status:** `blocked` — on Abhishek's answer to PRD v7 open question 1 (flagged-call rate,
-recommended, or flags per 100 words on R-1's shared denominator). The step below is
+**Status:** unblocked 2026-09-28 — Abhishek chose the **flagged-call rate** (PRD v7 open
+question 1). The Change paragraph below stands as written. (Was: `blocked` on that answer —
+flagged-call rate, recommended, or flags per 100 words on R-1's shared denominator.) The step below is
 written for the recommended answer; if he picks the other, the Change paragraph swaps
 `1 − cleanCallRate` for the R-1 rate and the rest stands.
 **PR:** one.
@@ -5944,8 +5950,11 @@ sentence; touch any other error message while in this file.
 
 ### R-24 — B-12's proper fix is a transaction, not a wrapper, so it is split not shipped
 
-**Status:** blocked — needs Abhishek to pick between two answers that are not equivalent.
-**PR:** none yet. The grill is the deliverable.
+**Status:** unblocked 2026-09-28 — Abhishek chose **(2), the transaction, staged**: the gold
+clear first, in a worktree, then the other sites one PR at a time. (Was: blocked on that
+choice.)
+**PR:** none yet. The grill is the deliverable; the steps are written when the first one is
+built.
 **Depends on:** R-22.
 **Files:** none changed.
 
@@ -7978,7 +7987,9 @@ readable without interaction.
 ### S-3 — A disable action in the catalog list
 
 **PR:** one.
-**Status:** `blocked` — needs Abhishek to confirm the reading below before any code.
+**Status:** unblocked 2026-09-28 — Abhishek confirmed the reading: a `disable` action beside
+each enabled model **in the catalog list**. S-4 (the real row id) is done, so the dependency
+below is met.
 **Depends on:** nothing.
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
 **Today:** in the catalog list an unenabled model shows a clickable `enable`; an enabled
@@ -8612,7 +8623,7 @@ config in the database; treat a prompt mark as machine-applicable.
 
 ### U-3 — The first write to a live assistant
 
-**Status:** blocked — needs an explicit go from Abhishek before it ships.
+**Status:** blocked — Abhishek, 2026-09-28: **not yet.** It writes to a client's production agent; build it when a client change is actually wanted, with that client's OK. (blocked — needs an explicit go from Abhishek before it ships.)
 Reverses the posture recorded at `vapi.ts:356` ("Read-only; nothing here
 writes to Vapi.") and touches production voice agents taking real calls.
 
@@ -9564,7 +9575,10 @@ transcript or name or number in `detail`, no Vapi assistant touched (D-12).
 
 ### W-5c3 — Arm it: start the tick behind `WATCH_SCHEDULER=1`
 
-**Status:** not started. **This is the PR that lets the system spend money with
+**Status:** PR #189 open. **Decision 2026-09-28 (Abhishek): merge it with the flag OFF.**
+Merging adds the code path only; `WATCH_SCHEDULER` stays unset and there are 0 enabled
+watch schedules, so nothing runs and nothing spends. **Arming — setting the flag — is a
+separate explicit go.** **This is the PR that lets the system spend money with
 nobody watching.** It is three lines, so that it can be read as three lines.
 **PR:** one.
 **Depends on:** W-5c2.
