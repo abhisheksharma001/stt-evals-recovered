@@ -7987,9 +7987,8 @@ readable without interaction.
 ### S-3 — A disable action in the catalog list
 
 **PR:** one.
-**Status:** unblocked 2026-09-28 — Abhishek confirmed the reading: a `disable` action beside
-each enabled model **in the catalog list**. S-4 (the real row id) is done, so the dependency
-below is met.
+**Status:** done 2026-09-28. Abhishek confirmed the reading the same day: a `disable` action
+beside each enabled model **in the catalog list**. S-4 (the real row id) was already done.
 **Depends on:** nothing.
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
 **Today:** in the catalog list an unenabled model shows a clickable `enable`; an enabled
@@ -8007,6 +8006,25 @@ read `disabled` on the card below and its historical results SHALL remain on Res
 **The question for Abhishek:** "give me open for disable as well" is read here as *an
 option to disable from the catalog list*. If it meant something else — a detail view on
 the card, or something on another page — say which screen.
+
+**As built.** `EnableCell` in `artifacts/stt-benchmark/src/pages/Providers.tsx`: a ready row
+reads "enabled · disable"; `disable` sends `{ disabled: true }` to the row in `providerId`
+(S-4's real id). Found while building: `enabled` in the catalog means *a row exists*, so a row
+switched off on its card still read "enabled" in the list -- it now reads "disabled". A row
+with no key (`not_configured`) shows no `disable`, the card's own rule. No re-enable in the
+list (the card does that); not asked for.
+
+A pass, 2026-09-28: typecheck clean in all four projects; `setup.test.tsx` 12 (one new: the
+PATCH goes to the real row id for a model whose catalog name differs; a switched-off row
+reads "disabled" with no button; a keyless row has no button); UI **225**. **Live** on the dev
+server against API `cb8587d5d269`: `nova-2` and `solaria-1` (already off) read "disabled";
+clicking `disable` on `nova` set `deepgram-nova` to `disabled` / `manually_disabled = t` and
+the row re-read "disabled"; it was then switched back on with `PATCH {disabled:false}`
+(actor `claude-s3-live-check`) and reads `ready` again.
+
+**Prove it by breaking it:** done, after committing. Removing the "switched off reads
+disabled" branch failed exactly the new case. Restored with
+`git checkout -- artifacts/stt-benchmark/src/pages/Providers.tsx`.
 
 ---
 
