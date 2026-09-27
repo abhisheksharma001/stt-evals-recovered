@@ -7861,7 +7861,10 @@ its render test.
 answers -- including while the database is down.
 
 **Change:** when `/healthz` reports `database: "unreachable"`, the dot turns amber and the
-footer says "database unreachable". Nothing else on the page changes.
+footer says "database unreachable". Nothing else on the page changes. Also correct the comment
+at `layout.tsx:92` ("/api/healthz does no database work (T-04), so this poll is cheap"): since
+R-56 each 30-second poll runs one `select 1` capped at a second -- still cheap, no longer
+free of database work.
 
 **Acceptance:** WHEN `/healthz` answers with `database: "unreachable"` THEN the footer SHALL
 show an amber dot and the words "database unreachable"; AND WHEN it answers `"ok"` THEN the
