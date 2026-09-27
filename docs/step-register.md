@@ -8724,7 +8724,8 @@ Select is not driven in jsdom anywhere in this suite. Checked by reading the fou
 
 ### S-AB3 — Say whether the judge agreed
 
-**Status:** not started. Spends nothing — reads rows the judge already wrote.
+**Status:** split 2026-09-27 into S-AB3a (the count-only read, done) and S-AB3b (the Results
+line). This row is the spec both follow. Spends nothing — reads rows the judge already wrote.
 **PR:** one.
 **Depends on:** S-AB2.
 **Spec:** `docs/feature-head-to-head.md`.
@@ -8751,6 +8752,69 @@ for B, and for neither.
 serves every scan's full `sourceTranscript` and is already a payload and PII problem on
 Corpus (logged in `docs/backlog/good-to-have.md`, 2026-09-13). Take a bulk-scoped,
 count-only read instead, adding one if none exists. Do not present a pick as a winner.
+
+**Checked 2026-09-27 before building:** 347 scans, now **103** picks (97 when written). A
+bulk-scoped, count-only read already existed -- `GET /benchmark/assistant-signals`
+(`artifacts/api-server/src/lib/assistant-signals.ts`): latest scan per call, "judged" =
+the judge answered, no transcript -- it just did not say which provider was picked. So the
+read is extended, not added, and the server half and the page half are two PRs.
+
+### S-AB3a — `assistant-signals` counts the judge's picks per provider
+
+**Status:** done 2026-09-27. Spent nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Files:** `artifacts/api-server/src/lib/assistant-signals.ts`,
+`artifacts/api-server/src/lib/assistant-signals-aggregate.ts`,
+`artifacts/api-server/src/lib/assistant-signals-aggregate.test.ts`,
+`artifacts/api-server/src/routes/__integration__/assistant-signals.int.test.ts`,
+`lib/api-spec/openapi.yaml` and the generated clients.
+
+**Change:** `judge.picks` = `[{ providerId, calls }]`, most picks first: on each call's
+latest scan, when the judge answered and named a cell, the provider of that cell. The
+provider is joined in the query (`agent_pick_result_id` -> the result's `provider_id`), so
+the response carries ids and counts only.
+
+**Acceptance:** WHEN a bulk's latest judged scans pick provider cells THEN
+`judge.picks` SHALL count them per provider AND a superseded scan, an unanswered scan, and a
+judged scan with no pick SHALL count nothing AND no transcript SHALL appear in the response.
+
+**Verify, 2026-09-27:** typecheck clean in all four projects; api-server unit **285**
+(one new), integration **47 files / 259** (one new, one extended with `picks: []`); UI 219;
+`check:api-routes`, `check:response-edge` clean.
+
+**Prove it by breaking it:** done, after committing. Removing the line that counts a pick
+failed exactly the new unit case and exactly the new integration case, nothing else.
+Restored with `git checkout -- artifacts/api-server/src/lib/assistant-signals-aggregate.ts`.
+
+**Must not:** return a transcript, reasoning text or a result id; call a provider or the judge.
+
+### S-AB3b — Results says how the judge picked between the pair
+
+**Status:** not started. Next. Spends nothing.
+**PR:** one.
+**Depends on:** S-AB3a, S-AB2.
+**Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx`,
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+
+**Today:** the pair pickers and the per-org "Head to head" box (S-AB2) say nothing about the
+AI judge.
+
+**Change:** read `GET /benchmark/assistant-signals?bulkId=<bulk>` (no `assistantId`: the
+whole bulk). Next to the pickers, once for the page, one line from `judge.picks`: "On the
+calls in this bulk the AI reader judged, it picked A on x and B on y" -- only when x + y > 0,
+silent otherwise. Never worded as a verdict or a winner. Once for the page, not per org box,
+because the count is the bulk's, not the org's.
+
+**Acceptance:** as S-AB3 -- WHEN the judge picked A or B on at least one call in this bulk
+THEN the line SHALL show both counts and the number of calls judged; AND WHEN it picked
+neither THEN no line SHALL render.
+
+**Verify:** `pnpm run typecheck`; `results.test.tsx` cases for picks on A, on B, and on
+neither.
+
+**Must not:** call `GET /benchmark/agent/scans`; present a pick as a winner; render in
+All-time.
 
 ## Part W — Watch: a daily sample of real calls, per org, per agent (`docs/PRD-v8-watch.md`)
 
