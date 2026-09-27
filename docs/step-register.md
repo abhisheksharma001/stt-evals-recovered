@@ -8026,6 +8026,20 @@ the row re-read "disabled"; it was then switched back on with `PATCH {disabled:f
 disabled" branch failed exactly the new case. Restored with
 `git checkout -- artifacts/stt-benchmark/src/pages/Providers.tsx`.
 
+**Independent review, 2026-09-28 (merge after fixes; fixed in the same PR):** the card's own
+toggle now also invalidates the catalog list (it showed row state since S-3 and went stale for
+up to 5 minutes); "N enabled here" no longer counts a switched-off row (break test: reverting
+it fails the new case); a new case covers the real Deepgram layout, where a base model's
+`disable` sits inside a group `<summary>`. **Its "group stays closed" assertion cannot fail in
+jsdom** -- jsdom never toggles `<details>` on a summary click, and removing `preventDefault`
+still passed -- so that behaviour was checked in a real browser instead: the group stayed
+closed. That browser check was meant to abort the PATCH and did not: `deepgram-nova` was
+disabled for 11 s (22:43:00-22:43:11 UTC) and restored as `claude-s3-review-restore`; no run
+was active. Both live disable rows (22:26:18, 22:43:00) are attributed "Abhishek" because the UI
+stamps the curator name; both were Claude's browser automation. Left as later steps: the
+button nested in `<summary>` (axe nested-interactive, as `enable` already was) and a possible
+duplicate PATCH on a double click.
+
 ---
 
 ### S-4 — Report a provider id that exists
