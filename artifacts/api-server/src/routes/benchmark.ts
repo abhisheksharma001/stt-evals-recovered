@@ -26,7 +26,9 @@ import { getProviderAdapter, listProviderAdapters, providerIdForModel, vendorOf,
 import { latestFinishedBulk, monthSpend, needsHuman, runningBulk } from "../lib/overview";
 import { wordsToWatch } from "../lib/words-to-watch";
 import { assistantSignals } from "../lib/assistant-signals";
+import { methodCheck } from "../lib/method-check";
 import { proxyAgreement } from "../lib/proxy-agreement";
+import { isUniqueViolation } from "../lib/bulks";
 import { assistantTranscriberConfig } from "../lib/assistant-transcriber";
 import { respondVapiError } from "../lib/vapi-error-response";
 import { BLANK_APPROVER_MESSAGE, trimmedApproverLabel } from "../lib/approver-label";
@@ -64,6 +66,7 @@ import {
   GetWordsToWatchResponse,
   GetAssistantSignalsQueryParams,
   GetAssistantSignalsResponse,
+  GetMethodCheckResponse,
   GetProxyAgreementResponse,
   ListBenchmarkCallsResponse,
   ListBenchmarkProvidersResponse,
@@ -333,22 +336,55 @@ router.post("/benchmark/calls", async (req, res): Promise<void> => {
     return;
   }
 
-  const [call] = await db
-    .insert(benchmarkCallsTable)
-    .values({
-      label: parsed.data.label,
-      vertical: parsed.data.vertical,
-      durationSeconds: Math.round(parsed.data.durationSeconds),
-      hardCases: parsed.data.hardCases ?? [],
-      entityNotes: parsed.data.entityNotes,
-      entityReferences: parsed.data.entityReferences ?? [],
-      audioObjectPath: parsed.data.audioObjectPath,
-      // De-id gate removed 2026-08-27 per Abhishek: a call is runnable the
-      // moment it exists, so it lands ready_to_run rather than waiting on a
-      // review step that no longer gates anything.
-      status: "ready_to_run",
-    })
-    .returning();
+  // W-12: provenance is all-or-nothing. A source id without its provider
+  // would land as ("manual", id) and collide with the next manual call that
+  // names the same id; a provider without an id would defeat the once-only
+  // guard the unique index gives the importer.
+  const provenance = [parsed.data.sourceProvider, parsed.data.sourceCallId, parsed.data.sourceAccountLabel];
+  const given = provenance.filter((v) => v !== undefined).length;
+  if (given !== 0 && given !== provenance.length) {
+    res.status(400).json({
+      error: "sourceProvider, sourceCallId and sourceAccountLabel must be given together or not at all.",
+    });
+    return;
+  }
+
+  let call: typeof benchmarkCallsTable.$inferSelect;
+  try {
+    [call] = await db
+      .insert(benchmarkCallsTable)
+      .values({
+        label: parsed.data.label,
+        vertical: parsed.data.vertical,
+        durationSeconds: Math.round(parsed.data.durationSeconds),
+        hardCases: parsed.data.hardCases ?? [],
+        entityNotes: parsed.data.entityNotes,
+        entityReferences: parsed.data.entityReferences ?? [],
+        audioObjectPath: parsed.data.audioObjectPath,
+        // W-12: a public-set clip brings its own human-reviewed gold and its
+        // provenance. Omitted, the column defaults keep the manual call
+        // exactly as before ("manual", no source id, no account label).
+        goldTranscript: parsed.data.goldTranscript,
+        ...(parsed.data.sourceProvider ? { sourceProvider: parsed.data.sourceProvider } : {}),
+        sourceCallId: parsed.data.sourceCallId,
+        sourceAccountLabel: parsed.data.sourceAccountLabel,
+        // De-id gate removed 2026-08-27 per Abhishek: a call is runnable the
+        // moment it exists, so it lands ready_to_run rather than waiting on a
+        // review step that no longer gates anything.
+        status: "ready_to_run",
+      })
+      .returning();
+  } catch (err) {
+    // (sourceProvider, sourceCallId) is unique: the same upstream clip
+    // registered twice is a conflict the caller can act on, not a 500.
+    if (isUniqueViolation(err)) {
+      res.status(409).json({
+        error: `A call from ${parsed.data.sourceProvider} with source id "${parsed.data.sourceCallId}" is already in the corpus.`,
+      });
+      return;
+    }
+    throw err;
+  }
 
   await writeAudit({
     entityType: "call",
@@ -397,6 +433,11 @@ router.get("/benchmark/calls/disagreement", async (req, res): Promise<void> => {
 // leave nothing to measure.
 router.get("/benchmark/proxy-agreement", async (_req, res): Promise<void> => {
   respondJson(res, GetProxyAgreementResponse, await proxyAgreement());
+});
+
+// W-12b: the gold-free ranking held against gold WER on the public set.
+router.get("/benchmark/method-check", async (_req, res): Promise<void> => {
+  respondJson(res, GetMethodCheckResponse, await methodCheck());
 });
 
 // T-87: which words keep splitting the providers, per bulk / assistant.

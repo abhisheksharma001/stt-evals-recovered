@@ -41,7 +41,7 @@ export type EntityReference = {
 
 export type ScoreInput = {
   callId: string;
-  vertical: "rush" | "property_management" | "trucking";
+  vertical: "rush" | "property_management" | "trucking" | "public_benchmark";
   providerId: string;
   goldTranscript: string;
   hypothesisTranscript: string;

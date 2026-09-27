@@ -8,5 +8,6 @@
     "rootDir": "src",
     "lib": ["dom", "es2022"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../api-client" }]
 }

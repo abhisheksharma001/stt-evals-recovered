@@ -5,6 +5,7 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantSignalsJudgePicksItem } from './assistantSignalsJudgePicksItem';
 
 export type AssistantSignalsJudge = {
   checked: number;
@@ -15,4 +16,5 @@ export type AssistantSignalsJudge = {
   notRecorded: number;
   clean: number;
   errored: number;
+  picks: AssistantSignalsJudgePicksItem[];
 };

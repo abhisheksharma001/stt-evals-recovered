@@ -202,6 +202,10 @@ export function resolveDurationBand(input: {
 // where callers have always imported them from.
 export type { SelectionExclusion };
 
+/** The exclusion bucket for a call with no `<id>.customer.audio` on file.
+ *  Named once: the watch tick (W-5f) reads it back out of `excluded`. */
+export const NO_CUSTOMER_AUDIO_BUCKET = "no customer-channel audio on file";
+
 export type ResolvedCriteriaSelection = ResolvedCriteriaCallIds & {
   /** Calls that passed the "who" filters (vertical / assistant / account) or
    *  were explicitly picked -- the pool the exclusions are counted against. */
@@ -451,7 +455,7 @@ export async function resolveCriteriaSelection(
       else excludedNoCustomerAudio += 1;
     }
     if (excludedNoCustomerAudio > 0) {
-      buckets.set("no customer-channel audio on file", excludedNoCustomerAudio);
+      buckets.set(NO_CUSTOMER_AUDIO_BUCKET, excludedNoCustomerAudio);
     }
   } else {
     for (const c of runnable) callIds.push(c.id);
@@ -521,7 +525,20 @@ export async function estimateBulkCostCents(
 // T-01 (2026-08-28): reads micro-cents from the scan table (the column it
 // used to read was integer cents and never held a value). Returns whole
 // CENTS, because a bulk-level estimate is a budget figure a person reads.
-export async function estimateBulkAgentCostCents(callCount: number): Promise<number | null> {
+//
+// W-12a4 (2026-09-26): only calls the judge can reach are counted. A public
+// calibration clip (sourceProvider "pipecat") never goes to the judge
+// (W-12a1, agent-verify.ts), so pricing it inflated bulk 4fee349b's estimate
+// by $5.79 for a judge that never ran.
+export async function estimateBulkAgentCostCents(callIds: string[]): Promise<number | null> {
+  const judgeable =
+    callIds.length === 0
+      ? []
+      : await db
+          .select({ sourceProvider: benchmarkCallsTable.sourceProvider })
+          .from(benchmarkCallsTable)
+          .where(inArray(benchmarkCallsTable.id, callIds));
+  const callCount = judgeable.filter((c) => c.sourceProvider !== "pipecat").length;
   if (callCount === 0) return 0;
   const scans = await db
     .select({ status: benchmarkAgentScansTable.status, judgeCostMicrocents: benchmarkAgentScansTable.judgeCostMicrocents })
@@ -584,7 +601,7 @@ export async function previewBulkSelection(input: {
   let estimate: BulkPreviewResult["estimate"] = null;
   if (providerIds.length > 0) {
     const sttCostCents = await estimateBulkCostCents(selection.callIds, providerIds);
-    const agentCostCents = await estimateBulkAgentCostCents(selection.callIds.length);
+    const agentCostCents = await estimateBulkAgentCostCents(selection.callIds);
     // A null agent estimate is "unknown", not zero; the total is then STT
     // only and the response says so via the null.
     const totalCostCents = sttCostCents + (agentCostCents ?? 0);
@@ -734,7 +751,7 @@ export async function createBulkFromCriteria(input: {
     callIds,
     input.providerIds,
   );
-  const estimatedAgentCostCents = await estimateBulkAgentCostCents(callIds.length);
+  const estimatedAgentCostCents = await estimateBulkAgentCostCents(callIds);
   const estimatedCostCents = estimatedSttCostCents + (estimatedAgentCostCents ?? 0);
   const overThreshold = estimatedCostCents > BULK_COST_THRESHOLD_CENTS;
   const name = input.name ?? now.toISOString().slice(0, 10); // FR-BLK-2
@@ -1027,6 +1044,20 @@ export async function retryBulkFailedCells(
   // T-6 fix: same shard-concurrency cap as launchBulk -- a full-bulk retry
   // must not re-fire every shard at once either.
   void drainWithConcurrency(toRetry, BULK_SHARD_CONCURRENCY, async (run) => {
+    // W-12a5: these shards are "failed" or "complete", not "queued", so
+    // cancelBulk cannot stop the ones still waiting in this list and the
+    // executor's status gate lets them in. Re-read the bulk before each one.
+    const [current] = await db
+      .select({ status: benchmarkBulksTable.status })
+      .from(benchmarkBulksTable)
+      .where(eq(benchmarkBulksTable.id, bulkId));
+    if (current?.status === "cancelled") {
+      await db
+        .update(benchmarkRunsTable)
+        .set({ status: "cancelled", completedAt: new Date() })
+        .where(eq(benchmarkRunsTable.id, run.id));
+      return;
+    }
     await executeBenchmarkRun(run.id, actorLabel).catch((err) => {
       logger.error({ err, runId: run.id, bulkId }, "bulk retry run crashed");
     });

@@ -15,6 +15,11 @@ import {
   type BulkVerdicts,
   useGetCallDisagreement,
   getGetCallDisagreementQueryKey,
+  useGetMethodCheck,
+  useGetBulkVerdicts,
+  getGetBulkVerdictsQueryKey,
+  useGetAssistantSignals,
+  getGetAssistantSignalsQueryKey,
 } from "@workspace/api-client-react"
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
@@ -440,7 +445,7 @@ function WithGroupVolume({ assistantId, children }: { assistantId: string | null
  *  pulled out so the page body reads as its hierarchy, not as one 400-line
  *  expression. */
 function RankingTable({
-  sorted, sortKey, asc, toggleSort, activeProviderId, activeRow, verdictWinnerId, viewMode, listPrices, gv,
+  sorted, sortKey, asc, toggleSort, activeProviderId, activeRow, verdictWinnerId, viewMode, listPrices, gv, pairIds,
 }: {
   sorted: RankingRow[]
   sortKey: SortKey
@@ -452,6 +457,8 @@ function RankingTable({
   viewMode: "bulk" | "overall"
   listPrices: Map<string, number>
   gv: GroupVolume
+  /** S-AB2: the two providers picked for a head-to-head; every other row is dimmed. */
+  pairIds: string[] | null
 }) {
   const sortAria = (key: SortKey) => (sortKey === key ? (asc ? "ascending" : "descending") : "none")
   const renderSortIcon = (key: SortKey) =>
@@ -502,7 +509,11 @@ function RankingTable({
       </TableHeader>
       <TableBody>
         {sorted.map((r) => (
-          <TableRow key={r.providerId} className={r.rank === 1 ? "bg-primary/5" : ""}>
+          <TableRow
+            key={r.providerId}
+            className={`${r.rank === 1 ? "bg-primary/5" : ""} ${pairIds && !pairIds.includes(r.providerId) ? "opacity-40" : ""}`}
+            data-in-pair={pairIds ? String(pairIds.includes(r.providerId)) : undefined}
+          >
             <TableCell className="text-center font-mono font-medium">
               {r.rank === 1 ? <span className="text-primary flex items-center justify-center gap-1 text-lg font-bold"><Trophy className="w-4 h-4" /> 1</span> : r.rank}
             </TableCell>
@@ -660,6 +671,53 @@ export default function Rankings() {
   // section. Only meaningful for a single bulk -- the all-time view has no
   // noise floor of its own and shows no verdict rather than a wrong one.
   const { data: verdicts } = useBulkVerdicts(viewMode === "bulk" ? selectedBulkId : null)
+  // S-AB2: two providers compared head to head, on this bulk only. Starts on
+  // the verdict's own leader and runner-up for the bulk's biggest org, so the
+  // first pair shown is the one the banner is already talking about -- not the
+  // cards' rank 1 and 2, which rank on a different quantity (R-2). The pair's
+  // verdict comes from the server (S-AB1); nothing is computed here.
+  const [pair, setPair] = React.useState<{ bulkId: string; a: string | null; b: string | null } | null>(null)
+  React.useEffect(() => {
+    if (viewMode !== "bulk" || !selectedBulkId || verdicts?.bulkId !== selectedBulkId) return
+    if (pair?.bulkId === selectedBulkId) return
+    const biggest = [...verdicts.groups].sort((x, y) => y.callCount - x.callCount)[0]?.verdict
+    const a = biggest?.leaderProviderId ?? null
+    const b = biggest?.runnerUpProviderId ?? null
+    setPair({ bulkId: selectedBulkId, a, b: b !== a ? b : null })
+  }, [viewMode, selectedBulkId, verdicts, pair])
+  const livePair = pair && pair.bulkId === selectedBulkId ? pair : null
+  const pairParam = viewMode === "bulk" && livePair?.a && livePair.b ? `${livePair.a},${livePair.b}` : null
+  const pairQuery = pairParam ? { providers: pairParam } : undefined
+  const { data: pairVerdicts } = useGetBulkVerdicts(selectedBulkId ?? "", pairQuery, {
+    query: { queryKey: getGetBulkVerdictsQueryKey(selectedBulkId ?? "", pairQuery), enabled: !!selectedBulkId && !!pairParam },
+  })
+  // Picking the other side's provider swaps the two, so the pair is never one provider twice.
+  const pickPair = (side: "a" | "b", value: string) => {
+    if (!livePair) return
+    const other = side === "a" ? "b" : "a"
+    setPair({ ...livePair, [side]: value, [other]: livePair[other] === value ? livePair[side] : livePair[other] })
+  }
+  const bulkProviderOptions = React.useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const r of rankings ?? []) if (!seen.has(r.providerId)) seen.set(r.providerId, r.providerName)
+    return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((x, y) => x.name.localeCompare(y.name))
+  }, [rankings])
+  const pairIds = pairParam && livePair?.a && livePair.b ? [livePair.a, livePair.b] : null
+  // S-AB3b: how the AI judge picked between the pair, over the whole bulk --
+  // a count-only read (S-AB3a), never the scans themselves.
+  const pairSignalsParams = pairParam && selectedBulkId ? { bulkId: selectedBulkId } : undefined
+  const { data: pairSignals } = useGetAssistantSignals(pairSignalsParams ?? {}, {
+    query: { queryKey: getGetAssistantSignalsQueryKey(pairSignalsParams), enabled: !!pairSignalsParams },
+  })
+  const pairPicks = (() => {
+    if (!pairSignalsParams || !pairSignals || !livePair?.a || !livePair.b) return null
+    const count = (id: string) => pairSignals.judge.picks.find((p) => p.providerId === id)?.calls ?? 0
+    const a = count(livePair.a)
+    const b = count(livePair.b)
+    return a + b > 0 ? { a, b, judged: pairSignals.judge.judged } : null
+  })()
+  const nameOf = (id: string | null | undefined) => bulkProviderOptions.find((p) => p.id === id)?.name ?? id ?? "?"
+
   const [sortKey, setSortKey] = React.useState<SortKey>("rank")
   const [asc, setAsc] = React.useState<boolean>(SORT_ASC_DEFAULT.rank)
 
@@ -840,7 +898,33 @@ export default function Rankings() {
             <FileText className="h-4 w-4" /> Share verdict
           </a>
         )}
+        {viewMode === "bulk" && livePair && bulkProviderOptions.length >= 2 && (
+          <div className="flex items-center gap-2 text-sm" data-testid="pair-pickers">
+            <span className="text-muted-foreground">Compare</span>
+            <Select value={livePair.a ?? ""} onValueChange={(v) => pickPair("a", v)}>
+              <SelectTrigger className="h-9 w-[200px]" aria-label="Compare"><SelectValue placeholder="Pick a provider..." /></SelectTrigger>
+              <SelectContent>
+                {bulkProviderOptions.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground">against</span>
+            <Select value={livePair.b ?? ""} onValueChange={(v) => pickPair("b", v)}>
+              <SelectTrigger className="h-9 w-[200px]" aria-label="against"><SelectValue placeholder="Pick a provider..." /></SelectTrigger>
+              <SelectContent>
+                {bulkProviderOptions.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
+
+      {viewMode === "bulk" && pairPicks && (
+        <p className="-mt-4 text-xs text-muted-foreground" data-testid="pair-judge-picks">
+          Of the {pairPicks.judged} call{pairPicks.judged === 1 ? "" : "s"} the AI reader judged in this bulk, it
+          picked {nameOf(livePair?.a)}'s transcript on {pairPicks.a} and {nameOf(livePair?.b)}'s on {pairPicks.b}. A
+          pick is one reader's preference on a disputed call, not a verdict.
+        </p>
+      )}
 
       {/* T-21: the answer first. */}
       {viewMode === "bulk" && selectedBulkId && <BulkVerdictBanner bulkId={selectedBulkId} groupLabels={{}} />}
@@ -938,6 +1022,25 @@ export default function Rankings() {
                 />
               </div>
             )}
+            {/* S-AB2: the picked pair's own verdict for this org, as the
+                server computed it over those two providers' cells alone. */}
+            {viewMode === "bulk" && pairParam && pairVerdicts && (
+              <div className="overflow-hidden rounded-lg border border-border" data-testid="pair-verdict">
+                <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
+                  Head to head: {bulkProviderOptions.find((p) => p.id === livePair?.a)?.name ?? livePair?.a} vs{" "}
+                  {bulkProviderOptions.find((p) => p.id === livePair?.b)?.name ?? livePair?.b}
+                </div>
+                {(() => {
+                  const g = pairVerdicts.groups.find((x) => x.clientLabel === org.label)
+                  return (
+                    <GroupVerdictHeadline
+                      verdict={g?.verdict}
+                      scope={g ? { clientLabel: g.clientLabel, assistantCount: g.assistantIds.length, callCount: g.callCount } : undefined}
+                    />
+                  )
+                })()}
+              </div>
+            )}
             {/* T-24: the org as a whole -- every candidate's list price at
                 the account's full projected monthly volume. */}
             <ClientMonthlyCostLine
@@ -991,6 +1094,7 @@ export default function Rankings() {
                             viewMode={viewMode}
                             listPrices={listPrices}
                             gv={gv}
+                            pairIds={viewMode === "bulk" ? pairIds : null}
                           />
                           {/* R-4: the card describes its own calls and points
                               at the decision instead of making one. "Why this
@@ -1060,6 +1164,8 @@ export default function Rankings() {
         ))
       )}
 
+      <MethodCheckSection />
+
       {/* T-88: the supporting evidence, folded. T-18 correlation qualifies
           the votes above; T-23 trend is the one chart on the page -- kept,
           once, here (the per-assistant copies inside every card were
@@ -1085,5 +1191,40 @@ export default function Rankings() {
         </details>
       )}
     </div>
+  )
+}
+
+/**
+ * W-12b (PRD Part F): the one check that the gold-free order tracks the truth.
+ * On the public Pipecat set every clip came with a gold transcript, so there
+ * the providers can be ordered two ways -- by pooled peer-flag rate (what this
+ * page ranks by) and by pooled gold WER -- and the two orders compared.
+ * Absent is not zero: before the bulk has finished there is no number at all.
+ */
+function MethodCheckSection() {
+  const { data } = useGetMethodCheck()
+  if (!data) return null
+
+  let line: string
+  if (data.state !== "measured") {
+    line = "Method check not run yet"
+  } else {
+    const measured = data.completedAt ? new Date(data.completedAt).toISOString().slice(0, 10) : "date unknown"
+    line =
+      data.verdict === "not_measurable" || data.rho == null || data.pOneSided == null
+        ? `Spearman ρ not measurable across ${data.n ?? 0} providers (fewer than 3, or one order entirely tied), measured ${measured}`
+        : `Spearman ρ ${data.rho.toFixed(2)} across ${data.n} providers (p = ${data.pOneSided.toFixed(3)}) -- ${data.verdict}, measured ${measured}`
+  }
+
+  return (
+    <section className="space-y-1 rounded-lg border border-border px-4 py-3" data-testid="method-check">
+      <h2 className="text-sm font-medium text-foreground">Method check</h2>
+      <p className="text-sm text-foreground" data-testid="method-check-line">{line}</p>
+      {data.state === "measured" && (
+        <p className="text-xs text-muted-foreground">
+          16 kHz mic audio, English, one public set. Checks the method, not any client's numbers.
+        </p>
+      )}
+    </section>
   )
 }

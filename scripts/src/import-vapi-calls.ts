@@ -1,4 +1,6 @@
-// CLI front-end for the Vapi importer (COR-01).
+// `stt-evals import` -- the Vapi importer (COR-01), one subcommand of the
+// W-9 CLI (see stt-evals.ts). Kept in its own file because it is the one
+// subcommand with real flags and a dry run.
 //
 // This is a thin wrapper over the API server's own routes
 // (POST /benchmark/vapi/preview and /import) rather than a second
@@ -14,12 +16,13 @@
 // two-person de-id gate before any run can use them.
 //
 // Usage:
-//   API_BASE_URL=http://localhost:8177/api \
-//     pnpm --filter @workspace/scripts import:vapi -- \
+//   API_BASE_URL=http://localhost:8177 \
+//     pnpm --filter @workspace/scripts cli import \
 //     --vertical=rush [--account=default] [--limit=20] \
 //     [--start=2026-08-01] [--end=2026-08-21] [--assistant-id=xxx] [--apply]
 //
 // Without --apply this only prints what WOULD be imported (dry run).
+import { importVapiCalls, listVapiAccounts, previewVapiCalls } from "@workspace/api-client";
 
 type Vertical = "rush" | "property_management" | "trucking";
 
@@ -33,48 +36,7 @@ type Args = {
   apply: boolean;
 };
 
-type VapiAccount = {
-  id: string;
-  label: string;
-  envVar: string;
-  keyFingerprint: string;
-};
-
-type PreviewCall = {
-  vapiCallId: string;
-  assistantId?: string | null;
-  startedAt?: string | null;
-  durationSeconds: number;
-  hasRecording: boolean;
-  draftTranscriptChars: number;
-  alreadyImported: boolean;
-};
-
-type PreviewResult = {
-  accountId: string;
-  accountLabel: string;
-  fetchedCount: number;
-  importableCount: number;
-  calls: PreviewCall[];
-};
-
-type ImportResult = {
-  importedCount: number;
-  skippedCount: number;
-  failedCount: number;
-  results: Array<{
-    vapiCallId: string;
-    outcome: string;
-    callId?: string | null;
-    label?: string | null;
-    message?: string | null;
-  }>;
-};
-
-const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:8177/api";
-
-function parseArgs(): Args {
-  const raw = process.argv.slice(2);
+function parseArgs(raw: string[]): Args {
   const get = (flag: string) => {
     const match = raw.find((a) => a.startsWith(`--${flag}=`));
     return match?.split("=").slice(1).join("=");
@@ -118,23 +80,8 @@ function dayBoundaryIso(
   return date.toISOString();
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "x-actor": "vapi-importer-cli",
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`${path} returned HTTP ${res.status}: ${await res.text()}`);
-  }
-  return (await res.json()) as T;
-}
-
-async function main(): Promise<void> {
-  const args = parseArgs();
+export async function runImport(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
 
   console.log(
     `\n⚠️  This pulls REAL call recordings from Vapi. Nothing is de-identified or\n` +
@@ -143,7 +90,7 @@ async function main(): Promise<void> {
       `   be used in a run (see docs/data-governance.md).\n`,
   );
 
-  const accounts = await api<VapiAccount[]>("/benchmark/vapi/accounts");
+  const accounts = await listVapiAccounts();
   if (accounts.length === 0) {
     throw new Error(
       "No Vapi accounts configured on the API server. Set VAPI_API_KEY (or " +
@@ -162,15 +109,12 @@ async function main(): Promise<void> {
     `Account: ${account.label} (${account.id}, from ${account.envVar}, key ${account.keyFingerprint})\n`,
   );
 
-  const preview = await api<PreviewResult>("/benchmark/vapi/preview", {
-    method: "POST",
-    body: JSON.stringify({
-      accountId: account.id,
-      limit: args.limit,
-      startDate: dayBoundaryIso(args.start, "start"),
-      endDate: dayBoundaryIso(args.end, "end"),
-      assistantId: args.assistantId,
-    }),
+  const preview = await previewVapiCalls({
+    accountId: account.id,
+    limit: args.limit,
+    startDate: dayBoundaryIso(args.start, "start"),
+    endDate: dayBoundaryIso(args.end, "end"),
+    assistantId: args.assistantId,
   });
 
   console.log(
@@ -202,13 +146,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  const result = await api<ImportResult>("/benchmark/vapi/import", {
-    method: "POST",
-    body: JSON.stringify({
-      accountId: account.id,
-      vertical: args.vertical,
-      vapiCallIds: importable.map((c) => c.vapiCallId),
-    }),
+  const result = await importVapiCalls({
+    accountId: account.id,
+    vertical: args.vertical,
+    vapiCallIds: importable.map((c) => c.vapiCallId),
   });
 
   console.log(
@@ -225,7 +166,3 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exitCode = 1;
-});

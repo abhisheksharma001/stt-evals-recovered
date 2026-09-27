@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readProductionSignals } from "./production-signals";
+import { readProductionSignals, readTurnLatencies } from "./production-signals";
 
 // The shapes below are the ones counted on disk on 2026-09-06, trimmed to the
 // fields this reader looks at. Every case is one rule from the module's own
@@ -81,5 +81,33 @@ describe("readProductionSignals", () => {
         prodToolCalls: null,
       });
     }
+  });
+});
+
+// W-7: the per-turn reader. Same zero rule per field as the averages: a 0
+// is a turn Vapi did not time, and an empty array is a call it did not time.
+describe("readTurnLatencies", () => {
+  it("reads the five numbers per turn and nulls a 0 in any one of them", () => {
+    expect(
+      readTurnLatencies({
+        performanceMetrics: {
+          turnLatencies: [
+            { modelLatency: 410, voiceLatency: 220, transcriberLatency: 300, endpointingLatency: 120, turnLatency: 1050 },
+            { modelLatency: 390, voiceLatency: 0, transcriberLatency: 280, endpointingLatency: 0, turnLatency: 670 },
+          ],
+        },
+        messages: [{ role: "user", message: "never read" }],
+      }),
+    ).toEqual([
+      { modelMs: 410, voiceMs: 220, transcriberMs: 300, endpointingMs: 120, turnMs: 1050 },
+      { modelMs: 390, voiceMs: null, transcriberMs: 280, endpointingMs: null, turnMs: 670 },
+    ]);
+  });
+
+  it("is null, not [], for an empty array, a missing block, or a non-object", () => {
+    expect(readTurnLatencies({ performanceMetrics: { turnLatencies: [] } })).toBeNull();
+    expect(readTurnLatencies({ performanceMetrics: { transcriberLatencyAverage: 0 } })).toBeNull();
+    expect(readTurnLatencies({})).toBeNull();
+    expect(readTurnLatencies("not an artifact")).toBeNull();
   });
 });

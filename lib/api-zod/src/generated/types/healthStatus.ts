@@ -5,9 +5,11 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { HealthStatusDatabase } from './healthStatusDatabase';
 
 export interface HealthStatus {
   status: string;
+  database: HealthStatusDatabase;
   commitSha: string;
   builtAt: string | null;
   startedAt: string;

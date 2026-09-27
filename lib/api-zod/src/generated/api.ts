@@ -13,6 +13,7 @@ import * as zod from 'zod';
  */
 export const HealthCheckResponse = zod.object({
   "status": zod.string(),
+  "database": zod.enum(['ok', 'unreachable']),
   "commitSha": zod.string(),
   "builtAt": zod.string().nullable(),
   "startedAt": zod.string(),
@@ -68,14 +69,14 @@ export const GetBenchmarkDashboardResponse = zod.object({
  * @summary List approved benchmark calls
  */
 export const ListBenchmarkCallsQueryParams = zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']).optional()
 })
 
 export const ListBenchmarkCallsResponseItem = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -123,9 +124,11 @@ export const createBenchmarkCallBodyLabelMin = 2;
 
 
 
+
+
 export const CreateBenchmarkCallBody = zod.object({
   "label": zod.string().min(createBenchmarkCallBodyLabelMin),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number().min(1),
   "hardCases": zod.array(zod.string()).optional(),
   "entityNotes": zod.string().optional(),
@@ -133,13 +136,17 @@ export const CreateBenchmarkCallBody = zod.object({
   "type": zod.enum(['ro_number', 'unit_number', 'vin', 'phone_number', 'name', 'address', 'load_number', 'city']),
   "value": zod.string()
 })).optional(),
-  "audioObjectPath": zod.string().optional()
+  "audioObjectPath": zod.string().optional(),
+  "goldTranscript": zod.string().optional(),
+  "sourceProvider": zod.enum(['pipecat']).optional(),
+  "sourceCallId": zod.string().min(1).optional(),
+  "sourceAccountLabel": zod.string().min(1).optional()
 })
 
 export const CreateBenchmarkCallResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -226,6 +233,26 @@ export const GetProxyAgreementResponse = zod.object({
 
 
 /**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+export const GetMethodCheckResponse = zod.object({
+  "state": zod.enum(['measured', 'not_run']),
+  "bulkId": zod.string().uuid().optional(),
+  "completedAt": zod.coerce.date().optional(),
+  "providers": zod.array(zod.object({
+  "providerId": zod.string(),
+  "wer": zod.number().describe('Pooled gold WER: total errors \/ total gold words.'),
+  "flagsPer100Words": zod.number().describe('Pooled peer flags per 100 words on the call word basis.'),
+  "calls": zod.number().int()
+})).optional(),
+  "n": zod.number().int().optional().describe('Providers that carried both a WER and a flag rate.'),
+  "rho": zod.number().nullish().describe('Spearman rho, -1 to 1. Null when fewer than 3 providers or one side is entirely tied.'),
+  "pOneSided": zod.number().nullish().describe('Exact one-sided permutation p-value. Null when rho is null.'),
+  "verdict": zod.enum(['agrees', 'weak', 'disagrees', 'not_measurable']).optional()
+})
+
+
+/**
  * @summary T-97 -- the transcriber this assistant is configured with in Vapi (primary, fallback plan, boosted keyterms), read live. Read-only.
  */
 export const GetAssistantTranscriberParams = zod.object({
@@ -273,7 +300,11 @@ export const GetAssistantSignalsResponse = zod.object({
   "low": zod.number(),
   "notRecorded": zod.number(),
   "clean": zod.number(),
-  "errored": zod.number()
+  "errored": zod.number(),
+  "picks": zod.array(zod.object({
+  "providerId": zod.string(),
+  "calls": zod.number()
+}))
 }),
   "hardCases": zod.object({
   "calls": zod.number(),
@@ -330,7 +361,7 @@ export const GetBenchmarkCallParams = zod.object({
 export const GetBenchmarkCallResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -396,7 +427,7 @@ export const UpdateBenchmarkCallBody = zod.object({
 export const UpdateBenchmarkCallResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -703,7 +734,7 @@ export const AttestBenchmarkCallDeidBody = zod.object({
 export const AttestBenchmarkCallDeidResponse = zod.object({
   "id": zod.string(),
   "label": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "durationSeconds": zod.number(),
   "status": zod.enum(['needs_review', 'ready_for_gold', 'gold_in_review', 'ready_to_run', 'archived']),
   "hardCases": zod.array(zod.string()),
@@ -816,7 +847,7 @@ export const importVapiCallsBodyVapiCallIdsMax = 200;
 
 export const ImportVapiCallsBody = zod.object({
   "accountId": zod.string().min(1),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "vapiCallIds": zod.array(zod.string()).min(1).max(importVapiCallsBodyVapiCallIdsMax)
 })
 
@@ -1226,7 +1257,7 @@ export const ListBenchmarkRankingsQueryParams = zod.object({
 
 export const ListBenchmarkRankingsResponseItem = zod.object({
   "runId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable().describe('Null buckets into the \"Other\" group (a manually-added call with no Vapi assistant).'),
   "assistantLabel": zod.string().describe('Resolved live from Vapi at read time; \"Unassigned (no assistant ID captured at import)\" when assistantId is null.'),
   "providerId": zod.string(),
@@ -1345,7 +1376,7 @@ export const ListBulksResponseItem = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1407,7 +1438,7 @@ export const createBulkBodyMaxDurationSecondsMin = 0;
 export const CreateBulkBody = zod.object({
   "name": zod.string().min(1).optional(),
   "criteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1451,7 +1482,7 @@ export const CreateBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1507,7 +1538,7 @@ export const previewBulkSelectionBodyMaxDurationSecondsMin = 0;
 
 export const PreviewBulkSelectionBody = zod.object({
   "criteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1580,7 +1611,7 @@ export const GetBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1675,7 +1706,7 @@ export const LaunchBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1734,7 +1765,7 @@ export const RetryBulkFailedResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1793,7 +1824,7 @@ export const CancelBulkResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -1853,10 +1884,15 @@ export const GetBulkProviderCorrelationResponse = zod.object({
 
 
 /**
- * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
  */
 export const GetBulkVerdictsParams = zod.object({
   "bulkId": zod.string().uuid()
+})
+
+export const GetBulkVerdictsQueryParams = zod.object({
+  "assistantId": zod.string().optional().describe('W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.'),
+  "providers": zod.string().optional().describe('S-AB1 -- comma-separated, exactly two distinct provider ids this bulk ran. Each group\'s verdict is computed over only those two providers\' cells, so the noise floor counts only calls both scored; everything else in the response is unchanged. 400 for anything but two such ids.')
 })
 
 export const getBulkVerdictsResponseGroupsItemVerdictNoiseFloorCi95Min = 2;
@@ -1924,6 +1960,83 @@ export const GetBulkVerdictsResponse = zod.object({
 
 
 /**
+ * @summary W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+ */
+export const GetBulkTurnSignalsParams = zod.object({
+  "bulkId": zod.string().uuid()
+})
+
+export const GetBulkTurnSignalsQueryParams = zod.object({
+  "assistantId": zod.string().optional().describe('Only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.')
+})
+
+export const GetBulkTurnSignalsResponse = zod.object({
+  "bulkId": zod.string(),
+  "assistantId": zod.string().nullable(),
+  "calls": zod.array(zod.object({
+  "callId": zod.string(),
+  "turns": zod.array(zod.object({
+  "modelMs": zod.number().nullable(),
+  "voiceMs": zod.number().nullable(),
+  "transcriberMs": zod.number().nullable(),
+  "endpointingMs": zod.number().nullable(),
+  "turnMs": zod.number().nullable()
+})).nullable(),
+  "assistantInterruptions": zod.number().nullable(),
+  "toolCalls": zod.number().nullable(),
+  "endedReason": zod.string().nullable(),
+  "successEvaluation": zod.string().nullable()
+})),
+  "summary": zod.object({
+  "totalCalls": zod.number(),
+  "stt": zod.object({
+  "transcriberLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+})
+}),
+  "turnTaking": zod.object({
+  "endpointingLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+}),
+  "interruptedCalls": zod.number(),
+  "interruptions": zod.number(),
+  "interruptionsMeasuredCalls": zod.number()
+}),
+  "llm": zod.object({
+  "modelLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+})
+}),
+  "voice": zod.object({
+  "voiceLatency": zod.object({
+  "medianMs": zod.number().nullable(),
+  "turns": zod.number(),
+  "measuredCalls": zod.number()
+})
+}),
+  "outcome": zod.object({
+  "endedReasons": zod.array(zod.object({
+  "value": zod.string(),
+  "calls": zod.number()
+})),
+  "endedReasonKnownCalls": zod.number(),
+  "successEvaluations": zod.array(zod.object({
+  "value": zod.string(),
+  "calls": zod.number()
+})),
+  "successEvaluationKnownCalls": zod.number()
+})
+})
+})
+
+
+/**
  * @summary T-32 -- the shareable dated verdict artefact. One self-contained HTML page (no scripts, no external assets, print-clean) rendered from the same numbers as getBulkVerdicts, stamped with the produced-at time, build SHA and scoring version. Open in a browser or save/attach; not part of the generated JSON client.
  */
 export const GetBulkVerdictArtefactParams = zod.object({
@@ -1959,7 +2072,7 @@ export const GetBulkManifestResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2024,7 +2137,7 @@ export const ListBulkTemplatesResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2081,7 +2194,7 @@ export const createBulkTemplateBodyMaxDurationSecondsMin = 0;
 export const CreateBulkTemplateBody = zod.object({
   "name": zod.string().min(1),
   "criteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2123,7 +2236,7 @@ export const CreateBulkTemplateResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2195,7 +2308,7 @@ export const LaunchBulkTemplateResponse = zod.object({
   "name": zod.string(),
   "status": zod.enum(['draft', 'estimating', 'awaiting_confirmation', 'running', 'complete', 'partial', 'failed', 'cancelled']),
   "selectionCriteria": zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "assistantIds": zod.array(zod.string()).optional(),
   "accountLabel": zod.string().optional(),
   "startedAtFrom": zod.coerce.date().optional(),
@@ -2230,13 +2343,51 @@ export const LaunchBulkTemplateResponse = zod.object({
 
 
 /**
+ * @summary Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+ */
+export const GetWatchOverviewResponse = zod.object({
+  "today": zod.string(),
+  "windowStart": zod.string(),
+  "accounts": zod.array(zod.object({
+  "accountId": zod.string(),
+  "accountLabel": zod.string().nullable(),
+  "agents": zod.array(zod.object({
+  "scheduleId": zod.string(),
+  "enabled": zod.boolean(),
+  "assistantId": zod.string().nullable(),
+  "production": zod.object({
+  "vendor": zod.string(),
+  "model": zod.string().nullable()
+}).nullable(),
+  "baseline": zod.object({
+  "state": zod.enum(['forming', 'steady', 'moved']),
+  "priorDays": zod.number(),
+  "low": zod.number().nullable(),
+  "high": zod.number().nullable()
+}),
+  "monthEstimatedCents": zod.number(),
+  "days": zod.array(zod.object({
+  "day": zod.string(),
+  "outcome": zod.string(),
+  "bulkId": zod.string().nullable(),
+  "rate": zod.number().optional(),
+  "calls": zod.number().optional(),
+  "leaderProviderId": zod.string().nullish(),
+  "leaderRate": zod.number().nullish()
+}))
+}))
+}))
+})
+
+
+/**
  * @summary List watch schedules -- one row per org-or-agent daily-sampling policy (W-2)
  */
 export const ListWatchSchedulesResponseItem = zod.object({
   "id": zod.string(),
   "templateId": zod.string(),
   "accountId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable(),
   "sampleSize": zod.number(),
   "dailyCapCents": zod.number(),
@@ -2267,7 +2418,7 @@ export const createWatchScheduleBodyHourLocalMax = 23;
 export const CreateWatchScheduleBody = zod.object({
   "templateId": zod.string().uuid(),
   "accountId": zod.string().min(1),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().min(1).nullish(),
   "sampleSize": zod.number().min(1).max(createWatchScheduleBodySampleSizeMax).optional(),
   "dailyCapCents": zod.number().min(1).optional(),
@@ -2280,7 +2431,7 @@ export const CreateWatchScheduleResponse = zod.object({
   "id": zod.string(),
   "templateId": zod.string(),
   "accountId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable(),
   "sampleSize": zod.number(),
   "dailyCapCents": zod.number(),
@@ -2312,7 +2463,7 @@ export const updateWatchScheduleBodyHourLocalMax = 23;
 
 
 export const UpdateWatchScheduleBody = zod.object({
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']).optional(),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']).optional(),
   "accountId": zod.string().min(1).optional(),
   "assistantId": zod.string().min(1).nullish(),
   "sampleSize": zod.number().min(1).max(updateWatchScheduleBodySampleSizeMax).optional(),
@@ -2326,7 +2477,7 @@ export const UpdateWatchScheduleResponse = zod.object({
   "id": zod.string(),
   "templateId": zod.string(),
   "accountId": zod.string(),
-  "vertical": zod.enum(['rush', 'property_management', 'trucking']),
+  "vertical": zod.enum(['rush', 'property_management', 'trucking', 'public_benchmark']),
   "assistantId": zod.string().nullable(),
   "sampleSize": zod.number(),
   "dailyCapCents": zod.number(),
@@ -2336,6 +2487,30 @@ export const UpdateWatchScheduleResponse = zod.object({
   "createdByLabel": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const RunWatchScheduleNowParams = zod.object({
+  "scheduleId": zod.string().uuid()
+})
+
+export const RunWatchScheduleNowResponse = zod.object({
+  "scheduleId": zod.string(),
+  "day": zod.string(),
+  "outcome": zod.string(),
+  "bulkId": zod.string().nullable(),
+  "detail": zod.object({
+  "imported": zod.number().optional(),
+  "matched": zod.number().optional(),
+  "sampled": zod.number().optional(),
+  "shortfall": zod.number().optional(),
+  "noCustomerAudio": zod.number().optional(),
+  "estimatedCents": zod.number().optional(),
+  "error": zod.string().optional()
+})
 })
 
 

@@ -307,11 +307,23 @@ the same day twice.
 Evidence note (visual-and-research, 2026-09-14) is in §8. The shape it supports:
 
 **Layer 1 — Orgs.** One row per account, expanding to one row per agent. Each agent row:
-name, the production transcriber it runs (already resolved by
-`GET /benchmark/assistants/{assistantId}/transcriber`), a **30-day tick bar** (one tick
-per scheduled day: green = ran, verdict unchanged; amber = ran, `too_close` or moved
-against baseline; grey = no run; red = refused/failed, with the reason on hover), today's
-rate vs trailing-30-day baseline, and cost this month. Pattern from Better Stack /
+name, the production transcriber it runs (resolved **offline** from the stored
+`source_transcriber_provider`, never by the live Vapi read behind
+`GET /benchmark/assistants/{assistantId}/transcriber` — corrected 2026-09-17, W-6
+grill), a **30-day tick bar** (one tick
+per scheduled day: green = ran; amber = today, when the ledger's baseline verdict
+(W-6a/W-6b) reads `moved` — ~~or `too_close`~~ (corrected 2026-09-23, W-6c grill:
+`too_close` is a Layer 2 verdict and is not on the ledger, so Layer 1 never shows it);
+grey = no run; red = refused/failed, with the reason on hover), today's
+rate vs trailing-30-day baseline, and cost this month.
+
+**Corrected 2026-09-23 (W-6b grill).** "Today's rate" is production's **M-8a
+disagreement** — the Vapi draft's caller turns against the candidates' consensus,
+with the best candidate on the same calls — not a `peerFlags / words` rate.
+Production (Flux on 310 of 362 calls) is streaming-only and never has cells of its
+own, so it never appears in `watch_runs.totals`. The measurement exists only on a
+customer-channel bulk. W-5e settles it onto the ledger; W-5f makes a watch run on
+the caller track. See `docs/backlog/good-to-have.md`, "Found 2026-09-23". Pattern from Better Stack /
 incident.io status pages (§8) — a person reads 36 agents in one screen without a chart.
 
 **Layer 2 — One agent, one day.** The existing verdict sentence for that day's bulk,
@@ -322,7 +334,7 @@ layers using data already stored — nothing new is collected:
 | layer | signal | source |
 |---|---|---|
 | STT | peer flags per 100 words; entity mismatches; words that split | scores, `GET /benchmark/words-to-watch` |
-| Turn-taking | endpointing latency; assistant interruptions | `prod_endpointing_latency_ms`, `prod_assistant_interruptions` |
+| Turn-taking | endpointing latency; assistant interruptions | ~~`prod_endpointing_latency_ms`~~ `artifact.performanceMetrics.turnLatencies[].endpointingLatency` (per turn, corrected 2026-09-23 in W-7 so all four latencies pool alike), `prod_assistant_interruptions` |
 | LLM | model latency per turn | `artifact.performanceMetrics.turnLatencies[].modelLatency` |
 | Voice | TTS latency per turn | `…voiceLatency` |
 | Outcome | ended reason; success evaluation | `source_ended_reason`, `source_success_evaluation` |
@@ -385,6 +397,12 @@ mean 9.59 s, measured 2026-09-14) ≈ **$6.32**; Cartesia's real-time adapter al
 - compute the no-gold peer-flag rate per provider (what every client verdict uses);
 - report **rank agreement** between the two (Spearman over 7 providers) on the Results
   page under a "Method check" line, with the date.
+
+The verdict word is decided by the exact one-sided permutation p-value on the real
+(tied) ranks, not a fixed cutoff: **agrees** at ρ > 0 and p < 0.05, **weak** at ρ > 0 and
+p ≥ 0.05, **disagrees** at ρ ≤ 0 (decided 2026-09-26; for 7 untied providers p < 0.05
+means ρ ≥ 5/7). Public calls never go to the paid AI judge and never enter the M-18
+human-gold figure (W-12a1, W-12a2).
 
 If the ranks agree, 1b is a claim with a receipt. If they do not, the flag threshold gets
 tuned on this set before anything is sold. This also answers the "standard benchmark"
@@ -452,6 +470,9 @@ order. Order and dependencies:
 | W-10 | MCP server: six reads, one ledger-gated write | W-8, W-9 | nothing by itself |
 | W-11 | Claude Code plugin (new repo) | W-10 | nothing |
 | W-12 | public calibration set — the receipt for §1b | W-13 | **≈ $6.32 once, approved 2026-09-14 by delegation, ceiling $7** |
+| W-12a1 | the AI judge never runs on a public calibration call (found 2026-09-26: it was unpriced, outside the $7 ceiling) — **done 2026-09-26** | W-12a | nothing |
+| W-12a2 | public clips stay out of the M-18 "human gold" agreement figure — **done 2026-09-26** | W-12a | nothing |
+| W-12b | method check: Spearman ρ + exact permutation p + verdict word on Results | W-12a1, W-12a2, the launch | nothing (reads only) |
 
 ## 8. Evidence — daily watch, org → agent → call
 
@@ -480,6 +501,31 @@ of tiles; Layer 3 reuses the comparison view unchanged.
 **No evidence found for:** a screen that shows a bootstrap noise floor or "too close to
 call" as a first-class state — no product in Mobbin's results does this. The wording from
 S-AB1's spec stands and is not validated by a reference.
+
+**Addendum 2026-09-23 (W-6c, visual-and-research).** Question: how do status pages word a
+per-day tick's hover, and a "not enough history yet" state?
+**Pattern to use:** hover = date, then the outcome, then the count with its denominator
+← [OpenAI Platform service health](https://mobbin.com/screens/fd98bb68-c8c4-446c-a0fc-0e1089003e1c)
+("Feb 26 · 7:00–7:59 AM · 100.00% uptime · (0 / 0 requests)"); the bar's two ends labelled
+"30 days ago … today" ← [Better Stack status](https://mobbin.com/screens/0d34fbf2-e4c4-451c-ad5d-de3cdf409164).
+**Patterns to avoid:** a tick bar with no legend in the page copy — every reference
+carries one line saying what the colours mean.
+**Changes to the plan:** hover text is `<day> · <outcome> · <rate> per 100 words · <n> calls`,
+each part only when present; legend sentence under the page title.
+**No evidence found for:** wording of a forming baseline — Lenny's search
+(`baseline|anomaly|not enough data|insufficient data|collecting data`, 71 hits) returned
+nothing about dashboards; "baseline forming · N of 7 days" is the register's own wording.
+
+**Addendum 2026-09-23 (W-7, visual-and-research).** Question: what does a per-day detail
+drawer look like when the day's numbers come with denominators? Mobbin, web: fal's request
+drawer (screen `5485a50c-1791-4b0c-a147-ee4c478c04ab`) — a right-side panel headed by a phase
+strip with a duration per phase, then a key/value list; the drawer copies that order (verdict
+sentence, then five layer cells). Plain's reporting (`72526f03-b98d-4df9-8c99-27e59a321ccc`)
+shows an unmeasured SLA metric as "N/A · No data", never 0 — the strip's "not timed on any of
+N calls" line. Lenny's: 14 hits for denominator / missing-data wording, none about dashboard
+copy (Forsgren's "are we missing data? was this a bad proxy?" is the closest and is a
+question, not a pattern). No evidence found for the "timed on 7 of 10 calls; 3 not timed by
+Vapi" wording; it follows the step's acceptance line.
 
 ---
 

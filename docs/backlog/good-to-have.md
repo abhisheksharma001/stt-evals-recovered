@@ -1,3 +1,110 @@
+## Found 2026-09-28 (S-AB3a deploy): the database was off and `/healthz` said "ok"
+
+Seen: the `stt-evals-pg` container received a fast shutdown request at 2026-09-27 17:30:33
+UTC and exited 0 (a `docker stop`, Docker Desktop quitting, or a machine restart -- not a
+crash; `docker inspect`: `OOMKilled=false`). Its restart policy is `no`, so it stayed down.
+For those hours the API process kept running and `GET /api/healthz` kept answering
+`{"status":"ok", ...}` -- it never touches the database -- while every page reading data
+would have failed. Started again 2026-09-28 with Abhishek's go; nothing lost (6,988 result
+rows, the same total as before).
+
+Two separate things, each its own small step if wanted:
+1. `/healthz` reports "ok" with the database down. **Fixed in R-56 (2026-09-28)** as a
+   `database` field beside the liveness `status` -- not a `select 1` that could fail the
+   answer, which `routes/health.ts` deliberately never does. The screen half is R-56b
+   (done 2026-09-28: the footer badge reads "database unreachable" in amber).
+2. `stt-evals-pg` has restart policy `no`. Worth: `docker update --restart unless-stopped
+   stt-evals-pg` -- a one-line, reversible change to the container, which is Abhishek's
+   call, not a PR.
+
+Also seen, and **not** a finding: the container log shows `watch_runs` / watch-bulk
+unique-key errors at 2026-09-27 04:09 UTC. `stt_evals` has 0 `watch_runs` and 0 watch
+bulks, so they did not come from it. The log is container-wide; most likely they are the
+integration suite's `stt_evals_test` database exercising those unique keys -- which test
+file was not checked.
+
+## Found 2026-09-26 (R-25b): one `ok` cell has no score row
+
+Expected: every `ok` cell has a `benchmark_scores` row -- R-26 measured 0 exceptions of 769
+on 2026-09-10, and `alreadyOk` in `artifacts/api-server/src/lib/run-executor.ts` skips
+`ok` cells on every retry, so an unscored one is billed and invisible to every ranking for
+good. Seen: result `07e4f6e3` (AssemblyAI, run `6e88dfeb`, bulk `4fee349b` "Public: Pipecat
+1k"), written 11:42:00 UTC -- a minute after that bulk's retry-failed began, and long
+before the API was stopped at 12:20 UTC, so the known kill does not explain it. Cause not
+investigated. Reproduce: `ok` rows left-joined to `benchmark_scores` where the score is
+null. Worth: find how a live, un-killed process left it unscored before trusting R-26's
+"latent only" reading.
+
+> **Cause found 2026-09-26 (R-55):** not a crash. AssemblyAI returned `ok` with an empty
+> transcript on a 1-second clip, and `runCell` skipped scoring on `!hypothesisTranscript`,
+> which an empty string satisfies. R-26's reading stands; this is a separate path. Fixed
+> in R-55; the existing cell is R-55b.
+
+## Found 2026-09-26 (picking the next step): register statuses left open
+
+Expected: a merged step reads `done` in `docs/step-register.md`. Seen: R-36, R-37, R-38,
+R-40, R-41, R-42, R-43 and R-44 all read "open" although each merged on 2026-09-09
+(#160 to #167, every merge commit an ancestor of `main`). Each PR wrote its row with
+status open and nothing flipped it; `scripts/check-register-coverage.mjs` (R-47) counts
+bug dispositions, not step statuses, so it could not see this. Nearly cost a rebuild of
+R-36. Fixed in the same docs PR that found it. Lesson: before building a register step,
+search merged PRs for its id.
+
+## Found 2026-09-26 (W-12 cap): cancelling a bulk does not stop a retry-failed in flight
+
+Expected: Abhishek capped bulk `4fee349b` at 2,000 cells; the bulk was cancelled at 1,984
+ok cells (up to 16 in flight may finish) so the total could not pass 2,000. Seen: cells
+kept landing -- 2,311 ok, $2.02 by `benchmark_scores.cost_microcents`, about 25 cents past
+the cap -- until the API process was stopped at 17:50. Cause: `retryBulkFailedCells`
+(`artifacts/api-server/src/lib/bulks.ts`) hands its shard list to
+`drainWithConcurrency`, which starts the next shard as each finishes. Those shards were
+status `failed`, not `queued`, so `cancelBulk` neither flipped them nor signalled them; it
+only cancels `queued` runs and signals `running` ones. Second hazard found on the way out:
+`recoverInterruptedRuns` resumes every `queued`/`running` run at boot, so the API could not
+be restarted until the three interrupted shards were set `cancelled` by hand (3 audit rows,
+actor `manual-w12-cap-2000`). Fix: W-12a5 -- **fixed 2026-09-26**: the retry re-reads the
+bulk before each shard and marks the shard cancelled instead of running it.
+
+## Found 2026-09-26 (W-12 launch): every public clip failed -- no audio_object_path
+
+Expected: after "go spend", bulk `4fee349b` "Public: Pipecat 1k" transcribes 1,000 clips on
+seven providers. Seen: all 7,000 cells failed in two seconds with "Call has no
+audioObjectPath to send to a provider." `scripts/src/import-public-set.ts` wrote each clip
+into the audio cache but never set `audio_object_path`, and the executor refuses an empty
+path before it reads the cache (`artifacts/api-server/src/lib/run-executor.ts:635`). Spend:
+$0 (the bulk's `actualCost` is 0; no provider was called). W-12a's tests covered the gate
+and the import, never one clip through the executor. Fix: W-12a3 -- **fixed 2026-09-26**
+(importer writes an `hf://` marker; backfill fills the 1,000 already imported).
+
+## Found 2026-09-26 (W-12 launch): the bulk's server estimate counts a judge that never runs
+
+Expected: the bulk's estimate matches the script's $6.32. Seen: `estimatedCostCents` 1210
+= `estimatedSttCostCents` 631 + `estimatedAgentCostCents` 579. W-12a1 skips the judge for
+pipecat calls, but the bulk estimate still prices it, so the Bulks page shows $12.10 for a
+run whose ceiling is $7. Real spend is the STT part only. Not blocking the retry (the
+script's own gate priced STT only, and D-15's approval was for that). Fix: W-12a4 --
+**fixed 2026-09-26**: the judge estimate counts only non-pipecat calls. Bulk `4fee349b`'s
+stored estimate is frozen at launch and still reads $12.10.
+
+
+## Found 2026-09-26 (W-12b write-up): the public-set launch would buy unpriced judge calls
+
+Expected: the W-12 launch spends ≈ $6.32, capped at $7 by `scripts/src/import-public-set.ts`.
+Seen: every completed run calls `runAutoAgentVerificationForRun`
+(`artifacts/api-server/src/lib/run-executor.ts:824`), which sends each flagged call to the
+paid OpenAI judge (`artifacts/api-server/src/lib/agent-verify.ts`). Nothing excludes
+`sourceProvider = 'pipecat'`, and the script prices STT providers only -- so up to 1,000
+judge calls would ride along outside the ceiling. Found by reading, before any spend.
+Fix: W-12a1 (skip the judge for public calls; decided by Abhishek 2026-09-26) -- **fixed 2026-09-26**.
+
+## Found 2026-09-26 (W-12b write-up): public gold would flood the M-18 agreement figure
+
+Expected (W-12 finding 5): public calls appear in proxy-agreement "as their own plainly
+labelled group". Seen: `labelledCall` in `artifacts/api-server/src/lib/proxy-agreement.ts:48`
+has no grouping and no source filter; a pipecat call (gold, no draft) counts as a
+person-written gold. After the launch ~1,000 public clips would outweigh the calls a human
+checked. Fix: W-12a2 -- **fixed 2026-09-26**. W-12 finding 5's sentence is corrected in its own row by W-12a2's
+"Why this exists".
 
 ## Found 2026-09-10 (R-43): a number word and its digits score as a total miss
 
@@ -96,6 +203,12 @@ rather than as an object, and **24 do not parse as JSON at all**. Anything readi
 column has to `JSON.parse` a value the schema types as an object, and a reader that does
 not will silently see no fields — which is exactly what the first pass of the R-25 probe
 did, and it reported "no events recorded" for every row before the shape was checked.
+
+> **Corrected 2026-09-26 (R-25a): neither half reproduces.** The column is `text`, not
+> jsonb (`\d benchmark_provider_call_results`). Of the 451 non-empty Cartesia values, one
+> `JSON.parse` gives an object on 435 and the JSON literal `null` on 16; **0 fail to parse
+> and 0 are double-encoded.** The 2026-09-10 figures most likely came from how that probe
+> exported the column, not from the data. Nothing to fix; kept for the record.
 
 Worth: find the write site, store the object, and decide what to do about the 24. Not
 urgent — nothing in the product reads this column today; the cost is paid by whoever
@@ -2915,3 +3028,66 @@ entry here and not a line in W-5c1's diff.
 
 Do not fix it by loosening the cycle check. The check has already earned its
 keep once (`lib/scoring` had six cycles, O-88).
+
+## Found 2026-09-23 (grilling W-6b): the ledger holds no production rate, and a watch bulk usually cannot produce one
+
+Layer 1's headline number is "today's **production** rate vs its baseline"
+(`docs/PRD-v8-watch.md` Part C). Two separate things stop it existing.
+
+**1. `watch_runs.totals` never contains production.** W-5d settles the trend
+cells (`peerFlags / words` per provider that RAN). Production is Deepgram Flux
+on 310 of the 362 Vapi calls in the corpus, and Flux is streaming-only:
+`deepgram-flux-general-en` is `disabled` and has **0** rows in
+`benchmark_provider_call_results`, ever. So for ~86 % of agents there is no
+production entry in any day's `totals`, and there never will be.
+
+Production is measured another way already — M-8a's `productionDisagreement`
+(`artifacts/api-server/src/lib/verdict.ts`): the caller turns of the Vapi draft
+held as a non-voting candidate against the candidates' consensus, with the
+best candidate measured over exactly the same calls so the two numbers share a
+scale. It is computed per bulk **at read time** and W-5d did not copy it, so it
+dies with the bulk on eviction exactly like the totals would have.
+
+**2. On a mono bulk that measurement is null by design, and watch bulks are
+mono.** M-8a returns null unless the bulk ran on the customer channel (on the
+mix, the candidates heard both speakers and the draft's turns are the caller
+alone, ~70 % "disagreement" for no reason). `runWatchTick` creates its bulk
+with `requireCustomerAudioDefault: false` (`artifacts/api-server/src/lib/watch-tick.ts`),
+inherited on purpose from the template-launch route, so a template with no
+opinion on file runs on the mix. Both templates in the dev database have no
+opinion on file:
+
+```
+docker exec stt-evals-pg psql -U postgres -d stt_evals -c \
+  "select name, selection_criteria->'requireCustomerAudio' from bulk_templates"
+-> weekly lindenwood heights chek         | (null)
+   last 14 days — all accounts (fallback) | (null)
+```
+
+A watch on either would spend every day and produce a Layer 1 row with no
+production rate, silently, forever.
+
+**Reproduce (no spend):**
+```
+docker exec stt-evals-pg psql -U postgres -d stt_evals -c \
+  "select source_transcriber_provider, source_transcriber_model, count(*)
+     from benchmark_calls where source_provider='vapi' group by 1,2"
+docker exec stt-evals-pg psql -U postgres -d stt_evals -c \
+  "select provider_id, count(*) from benchmark_provider_call_results group by 1"
+```
+
+**Worth having, in order:** W-5e (settle production's measurement onto the
+ledger per agent, as sums so days pool) and W-5f (a watch runs on the caller
+track — which of two ways is Abhishek's call). Both are in
+`docs/step-register.md`.
+
+**Do not** fix it by tracking the best candidate's `peerFlags / words` instead
+and calling it production. That is a different question ("is the best
+alternative drifting?"), and a row labelled production that is not production
+is the one thing Layer 1 must never show.
+
+- **Found 2026-09-23 (grilling W-6c): the watch overview has no agent name.**
+  `GET /benchmark/watch/overview` carries `assistantId` only, and `benchmark_calls`
+  stores no assistant name, so the Orgs page shows the id in mono. A name needs a
+  stored source first (import-time capture from Vapi, or a label on the schedule) —
+  then one field on `WatchOverviewAgent`.

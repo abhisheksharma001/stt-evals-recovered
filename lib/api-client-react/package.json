@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@workspace/api-client": "workspace:*",
     "@tanstack/react-query": "catalog:"
   },
   "peerDependencies": {

@@ -8,6 +8,8 @@ export type ScanLike = {
   status: string;
   judgeConfidence: string | null;
   agentPickReasoning: string | null;
+  /** S-AB3a: the provider whose cell the judge picked; null when it picked none. */
+  pickProviderId: string | null;
 };
 
 export type JudgeConfidenceSummary = {
@@ -22,6 +24,12 @@ export type JudgeConfidenceSummary = {
   notRecorded: number;
   clean: number;
   errored: number;
+  /**
+   * S-AB3a: on the judged calls, how many times the judge picked each
+   * provider's reading, most picks first. A pick is a suggestion, never gold
+   * and never a winner -- this counts them, nothing more.
+   */
+  picks: { providerId: string; calls: number }[];
 };
 
 /**
@@ -42,7 +50,8 @@ const JUDGED_STATUSES = new Set(["flagged", "approved", "rejected"]);
 
 export function aggregateJudgeConfidence(scans: ScanLike[]): JudgeConfidenceSummary {
   const latest = latestScanPerCall(scans);
-  const out: JudgeConfidenceSummary = { checked: latest.length, judged: 0, high: 0, medium: 0, low: 0, notRecorded: 0, clean: 0, errored: 0 };
+  const out: JudgeConfidenceSummary = { checked: latest.length, judged: 0, high: 0, medium: 0, low: 0, notRecorded: 0, clean: 0, errored: 0, picks: [] };
+  const picks = new Map<string, number>();
   for (const s of latest) {
     if (s.status === "clean") out.clean += 1;
     else if (s.status === "error") out.errored += 1;
@@ -51,11 +60,15 @@ export function aggregateJudgeConfidence(scans: ScanLike[]): JudgeConfidenceSumm
     // judge call failed is neither judged nor clean.
     if (!JUDGED_STATUSES.has(s.status) || s.agentPickReasoning === null) continue;
     out.judged += 1;
+    if (s.pickProviderId !== null) picks.set(s.pickProviderId, (picks.get(s.pickProviderId) ?? 0) + 1);
     if (s.judgeConfidence === "high") out.high += 1;
     else if (s.judgeConfidence === "medium") out.medium += 1;
     else if (s.judgeConfidence === "low") out.low += 1;
     else out.notRecorded += 1;
   }
+  out.picks = [...picks.entries()]
+    .map(([providerId, calls]) => ({ providerId, calls }))
+    .sort((a, b) => b.calls - a.calls || a.providerId.localeCompare(b.providerId));
   return out;
 }
 

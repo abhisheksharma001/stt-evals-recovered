@@ -48,11 +48,13 @@ import {
 import {
   BulkNameConflictError,
   createBulkFromCriteria,
+  NO_CUSTOMER_AUDIO_BUCKET,
   isUniqueViolation,
   previewBulkSelection,
   resolveCriteriaSelection,
 } from "./bulks";
 import { decideTick, localDay } from "./watch-scheduler";
+import { settleLaunchedRuns } from "./watch-settle";
 import { sampleForDay, type SampleCandidate } from "./watch-sampler";
 import {
   UnknownVapiAccountError,
@@ -83,6 +85,8 @@ export type WatchTickResult = {
   scheduleId: string;
   day: string;
   outcome: string;
+  /** `watch_runs.detail` as written: counts and one message (W-9 prints it). */
+  detail: WatchRunDetail;
   bulkId: string | null;
 };
 
@@ -128,6 +132,17 @@ export async function runWatchTick(input: {
   const source = input.source ?? REAL_SOURCE;
   const log = input.log ?? logger;
 
+  // W-5d: yesterday's numbers before today's decisions, and outside the loop
+  // below -- that loop runs once per schedule per DAY, so settling from
+  // inside it would leave Layer 1 a day behind. Caught here rather than
+  // allowed to escape: settling is a read-back, and a broken read-back must
+  // not stop the policies from running their day.
+  try {
+    await settleLaunchedRuns({ log });
+  } catch (err) {
+    log.error({ err }, "watch: settle pass failed");
+  }
+
   const schedules = await db
     .select()
     .from(watchSchedulesTable)
@@ -146,57 +161,82 @@ export async function runWatchTick(input: {
       ledgerDays: ledgerDays.map((r) => r.day),
     });
     if (decision.action === "skip") continue;
-    const day = decision.day;
 
-    // THE CLAIM. First write, before any work. A second tick for this pair
-    // bounces off watch_runs_schedule_day_unique here and stops, having done
-    // nothing -- not after importing a day it is about to discard.
-    let runId: string;
-    try {
-      const [row] = await db
-        .insert(watchRunsTable)
-        .values({ scheduleId: schedule.id, day, outcome: "started" })
-        .returning({ id: watchRunsTable.id });
-      runId = row.id;
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        log.info({ scheduleId: schedule.id, day }, "watch: another tick already claimed this day");
-        continue;
-      }
-      throw err;
-    }
-
-    let settlement: Settlement;
-    try {
-      settlement = await runOneSchedule({ schedule, day, now, source });
-    } catch (err) {
-      // Counts and messages only. `detail` is read by the UI and dumped in
-      // logs, and the corpus's PII rules do not stop at the corpus.
-      const message = err instanceof Error ? err.message : String(err);
-      log.error({ err, scheduleId: schedule.id, day }, "watch: tick failed");
-      settlement = { outcome: "failed", detail: { error: message }, bulkId: null };
-    }
-
-    await db
-      .update(watchRunsTable)
-      .set({
-        outcome: settlement.outcome,
-        detail: settlement.detail,
-        bulkId: settlement.bulkId,
-      })
-      .where(eq(watchRunsTable.id, runId));
-
-    results.push({
-      scheduleId: schedule.id,
-      day,
-      outcome: settlement.outcome,
-      bulkId: settlement.bulkId,
-    });
+    const result = await runScheduleDay({ schedule, day: decision.day, now, source, log });
+    if (result) results.push(result);
   }
   return results;
 }
 
 type ScheduleRow = typeof watchSchedulesTable.$inferSelect;
+
+/**
+ * One schedule, one day: claim it, run it, write it down. The tick calls
+ * this once per due schedule; the W-9 `run-now` route calls it for the
+ * schedule the operator named, with `day = localDay(now)` and no hour check.
+ * One body for both, so the cost gate cannot drift between the clock and the
+ * hand.
+ *
+ * Returns null when the day was already in the ledger -- the claim below lost
+ * -- so the caller can say so instead of reporting a run that never happened.
+ */
+export async function runScheduleDay(input: {
+  schedule: ScheduleRow;
+  day: string;
+  now: Date;
+  source?: WatchTickSource;
+  log?: Logger;
+}): Promise<WatchTickResult | null> {
+  const { schedule, day, now } = input;
+  const source = input.source ?? REAL_SOURCE;
+  const log = input.log ?? logger;
+
+  // THE CLAIM. First write, before any work. A second tick for this pair
+  // bounces off watch_runs_schedule_day_unique here and stops, having done
+  // nothing -- not after importing a day it is about to discard.
+  let runId: string;
+  try {
+    const [row] = await db
+      .insert(watchRunsTable)
+      .values({ scheduleId: schedule.id, day, outcome: "started" })
+      .returning({ id: watchRunsTable.id });
+    runId = row.id;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      log.info({ scheduleId: schedule.id, day }, "watch: another tick already claimed this day");
+      return null;
+    }
+    throw err;
+  }
+
+  let settlement: Settlement;
+  try {
+    settlement = await runOneSchedule({ schedule, day, now, source });
+  } catch (err) {
+    // Counts and messages only. `detail` is read by the UI and dumped in
+    // logs, and the corpus's PII rules do not stop at the corpus.
+    const message = err instanceof Error ? err.message : String(err);
+    log.error({ err, scheduleId: schedule.id, day }, "watch: tick failed");
+    settlement = { outcome: "failed", detail: { error: message }, bulkId: null };
+  }
+
+  await db
+    .update(watchRunsTable)
+    .set({
+      outcome: settlement.outcome,
+      detail: settlement.detail,
+      bulkId: settlement.bulkId,
+    })
+    .where(eq(watchRunsTable.id, runId));
+
+  return {
+    scheduleId: schedule.id,
+    day,
+    outcome: settlement.outcome,
+    detail: settlement.detail,
+    bulkId: settlement.bulkId,
+  };
+}
 
 async function runOneSchedule(input: {
   schedule: ScheduleRow;
@@ -260,8 +300,17 @@ async function runOneSchedule(input: {
   //    filters, narrowed to this account, this window and (when the policy
   //    names one) this agent. `lastNDays` is dropped rather than left to
   //    re-resolve: the window this tick ran is the window it reports.
+  // W-5f (Abhishek, 2026-09-23, option a): a watch runs on the caller track
+  // unless its template says otherwise. Decided HERE, before the draw, and
+  // not only at pricing: the sampler must only ever see calls that can go
+  // into the bulk, or the ledger would say it sampled ten and the freeze
+  // would quietly keep six. A template with no opinion on file gets `true`
+  // -- a watch that has never run has no earlier numbers to keep matching,
+  // which is the reason the hand template-launch route keeps `false`.
+  const requireCustomerAudio = template.selectionCriteria.requireCustomerAudio ?? true;
   const matchCriteria: BulkSelectionCriteria = {
     ...template.selectionCriteria,
+    requireCustomerAudio,
     accountLabel: preview.accountLabel,
     assistantIds: schedule.assistantId
       ? [schedule.assistantId]
@@ -276,10 +325,11 @@ async function runOneSchedule(input: {
     template.maxDurationSeconds ?? null,
     now,
   );
+  const noCustomerAudio = matched.excluded.find((e) => e.bucket === NO_CUSTOMER_AUDIO_BUCKET)?.count ?? 0;
   if (matched.callIds.length === 0) {
     return {
       outcome: "refused:no_calls",
-      detail: { imported, matched: 0, sampled: 0 },
+      detail: { imported, matched: 0, sampled: 0, noCustomerAudio },
       bulkId: null,
     };
   }
@@ -309,6 +359,7 @@ async function runOneSchedule(input: {
     matched: matched.callIds.length,
     sampled: picked.length,
     shortfall,
+    noCustomerAudio,
   };
   // Reachable: `sample_size` is an ordinary integer column and a policy set
   // to 0 draws nothing. A bulk of no calls is not a smaller bulk, it is a
@@ -322,7 +373,7 @@ async function runOneSchedule(input: {
   //    number priced here is the number that gets frozen.
   const bulkCriteria: BulkSelectionCriteria = {
     callIds: picked,
-    requireCustomerAudio: template.selectionCriteria.requireCustomerAudio,
+    requireCustomerAudio,
     minCustomerWords: template.selectionCriteria.minCustomerWords,
   };
   const priced = await previewBulkSelection({
@@ -330,10 +381,11 @@ async function runOneSchedule(input: {
     providerIds: template.providerIds,
     minDurationSeconds: template.minDurationSeconds,
     maxDurationSeconds: template.maxDurationSeconds ?? null,
-    // The same two answers the creation below passes, for the same reason the
-    // template launch route passes them: a template saved before M-5/M-16 has
-    // no opinion on file and must keep matching what it matched.
-    requireCustomerAudioDefault: false,
+    // The channel is already explicit on `bulkCriteria` (W-5f), so this
+    // default never decides anything; it is `true` so the answer would be the
+    // same if it ever did. M-16's floor keeps the template-launch route's
+    // rule: no opinion on file means no floor.
+    requireCustomerAudioDefault: true,
     minCustomerWordsDefault: undefined,
   });
   if (!priced.estimate) {
@@ -398,7 +450,7 @@ function nextMonthStart(day: string): string {
  *  same: the bulk is parked, nothing has run. Launched and settled days are
  *  the ones that cost money. */
 const SPENDING_OUTCOMES = ["launched", "settled"];
-async function estimatedCentsThisMonth(scheduleId: string, day: string): Promise<number> {
+export async function estimatedCentsThisMonth(scheduleId: string, day: string): Promise<number> {
   const rows = await db
     .select({ detail: watchRunsTable.detail, outcome: watchRunsTable.outcome })
     .from(watchRunsTable)
@@ -453,7 +505,9 @@ async function createBulkWithName(input: {
       // day and a real bill, and a scheduler has nobody to ask.
       confirm: false,
       actorLabel: WATCH_ACTOR_LABEL,
-      requireCustomerAudioDefault: false,
+      // W-5f: explicit on `criteria` already; `true` so preview and creation
+      // answer alike if a caller ever passes criteria without it.
+      requireCustomerAudioDefault: true,
       minCustomerWordsDefault: undefined,
       watchScheduleId: schedule.id,
       watchDay: day,

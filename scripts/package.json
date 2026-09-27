@@ -6,14 +6,18 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "score:stt": "tsx ./src/stt-score.ts",
-    "import:vapi": "tsx ./src/import-vapi-calls.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "import:vapi": "tsx ./src/stt-evals.ts import",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "cli": "tsx ./src/stt-evals.ts",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@workspace/api-client": "workspace:*",
     "@workspace/scoring": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "vitest": "^3.2.7"
   }
 }

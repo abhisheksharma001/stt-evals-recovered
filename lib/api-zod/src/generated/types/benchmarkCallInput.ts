@@ -5,6 +5,7 @@
  * API contract for the STT Benchmark Command Center
  * OpenAPI spec version: 0.1.0
  */
+import type { BenchmarkCallInputSourceProvider } from './benchmarkCallInputSourceProvider';
 import type { EntityReference } from './entityReference';
 import type { Vertical } from './vertical';
 
@@ -18,4 +19,10 @@ export interface BenchmarkCallInput {
   entityNotes?: string;
   entityReferences?: EntityReference[];
   audioObjectPath?: string;
+  goldTranscript?: string;
+  sourceProvider?: BenchmarkCallInputSourceProvider;
+  /** @minLength 1 */
+  sourceCallId?: string;
+  /** @minLength 1 */
+  sourceAccountLabel?: string;
 }

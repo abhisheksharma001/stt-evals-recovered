@@ -126,6 +126,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProxyAgreement"
+  /benchmark/method-check:
+    get:
+      operationId: getMethodCheck
+      tags: [benchmark]
+      summary: >-
+        W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold
+        transcript, does ordering the providers by pooled peer-flag rate (the gold-free
+        ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho
+        on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word.
+        state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not
+        finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+      responses:
+        "200":
+          description: The method check, or not_run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MethodCheck"
   /benchmark/assistants/{assistantId}/transcriber:
     get:
       operationId: getAssistantTranscriber
@@ -1010,7 +1028,7 @@ paths:
     get:
       operationId: getBulkVerdicts
       tags: [benchmark]
-      summary: T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+      summary: T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
       parameters:
         - name: bulkId
           in: path
@@ -1018,6 +1036,16 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: assistantId
+          in: query
+          description: W-7 -- only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
+          schema:
+            type: string
+        - name: providers
+          in: query
+          description: S-AB1 -- comma-separated, exactly two distinct provider ids this bulk ran. Each group's verdict is computed over only those two providers' cells, so the noise floor counts only calls both scored; everything else in the response is unchanged. 400 for anything but two such ids.
+          schema:
+            type: string
       responses:
         "200":
           description: One verdict per assistant group in the bulk
@@ -1025,6 +1053,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BulkVerdicts"
+        "400":
+          description: assistantId names no call in this bulk, or providers is not exactly two distinct providers in it
+        "404":
+          description: Bulk not found
+  /benchmark/bulks/{bulkId}/turn-signals:
+    get:
+      operationId: getBulkTurnSignals
+      tags: [benchmark]
+      summary: W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+      parameters:
+        - name: bulkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assistantId
+          in: query
+          description: Only calls with this `sourceAssistantId`. 400 when no call in the bulk has it.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Turn signals for the bulk's calls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkTurnSignals"
+        "400":
+          description: assistantId names no call in this bulk
         "404":
           description: Bulk not found
   /benchmark/bulks/{bulkId}/verdict.html:
@@ -1150,6 +1208,18 @@ paths:
   # W-2 (PRD v8 Part A): a watch schedule is the policy row -- which template,
   # which Vapi account and agent, how many calls a day, and the spend ceilings.
   # It launches nothing; the tick that reads these rows arrives in W-5.
+  /benchmark/watch/overview:
+    get:
+      operationId: getWatchOverview
+      tags: [benchmark]
+      summary: Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+      responses:
+        "200":
+          description: Watch overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchOverview"
   /benchmark/watch-schedules:
     get:
       operationId: listWatchSchedules
@@ -1212,6 +1282,29 @@ paths:
           description: Invalid body or unknown Vapi account
         "404":
           description: Schedule not found
+  /benchmark/watch-schedules/{scheduleId}/run-now:
+    post:
+      operationId: runWatchScheduleNow
+      tags: [benchmark]
+      summary: W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The ledger row this call wrote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchRunNowResult"
+        "404":
+          description: Schedule not found
+        "409":
+          description: Schedule disabled, or today is already in the ledger for it
   /benchmark/runs/{runId}/manifest:
     get:
       operationId: getBenchmarkRunManifest
@@ -1453,7 +1546,7 @@ components:
         callsInScope: { type: number }
         judge:
           type: object
-          required: [checked, judged, high, medium, low, notRecorded, clean, errored]
+          required: [checked, judged, high, medium, low, notRecorded, clean, errored, picks]
           properties:
             # Calls with a scan (latest scan per call, T-35 rule).
             checked: { type: number }
@@ -1466,6 +1559,17 @@ components:
             notRecorded: { type: number }
             clean: { type: number }
             errored: { type: number }
+            # S-AB3a: on the judged calls, how many times the judge picked each
+            # provider's reading, most picks first. A pick is a suggestion,
+            # never gold and never a winner. Ids and counts only.
+            picks:
+              type: array
+              items:
+                type: object
+                required: [providerId, calls]
+                properties:
+                  providerId: { type: string }
+                  calls: { type: number }
         hardCases:
           type: object
           required: [calls, tags, examples]
@@ -1573,10 +1677,16 @@ components:
           items: { $ref: "#/components/schemas/DisagreementSpan" }
     HealthStatus:
       type: object
-      required: [status, commitSha, builtAt, startedAt, providersConfigured]
+      required: [status, database, commitSha, builtAt, startedAt, providersConfigured]
       properties:
+        # Liveness: the process answered. Stays "ok" when the database is down.
         status:
           type: string
+        # R-56: a `select 1` capped at one second. "unreachable" covers refused,
+        # failed and too slow alike; the endpoint still answers 200.
+        database:
+          type: string
+          enum: [ok, unreachable]
         # T-04 (2026-08-28): build identity, so the running process can say
         # which code it is actually running. There is no watch mode on this
         # server -- a source change needs a rebuild AND a restart, and
@@ -1606,7 +1716,10 @@ components:
           items: { type: string }
     Vertical:
       type: string
-      enum: [rush, property_management, trucking]
+      # W-12: public_benchmark is the Pipecat calibration set (D-15). It is a
+      # method check, never a client vertical: the Vapi importer and the
+      # Import page do not offer it.
+      enum: [rush, property_management, trucking, public_benchmark]
     CallStatus:
       type: string
       enum: [needs_review, ready_for_gold, gold_in_review, ready_to_run, archived]
@@ -1725,6 +1838,15 @@ components:
           type: array
           items: { $ref: "#/components/schemas/EntityReference" }
         audioObjectPath: { type: string }
+        # W-12: a public-set clip arrives with its human-reviewed gold and its
+        # provenance. `sourceProvider` is an enum on purpose -- the manual
+        # route must not be able to forge a Vapi provenance -- and
+        # (sourceProvider, sourceCallId) is unique, so the same sample_id
+        # created twice is a 409, not a second corpus row.
+        goldTranscript: { type: string }
+        sourceProvider: { type: string, enum: [pipecat] }
+        sourceCallId: { type: string, minLength: 1 }
+        sourceAccountLabel: { type: string, minLength: 1 }
     BenchmarkCallUpdate:
       type: object
       properties:
@@ -2921,6 +3043,31 @@ components:
         kendallTau:
           type: ["number", "null"]
           description: "Mean Kendall tau-b over the contributing calls, -1 to 1. Null when n is 0."
+    MethodCheck:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [measured, not_run] }
+        bulkId: { type: string, format: uuid }
+        completedAt: { type: string, format: date-time }
+        providers:
+          type: array
+          items:
+            type: object
+            required: [providerId, wer, flagsPer100Words, calls]
+            properties:
+              providerId: { type: string }
+              wer: { type: number, description: "Pooled gold WER: total errors / total gold words." }
+              flagsPer100Words: { type: number, description: "Pooled peer flags per 100 words on the call word basis." }
+              calls: { type: integer }
+        n: { type: integer, description: "Providers that carried both a WER and a flag rate." }
+        rho:
+          type: ["number", "null"]
+          description: "Spearman rho, -1 to 1. Null when fewer than 3 providers or one side is entirely tied."
+        pOneSided:
+          type: ["number", "null"]
+          description: "Exact one-sided permutation p-value. Null when rho is null."
+        verdict: { type: string, enum: [agrees, weak, disagrees, not_measurable] }
     BulkVerdicts:
       type: object
       required: [bulkId, providers, groups]
@@ -3209,6 +3356,112 @@ components:
         # Override the auto-generated bulk name (default: template name + date).
         name: { type: string, minLength: 1 }
         confirm: { type: boolean }
+    WatchOverview:
+      type: object
+      required: [today, windowStart, accounts]
+      properties:
+        # Both are local calendar days (`YYYY-MM-DD`), the ledger's own `day`.
+        today: { type: string }
+        windowStart: { type: string }
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchOverviewAccount"
+    WatchOverviewAccount:
+      type: object
+      required: [accountId, accountLabel, agents]
+      properties:
+        # An env-var-derived id; never a key. Label is null when this server
+        # holds no key for the account (T-168): the ledger still reads.
+        accountId: { type: string }
+        accountLabel: { type: ["string", "null"] }
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchOverviewAgent"
+    WatchOverviewAgent:
+      type: object
+      required: [scheduleId, enabled, assistantId, production, baseline, monthEstimatedCents, days]
+      properties:
+        scheduleId: { type: string }
+        enabled: { type: boolean }
+        # null = the calls carried no assistant id, or the schedule has not
+        # run yet and names no agent.
+        assistantId: { type: ["string", "null"] }
+        # The production transcriber, resolved OFFLINE from the corpus rows'
+        # stored source_transcriber_provider / _model -- the most common pair
+        # among this agent's imported calls. Never a live Vapi read. Null
+        # when no call on file says.
+        production:
+          type: ["object", "null"]
+          required: [vendor, model]
+          properties:
+            vendor: { type: string }
+            model: { type: ["string", "null"] }
+        baseline:
+          $ref: "#/components/schemas/WatchBaseline"
+        # Sum of `detail.estimatedCents` over this schedule's launched and
+        # settled days this month -- the same sum the tick checks the monthly
+        # cap against.
+        monthEstimatedCents: { type: number }
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchOverviewDay"
+    WatchBaseline:
+      type: object
+      required: [state, priorDays, low, high]
+      properties:
+        # forming: fewer than 7 settled days with a rate. moved: today's rate
+        # lies strictly outside the trailing days' 5th-95th percentile AND
+        # today scored at least MIN_SHARED_CALLS_FOR_VERDICT calls. Otherwise
+        # steady. Computed by `watchBaseline` (W-6a), never in the browser.
+        state: { type: string, enum: [forming, steady, moved] }
+        priorDays: { type: number }
+        # The band, on the same scale as `WatchOverviewDay.rate`. Null while
+        # forming -- an absent band is never rendered as 0.
+        low: { type: ["number", "null"] }
+        high: { type: ["number", "null"] }
+    WatchOverviewDay:
+      type: object
+      required: [day, outcome, bulkId]
+      properties:
+        day: { type: string }
+        # The ledger outcome verbatim (`refused:` and `held:` are prefixes the
+        # UI matches on; the hover shows the string as is).
+        outcome: { type: string }
+        bulkId: { type: ["string", "null"] }
+        # Present only when the day settled a production measurement for this
+        # agent (W-5e). Absent means "not measured", never 0. `rate` is
+        # production's mismatched words per 100 compared words against the
+        # candidates' consensus (M-8a); `leaderRate` is the best-agreeing
+        # candidate's, over the same calls.
+        rate: { type: number }
+        calls: { type: number }
+        leaderProviderId: { type: ["string", "null"] }
+        leaderRate: { type: ["number", "null"] }
+    WatchRunNowResult:
+      type: object
+      required: [scheduleId, day, outcome, bulkId, detail]
+      properties:
+        scheduleId: { type: string }
+        day: { type: string }
+        # The ledger outcome verbatim, the same strings `WatchOverviewDay.outcome`
+        # carries: launched, held:cost_gate, refused:<reason>, failed.
+        outcome: { type: string }
+        bulkId: { type: ["string", "null"] }
+        # `watch_runs.detail` as written: counts and one message, never a
+        # transcript or a call id.
+        detail:
+          type: object
+          properties:
+            imported: { type: number }
+            matched: { type: number }
+            sampled: { type: number }
+            shortfall: { type: number }
+            noCustomerAudio: { type: number }
+            estimatedCents: { type: number }
+            error: { type: string }
     WatchSchedule:
       type: object
       required: [id, templateId, accountId, vertical, assistantId, sampleSize, dailyCapCents, monthlyCapCents, hourLocal, enabled, createdAt]
@@ -3307,3 +3560,93 @@ components:
                 properties:
                   shardIndex: { type: ["number", "null"] }
                   runStatus: { $ref: "#/components/schemas/RunStatus" }
+    # W-7: Layer 2's "what else happened" strip. Everything here is read from
+    # what M-6/M-7a already stored; nothing is collected. A null is a signal
+    # Vapi did not measure on that call -- never rendered as 0.
+    BulkTurnSignals:
+      type: object
+      required: [bulkId, assistantId, calls, summary]
+      properties:
+        bulkId: { type: string }
+        assistantId: { type: ["string", "null"] }
+        calls:
+          type: array
+          items: { $ref: "#/components/schemas/TurnSignalsCall" }
+        summary: { $ref: "#/components/schemas/TurnSignalsSummary" }
+    TurnSignalsCall:
+      type: object
+      required: [callId, turns, assistantInterruptions, toolCalls, endedReason, successEvaluation]
+      properties:
+        callId: { type: string }
+        # null when no artifact is saved for the call or Vapi timed no turn.
+        turns:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/TurnLatency" }
+        assistantInterruptions: { type: ["number", "null"] }
+        toolCalls: { type: ["number", "null"] }
+        endedReason: { type: ["string", "null"] }
+        successEvaluation: { type: ["string", "null"] }
+    TurnLatency:
+      type: object
+      required: [modelMs, voiceMs, transcriberMs, endpointingMs, turnMs]
+      properties:
+        modelMs: { type: ["number", "null"] }
+        voiceMs: { type: ["number", "null"] }
+        transcriberMs: { type: ["number", "null"] }
+        endpointingMs: { type: ["number", "null"] }
+        turnMs: { type: ["number", "null"] }
+    # One pooled latency: the median over every measured turn of every call
+    # that had one, with the two denominators the number must be read against.
+    LatencyPool:
+      type: object
+      required: [medianMs, turns, measuredCalls]
+      properties:
+        medianMs: { type: ["number", "null"] }
+        turns: { type: number }
+        measuredCalls: { type: number }
+    TurnSignalsSummary:
+      type: object
+      required: [totalCalls, stt, turnTaking, llm, voice, outcome]
+      properties:
+        totalCalls: { type: number }
+        stt:
+          type: object
+          required: [transcriberLatency]
+          properties:
+            transcriberLatency: { $ref: "#/components/schemas/LatencyPool" }
+        turnTaking:
+          type: object
+          required: [endpointingLatency, interruptedCalls, interruptions, interruptionsMeasuredCalls]
+          properties:
+            endpointingLatency: { $ref: "#/components/schemas/LatencyPool" }
+            interruptedCalls: { type: number }
+            interruptions: { type: number }
+            interruptionsMeasuredCalls: { type: number }
+        llm:
+          type: object
+          required: [modelLatency]
+          properties:
+            modelLatency: { $ref: "#/components/schemas/LatencyPool" }
+        voice:
+          type: object
+          required: [voiceLatency]
+          properties:
+            voiceLatency: { $ref: "#/components/schemas/LatencyPool" }
+        outcome:
+          type: object
+          required: [endedReasons, endedReasonKnownCalls, successEvaluations, successEvaluationKnownCalls]
+          properties:
+            endedReasons:
+              type: array
+              items: { $ref: "#/components/schemas/ValueCount" }
+            endedReasonKnownCalls: { type: number }
+            successEvaluations:
+              type: array
+              items: { $ref: "#/components/schemas/ValueCount" }
+            successEvaluationKnownCalls: { type: number }
+    ValueCount:
+      type: object
+      required: [value, calls]
+      properties:
+        value: { type: string }
+        calls: { type: number }

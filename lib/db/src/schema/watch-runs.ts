@@ -42,6 +42,10 @@ export type WatchRunDetail = {
   sampled?: number;
   /** matched - sampled when the day had fewer calls than `sampleSize`. */
   shortfall?: number;
+  /** W-5f: calls the window matched but that have no `<id>.customer.audio`
+   *  on file, so they could not go into a caller-track bulk. Counted before
+   *  the draw, so `matched` is the eligible number and a short day says why. */
+  noCustomerAudio?: number;
   /** What the preview priced the bulk at, in cents, before any cap decision. */
   estimatedCents?: number;
   /** One message, for a `failed` or `refused:` row. Counts and messages only:
@@ -62,6 +66,29 @@ export type WatchRunTotals = {
   words: number;
   callsScored: number;
   cleanCalls: number;
+};
+
+/** W-5e: production's own day, per agent, summed exactly as M-8a sums it
+ *  (`productionDisagreementSums` in the API's verdict module): the Vapi
+ *  draft's caller turns held against the candidates' consensus, and the
+ *  best-agreeing candidate measured over the same calls. Kept as SUMS, not
+ *  rates, so W-6b can pool days. An agent with no measurable call has no
+ *  entry; a mono bulk settles `[]` -- the measurement is null by design off
+ *  the customer channel. */
+export type WatchRunProduction = {
+  /** null = the calls carried no assistant id at import. */
+  assistantId: string | null;
+  /** Calls the measurement could be computed on (a draft with caller turns
+   *  and at least three candidates), out of `totalCalls` for the agent. */
+  calls: number;
+  totalCalls: number;
+  mismatchWords: number;
+  comparedWords: number;
+  /** The candidate that agreed most with the consensus over the same calls;
+   *  null when no candidate had a comparable word. */
+  leaderProviderId: string | null;
+  leaderMismatchWords: number;
+  leaderComparedWords: number;
 };
 
 export const watchRunsTable = pgTable(
@@ -117,6 +144,12 @@ export const watchRunsTable = pgTable(
      *  and must stay distinguishable from an empty array, which would mean
      *  "settled, and nothing scored". */
     totals: jsonb("totals").$type<WatchRunTotals[]>(),
+    /** W-5e: production's measurement per agent, filled at the same settle as
+     *  `totals`. Null = not settled; `[]` = settled on a mono bulk (or no
+     *  agent had a measurable call). Its own column rather than an entry in
+     *  `totals`, because a totals entry is a provider that RAN and production
+     *  never runs here (Flux is streaming-only). */
+    production: jsonb("production").$type<WatchRunProduction[]>(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()

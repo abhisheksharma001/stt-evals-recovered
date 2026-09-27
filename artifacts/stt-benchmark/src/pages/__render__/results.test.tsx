@@ -18,15 +18,17 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import type {
   AgentMark,
   AppSettings,
+  AssistantSignals,
   BenchmarkCall,
   Bulk,
   BulkDetail,
   BulkVerdicts,
+  MethodCheck,
   Provider,
   VerticalRanking,
 } from "@workspace/api-client-react"
 import Results from "../Rankings"
-import { installBrowserShims, renderPage, reply, stubApi, type StubRoutes } from "./harness"
+import { byQuery, installBrowserShims, renderPage, reply, stubApi, type StubRoutes } from "./harness"
 
 installBrowserShims()
 afterEach(cleanup)
@@ -254,6 +256,8 @@ const baseRoutes: StubRoutes = {
   // U-1b: every assistant card asks what has been marked on it. Empty by
   // default so the other assertions here see the page they were written for.
   "GET /api/benchmark/agent-marks": [],
+  // W-12b: the method check reads the public set, not this page's bulk.
+  "GET /api/benchmark/method-check": { state: "not_run" },
 }
 
 describe("Results", () => {
@@ -586,6 +590,118 @@ describe("Results", () => {
     expect(html).not.toContain("decision-grade")
   })
 
+  // S-AB2. The pair starts on the verdict's own leader and runner-up, asks the
+  // server for their head-to-head verdict, and shows that verdict's own
+  // sentence and shared-call count -- 7 here, where the whole bulk's is 12, so
+  // a pair box fed the unfiltered verdict cannot pass. A third provider is
+  // there to be dimmed.
+  it("compares the verdict's top two head to head from the server, and drops the pickers all-time", async () => {
+    const pairVerdicts: BulkVerdicts = {
+      ...verdicts,
+      groups: [
+        {
+          ...verdicts.groups[0]!,
+          verdict: {
+            ...verdicts.groups[0]!.verdict,
+            decision: "too_close",
+            winnerProviderId: null,
+            marginPct: null,
+            noiseFloor: { sharedCalls: 7, difference: 0.1, ci95: [-0.3, 0.5], withinNoise: true },
+            sentence: "Deepgram Nova-3 and Gladia Solaria are too close to call on 7 shared calls.",
+          },
+        },
+      ],
+    }
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/rankings": [
+        ...rankings,
+        row({ providerId: "elevenlabs-scribe", providerName: "ElevenLabs Scribe", rank: 3 }),
+      ],
+      "GET /api/benchmark/bulks/bulk-1/verdicts": byQuery((q) =>
+        q.get("providers") === "deepgram-nova-3,gladia-solaria" ? pairVerdicts : verdicts,
+      ),
+    })
+    renderPage(<Results />, { path: "/results" })
+
+    // One box per org section, as the org's own verdict box; the Default org's
+    // is the one with a group in the pair response.
+    const boxes = await screen.findAllByTestId("pair-verdict")
+    const box = boxes.find((b) => b.closest('[data-testid="org-section"]')?.textContent?.includes("Default"))!
+    expect(box).toBeTruthy()
+    expect(box.textContent).toContain("Head to head: Deepgram Nova-3 vs Gladia Solaria")
+    expect(box.textContent).toContain("7 calls both ran")
+    expect(box.textContent).toContain("too close to call on 7 shared calls")
+    expect(api.calls.some((c) => decodeURIComponent(c).includes("/verdicts?providers=deepgram-nova-3,gladia-solaria"))).toBe(true)
+    expect(screen.getByTestId("pair-pickers")).toBeTruthy()
+
+    const dimmed = document.querySelectorAll('[data-in-pair="false"]')
+    expect(dimmed.length).toBeGreaterThan(0)
+    for (const r of dimmed) expect(r.textContent).toContain("ElevenLabs Scribe")
+
+    fireEvent.click(screen.getByText("All-time combined"))
+    await waitFor(() => expect(screen.queryByTestId("pair-pickers")).toBeNull())
+    expect(screen.queryByTestId("pair-verdict")).toBeNull()
+    expect(document.querySelectorAll("[data-in-pair]").length).toBe(0)
+    expect(api.unmatched.filter((u) => u.includes("/verdicts"))).toEqual([])
+    api.restore()
+  })
+
+  // S-AB3b. The pair is Deepgram Nova-3 vs Gladia Solaria (the verdict's top
+  // two). The page-level read is the whole bulk's -- no assistantId -- and the
+  // line shows both counts and the calls judged, or nothing at all.
+  describe("how the AI reader picked between the pair (S-AB3b)", () => {
+    const signals = (picks: AssistantSignals["judge"]["picks"]): AssistantSignals => ({
+      bulkId: "bulk-1",
+      bulksCovered: 1,
+      assistantId: null,
+      callsInScope: 12,
+      judge: { checked: 12, judged: 9, high: 5, medium: 2, low: 2, notRecorded: 0, clean: 3, errored: 0, picks },
+      hardCases: { calls: 0, tags: [], examples: [] },
+    })
+    const routesWith = (picks: AssistantSignals["judge"]["picks"]): StubRoutes => ({
+      ...baseRoutes,
+      "GET /api/benchmark/assistant-signals": byQuery((q) =>
+        q.get("assistantId") === null ? signals(picks) : signals([]),
+      ),
+    })
+
+    it("counts picks for A", async () => {
+      const api = stubApi(routesWith([{ providerId: "deepgram-nova-3", calls: 4 }, { providerId: "elevenlabs-scribe", calls: 5 }]))
+      renderPage(<Results />, { path: "/results" })
+      const line = await screen.findByTestId("pair-judge-picks")
+      expect(line.textContent).toContain("Of the 9 calls the AI reader judged in this bulk")
+      expect(line.textContent).toContain("Deepgram Nova-3's transcript on 4")
+      expect(line.textContent).toContain("Gladia Solaria's on 0")
+      expect(line.textContent).not.toMatch(/winner|wins|least disagreement/i)
+      // The page-level read is the bulk's own: bulkId and no assistantId.
+      expect(api.calls.some((c) => c.startsWith("GET /api/benchmark/assistant-signals?bulkId=bulk-1") && !c.includes("assistantId"))).toBe(true)
+      api.restore()
+    })
+
+    it("counts picks for B", async () => {
+      const api = stubApi(routesWith([{ providerId: "gladia-solaria", calls: 2 }]))
+      renderPage(<Results />, { path: "/results" })
+      const line = await screen.findByTestId("pair-judge-picks")
+      expect(line.textContent).toContain("Deepgram Nova-3's transcript on 0")
+      expect(line.textContent).toContain("Gladia Solaria's on 2")
+      fireEvent.click(screen.getByText("All-time combined"))
+      await waitFor(() => expect(screen.queryByTestId("pair-judge-picks")).toBeNull())
+      api.restore()
+    })
+
+    it("says nothing when the judge picked neither", async () => {
+      const api = stubApi(routesWith([{ providerId: "elevenlabs-scribe", calls: 5 }]))
+      renderPage(<Results />, { path: "/results" })
+      await screen.findAllByTestId("pair-verdict")
+      await waitFor(() => expect(api.calls.some((c) => c.startsWith("GET /api/benchmark/assistant-signals?bulkId=bulk-1"))).toBe(true))
+      // Let the answer land before asserting the absence.
+      await new Promise((r) => setTimeout(r, 50))
+      expect(screen.queryByTestId("pair-judge-picks")).toBeNull()
+      api.restore()
+    })
+  })
+
   it("the org banner carries the evidence count once, and the card does not repeat it", async () => {
     stubApi(baseRoutes)
     renderPage(<Results />, { path: "/results" })
@@ -599,7 +715,11 @@ describe("Results", () => {
     // Every org section gets a verdict box, including the unassigned
     // bucket (whose box says it has no verdict), so this asks: exactly one
     // of them carries the count, and it carries it once.
-    const orgBanners = screen.getAllByTestId("group-verdict-headline")
+    // S-AB2's head-to-head box is a different verdict with its own count, so
+    // it is left out: this asks about the org's own verdict only.
+    const orgBanners = screen
+      .getAllByTestId("group-verdict-headline")
+      .filter((b) => !b.closest('[data-testid="pair-verdict"]'))
     const carrying = orgBanners.filter((b) => /12 calls scored/.test(b.textContent ?? ""))
     expect(carrying.length).toBe(1)
     expect(within(carrying[0]!).getAllByText(/12 calls scored/).length).toBe(1)
@@ -856,7 +976,7 @@ describe("Results", () => {
     const box = screen.getByTestId("production-disagreement").parentElement!
     const kids = [...box.children]
     expect(kids.indexOf(screen.getByTestId("production-disagreement"))).toBeLessThan(
-      kids.indexOf(screen.getByTestId("group-verdict-headline")),
+      kids.indexOf(within(box).getByTestId("group-verdict-headline")),
     )
     api.restore()
   })
@@ -1036,6 +1156,43 @@ describe("Results", () => {
     // arrow on the page.
     const allDirections = Array.from(document.querySelectorAll('[aria-label="lower is better"]'))
     expect(allDirections.length).toBeGreaterThan(0)
+    api.restore()
+  })
+})
+
+// W-12b: the method check. Two states, and the one that must not print a
+// number is the one that matters.
+describe("Results method check", () => {
+  it("says the check has not run, and shows no number, before the public bulk finishes", async () => {
+    const api = stubApi(baseRoutes)
+    renderPage(<Results />, { path: "/results" })
+    const line = await screen.findByTestId("method-check-line")
+    expect(line.textContent).toBe("Method check not run yet")
+    expect(screen.getByTestId("method-check").textContent).not.toMatch(/ρ|\d/)
+    api.restore()
+  })
+
+  it("shows rho, its exact p, the verdict word, the date and the caveat once measured", async () => {
+    const measured: MethodCheck = {
+      state: "measured",
+      bulkId: "4fee349b-e8a2-4865-890c-7643e6b5bdda",
+      completedAt: "2026-09-26T19:04:00.000Z",
+      providers: [],
+      n: 7,
+      rho: 5 / 7,
+      pOneSided: 222 / 5040,
+      verdict: "agrees",
+    }
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/method-check": measured })
+    renderPage(<Results />, { path: "/results" })
+    await waitFor(() =>
+      expect(screen.getByTestId("method-check-line").textContent).toBe(
+        "Spearman ρ 0.71 across 7 providers (p = 0.044) -- agrees, measured 2026-09-26",
+      ),
+    )
+    expect(screen.getByTestId("method-check").textContent).toContain(
+      "16 kHz mic audio, English, one public set. Checks the method, not any client's numbers.",
+    )
     api.restore()
   })
 })

@@ -188,6 +188,21 @@ character that is not a letter or a digit removed. `RO-4471` becomes `RO4471`.
 A provider is credited when that string appears **anywhere** inside its
 normalized transcript.
 
+## The method check (W-12b) — what it measures and what it does not
+
+The Results page's "Method check" line holds the gold-free order against the truth on
+the one set where the truth is on file: the public Pipecat clips (bulk "Public: Pipecat
+1k"), which came with a gold transcript each. Per provider it pools gold WER (total
+errors over total gold words, from each cell's stored edits) and peer flags per 100
+words (the call word basis above), orders the providers both ways, and reports
+Spearman's rho on tie-averaged ranks with its exact one-sided permutation p-value
+(every ordering counted, no t-approximation; docs/research.md R-1). Verdict: agrees
+(rho > 0, p < 0.05), weak (rho > 0, p ≥ 0.05), disagrees (rho ≤ 0), not measurable
+(fewer than three providers, or one order entirely tied). It measures whether the
+method ranks providers in the right order on 16 kHz English mic audio. It does not
+measure any client's calls, telephone audio, or how far apart two providers are, and
+the public bulk never enters a client verdict, trend or overview.
+
 ## Known gaps — stated, not hidden
 
 1. **`[inaudible]` has no policy.** A reviewer who writes `[inaudible]` in gold

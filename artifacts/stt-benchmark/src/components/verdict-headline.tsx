@@ -84,7 +84,9 @@ export function clientGroupLabel(g: { clientLabel: string | null }): string {
 }
 
 export function useBulkVerdicts(bulkId: string | null | undefined) {
-  return useGetBulkVerdicts(bulkId ?? "", {
+  // W-7 gave the hook a params argument (assistantId); this caller wants the
+  // whole bulk, so it passes none.
+  return useGetBulkVerdicts(bulkId ?? "", undefined, {
     query: { queryKey: getGetBulkVerdictsQueryKey(bulkId ?? ""), enabled: !!bulkId },
   })
 }

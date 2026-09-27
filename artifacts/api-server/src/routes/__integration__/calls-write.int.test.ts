@@ -51,6 +51,51 @@ describe("POST /api/benchmark/calls", () => {
     expect(audit.body[0]).toMatchObject({ action: "create", actorLabel: fx.actor });
   });
 
+  // W-12: a public-set clip (Pipecat) arrives with its human-reviewed gold and
+  // its provenance, and the same sample_id twice is a 409, not a second row.
+  it("stores gold and pipecat provenance, and refuses the same source id twice", async () => {
+    const body = {
+      label: `fx-pipecat-${fx.suffix}`,
+      vertical: "public_benchmark",
+      durationSeconds: 3.438,
+      goldTranscript: "what time does the store open",
+      sourceProvider: "pipecat",
+      sourceCallId: `sample-${fx.suffix}`,
+      sourceAccountLabel: "Public: Pipecat 1k",
+    };
+    const first = await request(server).post("/api/benchmark/calls").set("x-actor", fx.actor).send(body);
+    expect(first.status).toBe(201);
+    fx.adoptCall(first.body.id);
+    expect(first.body).toMatchObject({
+      vertical: "public_benchmark",
+      durationSeconds: 3,
+      goldTranscript: "what time does the store open",
+      sourceProvider: "pipecat",
+      sourceCallId: `sample-${fx.suffix}`,
+      sourceAccountLabel: "Public: Pipecat 1k",
+      status: "ready_to_run",
+    });
+
+    const again = await request(server).post("/api/benchmark/calls").set("x-actor", fx.actor).send(body);
+    expect(again.status).toBe(409);
+    expect(again.body.error).toMatch(/already in the corpus/);
+
+    // The manual route cannot forge a Vapi provenance.
+    const forged = await request(server)
+      .post("/api/benchmark/calls")
+      .send({ ...body, sourceProvider: "vapi", sourceCallId: `forged-${fx.suffix}` });
+    expect(forged.status).toBe(400);
+    expect(forged.body.error).toMatch(/sourceProvider/);
+
+    // Provenance is all-or-nothing: a source id on its own would land as
+    // ("manual", id) and collide with the next call that names the same id.
+    const partial = await request(server)
+      .post("/api/benchmark/calls")
+      .send({ label: `fx-partial-${fx.suffix}`, vertical: "rush", durationSeconds: 5, sourceCallId: `lone-${fx.suffix}` });
+    expect(partial.status).toBe(400);
+    expect(partial.body.error).toMatch(/together/);
+  });
+
   it("refuses a call with no label and an unknown vertical, naming the field", async () => {
     const noLabel = await request(server).post("/api/benchmark/calls").send({ vertical: "rush", durationSeconds: 30 });
     expect(noLabel.status).toBe(400);

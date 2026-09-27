@@ -108,6 +108,10 @@
   idempotent) and recomputes mid-flight bulk statuses. Verified live: a
   hand-stranded `running` run finalized to `failed` seconds after boot
   instead of being stuck forever.
+- **Claude Code plugin (W-11)**: the stt-evals-plugin repo (separate) installs the
+  `lib/mcp-server` tools and three skills (verdict, where-stt-failed,
+  add-provider-adapter): `/plugin marketplace add <owner>/stt-evals-plugin`, then
+  `/plugin install stt-evals@stt-evals-plugin`. No key passes through it.
 
 ## What was verified live (bulks slice, this session)
 

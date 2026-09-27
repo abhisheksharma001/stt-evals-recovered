@@ -76,8 +76,15 @@ export async function assistantSignals(bulkId: string | null, assistantId: strin
       status: benchmarkAgentScansTable.status,
       judgeConfidence: benchmarkAgentScansTable.judgeConfidence,
       agentPickReasoning: benchmarkAgentScansTable.agentPickReasoning,
+      // S-AB3a: the picked cell's provider, joined here so the response
+      // carries an id and a count, never the cell or its transcript.
+      pickProviderId: benchmarkProviderCallResultsTable.providerId,
     })
     .from(benchmarkAgentScansTable)
+    .leftJoin(
+      benchmarkProviderCallResultsTable,
+      eq(benchmarkProviderCallResultsTable.id, benchmarkAgentScansTable.agentPickResultId),
+    )
     .where(and(inArray(benchmarkAgentScansTable.runId, runIds), inArray(benchmarkAgentScansTable.callId, callIds)));
 
   return {

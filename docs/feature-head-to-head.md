@@ -61,9 +61,16 @@ Three options were on the table:
 - **(a) Challenger vs `settings.activeProviderId`.** The "compare against what we run
   today" framing. Rejected as the *default*: the setting is null live, so the screen
   would open empty.
-- **(b) Rank 1 vs rank 2.** Recommended, and adopted. It is already the pair
-  `computeVerdict` draws its noise floor from, so the default pair and the existing
-  verdict agree by construction instead of by coincidence.
+- **(b) Rank 1 vs rank 2.** Adopted first, and **wrong** (found building S-AB2,
+  2026-09-27): the cards' rank is the composite (flag badness plus 15 % cost), while
+  `computeVerdict` ranks on flags per 100 words -- R-2 records Cartesia rank 1 in 12 of
+  13 groups while the banner names ElevenLabs. Rank is also per assistant and the pickers
+  are per page, so "rank 1" is not even one provider. The two do not agree by
+  construction; they disagree by construction until R-2 is decided.
+- **(b') The verdict's own leader and runner-up, for the bulk's biggest org.** Adopted
+  2026-09-27 (Abhishek). `leaderProviderId` / `runnerUpProviderId` are set whatever the
+  decision, so the first pair shown is the one the banner is already talking about. On a
+  bulk with several orgs it is the biggest org's pair; the others may differ.
 - **(c) Always ask.** Kept as the override — both pickers are editable.
 
 ## Steps

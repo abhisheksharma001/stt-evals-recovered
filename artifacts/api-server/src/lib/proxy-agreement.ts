@@ -15,6 +15,11 @@
 //     a call to judge it and never feed a ranking, so counting them here
 //     would compare against an ordering nobody is shown. Five such cells
 //     exist on the two labelled calls today.
+//   - public calibration calls (source "pipecat", W-12a) never count. Their
+//     gold comes with the dataset, not from a person, and they carry no
+//     draft, so the rule above would admit all 1,000 of them and this figure
+//     would silently stop meaning "checked by a human". W-12b measures the
+//     public set on its own (W-12a2).
 import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import {
   db,
@@ -49,6 +54,7 @@ const labelledCall = and(
   isNotNull(benchmarkCallsTable.goldTranscript),
   ne(benchmarkCallsTable.goldTranscript, ""),
   sql`${benchmarkCallsTable.goldTranscript} is distinct from ${benchmarkCallsTable.draftTranscript}`,
+  ne(benchmarkCallsTable.sourceProvider, "pipecat"),
 );
 
 export async function proxyAgreement(): Promise<ProxyAgreement> {

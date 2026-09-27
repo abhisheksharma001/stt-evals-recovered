@@ -294,6 +294,19 @@ describe("POST /api/benchmark/bulks/preview", () => {
     expect(res.body.excluded).toEqual([]);
   });
 
+  it("prices no judge for public calibration calls, which never go to it (W-12a4)", async () => {
+    const clip = await fx.call({ durationSeconds: 60, sourceProvider: "pipecat", sourceCallId: `fx-w12a4-${fx.suffix}` });
+    const provider = await fx.provider({ costPerMinute: 0.5 });
+
+    const res = await request(server)
+      .post("/api/benchmark/bulks/preview")
+      .send({ criteria: { callIds: [clip.id], requireCustomerAudio: false, minCustomerWords: 0 }, providerIds: [provider.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.matchedCount).toBe(1);
+    // Zero, not null: this is known, not "no scan history".
+    expect(res.body.estimate).toMatchObject({ sttCostCents: 50, agentCostCents: 0, totalCostCents: 50 });
+  });
+
   it("prices nothing when no provider is picked, and refuses an upside-down band", async () => {
     const call = await fx.call({ durationSeconds: 60 });
 

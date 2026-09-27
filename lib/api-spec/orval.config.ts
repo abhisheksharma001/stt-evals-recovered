@@ -3,6 +3,7 @@ import path from "path";
 
 const root = path.resolve(__dirname, "..", "..");
 const apiClientReactSrc = path.resolve(root, "lib", "api-client-react", "src");
+const apiClientSrc = path.resolve(root, "lib", "api-client", "src");
 const apiZodSrc = path.resolve(root, "lib", "api-zod", "src");
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).
@@ -14,6 +15,37 @@ const titleTransformer: InputTransformerFn = (config) => {
 };
 
 export default defineConfig({
+  // W-8: the plain SDK. Same spec, same mutator logic, fetch-only functions,
+  // no React. lib/api-client-react's mutator is a thin wrapper over this one.
+  // @orval/fetch 8.23 lists zod as a fixed dependency (for its optional
+  // runtimeValidation) and emits `import { z as zod } from 'zod'` whether or
+  // not anything uses it, so lib/api-client declares zod for that import alone.
+  "api-client": {
+    input: {
+      target: "./openapi.yaml",
+      override: {
+        transformer: titleTransformer,
+      },
+    },
+    output: {
+      workspace: apiClientSrc,
+      target: "generated",
+      client: "fetch",
+      mode: "split",
+      baseUrl: "/api",
+      clean: true,
+      prettier: true,
+      override: {
+        fetch: {
+          includeHttpResponseReturnType: false,
+        },
+        mutator: {
+          path: path.resolve(apiClientSrc, "custom-fetch.ts"),
+          name: "customFetch",
+        },
+      },
+    },
+  },
   "api-client-react": {
     input: {
       target: "./openapi.yaml",

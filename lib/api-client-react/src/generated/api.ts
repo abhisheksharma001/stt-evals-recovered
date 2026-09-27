@@ -50,6 +50,7 @@ import type {
   BulkTemplate,
   BulkTemplateInput,
   BulkTemplateLaunchInput,
+  BulkTurnSignals,
   BulkVerdicts,
   CacheAudioResult,
   CallComparison,
@@ -59,6 +60,8 @@ import type {
   EnableProviderModelInput,
   EnableProviderModelResult,
   GetAssistantSignalsParams,
+  GetBulkTurnSignalsParams,
+  GetBulkVerdictsParams,
   GetCallDisagreementParams,
   GetClientVolumeParams,
   GetWordsToWatchParams,
@@ -71,6 +74,7 @@ import type {
   ListBulksParams,
   ListDisagreementSpansParams,
   ListVapiAssistantsParams,
+  MethodCheck,
   PlanTask,
   PreviewAgentMarksParams,
   Provider,
@@ -89,6 +93,8 @@ import type {
   VapiPreviewInput,
   VapiPreviewResult,
   VerticalRanking,
+  WatchOverview,
+  WatchRunNowResult,
   WatchSchedule,
   WatchScheduleInput,
   WatchSchedulePatch,
@@ -651,6 +657,83 @@ export function useGetProxyAgreement<TData = Awaited<ReturnType<typeof getProxyA
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProxyAgreementQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMethodCheckUrl = () => {
+
+
+
+
+  return `/api/benchmark/method-check`
+}
+
+/**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+export const getMethodCheck = async ( options?: Parameters<typeof customFetch>[1]): Promise<MethodCheck> => {
+
+  return customFetch<MethodCheck>(getGetMethodCheckUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMethodCheckQueryKey = () => {
+    return [
+    `/api/benchmark/method-check`
+    ] as const;
+    }
+
+
+export const getGetMethodCheckQueryOptions = <TData = Awaited<ReturnType<typeof getMethodCheck>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMethodCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMethodCheckQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMethodCheck>>> = ({ signal }) => getMethodCheck({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMethodCheck>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMethodCheckQueryResult = NonNullable<Awaited<ReturnType<typeof getMethodCheck>>>
+export type GetMethodCheckQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary W-12b (PRD Part F) -- on the public Pipecat set, whose clips come with a gold transcript, does ordering the providers by pooled peer-flag rate (the gold-free ranking this tool shows) agree with ordering them by pooled gold WER? Spearman rho on tie-averaged ranks, its exact one-sided permutation p-value, and a verdict word. state "not_run" while the bulk "Public: Pipecat 1k" does not exist or has not finished -- no figure is sent then. Aggregate arithmetic only; no transcript.
+ */
+
+export function useGetMethodCheck<TData = Awaited<ReturnType<typeof getMethodCheck>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMethodCheck>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMethodCheckQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -3784,20 +3867,29 @@ export function useGetBulkProviderCorrelation<TData = Awaited<ReturnType<typeof 
 
 
 
-export const getGetBulkVerdictsUrl = (bulkId: string,) => {
+export const getGetBulkVerdictsUrl = (bulkId: string,
+    params?: GetBulkVerdictsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/benchmark/bulks/${bulkId}/verdicts`
+  return stringifiedParams.length > 0 ? `/api/benchmark/bulks/${bulkId}/verdicts?${stringifiedParams}` : `/api/benchmark/bulks/${bulkId}/verdicts`
 }
 
 /**
- * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
  */
-export const getBulkVerdicts = async (bulkId: string, options?: Parameters<typeof customFetch>[1]): Promise<BulkVerdicts> => {
+export const getBulkVerdicts = async (bulkId: string,
+    params?: GetBulkVerdictsParams, options?: Parameters<typeof customFetch>[1]): Promise<BulkVerdicts> => {
 
-  return customFetch<BulkVerdicts>(getGetBulkVerdictsUrl(bulkId),
+  return customFetch<BulkVerdicts>(getGetBulkVerdictsUrl(bulkId,params),
   {
     ...options,
     method: 'GET'
@@ -3810,23 +3902,25 @@ export const getBulkVerdicts = async (bulkId: string, options?: Parameters<typeo
 
 
 
-export const getGetBulkVerdictsQueryKey = (bulkId: string,) => {
+export const getGetBulkVerdictsQueryKey = (bulkId: string,
+    params?: GetBulkVerdictsParams,) => {
     return [
-    `/api/benchmark/bulks/${bulkId}/verdicts`
+    `/api/benchmark/bulks/${bulkId}/verdicts`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetBulkVerdictsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetBulkVerdictsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(bulkId: string,
+    params?: GetBulkVerdictsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetBulkVerdictsQueryKey(bulkId);
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkVerdictsQueryKey(bulkId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkVerdicts>>> = ({ signal }) => getBulkVerdicts(bulkId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkVerdicts>>> = ({ signal }) => getBulkVerdicts(bulkId,params, { signal, ...requestOptions });
 
 
 
@@ -3840,15 +3934,105 @@ export type GetBulkVerdictsQueryError = ErrorType<void>
 
 
 /**
- * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores.
+ * @summary T-20 -- the headline verdict per ranking group (winner, runner-up, margin, vs production, evidence count, comparability note) with the noise floor drawn. Refuses to name a winner when the top two are inside it. Free; arithmetic over stored scores. W-7 -- `assistantId` scopes the bulk's calls to one agent before anything is computed, so the noise floor is that agent's own.
  */
 
 export function useGetBulkVerdicts<TData = Awaited<ReturnType<typeof getBulkVerdicts>>, TError = ErrorType<void>>(
- bulkId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ bulkId: string,
+    params?: GetBulkVerdictsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkVerdicts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetBulkVerdictsQueryOptions(bulkId,options)
+  const queryOptions = getGetBulkVerdictsQueryOptions(bulkId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBulkTurnSignalsUrl = (bulkId: string,
+    params?: GetBulkTurnSignalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmark/bulks/${bulkId}/turn-signals?${stringifiedParams}` : `/api/benchmark/bulks/${bulkId}/turn-signals`
+}
+
+/**
+ * @summary W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+ */
+export const getBulkTurnSignals = async (bulkId: string,
+    params?: GetBulkTurnSignalsParams, options?: Parameters<typeof customFetch>[1]): Promise<BulkTurnSignals> => {
+
+  return customFetch<BulkTurnSignals>(getGetBulkTurnSignalsUrl(bulkId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBulkTurnSignalsQueryKey = (bulkId: string,
+    params?: GetBulkTurnSignalsParams,) => {
+    return [
+    `/api/benchmark/bulks/${bulkId}/turn-signals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetBulkTurnSignalsQueryOptions = <TData = Awaited<ReturnType<typeof getBulkTurnSignals>>, TError = ErrorType<void>>(bulkId: string,
+    params?: GetBulkTurnSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkTurnSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBulkTurnSignalsQueryKey(bulkId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBulkTurnSignals>>> = ({ signal }) => getBulkTurnSignals(bulkId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: bulkId !== null && bulkId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBulkTurnSignals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBulkTurnSignalsQueryResult = NonNullable<Awaited<ReturnType<typeof getBulkTurnSignals>>>
+export type GetBulkTurnSignalsQueryError = ErrorType<void>
+
+
+/**
+ * @summary W-7 (Layer 2) -- what else happened on the bulk's calls, per call and pooled per layer, from data already stored. Per-turn latencies (model, voice, transcriber, endpointing, turn) come off the saved call artifact; interruptions, tool calls, ended reason and success evaluation off the calls table. Numbers and enums only, never a word of the call. null is "not measured", never 0. Free.
+ */
+
+export function useGetBulkTurnSignals<TData = Awaited<ReturnType<typeof getBulkTurnSignals>>, TError = ErrorType<void>>(
+ bulkId: string,
+    params?: GetBulkTurnSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBulkTurnSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBulkTurnSignalsQueryOptions(bulkId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -4306,6 +4490,83 @@ export const useLaunchBulkTemplate = <TError = ErrorType<void>,
       return useMutation(getLaunchBulkTemplateMutationOptions(options));
     }
 
+export const getGetWatchOverviewUrl = () => {
+
+
+
+
+  return `/api/benchmark/watch/overview`
+}
+
+/**
+ * @summary Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+ */
+export const getWatchOverview = async ( options?: Parameters<typeof customFetch>[1]): Promise<WatchOverview> => {
+
+  return customFetch<WatchOverview>(getGetWatchOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWatchOverviewQueryKey = () => {
+    return [
+    `/api/benchmark/watch/overview`
+    ] as const;
+    }
+
+
+export const getGetWatchOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getWatchOverview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWatchOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWatchOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWatchOverview>>> = ({ signal }) => getWatchOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWatchOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWatchOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getWatchOverview>>>
+export type GetWatchOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Layer 1 (W-6b) -- every watch schedule's agents with the last 30 ledger days, production's rate per day, and the baseline verdict. Read-only; computes nothing in the browser (D-13).
+ */
+
+export function useGetWatchOverview<TData = Awaited<ReturnType<typeof getWatchOverview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWatchOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWatchOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListWatchSchedulesUrl = () => {
 
 
@@ -4524,6 +4785,77 @@ export const useUpdateWatchSchedule = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateWatchScheduleMutationOptions(options));
+    }
+
+export const getRunWatchScheduleNowUrl = (scheduleId: string,) => {
+
+
+
+
+  return `/api/benchmark/watch-schedules/${scheduleId}/run-now`
+}
+
+/**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const runWatchScheduleNow = async (scheduleId: string, options?: Parameters<typeof customFetch>[1]): Promise<WatchRunNowResult> => {
+
+  return customFetch<WatchRunNowResult>(getRunWatchScheduleNowUrl(scheduleId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunWatchScheduleNowMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWatchScheduleNow>>, TError,{scheduleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runWatchScheduleNow>>, TError,{scheduleId: string}, TContext> => {
+
+const mutationKey = ['runWatchScheduleNow'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runWatchScheduleNow>>, {scheduleId: string}> = (props) => {
+          const {scheduleId} = props ?? {};
+
+          return  runWatchScheduleNow(scheduleId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunWatchScheduleNowMutationResult = NonNullable<Awaited<ReturnType<typeof runWatchScheduleNow>>>
+
+    export type RunWatchScheduleNowMutationError = ErrorType<void>
+
+    /**
+ * @summary W-9 -- run one schedule's day now, through the same claim, cost gate and ledger the scheduler uses. Answers the ledger row verbatim, refusals included. 409 when the schedule is disabled or the local day is already in the ledger.
+ */
+export const useRunWatchScheduleNow = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runWatchScheduleNow>>, TError,{scheduleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runWatchScheduleNow>>,
+        TError,
+        {scheduleId: string},
+        TContext
+      > => {
+      return useMutation(getRunWatchScheduleNowMutationOptions(options));
     }
 
 export const getGetBenchmarkRunManifestUrl = (runId: string,) => {

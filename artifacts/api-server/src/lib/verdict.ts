@@ -17,6 +17,7 @@ import {
   benchmarkRunsTable,
   benchmarkScoresTable,
   db,
+  type WatchRunProduction,
 } from "@workspace/db";
 import {
   callWordBasis,
@@ -107,10 +108,38 @@ const MIN_CONSENSUS_CANDIDATES = 3;
  * disagreement purely for the assistant's turns being absent. Null, not a
  * number, until a bulk runs on the customer channel.
  */
+/** W-5e: the same measurement as sums. A rate cannot be pooled across days
+ *  and a ledger row has to be, so the ledger keeps these and the route below
+ *  divides them. One sum, two readers -- never a second copy of the loop. */
+export type ProductionSums = {
+  calls: number;
+  totalCalls: number;
+  mismatchWords: number;
+  comparedWords: number;
+  leaderProviderId: string | null;
+  leaderMismatchWords: number;
+  leaderComparedWords: number;
+};
+
 function productionDisagreementFor(
   groupCalls: { id: string; draftTranscript: string | null }[],
   cellsByCall: Map<string, { providerId: string; transcript: string | null }[]>,
 ): ProductionDisagreement | null {
+  const sums = productionDisagreementSums(groupCalls, cellsByCall);
+  if (!sums) return null;
+  return {
+    rate: sums.mismatchWords / sums.comparedWords,
+    leaderProviderId: sums.leaderProviderId,
+    leaderRate: sums.leaderProviderId === null ? null : sums.leaderMismatchWords / sums.leaderComparedWords,
+    calls: sums.calls,
+    totalCalls: sums.totalCalls,
+  };
+}
+
+export function productionDisagreementSums(
+  groupCalls: { id: string; draftTranscript: string | null }[],
+  cellsByCall: Map<string, { providerId: string; transcript: string | null }[]>,
+): ProductionSums | null {
   let mismatchWords = 0;
   let comparedWords = 0;
   let calls = 0;
@@ -155,25 +184,166 @@ function productionDisagreementFor(
 
   let leaderProviderId: string | null = null;
   let leaderRate: number | null = null;
+  let leaderMismatchWords = 0;
+  let leaderComparedWords = 0;
   for (const [providerId, totals] of [...candidateTotals].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (totals.compared === 0) continue;
     const rate = totals.mismatch / totals.compared;
     if (leaderRate === null || rate < leaderRate) {
       leaderRate = rate;
       leaderProviderId = providerId;
+      leaderMismatchWords = totals.mismatch;
+      leaderComparedWords = totals.compared;
     }
   }
 
   return {
-    rate: mismatchWords / comparedWords,
-    leaderProviderId,
-    leaderRate,
     calls,
     totalCalls: groupCalls.length,
+    mismatchWords,
+    comparedWords,
+    leaderProviderId,
+    leaderMismatchWords,
+    leaderComparedWords,
   };
 }
 
-export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
+/**
+ * W-5e: production's measurement for one bulk, per agent, as sums the ledger
+ * can keep. Loads only what the sum needs (the bulk's channel, its calls'
+ * drafts and assistant ids, the on-channel cells' transcripts) -- a second,
+ * lighter loader than `bulkVerdicts`, but the SUM is the one function above,
+ * so a settled row and the verdicts route cannot disagree on the arithmetic.
+ *
+ * Returns `[]` for a mono bulk without reading a cell: M-8a is null by design
+ * off the customer channel (on the mix the candidates heard both speakers and
+ * the draft's turns are the caller alone). An agent with no measurable call
+ * has no entry -- absent is not zero.
+ */
+export async function productionByAssistant(bulkId: string): Promise<WatchRunProduction[]> {
+  const [bulkRow] = await db
+    .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
+    .from(benchmarkBulksTable)
+    .where(eq(benchmarkBulksTable.id, bulkId))
+    .limit(1);
+  if (!bulkRow || bulkRow.selectionCriteria.requireCustomerAudio !== true) return [];
+
+  const runs = await db
+    .select({ id: benchmarkRunsTable.id, callIds: benchmarkRunsTable.callIds })
+    .from(benchmarkRunsTable)
+    .where(eq(benchmarkRunsTable.bulkId, bulkId));
+  if (runs.length === 0) return [];
+  const runIds = runs.map((r) => r.id);
+  const allCallIds = [...new Set(runs.flatMap((r) => r.callIds))];
+  if (allCallIds.length === 0) return [];
+
+  const [calls, cells] = await Promise.all([
+    db
+      .select({
+        id: benchmarkCallsTable.id,
+        sourceAssistantId: benchmarkCallsTable.sourceAssistantId,
+        draftTranscript: benchmarkCallsTable.draftTranscript,
+      })
+      .from(benchmarkCallsTable)
+      .where(inArray(benchmarkCallsTable.id, allCallIds)),
+    db
+      .select({
+        callId: benchmarkProviderCallResultsTable.callId,
+        providerId: benchmarkProviderCallResultsTable.providerId,
+        transcript: benchmarkProviderCallResultsTable.hypothesisTranscript,
+        audioSource: benchmarkProviderCallResultsTable.audioSource,
+      })
+      .from(benchmarkProviderCallResultsTable)
+      .where(
+        and(
+          inArray(benchmarkProviderCallResultsTable.runId, runIds),
+          eq(benchmarkProviderCallResultsTable.status, "ok"),
+        ),
+      ),
+  ]);
+
+  const cellsByCall = new Map<string, { providerId: string; transcript: string | null }[]>();
+  for (const c of cells) {
+    if ((c.audioSource ?? "mono") !== "customer") continue;
+    const list = cellsByCall.get(c.callId) ?? [];
+    list.push({ providerId: c.providerId, transcript: c.transcript });
+    cellsByCall.set(c.callId, list);
+  }
+
+  const byAssistant = new Map<string | null, typeof calls>();
+  for (const c of calls) {
+    const key = c.sourceAssistantId ?? null;
+    byAssistant.set(key, [...(byAssistant.get(key) ?? []), c]);
+  }
+
+  const out: WatchRunProduction[] = [];
+  for (const [assistantId, agentCalls] of [...byAssistant].sort((a, b) => (a[0] ?? "").localeCompare(b[0] ?? ""))) {
+    const sums = productionDisagreementSums(agentCalls, cellsByCall);
+    if (!sums) continue;
+    out.push({ assistantId, ...sums });
+  }
+  return out;
+}
+
+/** W-7: the route answers 400 with this message; the id is an assistant id,
+ *  never a caller's. */
+export class AssistantNotInBulkError extends Error {
+  constructor(readonly assistantId: string) {
+    super(`assistantId "${assistantId}" names no call in this bulk`);
+    this.name = "AssistantNotInBulkError";
+  }
+}
+
+export class ProvidersNotInBulkError extends Error {
+  constructor(readonly providers: string) {
+    super(`providers must name exactly two distinct providers in this bulk; got "${providers}"`);
+    this.name = "ProvidersNotInBulkError";
+  }
+}
+
+/**
+ * S-AB1: the verdict asked about exactly two providers. Only the cells handed
+ * to computeVerdict are narrowed -- groups, call counts and production stay as
+ * the whole bulk has them -- so the noise floor is those two providers' own
+ * shared calls. Anything but two distinct ids the bulk ran is an error, never
+ * a quietly different question.
+ */
+export function scopeCellsToProviders<T extends { providerId: string }>(
+  cells: T[],
+  providers: string | undefined,
+  bulkProviderIds: string[],
+): T[] {
+  if (providers === undefined) return cells;
+  const ids = [...new Set(providers.split(",").map((id) => id.trim()))];
+  if (ids.length !== 2 || ids.some((id) => !bulkProviderIds.includes(id))) {
+    throw new ProvidersNotInBulkError(providers);
+  }
+  return cells.filter((c) => ids.includes(c.providerId));
+}
+
+/**
+ * W-7: the ONE place a bulk's calls are narrowed before anything is computed
+ * from them -- groups, call counts, production, its disagreement and the
+ * verdict all read the scoped list, so "one agent, one day" is one agent
+ * everywhere and the noise floor is that agent's own shared calls. S-AB1's
+ * `providers` filter belongs beside this, on the cells, not somewhere else.
+ * An id no call carries is an error, not an empty verdict: an empty answer
+ * would read as "this agent had a quiet day".
+ */
+export function scopeCallsToAssistant<T extends { sourceAssistantId: string | null }>(
+  calls: T[],
+  assistantId: string | undefined,
+): T[] {
+  if (assistantId === undefined) return calls;
+  const scoped = calls.filter((c) => c.sourceAssistantId === assistantId);
+  if (scoped.length === 0) throw new AssistantNotInBulkError(assistantId);
+  return scoped;
+}
+
+export async function bulkVerdicts(
+  bulkId: string,
+  options: { assistantId?: string; providers?: string } = {},
+): Promise<BulkVerdicts> {
   const [bulkRow] = await db
     .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
     .from(benchmarkBulksTable)
@@ -190,12 +360,15 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
     .select({ id: benchmarkRunsTable.id, callIds: benchmarkRunsTable.callIds, providerIds: benchmarkRunsTable.providerIds })
     .from(benchmarkRunsTable)
     .where(eq(benchmarkRunsTable.bulkId, bulkId));
-  if (runs.length === 0) return { bulkId, providers: [], groups: [] };
   const runIds = runs.map((r) => r.id);
   const allCallIds = [...new Set(runs.flatMap((r) => r.callIds))];
   const allProviderIds = [...new Set(runs.flatMap((r) => r.providerIds))];
+  // S-AB1: checked once up front, so a bad pair is refused even when no group
+  // ever reaches computeVerdict -- an empty bulk included.
+  scopeCellsToProviders([], options.providers, allProviderIds);
+  if (runs.length === 0) return { bulkId, providers: [], groups: [] };
 
-  const [calls, providers, cells] = await Promise.all([
+  const [unscopedCalls, providers, cells] = await Promise.all([
     allCallIds.length
       ? db
           .select({
@@ -237,6 +410,7 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       ),
   ]);
 
+  const calls = scopeCallsToAssistant(unscopedCalls, options.assistantId);
   const cellsOnChannel = cells.filter((c) => (c.audioSource ?? "mono") === bulkAudioSource);
 
   // Which providers report per-word confidence: decided from ONE real ok
@@ -307,9 +481,11 @@ export async function bulkVerdicts(bulkId: string): Promise<BulkVerdicts> {
       productionProviderId = resolveProductionProviderId(vendor, model || null, providers);
     }
 
-    const verdictCells: VerdictCell[] = cellsOnChannel
-      .filter((c) => groupCallIds.has(c.callId))
-      .map((c) => ({
+    const verdictCells: VerdictCell[] = scopeCellsToProviders(
+      cellsOnChannel.filter((c) => groupCallIds.has(c.callId)),
+      options.providers,
+      allProviderIds,
+    ).map((c) => ({
         callId: c.callId,
         providerId: c.providerId,
         peerFlagCount: c.peerFlagCount,
