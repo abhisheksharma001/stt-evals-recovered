@@ -13,6 +13,7 @@ function fakeRes() {
 
 const healthPayload = {
   status: "ok",
+  database: "ok" as const,
   commitSha: "abc123",
   builtAt: "2026-08-31T00:00:00.000Z",
   startedAt: "2026-08-31T00:00:01.000Z",

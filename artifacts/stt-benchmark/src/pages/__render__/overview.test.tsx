@@ -108,6 +108,7 @@ const models: ProviderModelList = {
 
 const health: HealthStatus = {
   status: "ok",
+  database: "ok",
   commitSha: "37f932350c6b",
   builtAt: "2026-08-31T13:49:52.092Z",
   startedAt: "2026-08-31T13:49:52.733Z",

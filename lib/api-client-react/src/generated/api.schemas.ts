@@ -130,8 +130,17 @@ export interface DisagreementSpansResponse {
   spans: DisagreementSpan[];
 }
 
+export type HealthStatusDatabase = typeof HealthStatusDatabase[keyof typeof HealthStatusDatabase];
+
+
+export const HealthStatusDatabase = {
+  ok: 'ok',
+  unreachable: 'unreachable',
+} as const;
+
 export interface HealthStatus {
   status: string;
+  database: HealthStatusDatabase;
   commitSha: string;
   builtAt: string | null;
   startedAt: string;

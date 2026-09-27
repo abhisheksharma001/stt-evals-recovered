@@ -1677,10 +1677,16 @@ components:
           items: { $ref: "#/components/schemas/DisagreementSpan" }
     HealthStatus:
       type: object
-      required: [status, commitSha, builtAt, startedAt, providersConfigured]
+      required: [status, database, commitSha, builtAt, startedAt, providersConfigured]
       properties:
+        # Liveness: the process answered. Stays "ok" when the database is down.
         status:
           type: string
+        # R-56: a `select 1` capped at one second. "unreachable" covers refused,
+        # failed and too slow alike; the endpoint still answers 200.
+        database:
+          type: string
+          enum: [ok, unreachable]
         # T-04 (2026-08-28): build identity, so the running process can say
         # which code it is actually running. There is no watch mode on this
         # server -- a source change needs a rebuild AND a restart, and

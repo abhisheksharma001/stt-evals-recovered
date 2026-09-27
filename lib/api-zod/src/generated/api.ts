@@ -13,6 +13,7 @@ import * as zod from 'zod';
  */
 export const HealthCheckResponse = zod.object({
   "status": zod.string(),
+  "database": zod.enum(['ok', 'unreachable']),
   "commitSha": zod.string(),
   "builtAt": zod.string().nullable(),
   "startedAt": zod.string(),
