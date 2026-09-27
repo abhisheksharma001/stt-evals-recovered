@@ -3,8 +3,15 @@
 // when the evidence can't separate the top two. Pure arithmetic over
 // per-cell peer flag counts and word counts; no DB, no LLM.
 //
-// Metric: peer flags per 100 words (the T-19 rate; confidence spans
-// excluded so every provider is measured on the same signal). Lower is
+// Metric (R-2a, 2026-09-28 -- Abhishek, PRD v7 open question 1): the
+// FLAGGED-CALL RATE -- calls on which the provider carried at least one peer
+// flag, over the calls it scored. Lower is better. It is the number a reader
+// can repeat ("flagged on 4 of 17 calls"), and R-2b makes the Results cards
+// rank on the same quantity so the page names one leader, not two. Peer flags
+// per 100 words (the T-19 rate; confidence spans excluded) is still computed
+// and reported per provider, and breaks ties; the Watch baseline reads it.
+//
+// The per-100-words rate, as it was before R-2a: lower is
 // better. Each provider's rate is pooled -- total flags / total words over
 // its scored cells -- not a mean of per-call rates, so a 30-word call
 // doesn't weigh as much as a 900-word one. R-1 (2026-09-08): the words are
@@ -46,7 +53,12 @@ export type VerdictCell = {
 
 export type VerdictProviderRate = {
   providerId: string;
-  /** Pooled peer flags per 100 words, lower is better. */
+  /** R-2a: the ranking quantity. flaggedCalls / calls, 0..1, lower is better. */
+  flaggedCallRate: number;
+  /** Calls on which this provider carried at least one peer flag. */
+  flaggedCalls: number;
+  /** Pooled peer flags per 100 words. No longer the ranking quantity (R-2a):
+   *  the first tiebreak, and what the Watch baseline tracks. */
   flagsPer100Words: number;
   calls: number;
   totalFlags: number;
@@ -56,8 +68,9 @@ export type VerdictProviderRate = {
 export type NoiseFloor = {
   /** Calls both top-two providers scored; the paired sample. */
   sharedCalls: number;
-  /** Point estimate: runner-up rate minus winner rate, in flags/100 words
-   *  (positive = winner cleaner) over the shared calls only. */
+  /** Point estimate: runner-up rate minus winner rate, in PERCENTAGE POINTS
+   *  of flagged calls since R-2a (positive = winner cleaner), over the shared
+   *  calls only. */
   difference: number;
   /** 95% bootstrap percentile interval on `difference`. */
   ci95: [number, number];
@@ -284,8 +297,9 @@ function fmtPct(p: number): string {
   return `${Math.round(Math.abs(p))}%`;
 }
 
-function fmtRate(r: number): string {
-  return r.toFixed(1);
+/** R-2a: the rate in words a reader can repeat -- "flagged on 4 of 17 calls". */
+function flaggedOn(r: VerdictProviderRate): string {
+  return `flagged on ${r.flaggedCalls} of ${r.calls} call${r.calls === 1 ? "" : "s"}`;
 }
 
 export type VerdictOptions = {
@@ -319,15 +333,26 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
     const totalWords = rows.reduce((s, r) => s + r.words, 0);
     if (totalWords === 0) continue;
     const totalFlags = rows.reduce((s, r) => s + (r.peerFlagCount ?? 0), 0);
+    const calls = new Set(rows.map((r) => r.callId)).size;
+    const flaggedCalls = new Set(rows.filter((r) => (r.peerFlagCount ?? 0) > 0).map((r) => r.callId)).size;
     rates.push({
       providerId: id,
+      flaggedCallRate: flaggedCalls / calls,
+      flaggedCalls,
       flagsPer100Words: (totalFlags / totalWords) * 100,
-      calls: new Set(rows.map((r) => r.callId)).size,
+      calls,
       totalFlags,
       totalWords,
     });
   }
-  rates.sort((a, b) => a.flagsPer100Words - b.flagsPer100Words || a.providerId.localeCompare(b.providerId));
+  // R-2a: flagged-call rate first; the per-100-words rate breaks ties (it
+  // still carries how much each provider was flagged, not only whether).
+  rates.sort(
+    (a, b) =>
+      a.flaggedCallRate - b.flaggedCallRate ||
+      a.flagsPer100Words - b.flagsPer100Words ||
+      a.providerId.localeCompare(b.providerId),
+  );
 
   const evidenceCalls = new Set(flagged.map((c) => c.callId)).size;
   const provisional = evidenceCalls < PROVISIONAL_EVIDENCE_CALLS;
@@ -366,7 +391,10 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
   const leader = rates[0]!;
   const runnerUp = rates[1]!;
 
-  // Paired sample: the calls both scored.
+  // Paired sample: the calls both scored. R-2a: each call is 0 (clean) or 1
+  // (flagged) with a weight of one call, so the same pooled bootstrap now
+  // resamples per-call 0/1 differences and its units are percentage points.
+  const flaggedOf = (c: VerdictCell) => ((c.peerFlagCount ?? 0) > 0 ? 1 : 0);
   const leaderByCall = new Map(byProvider.get(leader.providerId)!.map((c) => [c.callId, c]));
   const pairs = byProvider
     .get(runnerUp.providerId)!
@@ -374,8 +402,8 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
     .map((c) => {
       const l = leaderByCall.get(c.callId)!;
       return {
-        leader: { flags: l.peerFlagCount ?? 0, words: l.words },
-        runnerUp: { flags: c.peerFlagCount ?? 0, words: c.words },
+        leader: { flags: flaggedOf(l), words: 1 },
+        runnerUp: { flags: flaggedOf(c), words: 1 },
       };
     });
   const noiseFloor = pairs.length >= MIN_SHARED_CALLS_FOR_VERDICT ? bootstrapNoiseFloor(pairs) : null;
@@ -385,7 +413,7 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
   const productionIsLeader = leader.providerId === productionProviderId;
   const vsProductionPct =
     productionRate && !productionIsLeader
-      ? relativeImprovementPct(leader.flagsPer100Words, productionRate.flagsPer100Words)
+      ? relativeImprovementPct(leader.flaggedCallRate, productionRate.flaggedCallRate)
       : null;
   // T-81 copy: the confidence-comparability caveat is no longer appended to
   // the sentence (it describes a column the sentence does not use); the
@@ -401,7 +429,7 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
       vsProductionPct,
       productionIsLeader,
       sentence:
-        `Not enough calls: ${name(leader.providerId)} (${fmtRate(leader.flagsPer100Words)} disagreements per 100 words) is ahead of ${name(runnerUp.providerId)} (${fmtRate(runnerUp.flagsPer100Words)}), but only ${pairs.length} call${pairs.length === 1 ? "" : "s"} ran on both. Need ${MIN_SHARED_CALLS_FOR_VERDICT}. ${evidence}`,
+        `Not enough calls: ${name(leader.providerId)} (${flaggedOn(leader)}) is ahead of ${name(runnerUp.providerId)} (${flaggedOn(runnerUp)}), but only ${pairs.length} call${pairs.length === 1 ? "" : "s"} ran on both. Need ${MIN_SHARED_CALLS_FOR_VERDICT}. ${evidence}`,
     };
   }
 
@@ -428,11 +456,11 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
       callsToSettle,
       noiseFloor,
       sentence:
-        `Too close to call: ${name(leader.providerId)} (${fmtRate(leader.flagsPer100Words)} disagreements per 100 words) and ${name(runnerUp.providerId)} (${fmtRate(runnerUp.flagsPer100Words)}) are inside the margin of error. ${evidence}${settle}`,
+        `Too close to call: ${name(leader.providerId)} (${flaggedOn(leader)}) and ${name(runnerUp.providerId)} (${flaggedOn(runnerUp)}) are inside the margin of error. ${evidence}${settle}`,
     };
   }
 
-  const marginPct = relativeImprovementPct(leader.flagsPer100Words, runnerUp.flagsPer100Words);
+  const marginPct = relativeImprovementPct(leader.flaggedCallRate, runnerUp.flaggedCallRate);
   // Comparative clause (same sentence) vs. a follow-on sentence.
   const vsProdClause =
     vsProductionPct === null
@@ -448,9 +476,10 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
         : productionProviderId
           ? ` ${name(productionProviderId)} (in production today) was not benchmarked in this group.`
           : "";
-  const marginText = marginPct === null ? "" : `, ${fmtPct(marginPct)} fewer than ${name(runnerUp.providerId)}`;
+  const marginText =
+    marginPct === null ? "" : `, ${fmtPct(marginPct)} fewer flagged calls than ${name(runnerUp.providerId)} (${flaggedOn(runnerUp)})`;
   const sentence =
-    `${name(leader.providerId)} has the least disagreement: ${fmtRate(leader.flagsPer100Words)} disagreements per 100 words${marginText}${vsProdClause}.${vsProdSentence} ${evidence}`;
+    `${name(leader.providerId)} has the least disagreement: ${flaggedOn(leader)}${marginText}${vsProdClause}.${vsProdSentence} ${evidence}`;
 
   return {
     ...base,

@@ -82,8 +82,8 @@ const verdicts: BulkVerdicts = {
         noiseFloor: { sharedCalls: 12, difference: 0.9, ci95: [0.2, 1.6], withinNoise: false },
         confidenceComparable: { reporting: 2, total: 2 },
         rates: [
-          { providerId: "deepgram-nova-3", flagsPer100Words: 1.1, calls: 12, totalFlags: 20, totalWords: 1800 },
-          { providerId: "gladia-solaria", flagsPer100Words: 2.0, calls: 12, totalFlags: 36, totalWords: 1800 },
+          { providerId: "deepgram-nova-3", flaggedCallRate: 4 / 12, flaggedCalls: 4, flagsPer100Words: 1.1, calls: 12, totalFlags: 20, totalWords: 1800 },
+          { providerId: "gladia-solaria", flaggedCallRate: 9 / 12, flaggedCalls: 9, flagsPer100Words: 2.0, calls: 12, totalFlags: 36, totalWords: 1800 },
         ],
         sentence: "Deepgram Nova-3 is ahead on 12 calls.",
       },

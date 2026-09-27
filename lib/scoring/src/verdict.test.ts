@@ -5,6 +5,11 @@ function cellsFor(providerId: string, flags: number[], words = 100): VerdictCell
   return flags.map((f, i) => ({ callId: `c${i}`, providerId, peerFlagCount: f, words }));
 }
 
+/** R-2a: `n` calls, flagged (one flag) on exactly the calls `flaggedOn` picks. */
+function flaggedCalls(providerId: string, n: number, flaggedOn: (i: number) => boolean): VerdictCell[] {
+  return cellsFor(providerId, Array.from({ length: n }, (_, i) => (flaggedOn(i) ? 1 : 0)));
+}
+
 describe("pooledRate", () => {
   it("pools flags over words, not a mean of per-call rates", () => {
     expect(pooledRate([{ flags: 1, words: 10 }, { flags: 0, words: 90 }])).toBe(1);
@@ -68,10 +73,11 @@ describe("bootstrapNoiseFloor", () => {
 
 describe("computeVerdict", () => {
   it("names a winner with margin and evidence when the gap is outside noise", () => {
+    // Flagged on 5, 10 and 15 of 25 calls; b's flagged calls include all of a's.
     const cells = [
-      ...cellsFor("a", Array.from({ length: 25 }, () => 1)),
-      ...cellsFor("b", Array.from({ length: 25 }, () => 2)),
-      ...cellsFor("c", Array.from({ length: 25 }, () => 3)),
+      ...flaggedCalls("a", 25, (i) => i < 5),
+      ...flaggedCalls("b", 25, (i) => i < 10),
+      ...flaggedCalls("c", 25, (i) => i < 15),
     ];
     const v = computeVerdict(cells, { providerNames: { a: "A", b: "B", c: "C" } });
     expect(v.decision).toBe("winner");
@@ -80,16 +86,15 @@ describe("computeVerdict", () => {
     expect(v.marginPct).toBe(50);
     expect(v.evidenceCalls).toBe(25);
     expect(v.provisional).toBe(false);
-    expect(v.sentence).toContain("A has the least disagreement: ");
-    expect(v.sentence).toContain("50% fewer than B");
+    expect(v.sentence).toContain("A has the least disagreement: flagged on 5 of 25 calls");
+    expect(v.sentence).toContain("50% fewer flagged calls than B (flagged on 10 of 25 calls)");
     expect(v.sentence).toContain("25 calls.");
   });
 
   it("refuses to name a winner inside the noise floor and estimates what would settle it", () => {
-    const cells = [
-      ...cellsFor("a", Array.from({ length: 24 }, (_, i) => (i % 2 === 0 ? 0 : 4))),
-      ...cellsFor("b", Array.from({ length: 24 }, (_, i) => (i % 2 === 0 ? 4 : 1))),
-    ];
+    // a flagged on 8 of 24, b on 12 -- but on largely different calls, so the
+    // per-call differences point both ways.
+    const cells = [...flaggedCalls("a", 24, (i) => i < 8), ...flaggedCalls("b", 24, (i) => i >= 4 && i < 16)];
     const v = computeVerdict(cells);
     expect(v.decision).toBe("too_close");
     expect(v.winnerProviderId).toBeNull();
@@ -124,10 +129,8 @@ describe("computeVerdict", () => {
   });
 
   it("calls a near-zero gap effectively tied instead of quoting thousands of calls", () => {
-    const cells = [
-      ...cellsFor("a", Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 1 : 2))),
-      ...cellsFor("b", Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 2 : 1))),
-    ].map((c, i) => (i === 0 ? { ...c, peerFlagCount: 0 } : c)); // tiny lead for a
+    // 14 of 30 against 15 of 30, on opposite calls: a one-call lead.
+    const cells = [...flaggedCalls("a", 30, (i) => i % 2 === 1 && i !== 1), ...flaggedCalls("b", 30, (i) => i % 2 === 0)];
     const v = computeVerdict(cells);
     expect(v.decision).toBe("too_close");
     expect(v.callsToSettle).toBeNull();
@@ -136,22 +139,45 @@ describe("computeVerdict", () => {
 
   it("compares against production when it was benchmarked and isn't the leader", () => {
     const cells = [
-      ...cellsFor("a", Array.from({ length: 25 }, () => 1)),
-      ...cellsFor("b", Array.from({ length: 25 }, () => 2)),
-      ...cellsFor("prod", Array.from({ length: 25 }, () => 4)),
+      ...flaggedCalls("a", 25, (i) => i < 5),
+      ...flaggedCalls("b", 25, (i) => i < 10),
+      ...flaggedCalls("prod", 25, (i) => i < 20),
     ];
     const v = computeVerdict(cells, { productionProviderId: "prod" });
-    expect(v.vsProductionPct).toBe(75);
+    expect(v.vsProductionPct).toBeCloseTo(75, 10);
     expect(v.productionIsLeader).toBe(false);
     expect(v.sentence).toContain("75% fewer than prod (in production today)");
   });
 
   it("says so when production is already the leader", () => {
-    const cells = [...cellsFor("prod", Array.from({ length: 25 }, () => 1)), ...cellsFor("b", Array.from({ length: 25 }, () => 3))];
+    const cells = [...flaggedCalls("prod", 25, (i) => i < 5), ...flaggedCalls("b", 25, (i) => i < 15)];
     const v = computeVerdict(cells, { productionProviderId: "prod" });
     expect(v.productionIsLeader).toBe(true);
     expect(v.vsProductionPct).toBeNull();
     expect(v.sentence).toContain("also in production today");
+  });
+
+  // R-2a: the ranking quantity is the flagged-call rate, not flags per 100
+  // words. "few" is flagged on 3 calls with 6 flags each; "many" on 12 calls
+  // with one flag each. Per 100 words "few" is worse (18 vs 12 flags) -- the
+  // old order -- but it was flagged on a quarter of the calls, so it leads.
+  it("ranks by the share of calls flagged, and breaks a tie on flags per 100 words", () => {
+    const v = computeVerdict([
+      ...cellsFor("few", Array.from({ length: 24 }, (_, i) => (i < 3 ? 6 : 0))),
+      ...cellsFor("many", Array.from({ length: 24 }, (_, i) => (i < 12 ? 1 : 0))),
+    ]);
+    expect(v.leaderProviderId).toBe("few");
+    const few = v.rates.find((r) => r.providerId === "few")!;
+    const many = v.rates.find((r) => r.providerId === "many")!;
+    expect([few.flaggedCalls, few.calls, few.flaggedCallRate]).toEqual([3, 24, 0.125]);
+    expect(few.flagsPer100Words).toBeGreaterThan(many.flagsPer100Words);
+
+    // Same flagged calls, different flag totals: the per-100-words rate decides.
+    const tie = computeVerdict([
+      ...cellsFor("light", Array.from({ length: 10 }, (_, i) => (i < 4 ? 1 : 0))),
+      ...cellsFor("heavy", Array.from({ length: 10 }, (_, i) => (i < 4 ? 3 : 0))),
+    ]);
+    expect(tie.rates.map((r) => r.providerId)).toEqual(["light", "heavy"]);
   });
 
   it("reports insufficient with one provider and excludes never-flagged cells", () => {
@@ -167,11 +193,11 @@ describe("computeVerdict", () => {
 
   // R-1 (2026-09-08): live on bulk 42769f26, ElevenLabs and AssemblyAI
   // carried identical peer flags on all 17 calls and ElevenLabs was named
-  // winner for writing 4% more words -- filler the flags were never scored
-  // on, because flags come off canonicalTranscript and the denominator did
-  // not. Both halves are held here: under the old inputs (each provider's
-  // own word count) the wordier one MUST win, under the shared basis it
-  // must not, or this test is not proving what it claims.
+  // winner for writing 4% more words. R-1 fixed it with a shared word basis.
+  // R-2a (2026-09-28) removes the cause: the ranking counts flagged CALLS, so
+  // word counts cannot decide it at all -- not even each provider's own. The
+  // per-100-words rate, now only a tiebreak, still differs on own words, which
+  // is what shows the words were really different in the "before" input.
   it("names no winner when the only difference between two providers is verbosity", () => {
     const flags = [0, 1, 2, 0, 3, 1, 0, 2];
     const leanWords = [80, 120, 200, 60, 300, 140, 90, 160];
@@ -182,8 +208,12 @@ describe("computeVerdict", () => {
     const names = { lean: "Lean", wordy: "Wordy" };
 
     const before = computeVerdict(ownWords, { providerNames: names });
-    expect(before.decision).toBe("winner");
-    expect(before.winnerProviderId).toBe("wordy");
+    expect(before.decision).toBe("too_close");
+    expect(before.winnerProviderId).toBeNull();
+    expect(before.rates[0]!.flaggedCallRate).toBe(before.rates[1]!.flaggedCallRate);
+    expect(before.rates.find((r) => r.providerId === "wordy")!.flagsPer100Words).toBeLessThan(
+      before.rates.find((r) => r.providerId === "lean")!.flagsPer100Words,
+    );
 
     const basis = callWordBasis(ownWords.map((c) => ({ callId: c.callId, words: c.words })));
     const after = computeVerdict(

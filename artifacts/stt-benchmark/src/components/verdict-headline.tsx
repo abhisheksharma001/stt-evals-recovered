@@ -401,7 +401,7 @@ export function BulkVerdictBanner({ bulkId, groupLabels }: { bulkId: string; gro
           className="text-xs text-muted-foreground"
           title="Mechanism: disagreements = cross-provider word disagreements + entity mismatches, a provider's own low-confidence spans excluded. Margin of error = 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored."
         >
-          Least disagreement = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything
+          Least disagreement = flagged on the fewest calls, by more than the margin of error. Lower is better. Anything
           else is undecided, not a tie.
         </p>
         {/* M-9 (PRD-v6 D1): the permanent qualifier that stops "least

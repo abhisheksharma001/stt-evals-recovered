@@ -1948,13 +1948,15 @@ export const GetBulkVerdictsResponse = zod.object({
 }),
   "rates": zod.array(zod.object({
   "providerId": zod.string(),
+  "flaggedCallRate": zod.number(),
+  "flaggedCalls": zod.number(),
   "flagsPer100Words": zod.number(),
   "calls": zod.number(),
   "totalFlags": zod.number(),
   "totalWords": zod.number()
 })),
   "sentence": zod.string()
-}).describe('T-20. Metric is peer flags per 100 words (confidence spans excluded), pooled per provider; lower is better. R-1: the words are the call\'s -- one basis shared by every provider on it, so a wordier provider does not buy a lower rate. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.')
+}).describe('T-20. R-2a (2026-09-28): the metric is the FLAGGED-CALL RATE -- calls on which the provider carried at least one peer flag, over the calls it scored; lower is better. Peer flags per 100 words (confidence spans excluded, on R-1\'s shared call word basis) is still reported per provider and breaks ties. A winner is named only when a paired bootstrap (1,000 resamples of the calls the top two both scored, seeded; per-call 0\/1 flagged, so the noise floor is in percentage points) puts zero outside the 95% interval of their rate difference. Fewer than 5 shared calls: no noise floor and no winner (decision too_few_calls). Every margin ships with evidenceCalls; below 20 the whole verdict is provisional.')
 }))
 })
 

@@ -31,7 +31,7 @@ const STEPS: { title: string; body: string }[] = [
   },
   {
     title: "Get a verdict with its margin of error",
-    body: "The provider with the fewest disagreements per 100 words is named, only if the gap is bigger than the margin of error. Otherwise the page says so.",
+    body: "The provider flagged on the fewest calls is named, only if the gap is bigger than the margin of error. Otherwise the page says so.",
   },
 ]
 
@@ -102,15 +102,15 @@ export default function Landing() {
               <span className="text-[11px] font-mono text-muted-foreground">72 calls scored &middot; 64 calls both ran</span>
             </div>
             <p className="mt-3 text-lg leading-snug" style={{ textWrap: "balance" }}>
-              <span className="font-semibold">Provider A</span> has the least disagreement: 1.4 disagreements per 100 words, 38% fewer than
-              Provider B, 12% fewer than Provider C (in production today). 72 calls.
+              <span className="font-semibold">Provider A</span> has the least disagreement: flagged on 10 of 72 calls, 38% fewer flagged
+              calls than Provider B (flagged on 16 of 72 calls), 9% fewer than Provider C (in production today). 72 calls.
             </p>
             {/* M-9: this example is captioned "what a client sees", so it
                 carries the real page's words -- the phrase AND the permanent
                 relative line. An example that drops the qualifier teaches the
                 client the claim the qualifier exists to deny. */}
             <p className="mt-3 text-xs text-muted-foreground">
-              Least disagreement = fewest disagreements per 100 words, by more than the margin of error. Lower is better.
+              Least disagreement = flagged on the fewest calls, by more than the margin of error. Lower is better.
               Anything else is undecided, not a tie.
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
