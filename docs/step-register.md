@@ -8030,16 +8030,18 @@ both scored -- reads as "outside noise" and names that leader the winner. It nee
 one of the two scored, so it is rare, but it is a wrong answer, not a cautious one.
 
 **Change:** a winner is named only when (a) the paired interval excludes zero *on the positive
-side*, AND (b) an exact one-sided sign test on the discordant shared calls gives p < 0.05 --
-which needs at least 5 discordant calls all one way, 6 of 7, and so on. Otherwise
-`too_close`, with `callsToSettle` as today. An interval entirely below zero is `too_close`
+side*, AND (b) an exact **two-sided** sign test on the discordant shared calls gives p < 0.05 --
+two-sided because the leader is chosen after looking at the data. Computed exactly: the
+smallest splits that pass are 6-0 (p 0.031), 7-0, 8-1 (0.039), 9-1 (0.021), 10-2 (0.039); 5-0
+(0.0625), 6-1 (0.125) and 7-1 (0.070) do not. Otherwise `too_close`, with `callsToSettle` as
+today. An interval entirely below zero is `too_close`
 with the pair named as it is, never a winner.
 
-**Acceptance:** WHEN the top two differ on only 3 shared calls (3-0) THEN the verdict SHALL be
-`too_close`; WHEN they differ 6-0 THEN it MAY be `winner`; WHEN the paired interval lies
+**Acceptance:** WHEN the top two differ on only 3 shared calls (3-0), or 5-0, or 6-1, THEN the
+verdict SHALL be `too_close`; WHEN they differ 6-0 THEN it MAY be `winner`; WHEN the paired interval lies
 entirely below zero THEN no winner SHALL be named.
 
-**Verify:** unit cases for 3-0, 5-0, 6-1 and the negative interval; the existing verdict cases
+**Verify:** unit cases for 3-0, 5-0, 6-1, 6-0 and the negative interval; the existing verdict cases
 unchanged; report how many live bulks' verdicts change (expected: none -- every live verdict
 read this session is already `too_close`).
 
