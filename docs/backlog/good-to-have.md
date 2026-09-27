@@ -17,8 +17,9 @@ Two separate things, each its own small step if wanted:
 
 Also seen, and **not** a finding: the container log shows `watch_runs` / watch-bulk
 unique-key errors at 2026-09-27 04:09 UTC. `stt_evals` has 0 `watch_runs` and 0 watch
-bulks; the log is container-wide and those came from the integration suite's
-`stt_evals_test` database (`watch-tick.int.test.ts`).
+bulks, so they did not come from it. The log is container-wide; most likely they are the
+integration suite's `stt_evals_test` database exercising those unique keys -- which test
+file was not checked.
 
 ## Found 2026-09-26 (R-25b): one `ok` cell has no score row
 
