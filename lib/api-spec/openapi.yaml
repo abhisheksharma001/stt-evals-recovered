@@ -1546,7 +1546,7 @@ components:
         callsInScope: { type: number }
         judge:
           type: object
-          required: [checked, judged, high, medium, low, notRecorded, clean, errored]
+          required: [checked, judged, high, medium, low, notRecorded, clean, errored, picks]
           properties:
             # Calls with a scan (latest scan per call, T-35 rule).
             checked: { type: number }
@@ -1559,6 +1559,17 @@ components:
             notRecorded: { type: number }
             clean: { type: number }
             errored: { type: number }
+            # S-AB3a: on the judged calls, how many times the judge picked each
+            # provider's reading, most picks first. A pick is a suggestion,
+            # never gold and never a winner. Ids and counts only.
+            picks:
+              type: array
+              items:
+                type: object
+                required: [providerId, calls]
+                properties:
+                  providerId: { type: string }
+                  calls: { type: number }
         hardCases:
           type: object
           required: [calls, tags, examples]

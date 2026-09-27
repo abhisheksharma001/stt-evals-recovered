@@ -35,6 +35,7 @@ export * from './assistantSignalsHardCases';
 export * from './assistantSignalsHardCasesExamplesItem';
 export * from './assistantSignalsHardCasesTagsItem';
 export * from './assistantSignalsJudge';
+export * from './assistantSignalsJudgePicksItem';
 export * from './assistantTranscriber';
 export * from './attestDeidBody';
 export * from './auditLogEntry';
