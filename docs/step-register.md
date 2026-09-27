@@ -4333,7 +4333,29 @@ Restored with `git checkout -- lib/scoring/src/verdict.ts`.
 
 ### R-2b — The cards' composite ranks on the same flagged-call rate
 
-**Status:** not started. Next. Spends nothing.
+**Status:** blocked 2026-09-28 — **not built: as written it cannot pass its own acceptance.**
+Measured on bulk `42769f26` (read-only, per assistant group: calls, calls flagged, flag
+badness, $/min): every assistant card holds **1 or 2 calls**, and in **11 of 13** groups every
+provider is flagged on the same number of calls (all or none). Whatever the flag quantity, the
+tie goes to the next key -- cost -- and Cartesia, the cheapest at $0.0022/min, is rank 1 in
+12 of 13 cards under the 85/15 composite AND under a pure flagged-rate-then-badness-then-cost
+order. The banner reads the whole org's 17 calls. **The two disagree because of grain
+(per-assistant cards of 1-2 calls against a per-org verdict), not because of the quantity** --
+the same finding S-AB2 hit. Changing the composite would ship a methodology change and leave
+the page exactly as contradictory as it is.
+
+Also inside the row, for whoever picks it up: the Acceptance ("same flagged-call rate THEN
+`flagBadness` SHALL order them before cost") and the Must-not ("change the 85 / 15 weights")
+cannot both hold -- with cost inside a weighted composite, a tie on the flag term is decided by
+cost, not badness.
+
+**The decision for Abhishek -- options:**
+1. *A tie is a tie on the card.* When providers tie on flagged calls in a group, the card says
+   "tied on these N calls" instead of ranking them by price; no rank 1 by cost alone.
+2. *Cards rank at the org grain*, the verdict's own; the per-assistant card shows its calls
+   but not its own order.
+3. *Build R-2b as written anyway* (quantity alignment for the day groups are bigger), knowing
+   today's cards still read Cartesia first.
 **PR:** one.
 **Depends on:** R-2a.
 **Files:** as R-2's list: `lib/scoring/src/hybrid.ts` (`hybridCompositeScore`'s flag
@@ -4348,7 +4370,8 @@ and every card's rank 1 SHALL agree.
 
 **Status:** not started. Spends nothing.
 **PR:** one.
-**Depends on:** R-2b.
+**Depends on:** R-2a (not R-2b: both certify an ORDER, and the order the page names is the
+verdict's).
 **Files:** `artifacts/api-server/src/lib/proxy-agreement-aggregate.ts` and its test,
 `artifacts/api-server/src/lib/method-check-aggregate.ts` and its test.
 **Change:** both rank providers by the flagged-call rate (per 100 words as tiebreak) instead of
