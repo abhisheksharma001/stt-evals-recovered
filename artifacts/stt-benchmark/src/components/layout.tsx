@@ -89,7 +89,8 @@ function BuildBadge() {
       // Deliberately louder than the app-wide defaults (staleTime 30s,
       // refetchOnWindowFocus false). Restarting the API is exactly the moment
       // this number has to change, and the user is in another window doing it.
-      // /api/healthz does no database work (T-04), so this poll is cheap.
+      // Cheap: since R-56 each poll runs one `select 1` on the API side, capped
+      // at a second, and /api/healthz answers whether or not the database does.
       //
       // retry 0 on purpose, against the app-wide retry: 2. A liveness badge
       // that retries is a badge that lies for several seconds while the API is
@@ -134,7 +135,14 @@ function BuildBadge() {
   const uiSha = uiBuildCommitSha
   const mismatch = !isProvisional && !provisional(uiSha) && uiSha !== sha
 
+  // R-56b: the process answered, but the database behind it did not. Every
+  // page that reads data is broken while this is true, so the footer says so
+  // instead of a green dot. A UI/API mismatch still wins: that one means the
+  // whole screen is stale.
+  const databaseDown = data.database === "unreachable"
+
   const title = [
+    ...(databaseDown ? ["database unreachable -- the API is up, but its database did not answer. Pages that read data will fail."] : []),
     `api     ${sha}`,
     `ui      ${uiSha}${mismatch ? "  <-- differs from the API: this browser is showing a stale UI build. Hard-refresh." : ""}`,
     `built   ${data.builtAt ?? "not a bundle (running from source)"}`,
@@ -144,8 +152,8 @@ function BuildBadge() {
   ].join("\n")
 
   return (
-    <BuildBadgeShell tone={mismatch ? "down" : isProvisional ? "provisional" : "quiet"} title={title}>
-      {mismatch ? `api ${sha} ≠ ui ${uiSha}` : sha}
+    <BuildBadgeShell tone={mismatch ? "down" : databaseDown || isProvisional ? "provisional" : "quiet"} title={title}>
+      {mismatch ? `api ${sha} ≠ ui ${uiSha}` : databaseDown ? "database unreachable" : sha}
     </BuildBadgeShell>
   )
 }
