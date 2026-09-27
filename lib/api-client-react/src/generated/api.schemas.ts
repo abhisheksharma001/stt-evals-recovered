@@ -12,6 +12,11 @@ export interface SpanReading {
   agreesWithMajority: boolean;
 }
 
+export type AssistantSignalsJudgePicksItem = {
+  providerId: string;
+  calls: number;
+};
+
 export type AssistantSignalsJudge = {
   checked: number;
   judged: number;
@@ -21,6 +26,7 @@ export type AssistantSignalsJudge = {
   notRecorded: number;
   clean: number;
   errored: number;
+  picks: AssistantSignalsJudgePicksItem[];
 };
 
 export type AssistantSignalsHardCasesTagsItem = {

@@ -299,7 +299,11 @@ export const GetAssistantSignalsResponse = zod.object({
   "low": zod.number(),
   "notRecorded": zod.number(),
   "clean": zod.number(),
-  "errored": zod.number()
+  "errored": zod.number(),
+  "picks": zod.array(zod.object({
+  "providerId": zod.string(),
+  "calls": zod.number()
+}))
 }),
   "hardCases": zod.object({
   "calls": zod.number(),

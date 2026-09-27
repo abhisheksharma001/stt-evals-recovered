@@ -17,7 +17,10 @@ type SignalsBody = {
   bulksCovered: number;
   assistantId: string | null;
   callsInScope: number;
-  judge: { checked: number; judged: number; high: number; medium: number; low: number; notRecorded: number; clean: number; errored: number };
+  judge: {
+    checked: number; judged: number; high: number; medium: number; low: number; notRecorded: number; clean: number; errored: number;
+    picks: { providerId: string; calls: number }[];
+  };
   hardCases: { calls: number; tags: { tag: string; calls: number }[]; examples: { callId: string; label: string; tags: string[] }[] };
 };
 
@@ -83,7 +86,60 @@ describe("GET /api/benchmark/assistant-signals", () => {
       notRecorded: 1, // C: real verdict, no recorded level
       clean: 1, // A, by its latest scan
       errored: 1, // D
+      picks: [], // no scan here names a picked cell
     });
+  });
+
+  // S-AB3a: which provider the judge picked, counted off each call's latest
+  // judged scan through the picked cell -- ids and counts, never the cell.
+  it("counts the judge's picks per provider, off each call's latest judged scan", async () => {
+    const bulk = await fx.bulk({ status: "complete" });
+    const run = await fx.run({ bulkId: bulk.id, purpose: "batch" });
+    const [p1, p2] = [await fx.provider(), await fx.provider()];
+    const SECRET = `fx-transcript-${fx.suffix}`;
+
+    const seed = async (pickOf: (cells: { p1: string; p2: string }) => string | null, over: object = {}) => {
+      const call = await fx.call();
+      const c1 = await fx.result(run.id, call.id, p1.id, { hypothesisTranscript: SECRET });
+      const c2 = await fx.result(run.id, call.id, p2.id, { hypothesisTranscript: SECRET });
+      await fx.scan(call.id, {
+        runId: run.id,
+        status: "flagged",
+        judgeConfidence: "high",
+        agentPickReasoning: "reads best",
+        agentPickResultId: pickOf({ p1: c1.id, p2: c2.id }),
+        ...over,
+      });
+      return { call, c1, c2 };
+    };
+    await seed((c) => c.p1);
+    await seed((c) => c.p1);
+    await seed((c) => c.p2);
+    await seed(() => null); // judged, picked nothing
+    await seed((c) => c.p2, { agentPickReasoning: null }); // never answered: not a pick
+
+    // A superseded pick: p2 first, then a newer scan picking p1.
+    const { call, c1, c2 } = await seed((c) => c.p2);
+    void c2;
+    await fx.scan(call.id, {
+      runId: run.id,
+      status: "flagged",
+      judgeConfidence: "high",
+      agentPickReasoning: "second look",
+      agentPickResultId: c1.id,
+      createdAt: new Date(Date.now() + 60_000),
+    });
+
+    const res = await request(server).get("/api/benchmark/assistant-signals").query({ bulkId: bulk.id });
+    expect(res.status).toBe(200);
+    const body = res.body as SignalsBody;
+    expect(body.judge.judged).toBe(5);
+    expect(body.judge.picks).toEqual([
+      { providerId: p1.id, calls: 3 },
+      { providerId: p2.id, calls: 1 },
+    ]);
+    // Count-only: no transcript reaches this response.
+    expect(JSON.stringify(res.body)).not.toContain(SECRET);
   });
 
   it("hard cases come from the calls a person flagged, tags counted once per call", async () => {
