@@ -169,7 +169,7 @@ describe("Overview", () => {
     expect(lead.textContent).toContain("Production today (deepgram / nova-3)")
     expect(lead.textContent).toContain("6.6 of every 100 caller words")
     expect(lead.textContent).toContain("Gladia Solaria, sat at 2.6")
-    expect(lead.textContent).toContain("not the per-100-words flag count the ranking uses")
+    expect(lead.textContent).toContain("not the flagged-call count the verdict ranks by")
     // The verdict still follows it, in the same block.
     expect(document.body.textContent!.indexOf("6.6 of every 100 caller words")).toBeLessThan(
       document.body.textContent!.indexOf("has the least disagreement in 1 of 1 group"),

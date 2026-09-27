@@ -3185,7 +3185,8 @@ components:
           required: [sharedCalls, difference, ci95, withinNoise]
           properties:
             sharedCalls: { type: number }
-            # runner-up rate minus leader rate over shared calls.
+            # runner-up rate minus leader rate over shared calls. R-2a: in
+            # percentage points of calls flagged (e.g. 20 = 20 points).
             difference: { type: number }
             ci95:
               type: array
@@ -3209,8 +3210,8 @@ components:
               # R-2a: the ranking quantity, 0..1: flaggedCalls / calls.
               flaggedCallRate: { type: number }
               flaggedCalls: { type: number }
-              # No longer the ranking quantity: the first tiebreak, and what
-              # the Watch baseline tracks.
+              # No longer the ranking quantity: the first tiebreak. (The Watch
+              # computes its own per-100 rate; it does not read this field.)
               flagsPer100Words: { type: number }
               calls: { type: number }
               totalFlags: { type: number }

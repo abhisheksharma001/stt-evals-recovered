@@ -9,7 +9,9 @@
 // can repeat ("flagged on 4 of 17 calls"), and R-2b makes the Results cards
 // rank on the same quantity so the page names one leader, not two. Peer flags
 // per 100 words (the T-19 rate; confidence spans excluded) is still computed
-// and reported per provider, and breaks ties; the Watch baseline reads it.
+// and reported per provider, and breaks ties. (The Watch baseline does NOT
+// read it -- watch-overview.ts computes its own per-100 rate from
+// production's word mismatches; the names only coincide.)
 //
 // The per-100-words rate, as it was before R-2a: lower is
 // better. Each provider's rate is pooled -- total flags / total words over
@@ -58,7 +60,7 @@ export type VerdictProviderRate = {
   /** Calls on which this provider carried at least one peer flag. */
   flaggedCalls: number;
   /** Pooled peer flags per 100 words. No longer the ranking quantity (R-2a):
-   *  the first tiebreak, and what the Watch baseline tracks. */
+   *  the first tiebreak, and a column on the shareable page. */
   flagsPer100Words: number;
   calls: number;
   totalFlags: number;
@@ -94,8 +96,9 @@ export type HeadlineVerdict = {
    *  WOULD be if the noise floor were ignored. Never render this as the
    *  winner; it exists so the UI can say "X leads, but too close to call." */
   leaderProviderId: string | null;
-  /** Relative improvement of the winner over the runner-up in flags/100
-   *  words, 0..100 (38 = "38% cleaner"). null unless decision is "winner". */
+  /** Relative improvement of the winner over the runner-up in flagged-call
+   *  rate (R-2a), 0..100 (38 = "38% fewer flagged calls"). null unless
+   *  decision is "winner". */
   marginPct: number | null;
   /** Same, winner vs the provider Vapi runs live for this group's calls.
    *  Positive = winner cleaner, negative = production cleaner. null when
@@ -205,13 +208,14 @@ export function callWordBasis(cells: { callId: string; words: number }[]): Map<s
  * written out in three places drifts, and the first thing to drift is the
  * words around the number.
  *
- * `rate` is NOT the ranking table's quantity, and the caveat says so out loud.
+ * `rate` is NOT the verdict's quantity, and the caveat says so out loud.
  * Here it is word-by-word: positions where production's own transcript
  * differed from the candidates' plurality, over the caller's turns only,
  * divided by the aligned words a plurality existed at (hybrid.ts,
- * computeCrossProviderDisagreement). The table counts FLAGS -- a filtered
- * subset -- over the whole call's word basis. On bulk 42769f26 the same
- * provider reads 2.6 here and 0.40 there. Printing both without saying which
+ * computeCrossProviderDisagreement). The verdict counts CALLS with at least
+ * one flag (R-2a) -- a flag being a filtered subset of those positions. On
+ * bulk 42769f26 the same provider reads 2.6 here and "flagged on 4 of 17
+ * calls" there. Printing both without saying which
  * is which is how a reader concludes the tool contradicts itself.
  */
 export function productionLead(input: {
@@ -240,7 +244,7 @@ export function productionLead(input: {
     caveat:
       "Production ran live during the call; the candidates ran afterwards on the recording. " +
       "It is measured against them, never ranked with them -- it appears in no row here and cannot win a bulk. " +
-      "This is a word-by-word count on the caller's turns, not the per-100-words flag count the ranking uses.",
+      "This is a word-by-word count on the caller's turns, not the flagged-call count the verdict ranks by.",
   };
 }
 

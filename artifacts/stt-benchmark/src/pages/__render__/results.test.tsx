@@ -962,7 +962,7 @@ describe("Results", () => {
     expect(lead.textContent).toContain("4.1 of every 100 caller words")
     expect(lead.textContent).toContain("Gladia Solaria")
     // The units differ from the table's on purpose, and the banner says so.
-    expect(lead.textContent).toContain("not the per-100-words flag count the ranking uses")
+    expect(lead.textContent).toContain("not the flagged-call count the verdict ranks by")
     expect(lead.textContent).toContain("ran live during the call")
     // One org in this bulk, so its name is not prefixed onto the number.
     expect(lead.textContent).not.toContain("Default:")

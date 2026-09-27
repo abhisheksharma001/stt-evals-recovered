@@ -103,7 +103,7 @@ export default function Landing() {
             </div>
             <p className="mt-3 text-lg leading-snug" style={{ textWrap: "balance" }}>
               <span className="font-semibold">Provider A</span> has the least disagreement: flagged on 10 of 72 calls, 38% fewer flagged
-              calls than Provider B (flagged on 16 of 72 calls), 9% fewer than Provider C (in production today). 72 calls.
+              calls than Provider B (flagged on 16 of 72 calls), 47% fewer than Provider C (in production today). 72 calls.
             </p>
             {/* M-9: this example is captioned "what a client sees", so it
                 carries the real page's words -- the phrase AND the permanent

@@ -288,8 +288,9 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
     });
   }
 
-  // Ordering: the bulk's verdict rate (peer flags per 100 words, lower
-  // first) for the group this call belongs to; alphabetical otherwise.
+  // Ordering: the bulk's verdict order for the group this call belongs to --
+  // flagged-call rate, then peer flags per 100 words (R-2a); alphabetical
+  // otherwise.
   // Providers the verdict has no rate for sort after the rated ones.
   let ordering: CallComparison["ordering"] = "alphabetical";
   const byName = (a: ComparisonRow, b: ComparisonRow) => a.providerName.localeCompare(b.providerName);

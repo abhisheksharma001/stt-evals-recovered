@@ -194,10 +194,10 @@ describe("computeVerdict", () => {
   // R-1 (2026-09-08): live on bulk 42769f26, ElevenLabs and AssemblyAI
   // carried identical peer flags on all 17 calls and ElevenLabs was named
   // winner for writing 4% more words. R-1 fixed it with a shared word basis.
-  // R-2a (2026-09-28) removes the cause: the ranking counts flagged CALLS, so
-  // word counts cannot decide it at all -- not even each provider's own. The
-  // per-100-words rate, now only a tiebreak, still differs on own words, which
-  // is what shows the words were really different in the "before" input.
+  // R-2a (2026-09-28): the ranking counts flagged CALLS, so word counts can no
+  // longer make a WINNER. They can still pick the LEADER of an undecided pair
+  // through the per-100-words tiebreak -- which is where R-1 still earns its
+  // keep, and what the leader assertions below hold.
   it("names no winner when the only difference between two providers is verbosity", () => {
     const flags = [0, 1, 2, 0, 3, 1, 0, 2];
     const leanWords = [80, 120, 200, 60, 300, 140, 90, 160];
@@ -210,6 +210,10 @@ describe("computeVerdict", () => {
     const before = computeVerdict(ownWords, { providerNames: names });
     expect(before.decision).toBe("too_close");
     expect(before.winnerProviderId).toBeNull();
+    // R-1 still matters to the TIEBREAK: on own words the wordier provider
+    // reads lower per 100 words and leads the undecided pair ("Ahead, but not
+    // decided: Wordy") -- exactly R-1's bug, one level down.
+    expect(before.leaderProviderId).toBe("wordy");
     expect(before.rates[0]!.flaggedCallRate).toBe(before.rates[1]!.flaggedCallRate);
     expect(before.rates.find((r) => r.providerId === "wordy")!.flagsPer100Words).toBeLessThan(
       before.rates.find((r) => r.providerId === "lean")!.flagsPer100Words,
@@ -222,6 +226,8 @@ describe("computeVerdict", () => {
     );
     expect(after.decision).toBe("too_close");
     expect(after.winnerProviderId).toBeNull();
+    // On the shared basis the per-100 rates are equal, so id decides.
+    expect(after.leaderProviderId).toBe("lean");
     const [lean, wordy] = after.rates;
     expect(lean!.totalWords).toBe(wordy!.totalWords);
     expect(lean!.flagsPer100Words).toBe(wordy!.flagsPer100Words);
@@ -262,7 +268,7 @@ describe("productionLead", () => {
     // 42769f26 the same provider reads 2.6 and 0.40. Saying so is the whole
     // job of this line.
     expect(caveat).toContain("word-by-word count on the caller's turns");
-    expect(caveat).toContain("not the per-100-words flag count the ranking uses");
+    expect(caveat).toContain("not the flagged-call count the verdict ranks by");
     // The two caveats R-3 must not drop.
     expect(caveat).toContain("ran live during the call");
     expect(caveat).toContain("never ranked with them");

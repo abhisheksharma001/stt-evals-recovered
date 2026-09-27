@@ -203,7 +203,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     expect(html.status).toBe(200);
     expect(html.text).toContain("25.0 of every 100 caller words");
     expect(html.text).toContain("sat at 0.0");
-    expect(html.text).toContain("not the per-100-words flag count the ranking uses");
+    expect(html.text).toContain("not the flagged-call count the verdict ranks by");
     expect(html.text.indexOf("25.0 of every 100 caller words")).toBeLessThan(html.text.indexOf('<p class="counts">'));
   });
 

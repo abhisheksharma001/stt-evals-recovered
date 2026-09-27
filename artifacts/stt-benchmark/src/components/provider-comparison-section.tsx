@@ -112,7 +112,7 @@ export function ComparisonBody({ data }: { data: CallComparison }) {
             </span>
           )}
           {data.context && (
-            <span className="ml-auto text-[10px] font-mono text-muted-foreground" title="Only this bulk's runs are shown; providers are ordered by the bulk's verdict rate (peer flags per 100 words, lower first).">
+            <span className="ml-auto text-[10px] font-mono text-muted-foreground" title="Only this bulk's runs are shown; providers are ordered by the bulk's verdict: fewest calls flagged first, then fewest disagreements per 100 words.">
               in bulk: {data.context.bulkName}
             </span>
           )}
