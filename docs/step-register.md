@@ -4305,8 +4305,9 @@ which ranks on flags per 100 words too and was written after this row.
 / calls scored), then `flagsPer100Words`, then id. The paired bootstrap is the same function
 fed per-call 0/1 values with a weight of one call, so the noise floor is in percentage points.
 Each rate gains `flaggedCalls` and `flaggedCallRate`; `flagsPer100Words` stays -- it is the
-tiebreak, and the Watch baseline (`artifacts/api-server/src/lib/watch-baseline.ts`) tracks it,
-so the Watch is untouched. Sentences read "flagged on 4 of 17 calls"; the shareable page's
+tiebreak and a column on the shareable page. *(Corrected in review: this row first said the
+Watch baseline reads it. It does not -- `artifacts/api-server/src/lib/watch-overview.ts`
+computes its own per-100 rate from production's word mismatches; only the names coincide.)* Sentences read "flagged on 4 of 17 calls"; the shareable page's
 table leads with "Calls flagged"; the legend, the landing example and the per-call comparison
 order follow.
 
@@ -4325,7 +4326,19 @@ on that bulk still rank Cartesia first in every group -- that is R-2b.
 failed exactly "ranks by the share of calls flagged, and breaks a tie on flags per 100 words".
 Restored with `git checkout -- lib/scoring/src/verdict.ts`.
 
-**Must not:** remove `flagsPer100Words` (Watch reads it); change the bootstrap function.
+**Must not:** remove `flagsPer100Words` (it is the tiebreak -- not, as first written here,
+because the Watch reads it); change the bootstrap function (its small-sample weakness is R-57).
+
+**Independent review, 2026-09-28 -- merge after fixes; fixed in this PR:** the production caveat
+still said "not the per-100-words flag count the ranking uses" on Results, Overview and the
+shareable page -- now "not the flagged-call count the verdict ranks by"; the per-call comparison
+tooltip described the old order; the false Watch claim above; `marginPct` and
+`noiseFloor.difference` units; the landing example could not happen (C would have been the
+runner-up -- C is now 47% worse). Tests that could not fail were given teeth: the shareable
+page's table is now tested with the two rates disagreeing (break test: the old sort fails it),
+and the verbosity case pins the leader again (on own words "wordy" leads the undecided pair, on
+the shared basis "lean" does -- R-1 still decides the tiebreak). After fixes: scoring 204,
+api-server unit 289, integration 48 / 260, UI 224. The reviewer's statistical finding is R-57.
 
 > **What was learned.** *A coarser number settles less.* Tests seeded as "fewer flags on
 > most calls" stopped settling, because a call with 1 flag and a call with 2 are now the same
@@ -4336,7 +4349,9 @@ Restored with `git checkout -- lib/scoring/src/verdict.ts`.
 **Status:** blocked 2026-09-28 — **not built: as written it cannot pass its own acceptance.**
 Measured on bulk `42769f26` (read-only, per assistant group: calls, calls flagged, flag
 badness, $/min): every assistant card holds **1 or 2 calls**, and in **11 of 13** groups every
-provider is flagged on the same number of calls (all or none). Whatever the flag quantity, the
+provider is at 0 % or 100 % of its calls flagged, and in 9 of 13 every provider has the
+same count *(corrected in review: this line first merged the two statements)*. Whatever the
+flag quantity, the
 tie goes to the next key -- cost -- and Cartesia, the cheapest at $0.0022/min, is rank 1 in
 12 of 13 cards under the 85/15 composite AND under a pure flagged-rate-then-badness-then-cost
 order. The banner reads the whole org's 17 calls. **The two disagree because of grain
@@ -7990,6 +8005,46 @@ dot. The amber state was not produced live -- that would mean stopping the real 
 **Prove it by breaking it:** done, after committing. Forcing `databaseDown` to false failed
 exactly the "unreachable" case. Restored with
 `git checkout -- artifacts/stt-benchmark/src/components/layout.tsx`.
+
+### R-57 — A winner needs enough calls that actually differ
+
+**Status:** not started. **Next after R-2a.** Spends nothing.
+**PR:** one.
+**Depends on:** R-2a.
+**Found:** independent review of R-2a, 2026-09-28; confirmed by hand the same day.
+**Files:** `lib/scoring/src/verdict.ts` (`computeVerdict`, beside `bootstrapNoiseFloor`),
+`lib/scoring/src/verdict.test.ts`.
+
+**Today:** the noise floor is a percentile bootstrap over the shared calls. With the
+flagged-call rate each call is 0 or 1, and the only calls that carry signal are the
+*discordant* ones (one provider flagged, the other not). At 6 shared calls with 3 discordant
+calls all going one way, a resample misses all three with probability (1/2)^6 = 1.6 % < 2.5 %,
+so the interval's lower end stays above zero and **a winner is named on 3 calls of evidence**
+-- an exact one-sided sign (McNemar) test gives p = 0.125. The reviewer's scripted check found
+the same at n = 5-6 (3 one-way calls) and n >= 10 (4). The weakness predates R-2a (flag counts
+had it too), but R-2a makes the discordant calls the whole signal.
+
+Second, older gap in the same place: `withinNoise` is `ci95[0] <= 0 && ci95[1] >= 0`, so an
+interval **entirely below zero** -- the leader by overall rate is clearly *worse* on the calls
+both scored -- reads as "outside noise" and names that leader the winner. It needs calls only
+one of the two scored, so it is rare, but it is a wrong answer, not a cautious one.
+
+**Change:** a winner is named only when (a) the paired interval excludes zero *on the positive
+side*, AND (b) an exact one-sided sign test on the discordant shared calls gives p < 0.05 --
+which needs at least 5 discordant calls all one way, 6 of 7, and so on. Otherwise
+`too_close`, with `callsToSettle` as today. An interval entirely below zero is `too_close`
+with the pair named as it is, never a winner.
+
+**Acceptance:** WHEN the top two differ on only 3 shared calls (3-0) THEN the verdict SHALL be
+`too_close`; WHEN they differ 6-0 THEN it MAY be `winner`; WHEN the paired interval lies
+entirely below zero THEN no winner SHALL be named.
+
+**Verify:** unit cases for 3-0, 5-0, 6-1 and the negative interval; the existing verdict cases
+unchanged; report how many live bulks' verdicts change (expected: none -- every live verdict
+read this session is already `too_close`).
+
+**Must not:** change what is counted (R-2a's quantity); remove the bootstrap (the interval is
+still what `callsToSettle` reads).
 
 ## Part A — Setup page
 
