@@ -13,9 +13,9 @@ Two separate things, each its own small step if wanted:
    `database` field beside the liveness `status` -- not a `select 1` that could fail the
    answer, which `routes/health.ts` deliberately never does. The screen half is R-56b
    (done 2026-09-28: the footer badge reads "database unreachable" in amber).
-2. `stt-evals-pg` has restart policy `no`. Worth: `docker update --restart unless-stopped
-   stt-evals-pg` -- a one-line, reversible change to the container, which is Abhishek's
-   call, not a PR.
+2. `stt-evals-pg` has restart policy `no`. **Done 2026-09-28:** Abhishek gave the go and
+   `docker update --restart unless-stopped stt-evals-pg` was run; `docker inspect` reads
+   `unless-stopped`, the container kept running, `/healthz` still `database: "ok"`.
 
 Also seen, and **not** a finding: the container log shows `watch_runs` / watch-bulk
 unique-key errors at 2026-09-27 04:09 UTC. `stt_evals` has 0 `watch_runs` and 0 watch
