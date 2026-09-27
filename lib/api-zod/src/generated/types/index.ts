@@ -127,6 +127,7 @@ export * from './headlineVerdictDecision';
 export * from './headlineVerdictNoiseFloor';
 export * from './headlineVerdictRatesItem';
 export * from './healthStatus';
+export * from './healthStatusDatabase';
 export * from './hybridFlagDetail';
 export * from './hybridFlagDetailCrossProviderDisagreement';
 export * from './hybridFlagDetailEntityMismatchesItem';
