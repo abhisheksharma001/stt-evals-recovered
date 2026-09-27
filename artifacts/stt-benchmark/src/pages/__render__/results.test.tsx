@@ -18,6 +18,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import type {
   AgentMark,
   AppSettings,
+  AssistantSignals,
   BenchmarkCall,
   Bulk,
   BulkDetail,
@@ -644,6 +645,61 @@ describe("Results", () => {
     expect(document.querySelectorAll("[data-in-pair]").length).toBe(0)
     expect(api.unmatched.filter((u) => u.includes("/verdicts"))).toEqual([])
     api.restore()
+  })
+
+  // S-AB3b. The pair is Deepgram Nova-3 vs Gladia Solaria (the verdict's top
+  // two). The page-level read is the whole bulk's -- no assistantId -- and the
+  // line shows both counts and the calls judged, or nothing at all.
+  describe("how the AI reader picked between the pair (S-AB3b)", () => {
+    const signals = (picks: AssistantSignals["judge"]["picks"]): AssistantSignals => ({
+      bulkId: "bulk-1",
+      bulksCovered: 1,
+      assistantId: null,
+      callsInScope: 12,
+      judge: { checked: 12, judged: 9, high: 5, medium: 2, low: 2, notRecorded: 0, clean: 3, errored: 0, picks },
+      hardCases: { calls: 0, tags: [], examples: [] },
+    })
+    const routesWith = (picks: AssistantSignals["judge"]["picks"]): StubRoutes => ({
+      ...baseRoutes,
+      "GET /api/benchmark/assistant-signals": byQuery((q) =>
+        q.get("assistantId") === null ? signals(picks) : signals([]),
+      ),
+    })
+
+    it("counts picks for A", async () => {
+      const api = stubApi(routesWith([{ providerId: "deepgram-nova-3", calls: 4 }, { providerId: "elevenlabs-scribe", calls: 5 }]))
+      renderPage(<Results />, { path: "/results" })
+      const line = await screen.findByTestId("pair-judge-picks")
+      expect(line.textContent).toContain("Of the 9 calls the AI reader judged in this bulk")
+      expect(line.textContent).toContain("Deepgram Nova-3's transcript on 4")
+      expect(line.textContent).toContain("Gladia Solaria's on 0")
+      expect(line.textContent).not.toMatch(/winner|wins|least disagreement/i)
+      // The page-level read is the bulk's own: bulkId and no assistantId.
+      expect(api.calls.some((c) => c.startsWith("GET /api/benchmark/assistant-signals?bulkId=bulk-1") && !c.includes("assistantId"))).toBe(true)
+      api.restore()
+    })
+
+    it("counts picks for B", async () => {
+      const api = stubApi(routesWith([{ providerId: "gladia-solaria", calls: 2 }]))
+      renderPage(<Results />, { path: "/results" })
+      const line = await screen.findByTestId("pair-judge-picks")
+      expect(line.textContent).toContain("Deepgram Nova-3's transcript on 0")
+      expect(line.textContent).toContain("Gladia Solaria's on 2")
+      fireEvent.click(screen.getByText("All-time combined"))
+      await waitFor(() => expect(screen.queryByTestId("pair-judge-picks")).toBeNull())
+      api.restore()
+    })
+
+    it("says nothing when the judge picked neither", async () => {
+      const api = stubApi(routesWith([{ providerId: "elevenlabs-scribe", calls: 5 }]))
+      renderPage(<Results />, { path: "/results" })
+      await screen.findAllByTestId("pair-verdict")
+      await waitFor(() => expect(api.calls.some((c) => c.startsWith("GET /api/benchmark/assistant-signals?bulkId=bulk-1"))).toBe(true))
+      // Let the answer land before asserting the absence.
+      await new Promise((r) => setTimeout(r, 50))
+      expect(screen.queryByTestId("pair-judge-picks")).toBeNull()
+      api.restore()
+    })
   })
 
   it("the org banner carries the evidence count once, and the card does not repeat it", async () => {

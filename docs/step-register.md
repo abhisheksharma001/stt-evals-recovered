@@ -8791,7 +8791,7 @@ Restored with `git checkout -- artifacts/api-server/src/lib/assistant-signals-ag
 
 ### S-AB3b — Results says how the judge picked between the pair
 
-**Status:** not started. Next. Spends nothing.
+**Status:** done 2026-09-27. Spent nothing. Closes the head-to-head feature (S-AB1 … S-AB3b).
 **PR:** one.
 **Depends on:** S-AB3a, S-AB2.
 **Files:** `artifacts/stt-benchmark/src/pages/Rankings.tsx`,
@@ -8815,6 +8815,23 @@ neither.
 
 **Must not:** call `GET /benchmark/agent/scans`; present a pick as a winner; render in
 All-time.
+
+**As built.** One `useGetAssistantSignals({ bulkId })` read on the page, enabled only while a
+pair is set; the line sits under the pickers and reads "Of the N calls the AI reader judged in
+this bulk, it picked A's transcript on x and B's on y. A pick is one reader's preference on a
+disputed call, not a verdict."
+
+A pass, 2026-09-28: typecheck clean in all four projects; `results.test.tsx` **42** (three
+new: picks on A, picks on B plus absent All-time, picks on neither); UI suite **222**. Live on
+the dev server against API `1e4fcd6cd718`: bulk "2026-09-09" (`3f134973`) reads "Of the 32
+calls ... AssemblyAI's transcript on 8 and ElevenLabs's on 10", matching
+`judge.picks`; the Pipecat 1k bulk shows no line, correctly -- the judge never runs on
+public clips (W-12a1).
+
+**Prove it by breaking it:** done, after committing. Dropping the "x + y > 0" gate failed
+exactly "says nothing when the judge picked neither" -- which also proves that case waits
+for the answer rather than passing on timing. Restored with
+`git checkout -- artifacts/stt-benchmark/src/pages/Rankings.tsx`.
 
 ## Part W — Watch: a daily sample of real calls, per org, per agent (`docs/PRD-v8-watch.md`)
 

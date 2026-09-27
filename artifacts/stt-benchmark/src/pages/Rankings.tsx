@@ -18,6 +18,8 @@ import {
   useGetMethodCheck,
   useGetBulkVerdicts,
   getGetBulkVerdictsQueryKey,
+  useGetAssistantSignals,
+  getGetAssistantSignalsQueryKey,
 } from "@workspace/api-client-react"
 import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
@@ -701,6 +703,20 @@ export default function Rankings() {
     return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((x, y) => x.name.localeCompare(y.name))
   }, [rankings])
   const pairIds = pairParam && livePair?.a && livePair.b ? [livePair.a, livePair.b] : null
+  // S-AB3b: how the AI judge picked between the pair, over the whole bulk --
+  // a count-only read (S-AB3a), never the scans themselves.
+  const pairSignalsParams = pairParam && selectedBulkId ? { bulkId: selectedBulkId } : undefined
+  const { data: pairSignals } = useGetAssistantSignals(pairSignalsParams ?? {}, {
+    query: { queryKey: getGetAssistantSignalsQueryKey(pairSignalsParams), enabled: !!pairSignalsParams },
+  })
+  const pairPicks = (() => {
+    if (!pairSignalsParams || !pairSignals || !livePair?.a || !livePair.b) return null
+    const count = (id: string) => pairSignals.judge.picks.find((p) => p.providerId === id)?.calls ?? 0
+    const a = count(livePair.a)
+    const b = count(livePair.b)
+    return a + b > 0 ? { a, b, judged: pairSignals.judge.judged } : null
+  })()
+  const nameOf = (id: string | null | undefined) => bulkProviderOptions.find((p) => p.id === id)?.name ?? id ?? "?"
 
   const [sortKey, setSortKey] = React.useState<SortKey>("rank")
   const [asc, setAsc] = React.useState<boolean>(SORT_ASC_DEFAULT.rank)
@@ -901,6 +917,14 @@ export default function Rankings() {
           </div>
         )}
       </div>
+
+      {viewMode === "bulk" && pairPicks && (
+        <p className="-mt-4 text-xs text-muted-foreground" data-testid="pair-judge-picks">
+          Of the {pairPicks.judged} call{pairPicks.judged === 1 ? "" : "s"} the AI reader judged in this bulk, it
+          picked {nameOf(livePair?.a)}'s transcript on {pairPicks.a} and {nameOf(livePair?.b)}'s on {pairPicks.b}. A
+          pick is one reader's preference on a disputed call, not a verdict.
+        </p>
+      )}
 
       {/* T-21: the answer first. */}
       {viewMode === "bulk" && selectedBulkId && <BulkVerdictBanner bulkId={selectedBulkId} groupLabels={{}} />}
