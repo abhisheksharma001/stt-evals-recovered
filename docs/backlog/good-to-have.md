@@ -11,7 +11,8 @@ rows, the same total as before).
 Two separate things, each its own small step if wanted:
 1. `/healthz` reports "ok" with the database down. **Fixed in R-56 (2026-09-28)** as a
    `database` field beside the liveness `status` -- not a `select 1` that could fail the
-   answer, which `routes/health.ts` deliberately never does. The screen half is R-56b.
+   answer, which `routes/health.ts` deliberately never does. The screen half is R-56b
+   (done 2026-09-28: the footer badge reads "database unreachable" in amber).
 2. `stt-evals-pg` has restart policy `no`. Worth: `docker update --restart unless-stopped
    stt-evals-pg` -- a one-line, reversible change to the container, which is Abhishek's
    call, not a PR.

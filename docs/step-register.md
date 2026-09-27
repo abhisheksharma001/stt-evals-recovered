@@ -7851,7 +7851,7 @@ than the cap; report anything about the database beyond the one word (no host, n
 
 ### R-56b — The API dot on screen says when the database is down
 
-**Status:** not started. Next. Spends nothing.
+**Status:** done 2026-09-28. Spent nothing.
 **PR:** one.
 **Depends on:** R-56 deployed.
 **Files:** `artifacts/stt-benchmark/src/components/layout.tsx` (the "API <sha>" footer dot),
@@ -7872,6 +7872,23 @@ footer SHALL read as today.
 
 **Must not:** block the page or hide other content when the database is down; poll faster
 than the footer already does.
+
+**As built.** `BuildBadge` in `artifacts/stt-benchmark/src/components/layout.tsx` reuses the
+badge's existing amber tone; the text reads "database unreachable" and the title opens with the
+full sentence. A UI/API build mismatch (red) still takes precedence. The poll comment is
+corrected. Overview's own API figure (`Dashboard.tsx`, `ThisMonth`) was checked and left: it
+renders only after the dashboard read succeeds, which needs the database, so with the database
+down Overview already fails loudly.
+
+A pass, 2026-09-28: typecheck clean in all four projects; new
+`artifacts/stt-benchmark/src/pages/__render__/layout.test.tsx` (2: ok -> the commit, no amber;
+unreachable -> "database unreachable", amber, the sentence in the title); UI suite **224**.
+Live on the dev server against API `db53a231f237`: the footer reads the commit with a green
+dot. The amber state was not produced live -- that would mean stopping the real database.
+
+**Prove it by breaking it:** done, after committing. Forcing `databaseDown` to false failed
+exactly the "unreachable" case. Restored with
+`git checkout -- artifacts/stt-benchmark/src/components/layout.tsx`.
 
 ## Part A — Setup page
 
