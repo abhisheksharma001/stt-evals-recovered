@@ -1,3 +1,25 @@
+## Found 2026-09-28 (S-AB3a deploy): the database was off and `/healthz` said "ok"
+
+Seen: the `stt-evals-pg` container received a fast shutdown request at 2026-09-27 17:30:33
+UTC and exited 0 (a `docker stop`, Docker Desktop quitting, or a machine restart -- not a
+crash; `docker inspect`: `OOMKilled=false`). Its restart policy is `no`, so it stayed down.
+For those hours the API process kept running and `GET /api/healthz` kept answering
+`{"status":"ok", ...}` -- it never touches the database -- while every page reading data
+would have failed. Started again 2026-09-28 with Abhishek's go; nothing lost (6,988 result
+rows, the same total as before).
+
+Two separate things, each its own small step if wanted:
+1. `/healthz` reports "ok" with the database down. Worth: a cheap `select 1` in the health
+   answer (with its own field, so "API up, DB down" is visible, not a generic failure).
+2. `stt-evals-pg` has restart policy `no`. Worth: `docker update --restart unless-stopped
+   stt-evals-pg` -- a one-line, reversible change to the container, which is Abhishek's
+   call, not a PR.
+
+Also seen, and **not** a finding: the container log shows `watch_runs` / watch-bulk
+unique-key errors at 2026-09-27 04:09 UTC. `stt_evals` has 0 `watch_runs` and 0 watch
+bulks; the log is container-wide and those came from the integration suite's
+`stt_evals_test` database (`watch-tick.int.test.ts`).
+
 ## Found 2026-09-26 (R-25b): one `ok` cell has no score row
 
 Expected: every `ok` cell has a `benchmark_scores` row -- R-26 measured 0 exceptions of 769
