@@ -4250,8 +4250,8 @@ column; change the composite weights.
 
 ### R-2 — One quantity ranks both surfaces
 
-**Status:** unblocked 2026-09-28 — Abhishek chose the **flagged-call rate** (PRD v7 open
-question 1). The Change paragraph below stands as written. (Was: `blocked` on that answer —
+**Status:** split 2026-09-28 into R-2a (done), R-2b, R-2c -- see below. Abhishek chose the
+**flagged-call rate** (PRD v7 open question 1). The Change paragraph below stands as written. (Was: `blocked` on that answer —
 flagged-call rate, recommended, or flags per 100 words on R-1's shared denominator.) The step below is
 written for the recommended answer; if he picks the other, the Change paragraph swaps
 `1 − cleanCallRate` for the R-1 rate and the rest stands.
@@ -4285,6 +4285,75 @@ updated to the new quantity with the discriminating cases kept; the rankings int
 case asserts card and banner agree.
 **Must not:** change the 85 / 15 weights; drop `flagBadness` (severity still carries
 information); leave M-18 on the old quantity.
+
+**Split 2026-09-28** under the "three files in three ways is three steps" rule -- each half
+compiles and ships alone: **R-2a** the verdict banner, **R-2b** the cards' composite (and a
+free recompute of stored rankings), **R-2c** M-18's proxy agreement and W-12b's method check,
+which ranks on flags per 100 words too and was written after this row.
+
+### R-2a — The verdict ranks on the flagged-call rate
+
+**Status:** done 2026-09-28. Spent nothing.
+**PR:** one.
+**Files:** `lib/scoring/src/verdict.ts`, `lib/scoring/src/verdict.test.ts`,
+`lib/api-spec/openapi.yaml` and the generated clients,
+`artifacts/api-server/src/lib/verdict-artefact.ts`, `artifacts/api-server/src/lib/call-comparison.ts`,
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx`,
+`artifacts/stt-benchmark/src/pages/Landing.tsx`, and the tests that build a rate by hand.
+
+**Change, as built:** `computeVerdict` orders by `flaggedCallRate` (calls with >= 1 peer flag
+/ calls scored), then `flagsPer100Words`, then id. The paired bootstrap is the same function
+fed per-call 0/1 values with a weight of one call, so the noise floor is in percentage points.
+Each rate gains `flaggedCalls` and `flaggedCallRate`; `flagsPer100Words` stays -- it is the
+tiebreak, and the Watch baseline (`artifacts/api-server/src/lib/watch-baseline.ts`) tracks it,
+so the Watch is untouched. Sentences read "flagged on 4 of 17 calls"; the shareable page's
+table leads with "Calls flagged"; the legend, the landing example and the per-call comparison
+order follow.
+
+**Verify, 2026-09-28:** typecheck clean in all four projects; scoring **204** (six verdict
+cases re-seeded on per-call 0/1 flags with their intent kept, one new: "few" flagged on 3 of
+24 calls with 6 flags each leads "many" flagged on 12 with one each, though it is worse per 100
+words; a tie on calls is broken by per 100 words); api-server unit 288; integration **48 /
+260** (the settled-verdict seed re-made: under the new quantity "worse on every call" means
+the leader flagged on none, the runner-up on all six; the rates' `[flaggedCalls, calls]` now
+asserted); UI 224. Read-only preview on bulk `42769f26` with the branch code: "Too close to
+call: AssemblyAI (flagged on 4 of 17 calls) and ElevenLabs (flagged on 4 of 17 calls)" -- the
+same pair as before, in countable words; Cartesia and Nova-3 5 of 17, OpenAI 8 of 17. The cards
+on that bulk still rank Cartesia first in every group -- that is R-2b.
+
+**Prove it by breaking it:** done, after committing. Sorting on `flagsPer100Words` first again
+failed exactly "ranks by the share of calls flagged, and breaks a tie on flags per 100 words".
+Restored with `git checkout -- lib/scoring/src/verdict.ts`.
+
+**Must not:** remove `flagsPer100Words` (Watch reads it); change the bootstrap function.
+
+> **What was learned.** *A coarser number settles less.* Tests seeded as "fewer flags on
+> most calls" stopped settling, because a call with 1 flag and a call with 2 are now the same
+> call. The re-seeds say what "clearly better" means for this quantity: flagged on fewer calls.
+
+### R-2b — The cards' composite ranks on the same flagged-call rate
+
+**Status:** not started. Next. Spends nothing.
+**PR:** one.
+**Depends on:** R-2a.
+**Files:** as R-2's list: `lib/scoring/src/hybrid.ts` (`hybridCompositeScore`'s flag
+component), `artifacts/api-server/src/lib/run-executor.ts` (`providerAggregates`, the
+composite input, the `recommendation` sentence), `lib/scoring/src/hybrid.test.ts`,
+`artifacts/api-server/src/routes/__integration__/rankings.int.test.ts`; then run
+`artifacts/api-server/src/recompute-rankings.ts --apply` (free) so stored rows follow.
+**Change / Acceptance / Must not:** R-2's, for the cards. On bulk `42769f26` the banner's leader
+and every card's rank 1 SHALL agree.
+
+### R-2c — Proxy agreement and the method check read the same quantity
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** R-2b.
+**Files:** `artifacts/api-server/src/lib/proxy-agreement-aggregate.ts` and its test,
+`artifacts/api-server/src/lib/method-check-aggregate.ts` and its test.
+**Change:** both rank providers by the flagged-call rate (per 100 words as tiebreak) instead of
+flags per 100 words, so what they certify is the order the page shows. Report the method
+check's figure before and after.
 
 ---
 
