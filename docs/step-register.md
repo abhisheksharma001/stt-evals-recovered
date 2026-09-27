@@ -7806,6 +7806,70 @@ writing nothing was shown directly against real data.
 > clips every provider finished, so one unscored AssemblyAI cell quietly removed a clip
 > from all seven providers' figures, not just AssemblyAI's.
 
+### R-56 — `/healthz` says whether the database answers
+
+**Status:** done 2026-09-28. Spent nothing.
+**PR:** one.
+**Depends on:** nothing.
+**Decision:** Abhishek, 2026-09-28 -- a `database` field on `/healthz`, not a separate
+`/readyz`, and not "skip it".
+**Files:** new file `artifacts/api-server/src/lib/db-probe.ts`, new file
+`artifacts/api-server/src/lib/db-probe.test.ts`, `artifacts/api-server/src/routes/health.ts`,
+new file `artifacts/api-server/src/routes/__integration__/health.int.test.ts`,
+`lib/api-spec/openapi.yaml` and the generated clients, two typed test fixtures.
+
+**Today:** `/healthz` is deliberately free of database work -- a liveness probe that must
+answer when the database is down. So on 2026-09-27/28 the Postgres container was stopped for
+hours and `/healthz` kept answering `"status":"ok"` (bug log, 2026-09-28).
+
+**Change:** keep it a liveness probe -- `status` stays `"ok"` -- and add
+`database: "ok" | "unreachable"`: `probeDatabase` races `select 1` against a one-second
+cap and never throws, so the endpoint still answers. The deploy script and the daily import
+only check that `/healthz` answers, so neither changes behaviour.
+
+**Acceptance:** WHEN the database answers `select 1` THEN `/healthz` SHALL report
+`database: "ok"`; AND WHEN the query fails or takes longer than the cap THEN it SHALL report
+`"unreachable"` AND still answer 200 with `status: "ok"`.
+
+**Verify, 2026-09-28:** typecheck clean in all four projects; api-server unit **288** (three
+new: answers, refused, hangs past a 50 ms cap); integration **48 files / 260** (new
+`health.int.test.ts`); UI 222; `check:api-routes`, `check:response-edge` clean. With a real
+`pg` pool: a closed port read **unreachable in 2 ms**, the running test database **ok in
+11 ms**.
+
+**Prove it by breaking it:** done, after committing. Mapping a failed query to `"ok"` failed
+exactly "is unreachable when the query fails, and does not throw". Restored with
+`git checkout -- artifacts/api-server/src/lib/db-probe.ts`.
+
+**Must not:** make `/healthz` fail or answer non-200 because of the database; wait longer
+than the cap; report anything about the database beyond the one word (no host, no error text
+-- the endpoint is unauthenticated).
+
+> **What was learned.** *Read the comment before the fix.* The bug log's first suggestion
+> ("a `select 1` in the health answer") would have quietly undone a deliberate liveness
+> design. The code said why it was DB-free; the fix keeps that and adds a word beside it.
+
+### R-56b — The API dot on screen says when the database is down
+
+**Status:** not started. Next. Spends nothing.
+**PR:** one.
+**Depends on:** R-56 deployed.
+**Files:** `artifacts/stt-benchmark/src/components/layout.tsx` (the "API <sha>" footer dot),
+its render test.
+
+**Today:** the sidebar footer shows a green dot and the API's commit whenever `/healthz`
+answers -- including while the database is down.
+
+**Change:** when `/healthz` reports `database: "unreachable"`, the dot turns amber and the
+footer says "database unreachable". Nothing else on the page changes.
+
+**Acceptance:** WHEN `/healthz` answers with `database: "unreachable"` THEN the footer SHALL
+show an amber dot and the words "database unreachable"; AND WHEN it answers `"ok"` THEN the
+footer SHALL read as today.
+
+**Must not:** block the page or hide other content when the database is down; poll faster
+than the footer already does.
+
 ## Part A — Setup page
 
 ### S-1 — Group Deepgram's domain variants under their base engine

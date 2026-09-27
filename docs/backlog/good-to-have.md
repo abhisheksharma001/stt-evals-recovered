@@ -9,8 +9,9 @@ would have failed. Started again 2026-09-28 with Abhishek's go; nothing lost (6,
 rows, the same total as before).
 
 Two separate things, each its own small step if wanted:
-1. `/healthz` reports "ok" with the database down. Worth: a cheap `select 1` in the health
-   answer (with its own field, so "API up, DB down" is visible, not a generic failure).
+1. `/healthz` reports "ok" with the database down. **Fixed in R-56 (2026-09-28)** as a
+   `database` field beside the liveness `status` -- not a `select 1` that could fail the
+   answer, which `routes/health.ts` deliberately never does. The screen half is R-56b.
 2. `stt-evals-pg` has restart policy `no`. Worth: `docker update --restart unless-stopped
    stt-evals-pg` -- a one-line, reversible change to the container, which is Abhishek's
    call, not a PR.
