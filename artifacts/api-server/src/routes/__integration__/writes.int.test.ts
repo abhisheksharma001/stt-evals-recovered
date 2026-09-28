@@ -15,7 +15,7 @@ import { Fixtures } from "./fixtures";
 const fx = new Fixtures();
 
 // The settings row is a shared singleton, so this suite puts it back.
-let originalSettings: { activeProviderId: string | null; agentModel: string | null } | null = null;
+let originalSettings: { activeProviderId: string | null; agentModel: string | null; nightlyImportCap: number } | null = null;
 
 const auditFor = async (entityType: string, entityId: string) => {
   const res = await request(server).get("/api/benchmark/audit-log").query({ entityType, entityId });
@@ -32,7 +32,11 @@ afterAll(async () => {
   if (originalSettings) {
     await db
       .update(appSettingsTable)
-      .set({ activeProviderId: originalSettings.activeProviderId, agentModel: originalSettings.agentModel })
+      .set({
+        activeProviderId: originalSettings.activeProviderId,
+        agentModel: originalSettings.agentModel,
+        nightlyImportCap: originalSettings.nightlyImportCap,
+      })
       .where(eq(appSettingsTable.id, APP_SETTINGS_ID));
   }
   await fx.cleanup();
@@ -83,6 +87,35 @@ describe("PATCH /api/benchmark/calls/:callId", () => {
 });
 
 describe("PATCH /api/benchmark/settings", () => {
+  it("M-17a: sets the nightly import cap alone, audits it, and refuses what the job could not use", async () => {
+    // Its own actor, so the audit count in the next case stays its own.
+    const actor = `${fx.actor}-cap`;
+    const set = await request(server)
+      .patch("/api/benchmark/settings")
+      .set("x-actor", actor)
+      .send({ nightlyImportCap: 40 });
+    expect(set.status).toBe(200);
+    expect(set.body.nightlyImportCap).toBe(40);
+    expect((await request(server).get("/api/benchmark/settings")).body.nightlyImportCap).toBe(40);
+
+    const rows = (await auditFor("app_settings", APP_SETTINGS_ID)).filter((r) => r.actorLabel === actor);
+    expect(rows).toHaveLength(1);
+    expect((rows[0]!.afterState as { nightlyImportCap: number }).nightlyImportCap).toBe(40);
+
+    // Negative, fractional, and past the preview endpoint's 500: a 400, and
+    // the stored cap does not move.
+    for (const nightlyImportCap of [-1, 1.5, 501, "40"]) {
+      const bad = await request(server).patch("/api/benchmark/settings").send({ nightlyImportCap });
+      expect(bad.status, JSON.stringify(nightlyImportCap)).toBe(400);
+    }
+    expect((await request(server).get("/api/benchmark/settings")).body.nightlyImportCap).toBe(40);
+
+    // 0 is "off", and a real value, not "unset".
+    const off = await request(server).patch("/api/benchmark/settings").set("x-actor", actor).send({ nightlyImportCap: 0 });
+    expect(off.status).toBe(200);
+    expect(off.body.nightlyImportCap).toBe(0);
+  });
+
   it("sets a known provider, clears with null, and audits both", async () => {
     const provider = await fx.provider();
 
@@ -99,7 +132,7 @@ describe("PATCH /api/benchmark/settings", () => {
       .set("x-actor", fx.actor)
       .send({ activeProviderId: null, agentModel: "" });
     expect(cleared.status).toBe(200);
-    expect(cleared.body).toEqual({ activeProviderId: null, agentModel: null });
+    expect(cleared.body).toEqual({ activeProviderId: null, agentModel: null, nightlyImportCap: cleared.body.nightlyImportCap });
 
     const rows = (await auditFor("app_settings", APP_SETTINGS_ID)).filter((r) => r.actorLabel === fx.actor);
     expect(rows).toHaveLength(2);

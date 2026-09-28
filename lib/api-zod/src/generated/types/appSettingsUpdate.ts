@@ -11,4 +11,9 @@ export interface AppSettingsUpdate {
   activeProviderId?: string | null;
   /** @nullable */
   agentModel?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 500
+     */
+  nightlyImportCap?: number;
 }
