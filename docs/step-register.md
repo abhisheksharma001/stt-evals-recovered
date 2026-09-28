@@ -7987,9 +7987,8 @@ readable without interaction.
 ### S-3 — A disable action in the catalog list
 
 **PR:** one.
-**Status:** unblocked 2026-09-28 — Abhishek confirmed the reading: a `disable` action beside
-each enabled model **in the catalog list**. S-4 (the real row id) is done, so the dependency
-below is met.
+**Status:** done 2026-09-28. Abhishek confirmed the reading the same day: a `disable` action
+beside each enabled model **in the catalog list**. S-4 (the real row id) was already done.
 **Depends on:** nothing.
 **Files:** `artifacts/stt-benchmark/src/pages/Providers.tsx`
 **Today:** in the catalog list an unenabled model shows a clickable `enable`; an enabled
@@ -8007,6 +8006,39 @@ read `disabled` on the card below and its historical results SHALL remain on Res
 **The question for Abhishek:** "give me open for disable as well" is read here as *an
 option to disable from the catalog list*. If it meant something else — a detail view on
 the card, or something on another page — say which screen.
+
+**As built.** `EnableCell` in `artifacts/stt-benchmark/src/pages/Providers.tsx`: a ready row
+reads "enabled · disable"; `disable` sends `{ disabled: true }` to the row in `providerId`
+(S-4's real id). Found while building: `enabled` in the catalog means *a row exists*, so a row
+switched off on its card still read "enabled" in the list -- it now reads "disabled". A row
+with no key (`not_configured`) shows no `disable`, the card's own rule. No re-enable in the
+list (the card does that); not asked for.
+
+A pass, 2026-09-28: typecheck clean in all four projects; `setup.test.tsx` 12 (one new: the
+PATCH goes to the real row id for a model whose catalog name differs; a switched-off row
+reads "disabled" with no button; a keyless row has no button); UI **225**. **Live** on the dev
+server against API `cb8587d5d269`: `nova-2` and `solaria-1` (already off) read "disabled";
+clicking `disable` on `nova` set `deepgram-nova` to `disabled` / `manually_disabled = t` and
+the row re-read "disabled"; it was then switched back on with `PATCH {disabled:false}`
+(actor `claude-s3-live-check`) and reads `ready` again.
+
+**Prove it by breaking it:** done, after committing. Removing the "switched off reads
+disabled" branch failed exactly the new case. Restored with
+`git checkout -- artifacts/stt-benchmark/src/pages/Providers.tsx`.
+
+**Independent review, 2026-09-28 (merge after fixes; fixed in the same PR):** the card's own
+toggle now also invalidates the catalog list (it showed row state since S-3 and went stale for
+up to 5 minutes); "N enabled here" no longer counts a switched-off row (break test: reverting
+it fails the new case); a new case covers the real Deepgram layout, where a base model's
+`disable` sits inside a group `<summary>`. **Its "group stays closed" assertion cannot fail in
+jsdom** -- jsdom never toggles `<details>` on a summary click, and removing `preventDefault`
+still passed -- so that behaviour was checked in a real browser instead: the group stayed
+closed. That browser check was meant to abort the PATCH and did not: `deepgram-nova` was
+disabled for 11 s (22:43:00-22:43:11 UTC) and restored as `claude-s3-review-restore`; no run
+was active. Both live disable rows (22:26:18, 22:43:00) are attributed "Abhishek" because the UI
+stamps the curator name; both were Claude's browser automation. Left as later steps: the
+button nested in `<summary>` (axe nested-interactive, as `enable` already was) and a possible
+duplicate PATCH on a double click.
 
 ---
 

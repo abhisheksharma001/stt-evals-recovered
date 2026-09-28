@@ -15,7 +15,7 @@
 //     An old catalog has to say its age (T-107/T-119), and a vendor whose
 //     list did not answer has to say that rather than show nothing.
 import { afterEach, describe, expect, it } from "vitest"
-import { cleanup, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import type { AgentModelList, AppSettings, Provider, ProviderModelList } from "@workspace/api-client-react"
 import Setup from "../Setup"
 import { installBrowserShims, renderPage, reply, stubApi, type StubRoutes } from "./harness"
@@ -125,11 +125,101 @@ const baseRoutes: StubRoutes = {
 }
 
 describe("Setup", () => {
+  // S-3: the catalog list can switch a provider off, not only create one. The
+  // PATCH goes to the row that is actually enabled -- here deliberately NOT the
+  // id the catalog would have synthesised for "nova-3-general" -- and a row
+  // already switched off reads "disabled" instead of "enabled".
+  it("disables a ready model from the catalog list, and reads a switched-off one as disabled", async () => {
+    const withStates: ProviderModelList = {
+      ...models,
+      vendors: models.vendors.map((v) =>
+        v.vendor !== "deepgram"
+          ? v
+          : {
+              ...v,
+              models: [
+                { ...v.models[0]!, apiModel: "nova-3-general", providerId: "deepgram-nova-3", enabled: true, rowStatus: "ready" },
+                { apiModel: "nova-2", label: "Nova-2", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-2", enabled: true, rowStatus: "disabled" },
+                { apiModel: "nova-2-meeting", label: "Nova-2 meeting", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-2-meeting", enabled: true, rowStatus: "not_configured" },
+              ],
+            },
+      ),
+    }
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/providers/models": withStates,
+      "PATCH /api/benchmark/providers/deepgram-nova-3": providers[0],
+    })
+    renderPage(<Setup />, { path: "/setup" })
+
+    // The newest model is also named in the "Newest" line above the list, so
+    // each row is picked as the list entry (<li>, or a group's <summary>).
+    const rowOf = async (name: string) => {
+      const hits = await screen.findAllByText(name)
+      return hits.map((h) => h.closest("li,summary")).find(Boolean) as HTMLElement
+    }
+    const readyRow = await rowOf("nova-3-general")
+    const offRow = await rowOf("nova-2")
+    const keylessRow = await rowOf("nova-2-meeting")
+    expect(within(offRow).getByText("disabled")).toBeTruthy()
+    expect(within(offRow).queryByText("disable")).toBeNull()
+    expect(within(keylessRow).queryByText("disable")).toBeNull()
+
+    fireEvent.click(within(readyRow).getByText("disable"))
+    await waitFor(() => expect(api.bodyFor("PATCH /api/benchmark/providers/deepgram-nova-3")).toEqual({ disabled: true }))
+    expect(api.calls.filter((c) => c.startsWith("PATCH")).length).toBe(1)
+    api.restore()
+  })
+
   // S-2: the vendor block stacks the vendor's catalogue (a menu, costs
   // nothing) on top of the provider rows (what actually runs), and a person
   // seeing it for the first time cannot tell them apart. Both captions have
   // to be readable with no hovering, clicking or expanding -- note the model
   // list itself is a <details> and is collapsed on first render.
+  // S-3 review: every live Deepgram row is a group BASE (label `<name>-general`
+  // with domain variants), so its `disable` sits inside the group's <summary>.
+  // The click must send the PATCH without toggling the group open, and the
+  // group's "enabled here" count must not count a switched-off row.
+  it("disables a base model from inside its group header without opening the group", async () => {
+    const grouped: ProviderModelList = {
+      ...models,
+      vendors: models.vendors.map((v) =>
+        v.vendor !== "deepgram"
+          ? v
+          : {
+              ...v,
+              models: [
+                { ...v.models[0]!, apiModel: "nova-3", label: "nova-3-general", providerId: "deepgram-nova-3", enabled: true, rowStatus: "ready" },
+                { apiModel: "nova-3-medical", label: "nova-3-medical", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-3-medical", enabled: false, rowStatus: null },
+                { apiModel: "nova-2", label: "nova-2-general", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-2", enabled: true, rowStatus: "disabled" },
+                { apiModel: "nova-2-meeting", label: "nova-2-meeting", latest: false, source: "live", verifiedAt: daysAgo(0), note: null, providerId: "deepgram-nova-2-meeting", enabled: false, rowStatus: null },
+              ],
+            },
+      ),
+    }
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/providers/models": grouped,
+      "PATCH /api/benchmark/providers/deepgram-nova-3": providers[0],
+    })
+    renderPage(<Setup />, { path: "/setup" })
+
+    // Two rows exist, one switched off: the count says 1, not 2.
+    expect(await screen.findByText(/4 models offered · 1 enabled here/)).toBeTruthy()
+    const summaries = [...document.querySelectorAll("details details > summary, details summary")].filter((el) =>
+      el.textContent?.includes("nova-3"),
+    )
+    const header = summaries.find((el) => el.querySelector("button")) as HTMLElement
+    expect(header).toBeTruthy()
+    const group = header.closest("details") as HTMLDetailsElement
+    expect(group.open).toBe(false)
+
+    fireEvent.click(within(header).getByText("disable"))
+    await waitFor(() => expect(api.bodyFor("PATCH /api/benchmark/providers/deepgram-nova-3")).toEqual({ disabled: true }))
+    expect(group.open).toBe(false)
+    api.restore()
+  })
+
   it("says what the catalogue is and what the cards are, without anything being opened", async () => {
     const api = stubApi(baseRoutes)
     renderPage(<Setup />, { path: "/setup" })

@@ -165,8 +165,36 @@ export function groupByBaseEngine(models: ProviderModelOption[]): ModelGroup[] {
   return groups
 }
 
-function EnableCell({ model, pending, onEnable }: { model: ProviderModelOption; pending: boolean; onEnable: (apiModel: string) => void }) {
-  if (model.enabled) return <span className="ml-auto text-success">enabled</span>
+type CatalogActions = { pending: boolean; onEnable: (apiModel: string) => void; onDisable: (providerId: string) => void }
+
+function EnableCell({ model, pending, onEnable, onDisable }: { model: ProviderModelOption } & CatalogActions) {
+  // S-3: `enabled` means a provider row exists; `rowStatus` is that row's own
+  // state. A row switched off still exists, so it must not read "enabled".
+  if (model.enabled && model.rowStatus === "disabled") return <span className="ml-auto text-muted-foreground">disabled</span>
+  if (model.enabled) {
+    // Only a ready row can be switched off here -- the same rule as the card's
+    // toggle below (a row with no key has nothing to disable yet). The id is
+    // the row that is actually enabled (S-4), not the synthesised one.
+    if (model.rowStatus !== "ready") return <span className="ml-auto text-success">enabled</span>
+    return (
+      <span className="ml-auto flex items-center gap-2">
+        <span className="text-success">enabled</span>
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-destructive hover:underline"
+          disabled={pending}
+          title="Switch this provider off. Its results stay on Results (FR-P3); nothing is deleted."
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onDisable(model.providerId)
+          }}
+        >
+          disable
+        </button>
+      </span>
+    )
+  }
   return (
     <button
       type="button"
@@ -184,12 +212,12 @@ function EnableCell({ model, pending, onEnable }: { model: ProviderModelOption; 
   )
 }
 
-function ModelRow({ model, pending, onEnable }: { model: ProviderModelOption; pending: boolean; onEnable: (apiModel: string) => void }) {
+function ModelRow({ model, pending, onEnable, onDisable }: { model: ProviderModelOption } & CatalogActions) {
   return (
     <li className="flex items-center gap-2">
       <span className="font-mono">{model.apiModel}</span>
       {model.note && <span className="truncate text-muted-foreground/80">{model.note}</span>}
-      <EnableCell model={model} pending={pending} onEnable={onEnable} />
+      <EnableCell model={model} pending={pending} onEnable={onEnable} onDisable={onDisable} />
     </li>
   )
 }
@@ -208,11 +236,23 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
       onError: (err) => toast({ title: "Could not enable model", description: errorMessage(err), variant: "destructive" }),
     },
   })
+  const disable = useUpdateBenchmarkProvider({
+    mutation: {
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: getListBenchmarkProvidersQueryKey() })
+        void qc.invalidateQueries({ queryKey: getListProviderModelsQueryKey() })
+        toast({ title: "Provider disabled", description: "Historical results are kept (FR-P3)." })
+      },
+      onError: (err) => toast({ title: "Could not disable provider", description: errorMessage(err), variant: "destructive" }),
+    },
+  })
   const vendor = data?.vendors.find((v) => providers.some((p) => p.id === v.adapterId || p.id.startsWith(`${v.vendor}-`)))
   if (isLoading) return <p className="text-[11px] text-muted-foreground">Checking the vendor's model list…</p>
   if (!vendor) return null
   if (vendor.error) return <p className="text-[11px] text-muted-foreground" data-testid="vendor-models">Model list unavailable: {vendor.error}</p>
   const onEnable = (apiModel: string) => enable.mutate({ data: { vendor: vendor.vendor, apiModel } })
+  const onDisable = (providerId: string) => disable.mutate({ providerId, data: { disabled: true } })
+  const pending = enable.isPending || disable.isPending
   const latest = vendor.models.find((m) => m.latest)
   // S-5: a provider row this tool runs that the vendor's own list does not
   // contain. `deepgram-flux-general-en` is the real case -- it is what the
@@ -276,11 +316,11 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
       )}
       {vendor.models.length > 1 && (
         <details className="text-[11px] text-muted-foreground">
-          <summary className="cursor-pointer hover:text-foreground">{vendor.models.length} models offered · {vendor.models.filter((m) => m.enabled).length} enabled here</summary>
+          <summary className="cursor-pointer hover:text-foreground">{vendor.models.length} models offered · {vendor.models.filter((m) => m.enabled && m.rowStatus !== "disabled").length} enabled here</summary>
           <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto pl-1">
             {groupByBaseEngine(vendor.models).map(({ base, variants }) =>
               variants.length === 0 ? (
-                <ModelRow key={base.apiModel} model={base} pending={enable.isPending} onEnable={onEnable} />
+                <ModelRow key={base.apiModel} model={base} pending={pending} onEnable={onEnable} onDisable={onDisable} />
               ) : (
                 <li key={base.apiModel}>
                   <details>
@@ -290,12 +330,12 @@ function VendorModelsLine({ providers }: { providers: Provider[] }) {
                         <span className="text-muted-foreground/80" data-testid="domain-variants">
                           {variants.length} domain variant{variants.length === 1 ? "" : "s"}
                         </span>
-                        <EnableCell model={base} pending={enable.isPending} onEnable={onEnable} />
+                        <EnableCell model={base} pending={pending} onEnable={onEnable} onDisable={onDisable} />
                       </span>
                     </summary>
                     <ul className="mt-0.5 space-y-0.5 pl-4">
                       {variants.map((m) => (
-                        <ModelRow key={m.apiModel} model={m} pending={enable.isPending} onEnable={onEnable} />
+                        <ModelRow key={m.apiModel} model={m} pending={pending} onEnable={onEnable} onDisable={onDisable} />
                       ))}
                     </ul>
                   </details>
@@ -590,6 +630,9 @@ function DisableToggle({ providerId, status }: { providerId: string; status: str
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListBenchmarkProvidersQueryKey() })
+        // S-3: the catalog list above now shows each row's on/off state, so it
+        // has to hear about this toggle too, or the two disagree until reload.
+        queryClient.invalidateQueries({ queryKey: getListProviderModelsQueryKey() })
         toast({ title: isDisabled ? "Provider re-enabled" : "Provider disabled", description: "Historical results are kept (FR-P3)." })
       },
       onError: () => {
