@@ -432,3 +432,47 @@ describe("Setup", () => {
     api.restore()
   })
 })
+
+// M-17b: the nightly import cap lives on the Call sources tab, beside the
+// Vapi accounts it imports from. 0 = off, and that must read as off.
+describe("Setup · Call sources · nightly import cap", () => {
+  const sourcesRoutes: StubRoutes = {
+    "GET /api/benchmark/settings": settings,
+    "GET /api/benchmark/vapi/accounts": [],
+    "PATCH /api/benchmark/settings": { ...settings, nightlyImportCap: 40 },
+  }
+
+  it("shows 0 as off and saves a new cap as a number", async () => {
+    const api = stubApi(sourcesRoutes)
+    renderPage(<Setup />, { path: "/setup?tab=sources" })
+
+    const input = (await screen.findByLabelText("Nightly import: max calls per night")) as HTMLInputElement
+    await waitFor(() => expect(input.value).toBe("0"))
+    expect(screen.getByTestId("nightly-import-cap-hint").textContent).toContain("0 = off")
+    const save = within(screen.getByTestId("nightly-import-cap")).getByRole("button", { name: "Save" }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+
+    fireEvent.change(input, { target: { value: "40" } })
+    expect(save.disabled).toBe(false)
+    fireEvent.click(save)
+    await waitFor(() => expect(api.bodyFor("PATCH /api/benchmark/settings")).toEqual({ nightlyImportCap: 40 }))
+    expect(api.unmatched).toEqual([])
+    api.restore()
+  })
+
+  it("will not send a cap the job could not use", async () => {
+    const api = stubApi(sourcesRoutes)
+    renderPage(<Setup />, { path: "/setup?tab=sources" })
+
+    const input = (await screen.findByLabelText("Nightly import: max calls per night")) as HTMLInputElement
+    await waitFor(() => expect(input.value).toBe("0"))
+    const save = within(screen.getByTestId("nightly-import-cap")).getByRole("button", { name: "Save" }) as HTMLButtonElement
+    for (const value of ["501", "-1", "2.5"]) {
+      fireEvent.change(input, { target: { value } })
+      expect(save.disabled, value).toBe(true)
+      expect(screen.getByTestId("nightly-import-cap-hint").textContent).toBe("A whole number from 0 to 500.")
+    }
+    expect(api.asked("PATCH /api/benchmark/settings")).toBe(false)
+    api.restore()
+  })
+})

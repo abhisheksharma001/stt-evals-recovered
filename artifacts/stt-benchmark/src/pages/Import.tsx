@@ -4,6 +4,9 @@ import {
   useListVapiAccounts,
   usePreviewVapiCalls,
   useImportVapiCalls,
+  useGetAppSettings,
+  useUpdateAppSettings,
+  getGetAppSettingsQueryKey,
   getListBenchmarkCallsQueryKey,
   Vertical,
   VapiPreviewCall,
@@ -105,6 +108,69 @@ function CopyableId({ value, label, muted }: { value: string; label?: string; mu
         <Copy className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
       )}
     </button>
+  )
+}
+
+/**
+ * M-17b (2026-09-28, Abhishek): the most calls the 03:00 import
+ * (scripts/daily-import.sh) may bring in per night. 0 = off, and 0 is the
+ * default: one night on the Land And Apartment account alone was 252
+ * importable calls against a corpus of a few hundred, so how fast the corpus
+ * grows is a number someone sets here, not a side effect of the job.
+ */
+function NightlyImportCapControl() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { data: settings, isLoading } = useGetAppSettings()
+  const [cap, setCap] = React.useState("")
+  React.useEffect(() => {
+    if (settings) setCap(String(settings.nightlyImportCap))
+  }, [settings])
+  const updateSettings = useUpdateAppSettings({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetAppSettingsQueryKey() })
+        toast({ title: "Nightly import cap saved" })
+      },
+      onError: (err) => {
+        toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to save.", variant: "destructive" })
+      },
+    },
+  })
+  const parsed = /^\d+$/.test(cap.trim()) ? Number(cap.trim()) : null
+  const valid = parsed !== null && parsed <= 500
+  const dirty = !isLoading && settings !== undefined && parsed !== settings.nightlyImportCap
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3" data-testid="nightly-import-cap">
+      <label htmlFor="nightly-import-cap" className="text-sm font-medium">
+        Nightly import: max calls per night
+      </label>
+      <Input
+        id="nightly-import-cap"
+        type="number"
+        min={0}
+        max={500}
+        step={1}
+        className="h-8 w-24"
+        value={cap}
+        onChange={(e) => setCap(e.target.value)}
+      />
+      <Button
+        size="sm"
+        variant={dirty && valid ? "default" : "outline"}
+        disabled={!dirty || !valid || updateSettings.isPending}
+        onClick={() => parsed !== null && updateSettings.mutate({ data: { nightlyImportCap: parsed } })}
+      >
+        {updateSettings.isPending ? "Saving…" : "Save"}
+      </Button>
+      <p className="w-full text-xs text-muted-foreground" data-testid="nightly-import-cap-hint">
+        {!valid && cap.trim() !== ""
+          ? "A whole number from 0 to 500."
+          : settings?.nightlyImportCap === 0
+            ? "0 = off: the 03:00 import brings in nothing."
+            : "The 03:00 import brings in at most this many new Vapi calls from the last day. 0 turns it off."}
+      </p>
+    </div>
   )
 }
 
@@ -299,6 +365,7 @@ export default function Import() {
               </div>
             </details>
           </div>
+          <NightlyImportCapControl />
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border p-3 text-sm">
             <div className="flex items-center gap-3 text-muted-foreground">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
