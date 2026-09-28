@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bootstrapNoiseFloor, callWordBasis, computeVerdict, pooledRate, productionLead, type VerdictCell } from "./verdict";
+import {
+  bootstrapNoiseFloor,
+  callWordBasis,
+  computeVerdict,
+  pooledRate,
+  productionLead,
+  signTestTwoSidedP,
+  type VerdictCell,
+} from "./verdict";
 
 function cellsFor(providerId: string, flags: number[], words = 100): VerdictCell[] {
   return flags.map((f, i) => ({ callId: `c${i}`, providerId, peerFlagCount: f, words }));
@@ -71,13 +79,32 @@ describe("bootstrapNoiseFloor", () => {
   });
 });
 
+describe("signTestTwoSidedP", () => {
+  it("matches the exact values R-57 was written against", () => {
+    expect(signTestTwoSidedP(3, 0)).toBeCloseTo(0.25, 10);
+    expect(signTestTwoSidedP(5, 0)).toBeCloseTo(0.0625, 10);
+    expect(signTestTwoSidedP(6, 0)).toBeCloseTo(0.03125, 10);
+    expect(signTestTwoSidedP(6, 1)).toBeCloseTo(0.125, 10);
+    expect(signTestTwoSidedP(7, 1)).toBeCloseTo(0.0703125, 10);
+    expect(signTestTwoSidedP(8, 1)).toBeCloseTo(0.0390625, 10);
+    expect(signTestTwoSidedP(9, 1)).toBeCloseTo(0.021484375, 10);
+    expect(signTestTwoSidedP(10, 2)).toBeCloseTo(0.03857421875, 10);
+  });
+  it("is symmetric and capped at 1", () => {
+    expect(signTestTwoSidedP(1, 8)).toBe(signTestTwoSidedP(8, 1));
+    expect(signTestTwoSidedP(4, 4)).toBe(1);
+    expect(signTestTwoSidedP(0, 0)).toBe(1);
+  });
+});
+
 describe("computeVerdict", () => {
   it("names a winner with margin and evidence when the gap is outside noise", () => {
-    // Flagged on 5, 10 and 15 of 25 calls; b's flagged calls include all of a's.
+    // Flagged on 6, 12 and 18 of 25 calls; b's flagged calls include all of
+    // a's, so the pair splits 6-0 -- the smallest one-way split R-57 passes.
     const cells = [
-      ...flaggedCalls("a", 25, (i) => i < 5),
-      ...flaggedCalls("b", 25, (i) => i < 10),
-      ...flaggedCalls("c", 25, (i) => i < 15),
+      ...flaggedCalls("a", 25, (i) => i < 6),
+      ...flaggedCalls("b", 25, (i) => i < 12),
+      ...flaggedCalls("c", 25, (i) => i < 18),
     ];
     const v = computeVerdict(cells, { providerNames: { a: "A", b: "B", c: "C" } });
     expect(v.decision).toBe("winner");
@@ -86,8 +113,8 @@ describe("computeVerdict", () => {
     expect(v.marginPct).toBe(50);
     expect(v.evidenceCalls).toBe(25);
     expect(v.provisional).toBe(false);
-    expect(v.sentence).toContain("A has the least disagreement: flagged on 5 of 25 calls");
-    expect(v.sentence).toContain("50% fewer flagged calls than B (flagged on 10 of 25 calls)");
+    expect(v.sentence).toContain("A has the least disagreement: flagged on 6 of 25 calls");
+    expect(v.sentence).toContain("50% fewer flagged calls than B (flagged on 12 of 25 calls)");
     expect(v.sentence).toContain("25 calls.");
   });
 
@@ -140,7 +167,7 @@ describe("computeVerdict", () => {
   it("compares against production when it was benchmarked and isn't the leader", () => {
     const cells = [
       ...flaggedCalls("a", 25, (i) => i < 5),
-      ...flaggedCalls("b", 25, (i) => i < 10),
+      ...flaggedCalls("b", 25, (i) => i < 12),
       ...flaggedCalls("prod", 25, (i) => i < 20),
     ];
     const v = computeVerdict(cells, { productionProviderId: "prod" });
@@ -231,6 +258,66 @@ describe("computeVerdict", () => {
     const [lean, wordy] = after.rates;
     expect(lean!.totalWords).toBe(wordy!.totalWords);
     expect(lean!.flagsPer100Words).toBe(wordy!.flagsPer100Words);
+  });
+
+  // R-57: on 0/1 calls the only evidence is the discordant calls. A winner
+  // needs the exact two-sided sign test on them at p < 0.05.
+  describe("R-57 sign-test floor", () => {
+    /** `n` shared calls; a is cleaner on `wins` of them, b on `losses`. */
+    function split(wins: number, losses: number, n = 30): VerdictCell[] {
+      return [
+        ...flaggedCalls("a", n, (i) => i >= wins && i < wins + losses),
+        ...flaggedCalls("b", n, (i) => i < wins),
+      ];
+    }
+
+    it.each([
+      [3, 0, 6],
+      [3, 0, 30],
+      [5, 0, 30],
+      [6, 1, 30],
+      [7, 1, 30],
+    ])("names no winner on a %i-%i split over %i shared calls", (wins, losses, n) => {
+      const v = computeVerdict(split(wins, losses, n));
+      expect(v.leaderProviderId).toBe("a");
+      expect(v.decision).toBe("too_close");
+      expect(v.winnerProviderId).toBeNull();
+    });
+
+    it("names no winner on 3-0 over 6 calls even though the bootstrap clears zero", () => {
+      // The case the review found: the interval alone would have named a.
+      const v = computeVerdict(split(3, 0, 6));
+      expect(v.noiseFloor!.ci95[0]).toBeGreaterThan(0);
+      expect(v.decision).toBe("too_close");
+    });
+
+    it.each([
+      [6, 0],
+      [8, 1],
+      [9, 1],
+      [10, 2],
+    ])("may name a winner on a %i-%i split", (wins, losses) => {
+      const v = computeVerdict(split(wins, losses));
+      expect(v.decision).toBe("winner");
+      expect(v.winnerProviderId).toBe("a");
+    });
+
+    it("never names a winner when the paired interval lies entirely below zero", () => {
+      // a leads overall only on calls b never scored; on the 20 calls both
+      // scored, a was flagged on 10 and b on none.
+      const cells: VerdictCell[] = [
+        ...flaggedCalls("a", 20, (i) => i < 10),
+        ...flaggedCalls("b", 20, () => false),
+        ...Array.from({ length: 60 }, (_, i) => ({ callId: `x${i}`, providerId: "a", peerFlagCount: 0, words: 100 })),
+        ...Array.from({ length: 20 }, (_, i) => ({ callId: `y${i}`, providerId: "b", peerFlagCount: 1, words: 100 })),
+      ];
+      const v = computeVerdict(cells);
+      expect(v.leaderProviderId).toBe("a");
+      expect(v.noiseFloor!.ci95[1]).toBeLessThan(0);
+      expect(v.decision).toBe("too_close");
+      expect(v.winnerProviderId).toBeNull();
+      expect(v.runnerUpProviderId).toBe("b");
+    });
   });
 
   it("counts confidence-reporting providers for the comparability note", () => {

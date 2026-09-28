@@ -28,6 +28,9 @@
 // and no winner is named (docs/logic-register.md §11 asked for exactly this:
 // overlapping intervals = no ranking claim). The resampler is seeded so the
 // same cells always give the same interval -- a verdict must be reproducible.
+// R-57 (2026-09-28): the interval must also clear zero on the positive side,
+// and the discordant calls must pass an exact sign test (signTestTwoSidedP) --
+// on 0/1 calls the bootstrap alone named a winner on 3 calls of evidence.
 
 export const BOOTSTRAP_ITERATIONS = 1000;
 /** Below this many evidence calls the whole verdict is provisional
@@ -38,6 +41,10 @@ export const PROVISIONAL_EVIDENCE_CALLS = 20;
  *  collapses to a point, and a 2% gap on one call would read as "outside
  *  noise" -- seen live on the first cut of this module. */
 export const MIN_SHARED_CALLS_FOR_VERDICT = 5;
+/** R-57: a winner also needs the discordant shared calls -- the ones only
+ *  one of the top two was flagged on -- to lean one way at this two-sided
+ *  exact sign-test level. The smallest splits that pass: 6-0, 8-1, 9-1, 10-2. */
+export const SIGN_TEST_ALPHA = 0.05;
 /** callsToSettle above this is reported as null with the pair called
  *  "effectively tied" -- "2,750 more calls" is false precision, not a plan. */
 export const MAX_CALLS_TO_SETTLE = 500;
@@ -82,7 +89,8 @@ export type NoiseFloor = {
 
 export type HeadlineVerdict = {
   /** "winner" = a winner is named. "too_close" = top two inside the noise
-   *  floor, no winner named. "too_few_calls" = the top two share fewer than
+   *  floor (R-57: or the interval below zero, or the sign test not passed),
+   *  no winner named. "too_few_calls" = the top two share fewer than
    *  MIN_SHARED_CALLS_FOR_VERDICT calls, so no noise floor can be drawn and
    *  no winner is named. "insufficient" = fewer than two providers have
    *  scored evidence, nothing to compare. */
@@ -292,6 +300,30 @@ export function bootstrapNoiseFloor(
   };
 }
 
+/**
+ * R-57: exact two-sided sign test (McNemar's exact test on a paired 0/1
+ * outcome). `wins` and `losses` are the discordant calls each way; ties carry
+ * no signal and are not passed in. p = 2 × P(X <= min) for X ~ Binomial(n,
+ * 1/2), capped at 1. Two-sided because the leader is picked after looking at
+ * the data. Exported for tests.
+ *
+ * Why the bootstrap alone was not enough (found 2026-09-28): with 0/1 calls,
+ * 6 shared calls and 3 one-way discordant calls, a resample misses all three
+ * with probability (1/2)^6 = 1.6 % < 2.5 %, so the interval stayed above zero
+ * and a winner was named on 3 calls of evidence (this test: p = 0.25).
+ */
+export function signTestTwoSidedP(wins: number, losses: number): number {
+  const n = wins + losses;
+  const k = Math.min(wins, losses);
+  let tail = 0;
+  let term = 1; // C(n, 0)
+  for (let i = 0; i <= k; i++) {
+    tail += term;
+    term = (term * (n - i)) / (i + 1);
+  }
+  return Math.min(1, (2 * tail) / 2 ** n);
+}
+
 function relativeImprovementPct(better: number, worse: number): number | null {
   if (worse <= 0) return null;
   return ((worse - better) / worse) * 100;
@@ -412,7 +444,14 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
     });
   const noiseFloor = pairs.length >= MIN_SHARED_CALLS_FOR_VERDICT ? bootstrapNoiseFloor(pairs) : null;
   const tooFewCalls = noiseFloor === null;
-  const tooClose = !tooFewCalls && noiseFloor.withinNoise;
+  // R-57: a winner needs the interval clear of zero ON THE POSITIVE SIDE --
+  // one entirely below zero means the leader was worse on the calls both
+  // scored -- AND the discordant calls to pass the exact sign test.
+  const leaderCleaner = pairs.filter((p) => p.leader.flags < p.runnerUp.flags).length;
+  const runnerUpCleaner = pairs.filter((p) => p.leader.flags > p.runnerUp.flags).length;
+  const tooClose =
+    !tooFewCalls &&
+    (noiseFloor.ci95[0] <= 0 || signTestTwoSidedP(leaderCleaner, runnerUpCleaner) >= SIGN_TEST_ALPHA);
 
   const productionIsLeader = leader.providerId === productionProviderId;
   const vsProductionPct =
