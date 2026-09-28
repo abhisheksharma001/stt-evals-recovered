@@ -1,3 +1,34 @@
+## Found 2026-09-28 (end-to-end review, in a browser against API `cb8587d5d269`)
+
+Every page loaded (Overview, Orgs, Calls, Bulks, Results, Setup), the footer badge named the live
+build on each, the console showed no error or warning, and the shareable verdict page answered
+200 with no `<script` and no `http`. Four things were wrong on screen, none from the 2026-09-26/28
+work:
+
+1. **Bulks promises the wrong retention.** `artifacts/stt-benchmark/src/pages/Bulks.tsx:1380`
+   reads "Keeps the 3 newest bulks; older ones are removed." `MAX_LIVE_BULKS` is **10**
+   (`artifacts/api-server/src/lib/bulks.ts:56`, W-13, 2026-09-15). W-13 corrected "4th" to
+   "11th" and missed this sentence. A reader believes their bulks vanish three times sooner than
+   they do. Worth: one-line copy fix, ideally reading the number from the API.
+2. **Calls' header collapses at 1280 px.** The title and the filter row share one
+   `sm:flex-row` line (`artifacts/stt-benchmark/src/pages/Corpus.tsx:325`); the filters alone
+   measure 1,044 px against a 1,033 px content area, so the description wraps one word per line
+   and the page scrolls sideways. Present since the "Run or not" filter (#127). Worth: let the
+   filter row wrap below the title (`lg:flex-row` or `flex-wrap`).
+3. **A cancelled bulk shows work "waiting".** Public: Pipecat 1k (cancelled) reads "768 pending"
+   on Bulks and "768 TRANSCRIPTS WAITING" in its detail. Nothing will ever run them; the word
+   says otherwise. Worth: on a cancelled bulk, say "not run (bulk cancelled)".
+4. **"AI check 0/339 calls verified · 0 %" on the public bulk** looks like unfinished work. The
+   judge never runs on public clips by design (W-12a1). Worth: say "not run on public clips".
+
+Also found, about the audit trail rather than the screen: a write made through the UI is stamped
+with the curator's name (`x-actor`), so the two `deepgram-nova` disable rows of 2026-09-28
+(22:26:18, 22:43:00) read "Abhishek" although both were Claude's browser automation during S-3's
+checks (restored as `claude-s3-live-check` / `claude-s3-review-restore`). Not a bug in the product
+-- the UI cannot know who is at the keyboard -- but an automated browser session should not be
+mistaken for the person in the audit log. Worth: automation writes by API with its own actor,
+never by clicking.
+
 ## Found 2026-09-28 (S-AB3a deploy): the database was off and `/healthz` said "ok"
 
 Seen: the `stt-evals-pg` container received a fast shutdown request at 2026-09-27 17:30:33
