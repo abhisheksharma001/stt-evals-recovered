@@ -34,6 +34,14 @@
 # same cliff it exists to prevent. One day fits; if it ever stops fitting, the
 # truncation check below says so and the run exits non-zero.
 #
+# CAP (M-17c, 2026-09-28, Abhishek): the most calls one night may import, all
+# accounts together, read from GET /benchmark/settings (nightlyImportCap, set on
+# Setup > Call sources). 0 = off and is the default: the job asks nothing of
+# Vapi and imports nothing. A settings answer without the field (an API older
+# than M-17a) stops the run -- never an uncapped import. Over the cap, the
+# oldest calls go first (they are nearest Vapi's 14-day deletion) and the rest
+# are counted and named as not imported, not silently dropped.
+#
 # Usage:  bash scripts/daily-import.sh
 #         DAYS=2 bash scripts/daily-import.sh          # a catch-up after a miss
 #         launchd runs it daily at 03:00 as ai.ellavox.stt-evals.import
@@ -69,6 +77,20 @@ curl -fsS "${API}/healthz" >/dev/null || {
   exit 1
 }
 
+CAP="$(curl -fsS "${API}/benchmark/settings" | jq -r '.nightlyImportCap // empty')"
+case "$CAP" in
+  '' | *[!0-9]*)
+    echo "daily-import: could not read nightlyImportCap from ${API}/benchmark/settings; nothing imported" >&2
+    exit 1
+    ;;
+esac
+if [ "$CAP" -eq 0 ]; then
+  echo "== nightly import is off (cap 0, Setup > Call sources); nothing imported"
+  exit 0
+fi
+remaining="$CAP"
+echo "   cap ${CAP} calls tonight"
+
 for entry in "${ACCOUNTS[@]}"; do
   account="${entry%%:*}"
   vertical="${entry##*:}"
@@ -89,9 +111,17 @@ for entry in "${ACCOUNTS[@]}"; do
   # importableCount is the API's own word for it, but the ids are filtered
   # here as well rather than trusted: a call with no recording is one Vapi has
   # already deleted, and asking for it would only produce a failed outcome.
-  ids="$(jq -r '[.calls[] | select(.alreadyImported == false and .hasRecording == true) | .vapiCallId]' <<<"$preview")"
-  count="$(jq -r 'length' <<<"$ids")"
-  echo "-- ${account} (${vertical}): ${fetched} fetched, ${count} to import"
+  # Oldest first: over the cap, the calls left behind are the ones with the
+  # most days before Vapi deletes their recording.
+  ids="$(jq -r '[.calls[] | select(.alreadyImported == false and .hasRecording == true)] | sort_by(.startedAt // "") | map(.vapiCallId)' <<<"$preview")"
+  importable="$(jq -r 'length' <<<"$ids")"
+  count=$((importable < remaining ? importable : remaining))
+  ids="$(jq -c --argjson n "$count" '.[:$n]' <<<"$ids")"
+  remaining=$((remaining - count))
+  echo "-- ${account} (${vertical}): ${fetched} fetched, ${importable} importable, ${count} to import"
+  if [ "$count" -lt "$importable" ]; then
+    echo "   OVER CAP: $((importable - count)) importable calls not imported tonight (cap ${CAP})"
+  fi
 
   if [ "$count" -eq 0 ]; then continue; fi
 
