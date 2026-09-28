@@ -383,3 +383,68 @@ describe("productionLead", () => {
     expect(productionLead({ ...live, calls: 1, totalCalls: 1 }).lead).toContain("over 1 of 1 call.");
   });
 });
+
+// R-2e (2026-09-28). A provider that timed out or threw a server error on a
+// call used to drop out of its own denominator, so failing half its calls
+// read exactly as reliable as never failing. Such a call now counts as one
+// flagged call -- on the rate and in the paired sample.
+describe("computeVerdict -- provider failures (R-2e)", () => {
+  const failedOn = (providerId: string, callIds: string[]): VerdictCell[] =>
+    callIds.map((callId) => ({ callId, providerId, peerFlagCount: null, words: 0, failed: true }));
+
+  it("counts a failed call as flagged, with no flags or words added", () => {
+    // `a` is clean on c0-c9 and failed on c10-c11; `b` is clean on all 12.
+    const cells = [
+      ...cellsFor("a", Array(10).fill(0)),
+      ...failedOn("a", ["c10", "c11"]),
+      ...cellsFor("b", Array(12).fill(0)),
+    ];
+    const v = computeVerdict(cells);
+    const a = v.rates.find((r) => r.providerId === "a")!;
+    expect(a).toMatchObject({ calls: 12, flaggedCalls: 2, failedCalls: 2, totalFlags: 0, totalWords: 1000 });
+    expect(a.flaggedCallRate).toBeCloseTo(2 / 12);
+    expect(a.flagsPer100Words).toBe(0);
+    expect(v.leaderProviderId).toBe("b");
+    expect(v.evidenceCalls).toBe(12);
+  });
+
+  it("says how many flagged calls were failures", () => {
+    const cells = [
+      ...cellsFor("a", [1, 0, 0, 0, 0, 0]),
+      ...failedOn("a", ["c6", "c7"]),
+      ...cellsFor("b", [0, 0, 0, 0, 0, 0, 0, 0]),
+    ];
+    const v = computeVerdict(cells, { providerNames: { a: "Alpha", b: "Bravo" } });
+    expect(v.sentence).toContain("Alpha (flagged on 3 of 8 calls (2 failed))");
+    expect(v.sentence).not.toContain("Bravo (flagged on 0 of 8 calls (");
+  });
+
+  it("puts the failed call in the paired sample as a flagged one", () => {
+    // Six shared calls; `b` failed on all six and `a` was clean on them. As
+    // clean-vs-flagged on every shared call that is a 6-0 sign test, the
+    // smallest split that names a winner.
+    const cells = [
+      ...cellsFor("a", Array(6).fill(0)),
+      ...failedOn("b", ["c0", "c1", "c2", "c3", "c4", "c5"]),
+      ...cellsFor("b", [0], 100).map((c) => ({ ...c, callId: "c6" })),
+    ];
+    const v = computeVerdict(cells);
+    expect(v.decision).toBe("winner");
+    expect(v.winnerProviderId).toBe("a");
+    expect(v.noiseFloor!.sharedCalls).toBe(6);
+  });
+
+  it("leaves out a provider that failed on every call, as one with no words always was", () => {
+    const cells = [...cellsFor("a", [0, 0]), ...failedOn("b", ["c0", "c1"])];
+    const v = computeVerdict(cells);
+    expect(v.rates.map((r) => r.providerId)).toEqual(["a"]);
+    expect(v.decision).toBe("insufficient");
+  });
+
+  it("changes nothing when no cell failed", () => {
+    const cells = [...flaggedCalls("a", 10, (i) => i < 2), ...flaggedCalls("b", 10, (i) => i < 5)];
+    const v = computeVerdict(cells);
+    for (const r of v.rates) expect(r.failedCalls).toBe(0);
+    expect(v.sentence).not.toContain("failed");
+  });
+});

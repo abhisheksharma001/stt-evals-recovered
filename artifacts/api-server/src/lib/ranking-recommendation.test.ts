@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rank1Recommendation, runnerUpRecommendation } from "./ranking-recommendation";
+import { rank1Recommendation, runnerUpRecommendation, withFailures } from "./ranking-recommendation";
 
 const p = (name: string, flaggedCallRate: number | null, peerFlagsPer100Words: number | null = 0) => ({
   name,
@@ -134,5 +134,19 @@ describe("runnerUpRecommendation", () => {
       expect(s).not.toContain("hybrid flags");
       expect(s).not.toMatch(/cheap|price|cost/i);
     }
+  });
+});
+
+describe("withFailures", () => {
+  it("names the provider's failures after the sentence", () => {
+    const s = withFailures("Behind rank 1: flagged on a larger share of its calls.", { ...p("Cartesia", 0.5), failedCalls: 2 });
+    expect(s).toBe(
+      "Behind rank 1: flagged on a larger share of its calls. Cartesia failed on 2 calls (timeout or server error); each counts as a flagged call.",
+    );
+  });
+
+  it("leaves the sentence alone when nothing failed", () => {
+    expect(withFailures("x.", p("A", 0))).toBe("x.");
+    expect(withFailures("x.", { ...p("A", 0), failedCalls: 0 })).toBe("x.");
   });
 });

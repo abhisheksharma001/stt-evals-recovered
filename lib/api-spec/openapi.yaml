@@ -3209,12 +3209,15 @@ components:
           type: array
           items:
             type: object
-            required: [providerId, flaggedCallRate, flaggedCalls, flagsPer100Words, calls, totalFlags, totalWords]
+            required: [providerId, flaggedCallRate, flaggedCalls, failedCalls, flagsPer100Words, calls, totalFlags, totalWords]
             properties:
               providerId: { type: string }
               # R-2a: the ranking quantity, 0..1: flaggedCalls / calls.
               flaggedCallRate: { type: number }
               flaggedCalls: { type: number }
+              # R-2e: how many of flaggedCalls the provider failed (a timeout
+              # or a server error). Each counts as one flagged call.
+              failedCalls: { type: number }
               # No longer the ranking quantity: the first tiebreak. (The Watch
               # computes its own per-100 rate; it does not read this field.)
               flagsPer100Words: { type: number }

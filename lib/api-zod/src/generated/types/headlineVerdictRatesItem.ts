@@ -10,6 +10,7 @@ export type HeadlineVerdictRatesItem = {
   providerId: string;
   flaggedCallRate: number;
   flaggedCalls: number;
+  failedCalls: number;
   flagsPer100Words: number;
   calls: number;
   totalFlags: number;

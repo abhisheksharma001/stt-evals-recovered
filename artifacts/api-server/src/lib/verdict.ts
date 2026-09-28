@@ -28,6 +28,7 @@ import {
   type HeadlineVerdict,
   type VerdictCell,
 } from "@workspace/scoring";
+import { PROVIDER_FAULT_CLASSES } from "@workspace/stt-providers";
 import { extractProviderConfidenceWords } from "./hybrid-flagging";
 
 export type BulkGroupVerdict = {
@@ -368,7 +369,7 @@ export async function bulkVerdicts(
   scopeCellsToProviders([], options.providers, allProviderIds);
   if (runs.length === 0) return { bulkId, providers: [], groups: [] };
 
-  const [unscopedCalls, providers, cells] = await Promise.all([
+  const [unscopedCalls, providers, cells, failures] = await Promise.all([
     allCallIds.length
       ? db
           .select({
@@ -408,10 +409,28 @@ export async function bulkVerdicts(
           eq(benchmarkProviderCallResultsTable.status, "ok"),
         ),
       ),
+    // R-2e: cells the provider itself failed (a timeout or a server error).
+    // Each is one flagged call for that provider. Failures of ours -- our
+    // audio, our key, our concurrency, or unclassified -- stay out.
+    db
+      .select({
+        callId: benchmarkProviderCallResultsTable.callId,
+        providerId: benchmarkProviderCallResultsTable.providerId,
+        audioSource: benchmarkProviderCallResultsTable.audioSource,
+      })
+      .from(benchmarkProviderCallResultsTable)
+      .where(
+        and(
+          inArray(benchmarkProviderCallResultsTable.runId, runIds),
+          eq(benchmarkProviderCallResultsTable.status, "failed"),
+          inArray(benchmarkProviderCallResultsTable.failureClass, [...PROVIDER_FAULT_CLASSES]),
+        ),
+      ),
   ]);
 
   const calls = scopeCallsToAssistant(unscopedCalls, options.assistantId);
   const cellsOnChannel = cells.filter((c) => (c.audioSource ?? "mono") === bulkAudioSource);
+  const failuresOnChannel = failures.filter((c) => (c.audioSource ?? "mono") === bulkAudioSource);
 
   // Which providers report per-word confidence: decided from ONE real ok
   // response per provider through the same extractor hybrid flagging uses
@@ -481,16 +500,23 @@ export async function bulkVerdicts(
       productionProviderId = resolveProductionProviderId(vendor, model || null, providers);
     }
 
-    const verdictCells: VerdictCell[] = scopeCellsToProviders(
-      cellsOnChannel.filter((c) => groupCallIds.has(c.callId)),
-      options.providers,
-      allProviderIds,
-    ).map((c) => ({
+    const verdictCells: VerdictCell[] = [
+      ...scopeCellsToProviders(
+        cellsOnChannel.filter((c) => groupCallIds.has(c.callId)),
+        options.providers,
+        allProviderIds,
+      ).map((c) => ({
         callId: c.callId,
         providerId: c.providerId,
         peerFlagCount: c.peerFlagCount,
         words: wordBasis.get(c.callId) ?? 0,
-      }));
+      })),
+      ...scopeCellsToProviders(
+        failuresOnChannel.filter((c) => groupCallIds.has(c.callId)),
+        options.providers,
+        allProviderIds,
+      ).map((c) => ({ callId: c.callId, providerId: c.providerId, peerFlagCount: null, words: 0, failed: true })),
+    ];
 
     groups.push({
       clientLabel,

@@ -445,3 +445,52 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
     expect(malformed.body.error).toMatch(/bulkId/);
   });
 });
+
+// R-2e. A cell the provider itself failed -- a timeout or a server error --
+// is one flagged call for it. Every other failure class is ours and stays
+// out, or a provider would be charged for our audio, key or concurrency.
+describe("GET /api/benchmark/bulks/:bulkId/verdicts -- provider failures (R-2e)", () => {
+  it("counts provider_timeout and provider_5xx as flagged calls, and nothing else", async () => {
+    const clean = await fx.provider({ name: `fx clean ${fx.suffix}` });
+    const faulty = await fx.provider({ name: `fx faulty ${fx.suffix}` });
+    const ours = await fx.provider({ name: `fx ours ${fx.suffix}` });
+    const org = `fx-org-r2e-${fx.suffix}`;
+    const calls = [];
+    for (let i = 0; i < 4; i++) calls.push(await fx.call({ sourceAccountLabel: org }));
+    const bulk = await fx.bulk({ providerIds: [clean.id, faulty.id, ours.id] });
+    const run = await fx.run({
+      bulkId: bulk.id,
+      callIds: calls.map((c) => c.id),
+      providerIds: [clean.id, faulty.id, ours.id],
+      callCount: calls.length,
+    });
+
+    const ok = async (providerId: string, callId: string) => {
+      const cell = await fx.result(run.id, callId, providerId, { hypothesisTranscript: "alpha beta gamma delta" });
+      await fx.score(cell.id, { peerFlagCount: 0 });
+    };
+    const failed = (providerId: string, callId: string, failureClass: "provider_timeout" | "provider_5xx" | "unknown" | "rate_limited") =>
+      fx.result(run.id, callId, providerId, { status: "failed", failureClass });
+
+    for (const c of calls) await ok(clean.id, c.id);
+    await ok(faulty.id, calls[0].id);
+    await failed(faulty.id, calls[1].id, "provider_timeout");
+    await failed(faulty.id, calls[2].id, "provider_5xx");
+    await ok(faulty.id, calls[3].id);
+    await ok(ours.id, calls[0].id);
+    await failed(ours.id, calls[1].id, "unknown");
+    await failed(ours.id, calls[2].id, "rate_limited");
+    await ok(ours.id, calls[3].id);
+
+    const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdicts`);
+    expect(res.status).toBe(200);
+    const group = res.body.groups.find((g: { clientLabel: string | null }) => g.clientLabel === org);
+    const rate = (id: string) => group.verdict.rates.find((r: { providerId: string }) => r.providerId === id);
+
+    expect(rate(faulty.id)).toMatchObject({ calls: 4, flaggedCalls: 2, failedCalls: 2, flaggedCallRate: 0.5 });
+    // Our failures: the two calls are simply not evidence, as before R-2e.
+    expect(rate(ours.id)).toMatchObject({ calls: 2, flaggedCalls: 0, failedCalls: 0, flaggedCallRate: 0 });
+    expect(rate(clean.id)).toMatchObject({ calls: 4, flaggedCalls: 0, failedCalls: 0 });
+    expect(group.verdict.rates.at(-1).providerId).toBe(faulty.id);
+  });
+});

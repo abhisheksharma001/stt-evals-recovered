@@ -58,14 +58,24 @@ export type VerdictCell = {
   /** R-1: the call's word basis -- the SAME number for every provider on
    *  that call, from callWordBasis. Not this provider's own word count. */
   words: number;
+  /** R-2e: the provider failed this call for a provider-side reason (a
+   *  timeout or a server error -- PROVIDER_FAULT_CLASSES in
+   *  @workspace/stt-providers). Counts as one flagged call; there is no
+   *  transcript, so it adds no flags and no words, and peerFlagCount and
+   *  words are ignored. Callers pass only provider-fault failures: a failure
+   *  of ours must not count against the provider. */
+  failed?: boolean;
 };
 
 export type VerdictProviderRate = {
   providerId: string;
   /** R-2a: the ranking quantity. flaggedCalls / calls, 0..1, lower is better. */
   flaggedCallRate: number;
-  /** Calls on which this provider carried at least one peer flag. */
+  /** Calls on which this provider carried at least one peer flag, or
+   *  failed (R-2e). */
   flaggedCalls: number;
+  /** R-2e: how many of flaggedCalls were provider failures. */
+  failedCalls: number;
   /** Pooled peer flags per 100 words. No longer the ranking quantity (R-2a):
    *  the first tiebreak, and a column on the shareable page. */
   flagsPer100Words: number;
@@ -115,8 +125,8 @@ export type HeadlineVerdict = {
   productionProviderId: string | null;
   /** true when the production provider is the leader/winner. */
   productionIsLeader: boolean;
-  /** Distinct calls with at least one flagged cell in this group -- the
-   *  number every margin must be read against. */
+  /** Distinct calls with at least one flagged cell (R-2e: or a provider
+   *  failure) in this group -- the number every margin must be read against. */
   evidenceCalls: number;
   /** evidenceCalls < PROVISIONAL_EVIDENCE_CALLS. */
   provisional: boolean;
@@ -333,9 +343,11 @@ function fmtPct(p: number): string {
   return `${Math.round(Math.abs(p))}%`;
 }
 
-/** R-2a: the rate in words a reader can repeat -- "flagged on 4 of 17 calls". */
+/** R-2a: the rate in words a reader can repeat -- "flagged on 4 of 17 calls".
+ *  R-2e: "(2 failed)" when some of those calls were provider failures. */
 function flaggedOn(r: VerdictProviderRate): string {
-  return `flagged on ${r.flaggedCalls} of ${r.calls} call${r.calls === 1 ? "" : "s"}`;
+  const failed = r.failedCalls > 0 ? ` (${r.failedCalls} failed)` : "";
+  return `flagged on ${r.flaggedCalls} of ${r.calls} call${r.calls === 1 ? "" : "s"}${failed}`;
 }
 
 export type VerdictOptions = {
@@ -349,7 +361,8 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
   const productionProviderId = options.productionProviderId ?? null;
   const name = (id: string | null): string => (id ? (options.providerNames?.[id] ?? id) : "—");
 
-  const flagged = cells.filter((c) => c.peerFlagCount !== null);
+  // R-2e: a provider failure is evidence too -- one flagged call.
+  const flagged = cells.filter((c) => c.failed || c.peerFlagCount !== null);
   const byProvider = new Map<string, VerdictCell[]>();
   for (const c of flagged) {
     const list = byProvider.get(c.providerId) ?? [];
@@ -366,15 +379,21 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
   const rates: VerdictProviderRate[] = [];
   for (const id of providerIds) {
     const rows = byProvider.get(id)!;
-    const totalWords = rows.reduce((s, r) => s + r.words, 0);
+    // R-2e: a failed cell has no transcript -- no words, no flags. A
+    // provider that failed on every call has no per-100-words rate to sort
+    // on and is left out, as a provider with no words always was.
+    const scored = rows.filter((r) => !r.failed);
+    const totalWords = scored.reduce((s, r) => s + r.words, 0);
     if (totalWords === 0) continue;
-    const totalFlags = rows.reduce((s, r) => s + (r.peerFlagCount ?? 0), 0);
+    const totalFlags = scored.reduce((s, r) => s + (r.peerFlagCount ?? 0), 0);
     const calls = new Set(rows.map((r) => r.callId)).size;
-    const flaggedCalls = new Set(rows.filter((r) => (r.peerFlagCount ?? 0) > 0).map((r) => r.callId)).size;
+    const flaggedCalls = new Set(rows.filter((r) => r.failed || (r.peerFlagCount ?? 0) > 0).map((r) => r.callId)).size;
+    const failedCalls = new Set(rows.filter((r) => r.failed).map((r) => r.callId)).size;
     rates.push({
       providerId: id,
       flaggedCallRate: flaggedCalls / calls,
       flaggedCalls,
+      failedCalls,
       flagsPer100Words: (totalFlags / totalWords) * 100,
       calls,
       totalFlags,
@@ -430,7 +449,7 @@ export function computeVerdict(cells: VerdictCell[], options: VerdictOptions = {
   // Paired sample: the calls both scored. R-2a: each call is 0 (clean) or 1
   // (flagged) with a weight of one call, so the same pooled bootstrap now
   // resamples per-call 0/1 differences and its units are percentage points.
-  const flaggedOf = (c: VerdictCell) => ((c.peerFlagCount ?? 0) > 0 ? 1 : 0);
+  const flaggedOf = (c: VerdictCell) => (c.failed || (c.peerFlagCount ?? 0) > 0 ? 1 : 0);
   const leaderByCall = new Map(byProvider.get(leader.providerId)!.map((c) => [c.callId, c]));
   const pairs = byProvider
     .get(runnerUp.providerId)!
