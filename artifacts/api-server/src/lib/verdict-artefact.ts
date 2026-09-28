@@ -115,7 +115,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   const label = g.clientLabel ?? "Calls with no org label on file";
   const headline =
     v.decision === "winner" && v.winnerProviderId
-      ? `${esc(nameOf(v.winnerProviderId))} has the least disagreement${v.marginPct != null ? `: ${v.marginPct.toFixed(0)}% fewer disagreements per 100 words than ${esc(nameOf(v.runnerUpProviderId))}` : ""}.`
+      ? `${esc(nameOf(v.winnerProviderId))} has the least disagreement${v.marginPct != null ? `: ${v.marginPct.toFixed(0)}% fewer flagged calls than ${esc(nameOf(v.runnerUpProviderId))}` : ""}.`
       : v.leaderProviderId
         ? `Ahead, but not decided: ${esc(nameOf(v.leaderProviderId))}.`
         : "Nothing decided.";
@@ -129,7 +129,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   }
   if (v.callsToSettle != null) evidence.push(`about ${n(v.callsToSettle)} calls both ran would decide it`);
   const production = g.production
-    ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — the named provider has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} disagreements than production` : ""}.`
+    ? `In production today: ${esc(g.production.vendor)}${g.production.model ? ` ${esc(g.production.model)}` : ""} on ${n(g.production.coverage)} of ${n(g.production.total)} calls${v.vsProductionPct != null ? ` — the named provider has ${v.vsProductionPct > 0 ? `${v.vsProductionPct.toFixed(0)}% fewer` : `${Math.abs(v.vsProductionPct).toFixed(0)}% more`} flagged calls than production` : ""}.`
     : "In production today: unknown (no call in this group recorded its live provider).";
   // M-8b/R-3: production's OWN transcript against the candidates' consensus.
   // It is now the FIRST thing in the section, above the decision, because it
@@ -143,10 +143,11 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   if (v.confidenceComparable.total > 0 && v.confidenceComparable.reporting < v.confidenceComparable.total)
     caveats.push(`Only ${v.confidenceComparable.reporting} of ${v.confidenceComparable.total} providers report per-word confidence; those unsure-word spans are left out of this metric so the comparison stays like-for-like.`);
   const rates = [...v.rates]
-    .sort((a, b) => a.flagsPer100Words - b.flagsPer100Words)
+    // R-2a: the verdict's own order -- flagged-call rate, then per 100 words.
+    .sort((a, b) => a.flaggedCallRate - b.flaggedCallRate || a.flagsPer100Words - b.flagsPer100Words)
     .map(
       (r) =>
-        `<tr><td>${esc(nameOf(r.providerId))}${r.providerId === v.winnerProviderId && v.decision === "winner" ? ' <span class="tag">fewest</span>' : ""}${r.providerId === v.productionProviderId ? ' <span class="tag muted">production</span>' : ""}</td><td class="num">${r.flagsPer100Words.toFixed(2)}</td><td class="num">${n(r.calls)}</td><td class="num">${n(r.totalFlags)}</td><td class="num">${n(r.totalWords)}</td><td class="num">${price[r.providerId] !== undefined ? fmtRate(price[r.providerId]) : "not on file"}</td></tr>`,
+        `<tr><td>${esc(nameOf(r.providerId))}${r.providerId === v.winnerProviderId && v.decision === "winner" ? ' <span class="tag">fewest</span>' : ""}${r.providerId === v.productionProviderId ? ' <span class="tag muted">production</span>' : ""}</td><td class="num">${n(r.flaggedCalls)} of ${n(r.calls)} (${Math.round(r.flaggedCallRate * 100)}%)</td><td class="num">${r.flagsPer100Words.toFixed(2)}</td><td class="num">${n(r.calls)}</td><td class="num">${n(r.totalFlags)}</td><td class="num">${n(r.totalWords)}</td><td class="num">${price[r.providerId] !== undefined ? fmtRate(price[r.providerId]) : "not on file"}</td></tr>`,
     )
     .join("");
   return `
@@ -160,7 +161,7 @@ function groupSection(g: BulkVerdicts["groups"][number], nameOf: (id: string | n
   <p class="meta">Cost: ${esc(costDeltaLine(v, nameOf, price))}</p>
   ${caveats.map((c) => `<p class="caveat">${esc(c)}</p>`).join("")}
   <table>
-    <thead><tr><th>Provider</th><th class="num">Disagreements / 100 words ↓</th><th class="num">Calls</th><th class="num">Flags</th><th class="num">Words</th><th class="num">List price</th></tr></thead>
+    <thead><tr><th>Provider</th><th class="num">Calls flagged ↓</th><th class="num">Disagreements / 100 words</th><th class="num">Calls</th><th class="num">Flags</th><th class="num">Words</th><th class="num">List price</th></tr></thead>
     <tbody>${rates}</tbody>
   </table>
 </section>`;
@@ -247,7 +248,7 @@ ${
 <p class="counts">${groups.length} org${groups.length === 1 ? "" : "s"} · ${n(totalEvidence)} call${totalEvidence === 1 ? "" : "s"} scored · ${counts.winner} decided · ${counts.too_close} too close · ${counts.too_few_calls} not enough calls${counts.insufficient ? ` · ${counts.insufficient} only one provider` : ""}</p>
 ${groups.map((g) => groupSection(g, nameOf, price)).join("\n")}
 <div class="legend">
-  <p><strong>Least disagreement</strong> = fewest disagreements per 100 words, by more than the margin of error. Lower is better. Anything else is undecided, not a tie. Under 20 calls is an early read.<br><span class="muted">Mechanism: disagreements are cross-provider word disagreements plus entity mismatches (a provider's own low-confidence spans excluded); the margin of error is a 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored.</span></p>
+  <p><strong>Least disagreement</strong> = flagged on the fewest calls, by more than the margin of error. A call is flagged for a provider when it disagreed with the others there on a word, a name or a number. Lower is better. Anything else is undecided, not a tie. Under 20 calls is an early read.<br><span class="muted">Mechanism: disagreements are cross-provider word disagreements plus entity mismatches (a provider's own low-confidence spans excluded); the margin of error is a 95% bootstrap interval over 1,000 reshuffles of the calls both providers scored.</span></p>
   <p><strong>Relative:</strong> how often each provider disagreed with the others on the same audio. Not a measured accuracy &mdash; nothing here is scored against a human-checked transcript.</p>
   <p><strong>Cost figures</strong> are operator-entered list prices per minute at the time this page was produced. Verify against the provider's current pricing page and any contract before making a financial decision.</p>
   <p><strong>This is a dated snapshot.</strong> It was computed from the scores stored for this bulk at the time above. Re-generating it later on a different build or after retries may give different figures; compare the stamp.</p>

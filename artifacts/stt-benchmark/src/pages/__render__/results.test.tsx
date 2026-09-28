@@ -216,8 +216,8 @@ const verdicts: BulkVerdicts = {
         noiseFloor: { sharedCalls: 12, difference: 0.9, ci95: [0.2, 1.6], withinNoise: false },
         confidenceComparable: { reporting: 2, total: 2 },
         rates: [
-          { providerId: "deepgram-nova-3", flagsPer100Words: 0.9, calls: 12, totalFlags: 16, totalWords: 1800 },
-          { providerId: "gladia-solaria", flagsPer100Words: 2.0, calls: 12, totalFlags: 36, totalWords: 1800 },
+          { providerId: "deepgram-nova-3", flaggedCallRate: 4 / 12, flaggedCalls: 4, flagsPer100Words: 0.9, calls: 12, totalFlags: 16, totalWords: 1800 },
+          { providerId: "gladia-solaria", flaggedCallRate: 9 / 12, flaggedCalls: 9, flagsPer100Words: 2.0, calls: 12, totalFlags: 36, totalWords: 1800 },
         ],
         sentence: "Deepgram Nova-3 is ahead on 12 calls.",
       },
@@ -962,7 +962,7 @@ describe("Results", () => {
     expect(lead.textContent).toContain("4.1 of every 100 caller words")
     expect(lead.textContent).toContain("Gladia Solaria")
     // The units differ from the table's on purpose, and the banner says so.
-    expect(lead.textContent).toContain("not the per-100-words flag count the ranking uses")
+    expect(lead.textContent).toContain("not the flagged-call count the verdict ranks by")
     expect(lead.textContent).toContain("ran live during the call")
     // One org in this bulk, so its name is not prefixed onto the number.
     expect(lead.textContent).not.toContain("Default:")

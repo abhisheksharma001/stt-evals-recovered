@@ -18,8 +18,8 @@ const base: HeadlineVerdict = {
   noiseFloor: { sharedCalls: 6, difference: 0.4, ci95: [-0.2, 1.1], withinNoise: true },
   confidenceComparable: { reporting: 1, total: 2 },
   rates: [
-    { providerId: "a", flagsPer100Words: 1.2, calls: 7, totalFlags: 12, totalWords: 1000 },
-    { providerId: "b", flagsPer100Words: 1.6, calls: 7, totalFlags: 16, totalWords: 1000 },
+    { providerId: "a", flaggedCallRate: 3 / 7, flaggedCalls: 3, flagsPer100Words: 1.2, calls: 7, totalFlags: 12, totalWords: 1000 },
+    { providerId: "b", flaggedCallRate: 4 / 7, flaggedCalls: 4, flagsPer100Words: 1.6, calls: 7, totalFlags: 16, totalWords: 1000 },
   ],
   sentence: "Too close to call on 7 calls.",
 };
@@ -54,6 +54,24 @@ function render(
 // T-32: the artefact is dated, attributed, and never names a winner the
 // verdict did not name.
 describe("renderVerdictArtefact", () => {
+  // R-2a review: the two rates in the base fixture order the same way, so
+  // undoing the table's sort passed. Here they disagree: Bravo is flagged on
+  // fewer calls but carries more flags per 100 words -- it must be listed
+  // first, and its cell must read the count.
+  it("orders the table by calls flagged, not by flags per 100 words", () => {
+    const html = render({
+      ...base,
+      rates: [
+        { providerId: "a", flaggedCallRate: 5 / 7, flaggedCalls: 5, flagsPer100Words: 1.0, calls: 7, totalFlags: 10, totalWords: 1000 },
+        { providerId: "b", flaggedCallRate: 3 / 7, flaggedCalls: 3, flagsPer100Words: 1.8, calls: 7, totalFlags: 18, totalWords: 1000 },
+      ],
+    });
+    const table = html.slice(html.indexOf("<tbody>"));
+    expect(table.indexOf("Bravo")).toBeLessThan(table.indexOf("Alpha"));
+    expect(table).toContain("3 of 7 (43%)");
+  });
+
+
   it("stamps date, build SHA and scoring version, and escapes operator text", () => {
     const html = render(base);
     expect(html).toContain("Produced 2026-08-30 04:05 UTC");
@@ -77,9 +95,9 @@ describe("renderVerdictArtefact", () => {
 
   it("renders the winner, margin and cost delta vs production when a winner is named", () => {
     const html = render({ ...base, decision: "winner", winnerProviderId: "a", marginPct: 25, vsProductionPct: 25, provisional: false, evidenceCalls: 30 });
-    expect(html).toContain("Alpha has the least disagreement: 25% fewer disagreements per 100 words than Bravo.");
+    expect(html).toContain("Alpha has the least disagreement: 25% fewer flagged calls than Bravo.");
     expect(html).toContain("Alpha $0.0040/min is 50% cheaper per minute than production Bravo $0.0080/min.");
-    expect(html).toContain("the named provider has 25% fewer disagreements than production");
+    expect(html).toContain("the named provider has 25% fewer flagged calls than production");
     expect(html).not.toContain("Early read");
   });
 });
@@ -183,7 +201,7 @@ describe("renderVerdictArtefact production disagreement", () => {
     expect(section.indexOf("4.1 of every 100 caller words")).toBeLessThan(section.indexOf("Ahead, but not decided"));
     // The caveat rides with it, once at the top and once in the section.
     expect(html).toContain("ran live during the call");
-    expect(html).toContain("not the per-100-words flag count the ranking uses");
+    expect(html).toContain("not the flagged-call count the verdict ranks by");
   });
 
   it("prefixes the org's name only when the bulk holds more than one", () => {

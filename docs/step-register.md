@@ -4250,8 +4250,8 @@ column; change the composite weights.
 
 ### R-2 — One quantity ranks both surfaces
 
-**Status:** unblocked 2026-09-28 — Abhishek chose the **flagged-call rate** (PRD v7 open
-question 1). The Change paragraph below stands as written. (Was: `blocked` on that answer —
+**Status:** split 2026-09-28 into R-2a (done), R-2b, R-2c -- see below. Abhishek chose the
+**flagged-call rate** (PRD v7 open question 1). The Change paragraph below stands as written. (Was: `blocked` on that answer —
 flagged-call rate, recommended, or flags per 100 words on R-1's shared denominator.) The step below is
 written for the recommended answer; if he picks the other, the Change paragraph swaps
 `1 − cleanCallRate` for the R-1 rate and the rest stands.
@@ -4285,6 +4285,113 @@ updated to the new quantity with the discriminating cases kept; the rankings int
 case asserts card and banner agree.
 **Must not:** change the 85 / 15 weights; drop `flagBadness` (severity still carries
 information); leave M-18 on the old quantity.
+
+**Split 2026-09-28** under the "three files in three ways is three steps" rule -- each half
+compiles and ships alone: **R-2a** the verdict banner, **R-2b** the cards' composite (and a
+free recompute of stored rankings), **R-2c** M-18's proxy agreement and W-12b's method check,
+which ranks on flags per 100 words too and was written after this row.
+
+### R-2a — The verdict ranks on the flagged-call rate
+
+**Status:** done 2026-09-28. Spent nothing.
+**PR:** one.
+**Files:** `lib/scoring/src/verdict.ts`, `lib/scoring/src/verdict.test.ts`,
+`lib/api-spec/openapi.yaml` and the generated clients,
+`artifacts/api-server/src/lib/verdict-artefact.ts`, `artifacts/api-server/src/lib/call-comparison.ts`,
+`artifacts/stt-benchmark/src/components/verdict-headline.tsx`,
+`artifacts/stt-benchmark/src/pages/Landing.tsx`, and the tests that build a rate by hand.
+
+**Change, as built:** `computeVerdict` orders by `flaggedCallRate` (calls with >= 1 peer flag
+/ calls scored), then `flagsPer100Words`, then id. The paired bootstrap is the same function
+fed per-call 0/1 values with a weight of one call, so the noise floor is in percentage points.
+Each rate gains `flaggedCalls` and `flaggedCallRate`; `flagsPer100Words` stays -- it is the
+tiebreak and a column on the shareable page. *(Corrected in review: this row first said the
+Watch baseline reads it. It does not -- `artifacts/api-server/src/lib/watch-overview.ts`
+computes its own per-100 rate from production's word mismatches; only the names coincide.)* Sentences read "flagged on 4 of 17 calls"; the shareable page's
+table leads with "Calls flagged"; the legend, the landing example and the per-call comparison
+order follow.
+
+**Verify, 2026-09-28:** typecheck clean in all four projects; scoring **204** (six verdict
+cases re-seeded on per-call 0/1 flags with their intent kept, one new: "few" flagged on 3 of
+24 calls with 6 flags each leads "many" flagged on 12 with one each, though it is worse per 100
+words; a tie on calls is broken by per 100 words); api-server unit 288; integration **48 /
+260** (the settled-verdict seed re-made: under the new quantity "worse on every call" means
+the leader flagged on none, the runner-up on all six; the rates' `[flaggedCalls, calls]` now
+asserted); UI 224. Read-only preview on bulk `42769f26` with the branch code: "Too close to
+call: AssemblyAI (flagged on 4 of 17 calls) and ElevenLabs (flagged on 4 of 17 calls)" -- the
+same pair as before, in countable words; Cartesia and Nova-3 5 of 17, OpenAI 8 of 17. The cards
+on that bulk still rank Cartesia first in every group -- that is R-2b.
+
+**Prove it by breaking it:** done, after committing. Sorting on `flagsPer100Words` first again
+failed exactly "ranks by the share of calls flagged, and breaks a tie on flags per 100 words".
+Restored with `git checkout -- lib/scoring/src/verdict.ts`.
+
+**Must not:** remove `flagsPer100Words` (it is the tiebreak -- not, as first written here,
+because the Watch reads it); change the bootstrap function (its small-sample weakness is R-57).
+
+**Independent review, 2026-09-28 -- merge after fixes; fixed in this PR:** the production caveat
+still said "not the per-100-words flag count the ranking uses" on Results, Overview and the
+shareable page -- now "not the flagged-call count the verdict ranks by"; the per-call comparison
+tooltip described the old order; the false Watch claim above; `marginPct` and
+`noiseFloor.difference` units; the landing example could not happen (C would have been the
+runner-up -- C is now 47% worse). Tests that could not fail were given teeth: the shareable
+page's table is now tested with the two rates disagreeing (break test: the old sort fails it),
+and the verbosity case pins the leader again (on own words "wordy" leads the undecided pair, on
+the shared basis "lean" does -- R-1 still decides the tiebreak). After fixes: scoring 204,
+api-server unit 289, integration 48 / 260, UI 224. The reviewer's statistical finding is R-57.
+
+> **What was learned.** *A coarser number settles less.* Tests seeded as "fewer flags on
+> most calls" stopped settling, because a call with 1 flag and a call with 2 are now the same
+> call. The re-seeds say what "clearly better" means for this quantity: flagged on fewer calls.
+
+### R-2b — The cards' composite ranks on the same flagged-call rate
+
+**Status:** blocked 2026-09-28 — **not built: as written it cannot pass its own acceptance.**
+Measured on bulk `42769f26` (read-only, per assistant group: calls, calls flagged, flag
+badness, $/min): every assistant card holds **1 or 2 calls**, and in **11 of 13** groups every
+provider is at 0 % or 100 % of its calls flagged, and in 9 of 13 every provider has the
+same count *(corrected in review: this line first merged the two statements)*. Whatever the
+flag quantity, the
+tie goes to the next key -- cost -- and Cartesia, the cheapest at $0.0022/min, is rank 1 in
+12 of 13 cards under the 85/15 composite AND under a pure flagged-rate-then-badness-then-cost
+order. The banner reads the whole org's 17 calls. **The two disagree because of grain
+(per-assistant cards of 1-2 calls against a per-org verdict), not because of the quantity** --
+the same finding S-AB2 hit. Changing the composite would ship a methodology change and leave
+the page exactly as contradictory as it is.
+
+Also inside the row, for whoever picks it up: the Acceptance ("same flagged-call rate THEN
+`flagBadness` SHALL order them before cost") and the Must-not ("change the 85 / 15 weights")
+cannot both hold -- with cost inside a weighted composite, a tie on the flag term is decided by
+cost, not badness.
+
+**The decision for Abhishek -- options:**
+1. *A tie is a tie on the card.* When providers tie on flagged calls in a group, the card says
+   "tied on these N calls" instead of ranking them by price; no rank 1 by cost alone.
+2. *Cards rank at the org grain*, the verdict's own; the per-assistant card shows its calls
+   but not its own order.
+3. *Build R-2b as written anyway* (quantity alignment for the day groups are bigger), knowing
+   today's cards still read Cartesia first.
+**PR:** one.
+**Depends on:** R-2a.
+**Files:** as R-2's list: `lib/scoring/src/hybrid.ts` (`hybridCompositeScore`'s flag
+component), `artifacts/api-server/src/lib/run-executor.ts` (`providerAggregates`, the
+composite input, the `recommendation` sentence), `lib/scoring/src/hybrid.test.ts`,
+`artifacts/api-server/src/routes/__integration__/rankings.int.test.ts`; then run
+`artifacts/api-server/src/recompute-rankings.ts --apply` (free) so stored rows follow.
+**Change / Acceptance / Must not:** R-2's, for the cards. On bulk `42769f26` the banner's leader
+and every card's rank 1 SHALL agree.
+
+### R-2c — Proxy agreement and the method check read the same quantity
+
+**Status:** not started. Spends nothing.
+**PR:** one.
+**Depends on:** R-2a (not R-2b: both certify an ORDER, and the order the page names is the
+verdict's).
+**Files:** `artifacts/api-server/src/lib/proxy-agreement-aggregate.ts` and its test,
+`artifacts/api-server/src/lib/method-check-aggregate.ts` and its test.
+**Change:** both rank providers by the flagged-call rate (per 100 words as tiebreak) instead of
+flags per 100 words, so what they certify is the order the page shows. Report the method
+check's figure before and after.
 
 ---
 
@@ -7898,6 +8005,48 @@ dot. The amber state was not produced live -- that would mean stopping the real 
 **Prove it by breaking it:** done, after committing. Forcing `databaseDown` to false failed
 exactly the "unreachable" case. Restored with
 `git checkout -- artifacts/stt-benchmark/src/components/layout.tsx`.
+
+### R-57 — A winner needs enough calls that actually differ
+
+**Status:** not started. **Next after R-2a.** Spends nothing.
+**PR:** one.
+**Depends on:** R-2a.
+**Found:** independent review of R-2a, 2026-09-28; confirmed by hand the same day.
+**Files:** `lib/scoring/src/verdict.ts` (`computeVerdict`, beside `bootstrapNoiseFloor`),
+`lib/scoring/src/verdict.test.ts`.
+
+**Today:** the noise floor is a percentile bootstrap over the shared calls. With the
+flagged-call rate each call is 0 or 1, and the only calls that carry signal are the
+*discordant* ones (one provider flagged, the other not). At 6 shared calls with 3 discordant
+calls all going one way, a resample misses all three with probability (1/2)^6 = 1.6 % < 2.5 %,
+so the interval's lower end stays above zero and **a winner is named on 3 calls of evidence**
+-- an exact one-sided sign (McNemar) test gives p = 0.125. The reviewer's scripted check found
+the same at n = 5-6 (3 one-way calls) and n >= 10 (4). The weakness predates R-2a (flag counts
+had it too), but R-2a makes the discordant calls the whole signal.
+
+Second, older gap in the same place: `withinNoise` is `ci95[0] <= 0 && ci95[1] >= 0`, so an
+interval **entirely below zero** -- the leader by overall rate is clearly *worse* on the calls
+both scored -- reads as "outside noise" and names that leader the winner. It needs calls only
+one of the two scored, so it is rare, but it is a wrong answer, not a cautious one.
+
+**Change:** a winner is named only when (a) the paired interval excludes zero *on the positive
+side*, AND (b) an exact **two-sided** sign test on the discordant shared calls gives p < 0.05 --
+two-sided because the leader is chosen after looking at the data. Computed exactly: the
+smallest splits that pass are 6-0 (p 0.031), 7-0, 8-1 (0.039), 9-1 (0.021), 10-2 (0.039); 5-0
+(0.0625), 6-1 (0.125) and 7-1 (0.070) do not. Otherwise `too_close`, with `callsToSettle` as
+today. An interval entirely below zero is `too_close`
+with the pair named as it is, never a winner.
+
+**Acceptance:** WHEN the top two differ on only 3 shared calls (3-0), or 5-0, or 6-1, THEN the
+verdict SHALL be `too_close`; WHEN they differ 6-0 THEN it MAY be `winner`; WHEN the paired interval lies
+entirely below zero THEN no winner SHALL be named.
+
+**Verify:** unit cases for 3-0, 5-0, 6-1, 6-0 and the negative interval; the existing verdict cases
+unchanged; report how many live bulks' verdicts change (expected: none -- every live verdict
+read this session is already `too_close`).
+
+**Must not:** change what is counted (R-2a's quantity); remove the bootstrap (the interval is
+still what `callsToSettle` reads).
 
 ## Part A — Setup page
 

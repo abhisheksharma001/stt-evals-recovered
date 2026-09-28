@@ -203,7 +203,7 @@ describe("GET /api/benchmark/bulks/:bulkId/verdicts", () => {
     expect(html.status).toBe(200);
     expect(html.text).toContain("25.0 of every 100 caller words");
     expect(html.text).toContain("sat at 0.0");
-    expect(html.text).toContain("not the per-100-words flag count the ranking uses");
+    expect(html.text).toContain("not the flagged-call count the verdict ranks by");
     expect(html.text.indexOf("25.0 of every 100 caller words")).toBeLessThan(html.text.indexOf('<p class="counts">'));
   });
 
@@ -384,9 +384,13 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
     // calls with replacement, so a gap present in every pair survives every
     // resample and the 95% interval never reaches zero. That is what makes
     // this seed settle deterministically instead of by the bootstrap's luck.
+    // R-2a: the ranking counts flagged CALLS, so "worse on every call" means
+    // the leader is flagged on none and the runner-up on all six -- the old
+    // seed (leader flagged on 4 of 6, fewer flags each) left only 2 calls
+    // with a gap and no longer settled.
     const transcript =
       "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon";
-    const leaderFlags = [1, 0, 1, 2, 1, 0];
+    const leaderFlags = [0, 0, 0, 0, 0, 0];
     const runnerUpFlags = [4, 5, 3, 6, 4, 5];
     for (const [i, call] of calls.entries()) {
       const leaderCell = await fx.result(run.id, call.id, leader.id, { hypothesisTranscript: transcript });
@@ -406,6 +410,13 @@ describe("GET /api/benchmark/bulks/:bulkId/verdict.html", () => {
       winnerProviderId: leader.id,
       runnerUpProviderId: runnerUp.id,
     });
+    // R-2a: the rate the order is made of, carried per provider.
+    expect(
+      json.body.groups[0].verdict.rates.map((r: { flaggedCalls: number; calls: number }) => [r.flaggedCalls, r.calls]),
+    ).toEqual([
+      [0, 6],
+      [6, 6],
+    ]);
 
     const res = await request(server).get(`/api/benchmark/bulks/${bulk.id}/verdict.html`);
     expect(res.status).toBe(200);

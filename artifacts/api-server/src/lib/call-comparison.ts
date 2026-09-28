@@ -288,8 +288,9 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
     });
   }
 
-  // Ordering: the bulk's verdict rate (peer flags per 100 words, lower
-  // first) for the group this call belongs to; alphabetical otherwise.
+  // Ordering: the bulk's verdict order for the group this call belongs to --
+  // flagged-call rate, then peer flags per 100 words (R-2a); alphabetical
+  // otherwise.
   // Providers the verdict has no rate for sort after the rated ones.
   let ordering: CallComparison["ordering"] = "alphabetical";
   const byName = (a: ComparisonRow, b: ComparisonRow) => a.providerName.localeCompare(b.providerName);
@@ -299,11 +300,13 @@ export async function callComparison(callId: string, bulkId: string | null): Pro
       verdicts.groups.find((g) => g.assistantIds.includes(call.sourceAssistantId ?? null)) ?? null;
     if (group && group.verdict.rates.length > 0) {
       ordering = "verdict_rate";
-      const rate = new Map(group.verdict.rates.map((r) => [r.providerId, r.flagsPer100Words]));
+      // R-2a: the verdict's own order -- flagged-call rate, per 100 words to break ties.
+      const rate = new Map(group.verdict.rates.map((r) => [r.providerId, r]));
       rows.sort((a, b) => {
         const ra = rate.get(a.providerId);
         const rb = rate.get(b.providerId);
-        if (ra != null && rb != null) return ra - rb || byName(a, b);
+        if (ra != null && rb != null)
+          return ra.flaggedCallRate - rb.flaggedCallRate || ra.flagsPer100Words - rb.flagsPer100Words || byName(a, b);
         if (ra != null) return -1;
         if (rb != null) return 1;
         return byName(a, b);

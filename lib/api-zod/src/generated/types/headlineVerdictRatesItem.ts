@@ -8,6 +8,8 @@
 
 export type HeadlineVerdictRatesItem = {
   providerId: string;
+  flaggedCallRate: number;
+  flaggedCalls: number;
   flagsPer100Words: number;
   calls: number;
   totalFlags: number;

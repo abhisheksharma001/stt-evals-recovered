@@ -3141,12 +3141,14 @@ components:
     HeadlineVerdict:
       type: object
       description: >-
-        T-20. Metric is peer flags per 100 words (confidence spans excluded),
-        pooled per provider; lower is better. R-1: the words are the call's --
-        one basis shared by every provider on it, so a wordier provider does
-        not buy a lower rate. A winner is named only when a
+        T-20. R-2a (2026-09-28): the metric is the FLAGGED-CALL RATE -- calls
+        on which the provider carried at least one peer flag, over the calls
+        it scored; lower is better. Peer flags per 100 words (confidence spans
+        excluded, on R-1's shared call word basis) is still reported per
+        provider and breaks ties. A winner is named only when a
         paired bootstrap (1,000 resamples of the calls the top two both
-        scored, seeded) puts zero outside the 95% interval of their rate
+        scored, seeded; per-call 0/1 flagged, so the noise floor is in
+        percentage points) puts zero outside the 95% interval of their rate
         difference. Fewer than 5 shared calls: no noise floor and no winner
         (decision too_few_calls). Every margin ships with evidenceCalls;
         below 20 the whole verdict is provisional.
@@ -3183,7 +3185,8 @@ components:
           required: [sharedCalls, difference, ci95, withinNoise]
           properties:
             sharedCalls: { type: number }
-            # runner-up rate minus leader rate over shared calls.
+            # runner-up rate minus leader rate over shared calls. R-2a: in
+            # percentage points of calls flagged (e.g. 20 = 20 points).
             difference: { type: number }
             ci95:
               type: array
@@ -3201,9 +3204,14 @@ components:
           type: array
           items:
             type: object
-            required: [providerId, flagsPer100Words, calls, totalFlags, totalWords]
+            required: [providerId, flaggedCallRate, flaggedCalls, flagsPer100Words, calls, totalFlags, totalWords]
             properties:
               providerId: { type: string }
+              # R-2a: the ranking quantity, 0..1: flaggedCalls / calls.
+              flaggedCallRate: { type: number }
+              flaggedCalls: { type: number }
+              # No longer the ranking quantity: the first tiebreak. (The Watch
+              # computes its own per-100 rate; it does not read this field.)
               flagsPer100Words: { type: number }
               calls: { type: number }
               totalFlags: { type: number }
