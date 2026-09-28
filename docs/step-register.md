@@ -4470,6 +4470,46 @@ check's figure before and after.
 
 ---
 
+### R-2e — A call the provider failed counts as a flagged call
+
+**Status:** not started. Decided 2026-09-28 (Abhishek: "do whatever u recommend", on R-2's
+answer in `docs/research.md`).
+**PR:** one. Card and verdict change together: they must rank on the same quantity (R-2b),
+and shipping one without the other puts two different winners on one page again (F-223).
+**Depends on:** R-2b. **Research:** R-2 answered.
+**Files:** `lib/scoring/src/verdict.ts` (`VerdictCell`, `computeVerdict`) and
+`lib/scoring/src/verdict.test.ts`; `artifacts/api-server/src/lib/verdict.ts` (the bulk cell
+query); `artifacts/api-server/src/lib/run-executor.ts` (`aggregateRankingRows`,
+`computeRankingsForRun`, `computeRankingsForBulk`);
+`artifacts/api-server/src/routes/__integration__/verdicts.int.test.ts` and
+`artifacts/api-server/src/routes/__integration__/rankings.int.test.ts`.
+**Today:** the card rank and the verdict read only `status = 'ok'` cells joined to a score
+row. A cell that ended `failed` drops out of the provider's denominator, so a provider that
+times out on half its calls reads exactly as reliable as one that never fails. Local DB
+2026-09-28: no finished bulk holds such a failure yet, so nothing changes rank on deploy.
+**Change:** a cell whose final status is `failed` with `failure_class` `provider_timeout` or
+`provider_5xx` (the two provider-fault classes in `lib/stt-providers/src/failure-class.ts`)
+counts as one flagged call for that provider, in both the flagged-call rate and the verdict's
+paired sample. It adds nothing to disagreements per 100 words (there is no transcript to
+count words or flags on). Every other failure class -- ours (`retention_expired`,
+`audio_url_forbidden`, `unknown`, which includes "no audioObjectPath"), `rate_limited` (our
+concurrency), `provider_auth` (our key), `audio_decode` (our audio) -- stays excluded as
+today. The card's recommendation sentence and the verdict sentence say how many of the
+flagged calls were failures when any were, e.g. "flagged on 5 of 17 calls (2 failed)".
+**Acceptance:** WHEN a provider's cell on a call ends `failed` with class `provider_timeout`
+or `provider_5xx` THEN that call SHALL count as flagged for that provider on both the card
+rank and the verdict, AND a failure of any other class SHALL change neither.
+**Verify:** `pnpm run typecheck` clean; `pnpm --filter @workspace/scoring test`;
+`pnpm --filter @workspace/api-server test` and its integration suite pass with new cases for
+both classes in and a `unknown` failure out. Break test: drop the class filter -> the
+`unknown` case fails. After deploy, `recompute-rankings.ts --apply` (free) and confirm bulk
+`42769f26`'s cards and verdict are unchanged (it has 0 failed cells).
+**Must not:** spend anything; retry or re-run any cell; count `rate_limited` or `unknown`;
+touch the method check or proxy agreement (the method check reads gold -- out of scope, no
+gold work); change stored `failure_class` values.
+
+---
+
 ### R-3 — Production against the pack is the headline sentence
 
 **Status:** done 2026-09-09 (PR #119, `8e71fa957af7`), deployed `5493df7ced85 ->
@@ -6134,7 +6174,10 @@ sentence; touch any other error message while in this file.
 
 **Status:** unblocked 2026-09-28 — Abhishek chose **(2), the transaction, staged**: the gold
 clear first, in a worktree, then the other sites one PR at a time. (Was: blocked on that
-choice.)
+choice.) **Changed 2026-09-28:** gold work is out ("DONT THE WHICH INCLUDE GOLD"), so the
+gold-clear stage is dropped and stage 1 is the bulk-template delete instead -- the other
+route where the audit row is the only surviving copy of something (R-24a). The gold route
+stays as it is.
 **PR:** none yet. The grill is the deliverable; the steps are written when the first one is
 built.
 **Depends on:** R-22.
@@ -6171,6 +6214,32 @@ only one of them is right.
 
 **Must not:** wrap all 30 sites "for now"; treat the 500-after-commit as the whole bug,
 when the lost audit row is the half that cannot be retried.
+
+---
+
+### R-24a — Deleting a bulk template writes its audit row in the same transaction
+
+**Status:** not started. Decided 2026-09-28 (Abhishek: "do whatever u recommend").
+**PR:** one, in a worktree (R-24's standing rule).
+**Depends on:** R-24. **Research:** none.
+**Files:** `artifacts/api-server/src/lib/audit.ts` (`writeAudit`),
+`artifacts/api-server/src/routes/bulks.ts` (`DELETE /benchmark/bulk-templates/:templateId`),
+`artifacts/api-server/src/routes/__integration__/bulk-templates.int.test.ts`.
+**Today:** the route deletes the template with `.returning()`, then calls `writeAudit` with
+the deleted row as `beforeState`. If that insert throws, the template is already gone, the
+caller gets a 500 saying it was not, and the only copy of the template is lost.
+**Change:** `writeAudit` takes an optional executor (a drizzle transaction) and inserts
+through it when given, `db` otherwise, so the other 29 sites are untouched. The delete route
+runs the delete and the audit insert inside one `db.transaction`: both land or neither does.
+**Acceptance:** WHEN the audit insert fails during a template delete THEN the template SHALL
+still exist AND the response SHALL be an error; WHEN it succeeds THEN the template SHALL be
+gone AND exactly one `bulk_template` / `delete` audit row SHALL hold it as `beforeState`.
+**Verify:** `pnpm run typecheck` clean; the bulk-templates integration suite passes with a
+case that forces the audit insert to fail (e.g. a mocked `auditLogTable` insert that throws
+inside the transaction) and then reads the template back. Break test: move the audit call
+back outside the transaction -> that case fails.
+**Must not:** touch the gold-clear route or any other audit site; wrap anything in
+`auditOrLog`; spend anything.
 
 ---
 
