@@ -3784,7 +3784,11 @@ integer, not null, default **0 = off**; `GET/PATCH /benchmark/settings` carry
 maximum, so a bigger cap could never be reached); the PATCH is audited like the other two
 settings. Schema push: `pnpm --filter @workspace/db run push` on the dev database at deploy
 (additive column, default 0). Break test: dropping the PATCH write fails the M-17a case.
-**M-17b** the Setup control, **M-17c** the script reads the cap, **M-17d** the install --
+**M-17b done 2026-09-28** (branch `m17b-nightly-cap-control`): Setup > Call sources, in the
+Vapi card, "Nightly import: max calls per night" -- number input + Save, sends the cap as a
+number, will not send anything outside 0..500 or a fraction; 0 reads "0 = off". Break
+tests: dropping the 500 bound and sending the text instead of a number each fail one case.
+**M-17c** the script reads the cap, **M-17d** the install --
 M-17d must not happen before M-17c is on main: the script on main today has no cap, so
 an agent installed now would import ~250 calls on its first night.
 **Correction, same day, before this row was pushed:** this line first read "and
