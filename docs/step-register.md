@@ -4376,31 +4376,27 @@ api-server unit 289, integration 48 / 260, UI 224. The reviewer's statistical fi
 
 ### R-2b — The cards' composite ranks on the same flagged-call rate
 
-**Status:** blocked 2026-09-28 — **not built: as written it cannot pass its own acceptance.**
-Measured on bulk `42769f26` (read-only, per assistant group: calls, calls flagged, flag
-badness, $/min): every assistant card holds **1 or 2 calls**, and in **11 of 13** groups every
-provider is at 0 % or 100 % of its calls flagged, and in 9 of 13 every provider has the
-same count *(corrected in review: this line first merged the two statements)*. Whatever the
-flag quantity, the
-tie goes to the next key -- cost -- and Cartesia, the cheapest at $0.0022/min, is rank 1 in
-12 of 13 cards under the 85/15 composite AND under a pure flagged-rate-then-badness-then-cost
-order. The banner reads the whole org's 17 calls. **The two disagree because of grain
-(per-assistant cards of 1-2 calls against a per-org verdict), not because of the quantity** --
-the same finding S-AB2 hit. Changing the composite would ship a methodology change and leave
-the page exactly as contradictory as it is.
-
-Also inside the row, for whoever picks it up: the Acceptance ("same flagged-call rate THEN
-`flagBadness` SHALL order them before cost") and the Must-not ("change the 85 / 15 weights")
-cannot both hold -- with cost inside a weighted composite, a tie on the flag term is decided by
-cost, not badness.
-
-**The decision for Abhishek -- options:**
-1. *A tie is a tie on the card.* When providers tie on flagged calls in a group, the card says
-   "tied on these N calls" instead of ranking them by price; no rank 1 by cost alone.
-2. *Cards rank at the org grain*, the verdict's own; the per-assistant card shows its calls
-   but not its own order.
-3. *Build R-2b as written anyway* (quantity alignment for the day groups are bigger), knowing
-   today's cards still read Cartesia first.
+**Status:** done 2026-09-28 (PR on branch `r2b-rank-without-price`), changed by decision.
+Spent nothing. **Decision (Abhishek, 2026-09-28):** "we are not seeing the cheapest option in
+this whole thing, we want the most reliable STT" -- price leaves the ranking entirely, which
+also dissolves the row's internal conflict (the 85/15 Must-not below no longer applies).
+The three options that were on the table (a tie reads "tied"; cards rank at the org grain;
+build as written) were replaced by: cards rank on the verdict's own keys and price votes on
+nothing. Built: `artifacts/api-server/src/lib/ranking-order.ts` sorts on flagged-call rate,
+then peer flags per 100 words, then providerId (stable, decides nothing); `run-executor.ts`
+computes `flaggedCallRate` (counted, not `1 - cleanCallRate`, so equal shares compare equal);
+the composite (`HYBRID_RANKING_WEIGHTS`, the composite function, `flagBadness`) is deleted from
+`lib/scoring/src/hybrid.ts`; the stored sentence (`ranking-recommendation.ts`) names flagged
+calls and disagreements per 100 words, never price, and calls a tie on both "arbitrary";
+Results reads "Ranked by flagged calls, disagreements". $/min stays on the page as
+information. Learned: (1) price was never in the org verdict -- only the cards used it.
+(2) Break tests: sorting on price first fails exactly the tie test in
+`rankings.int.test.ts` (the pricier provider is created first so its id sorts first);
+dropping the rate key fails 3 `ranking-order.test.ts` cases. (3) On today's 1-2-call cards
+most groups are now an all-way tie resolved by provider id -- the order is stable but means
+nothing, which the sentence says; showing "tied" on the card itself is R-2d.
+**Follow-ups:** R-2d (card shows "tied"); research R-2 in `docs/research.md` (does a failed
+cell count against a provider's reliability?).
 **PR:** one.
 **Depends on:** R-2a.
 **Files:** as R-2's list: `lib/scoring/src/hybrid.ts` (`hybridCompositeScore`'s flag
