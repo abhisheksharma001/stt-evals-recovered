@@ -4395,6 +4395,17 @@ information. Learned: (1) price was never in the org verdict -- only the cards u
 dropping the rate key fails 3 `ranking-order.test.ts` cases. (3) On today's 1-2-call cards
 most groups are now an all-way tie resolved by provider id -- the order is stable but means
 nothing, which the sentence says; showing "tied" on the card itself is R-2d.
+**Live 2026-09-28:** merged #233 (`4606ede`), deployed, `recompute-rankings.ts --apply` (free;
+3 bulks + 17 standalone runs rewritten). Bulk `42769f26` rank 1: before Cartesia 12 / AssemblyAI 1,
+after AssemblyAI 13 of 13 -- **every one of the 13 cards is a tie on both keys**, so the providerId
+tiebreak picks `assemblyai-universal` because it sorts first alphabetically. The stored sentence
+says so ("every provider tied ..." / "N providers tied for fewest ..."), but the card still shows
+AssemblyAI at #1, which reads as a pick it is not. That makes R-2d (the card shows "tied", no #1
+on a tie) the next step, not a nicety. Also found: 5 rows of cancelled bulk `4fee349b` (Pipecat 1k,
+public calibration set, 339 calls with no assistant) still carry the old price sentences --
+`recompute-rankings.ts` rewrites finished bulks only, by design -- and they show price outranking
+accuracy at scale: ranks 2, 4, 5 and 7 raised fewer disagreements than rank 1 there. Not shown to
+clients (D-15 excludes that set); left as is, named here so it is not mistaken for current logic.
 **Follow-ups:** R-2d (card shows "tied"); research R-2 in `docs/research.md` (does a failed
 cell count against a provider's reliability?).
 **PR:** one.
