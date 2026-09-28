@@ -74,7 +74,7 @@ const providersWithUnlistedRow: Provider[] = [
   },
 ]
 
-const settings: AppSettings = { activeProviderId: "deepgram-nova-3", agentModel: null }
+const settings: AppSettings = { activeProviderId: "deepgram-nova-3", agentModel: null, nightlyImportCap: 0 }
 
 const agentModels: AgentModelList = {
   defaultModel: "gpt-4o",

@@ -183,7 +183,7 @@ const measuredCalls: BenchmarkCall[] = [
   signalCall("m-5", {}),
 ]
 
-const settings: AppSettings = { activeProviderId: "deepgram-nova-3", agentModel: "gpt-4o" }
+const settings: AppSettings = { activeProviderId: "deepgram-nova-3", agentModel: "gpt-4o", nightlyImportCap: 0 }
 
 const verdicts: BulkVerdicts = {
   bulkId: "bulk-1",

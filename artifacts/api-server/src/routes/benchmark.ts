@@ -1198,6 +1198,7 @@ router.get("/benchmark/settings", async (_req, res): Promise<void> => {
     {
       activeProviderId: settings.activeProviderId,
       agentModel: settings.agentModel,
+      nightlyImportCap: settings.nightlyImportCap,
     },
   );
 });
@@ -1213,9 +1214,13 @@ router.patch("/benchmark/settings", async (req, res): Promise<void> => {
   // unknown keys -- answered 500. Reproduced live on `{"judgeModel":123}`:
   // the field does not exist, nothing was left to set, and the caller was
   // told the server had failed rather than that they had.
-  if (parsed.data.activeProviderId === undefined && parsed.data.agentModel === undefined) {
+  if (
+    parsed.data.activeProviderId === undefined &&
+    parsed.data.agentModel === undefined &&
+    parsed.data.nightlyImportCap === undefined
+  ) {
     res.status(400).json({
-      error: "Name at least one setting to change: activeProviderId or agentModel.",
+      error: "Name at least one setting to change: activeProviderId, agentModel or nightlyImportCap.",
     });
     return;
   }
@@ -1242,6 +1247,9 @@ router.patch("/benchmark/settings", async (req, res): Promise<void> => {
       ...(parsed.data.agentModel !== undefined
         ? { agentModel: parsed.data.agentModel || null }
         : {}),
+      ...(parsed.data.nightlyImportCap !== undefined
+        ? { nightlyImportCap: parsed.data.nightlyImportCap }
+        : {}),
     })
     .where(eq(appSettingsTable.id, APP_SETTINGS_ID))
     .returning();
@@ -1251,7 +1259,11 @@ router.patch("/benchmark/settings", async (req, res): Promise<void> => {
     entityId: APP_SETTINGS_ID,
     actorLabel: actorFromRequest(req),
     action: "update",
-    afterState: { activeProviderId: updated.activeProviderId, agentModel: updated.agentModel },
+    afterState: {
+      activeProviderId: updated.activeProviderId,
+      agentModel: updated.agentModel,
+      nightlyImportCap: updated.nightlyImportCap,
+    },
   });
 
   respondJson(
@@ -1260,6 +1272,7 @@ router.patch("/benchmark/settings", async (req, res): Promise<void> => {
     {
       activeProviderId: updated.activeProviderId,
       agentModel: updated.agentModel,
+      nightlyImportCap: updated.nightlyImportCap,
     },
   );
 });

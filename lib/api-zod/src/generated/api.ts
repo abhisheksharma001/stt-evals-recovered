@@ -1035,23 +1035,41 @@ export const ListAgentModelsResponse = zod.object({
 /**
  * @summary System-wide, changeable settings -- which provider real production calls actually use (separate from picking providers to benchmark in a bulk run), and which OpenAI model powers the transcript-quality agent's judge pass (2026-08-26)
  */
+export const getAppSettingsResponseNightlyImportCapMin = 0;
+export const getAppSettingsResponseNightlyImportCapMax = 500;
+
+
+
 export const GetAppSettingsResponse = zod.object({
   "activeProviderId": zod.string().nullable().describe('Which provider real production calls actually use. Independent of which providers a bulk run benchmarks.'),
-  "agentModel": zod.string().nullable().describe('OpenAI model for the transcript-quality agent\'s judge pass (lib\/agent.ts). The cheap flag-pass model is not user-configurable.')
+  "agentModel": zod.string().nullable().describe('OpenAI model for the transcript-quality agent\'s judge pass (lib\/agent.ts). The cheap flag-pass model is not user-configurable.'),
+  "nightlyImportCap": zod.number().int().min(getAppSettingsResponseNightlyImportCapMin).max(getAppSettingsResponseNightlyImportCapMax).describe('Most Vapi calls the nightly import may bring in per night. 0 = off.')
 }).describe('2026-08-26. Null on either field means \"no override -- fall back to the hardcoded default\" (no active provider designated; lib\/agent.ts\'s own JUDGE_MODEL constant).')
 
 
 /**
  * @summary Update the active production provider and/or the agent's judge model. Either field may be omitted (left unchanged) or set to null (cleared, falls back to the hardcoded default).
  */
+export const updateAppSettingsBodyNightlyImportCapMin = 0;
+export const updateAppSettingsBodyNightlyImportCapMax = 500;
+
+
+
 export const UpdateAppSettingsBody = zod.object({
   "activeProviderId": zod.string().nullish(),
-  "agentModel": zod.string().nullish()
+  "agentModel": zod.string().nullish(),
+  "nightlyImportCap": zod.number().int().min(updateAppSettingsBodyNightlyImportCapMin).max(updateAppSettingsBodyNightlyImportCapMax).optional()
 })
+
+export const updateAppSettingsResponseNightlyImportCapMin = 0;
+export const updateAppSettingsResponseNightlyImportCapMax = 500;
+
+
 
 export const UpdateAppSettingsResponse = zod.object({
   "activeProviderId": zod.string().nullable().describe('Which provider real production calls actually use. Independent of which providers a bulk run benchmarks.'),
-  "agentModel": zod.string().nullable().describe('OpenAI model for the transcript-quality agent\'s judge pass (lib\/agent.ts). The cheap flag-pass model is not user-configurable.')
+  "agentModel": zod.string().nullable().describe('OpenAI model for the transcript-quality agent\'s judge pass (lib\/agent.ts). The cheap flag-pass model is not user-configurable.'),
+  "nightlyImportCap": zod.number().int().min(updateAppSettingsResponseNightlyImportCapMin).max(updateAppSettingsResponseNightlyImportCapMax).describe('Most Vapi calls the nightly import may bring in per night. 0 = off.')
 }).describe('2026-08-26. Null on either field means \"no override -- fall back to the hardcoded default\" (no active provider designated; lib\/agent.ts\'s own JUDGE_MODEL constant).')
 
 

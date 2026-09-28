@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { benchmarkProvidersTable } from "./benchmark-providers";
@@ -18,6 +18,11 @@ export const appSettingsTable = pgTable("app_settings", {
     () => benchmarkProvidersTable.id,
   ),
   agentModel: text("agent_model"),
+  // M-17a (2026-09-28, Abhishek): the most calls the 03:00 import
+  // (scripts/daily-import.sh) may bring in per night. 0 = off -- the job runs
+  // and imports nothing -- and 0 is the default, so installing the job
+  // changes nothing until someone sets a number on the Setup page.
+  nightlyImportCap: integer("nightly_import_cap").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()

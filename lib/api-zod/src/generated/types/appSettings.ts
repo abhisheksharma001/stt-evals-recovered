@@ -20,4 +20,10 @@ export interface AppSettings {
      * @nullable
      */
   agentModel: string | null;
+  /**
+     * Most Vapi calls the nightly import may bring in per night. 0 = off.
+     * @minimum 0
+     * @maximum 500
+     */
+  nightlyImportCap: number;
 }

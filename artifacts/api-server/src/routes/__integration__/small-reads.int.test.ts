@@ -20,12 +20,12 @@ afterAll(async () => {
 });
 
 describe("GET /api/benchmark/settings", () => {
-  it("answers exactly the two settings fields", async () => {
+  it("answers exactly the three settings fields", async () => {
     const res = await request(server).get("/api/benchmark/settings");
     expectStatus(res, 200);
     // Values are shared state (another suite or a person may have set
     // them); the shape is the contract.
-    expect(Object.keys(res.body).sort()).toEqual(["activeProviderId", "agentModel"]);
+    expect(Object.keys(res.body).sort()).toEqual(["activeProviderId", "agentModel", "nightlyImportCap"]);
   });
 });
 
