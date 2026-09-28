@@ -8008,7 +8008,17 @@ exactly the "unreachable" case. Restored with
 
 ### R-57 — A winner needs enough calls that actually differ
 
-**Status:** not started. **Next after R-2a.** Spends nothing.
+**Status:** done 2026-09-28 (PR on branch `r57-sign-test-floor`). Spent nothing.
+`signTestTwoSidedP` in `lib/scoring/src/verdict.ts`; `computeVerdict` names a winner only
+when `ci95[0] > 0` AND the discordant split passes p < `SIGN_TEST_ALPHA` (0.05). Learned:
+(1) `withinNoise` on the API's NoiseFloor is left meaning what it says (interval includes
+zero) -- the DECISION carries R-57, so a group can read `withinNoise: false` and still be
+`too_close`; no UI reads `withinNoise` to name a winner (grep, 2026-09-28). (2) Two old
+fixtures were 5-0 splits and had to move to 6-0 / 7-0 -- the acceptance says 5-0 is
+`too_close`, so they were winners only because of the bug. (3) Break tests: dropping the
+sign test fails 4 cases (3-0 at n 6 and 30, 5-0, 7-1; 6-1 was already caught by the
+bootstrap); going back to `withinNoise` fails only the below-zero case. (4) Live: 5 verdict
+groups over 4 bulks before deploy, 4 `too_close` + 1 `too_few_calls`, none a winner.
 **PR:** one.
 **Depends on:** R-2a.
 **Found:** independent review of R-2a, 2026-09-28; confirmed by hand the same day.
