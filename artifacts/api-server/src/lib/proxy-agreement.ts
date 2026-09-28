@@ -73,7 +73,6 @@ export async function proxyAgreement(): Promise<ProxyAgreement> {
       providerId: benchmarkProviderCallResultsTable.providerId,
       wer: benchmarkScoresTable.wer,
       peerFlagCount: benchmarkScoresTable.peerFlagCount,
-      peerFlagSeverity: benchmarkScoresTable.peerFlagSeverity,
     })
     .from(benchmarkProviderCallResultsTable)
     .innerJoin(benchmarkCallsTable, eq(benchmarkCallsTable.id, benchmarkProviderCallResultsTable.callId))

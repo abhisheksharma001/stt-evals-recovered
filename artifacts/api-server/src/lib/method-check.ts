@@ -4,8 +4,8 @@
 // disagrees with its peers. That is a claim about a proxy. The public Pipecat
 // set (W-12a) is the one place on file where every clip carries a gold that
 // came with the dataset, so there the proxy can be held against the truth:
-// across the providers, does ordering by pooled peer-flag rate agree with
-// ordering by pooled gold WER? Spearman rho, with its exact one-sided
+// across the providers, does the verdict's order (flagged-call rate, R-2c)
+// agree with ordering by pooled gold WER? Spearman rho, with its exact one-sided
 // permutation p (docs/research.md R-1), and a plain verdict word.
 //
 // Aggregate arithmetic only (D-15): no transcript or clip leaves this file,

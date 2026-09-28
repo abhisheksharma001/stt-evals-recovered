@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateJudgeAccuracy,
   aggregateProxyAgreement,
+  flaggedCallOrder,
   type JudgePickRow,
   type ProxyAgreementRow,
 } from "./proxy-agreement-aggregate";
@@ -12,8 +13,17 @@ const cell = (
   providerId: string,
   wer: number | null,
   peerFlagCount: number | null,
-  peerFlagSeverity: string | null = "none",
-): ProxyAgreementRow => ({ callId, providerId, wer, peerFlagCount, peerFlagSeverity });
+): ProxyAgreementRow => ({ callId, providerId, wer, peerFlagCount });
+
+describe("flaggedCallOrder (R-2c)", () => {
+  it("orders by flagged-call rate first and breaks a tie on the second key", () => {
+    // 0.5 beats 1 whatever the second key says; the two 1s split on it.
+    expect(flaggedCallOrder([[1, 1], [0.5, 9], [1, 3]])).toEqual([1, 0, 2]);
+  });
+  it("gives entries equal on both keys the same position", () => {
+    expect(flaggedCallOrder([[1, 2], [0, 0], [1, 2]])).toEqual([1, 0, 1]);
+  });
+});
 
 describe("aggregateProxyAgreement", () => {
   it("reports perfect agreement when both orderings put the providers the same way", () => {
@@ -49,14 +59,28 @@ describe("aggregateProxyAgreement", () => {
     expect(figures).toEqual({ n: 1, kendallTau: 1, top1Agreement: 1 });
   });
 
-  it("folds flag severity into the disagreement ordering, not just the count", () => {
-    // a has no flags but a high-severity one recorded (badness 0 + 3);
-    // b has one flag at no severity (badness 1 + 0). b is the better of the
-    // two, which agrees with b's lower WER. Counting flags alone would rank
-    // a first and report disagreement.
+  it("ranks by the share of a provider's cells flagged, as the verdict does, not by flag count (R-2c)", () => {
+    // The call sits in two runs. a was flagged in one run with 4 flags
+    // (rate 0.5, mean 2 flags); b in both with 1 flag each (rate 1, mean 1).
+    // The verdict's order puts a first, agreeing with a's lower WER. Ranked
+    // by flag count (the old flagBadness) b would come first: tau -1.
     expect(
-      aggregateProxyAgreement([cell("c1", "a", 0.5, 0, "high"), cell("c1", "b", 0.1, 1, "none")]),
+      aggregateProxyAgreement([
+        cell("c1", "a", 0.1, 4),
+        cell("c1", "a", 0.1, 0),
+        cell("c1", "b", 0.2, 1),
+        cell("c1", "b", 0.2, 1),
+      ]),
     ).toEqual({ n: 1, kendallTau: 1, top1Agreement: 1 });
+  });
+
+  it("breaks a flagged-call tie on the flag count", () => {
+    // Both flagged on the call; a with fewer flags, and a lower WER.
+    expect(aggregateProxyAgreement([cell("c1", "a", 0.1, 1), cell("c1", "b", 0.2, 3)])).toEqual({
+      n: 1,
+      kendallTau: 1,
+      top1Agreement: 1,
+    });
   });
 
   it("drops a call whose disagreement ordering is entirely tied rather than scoring it as agreement", () => {
@@ -101,7 +125,7 @@ describe("aggregateProxyAgreement", () => {
     // shared top-1. The difference between absent and zero is the assertion.
     expect(
       aggregateProxyAgreement([
-        cell("c1", "a", 0.1, null, null),
+        cell("c1", "a", 0.1, null),
         cell("c1", "b", 0.2, 2),
         cell("c1", "c", 0.3, 3),
       ]),

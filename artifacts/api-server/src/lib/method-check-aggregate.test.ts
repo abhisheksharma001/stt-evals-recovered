@@ -52,6 +52,29 @@ describe("aggregateMethodCheck", () => {
     expect(figures.verdict).toBe("agrees");
   });
 
+  it("orders the flag side by flagged-call rate, as the verdict does, not flags per 100 words (R-2c)", () => {
+    // Four calls. By WER a < b < c. a is flagged on 1 call with 8 flags, b on
+    // 2 calls with 1 flag each, c on 3 calls with 1 each. Per 100 words a is
+    // the WORST (2.0 vs 0.5 vs 0.75) and rho would be -0.5; by the share of calls
+    // flagged the order is a, b, c -- the same as WER.
+    const figures = aggregateMethodCheck([
+      cell("c1", "a", 1, 8),
+      cell("c2", "a", 1, 0),
+      cell("c3", "a", 1, 0),
+      cell("c4", "a", 1, 0),
+      cell("c1", "b", 2, 1),
+      cell("c2", "b", 2, 1),
+      cell("c3", "b", 2, 0),
+      cell("c4", "b", 2, 0),
+      cell("c1", "c", 3, 1),
+      cell("c2", "c", 3, 1),
+      cell("c3", "c", 3, 1),
+      cell("c4", "c", 3, 0),
+    ]);
+    expect(figures.providers.map((p) => p.flaggedCallRate)).toEqual([0.25, 0.5, 0.75]);
+    expect(figures.rho).toBeCloseTo(1, 10);
+  });
+
   it("leaves a provider with no flag reading out of n instead of scoring it clean", () => {
     const figures = aggregateMethodCheck([
       cell("c1", "a", 1, 1),
