@@ -76,7 +76,9 @@ export const benchmarkRankingsTable = pgTable("benchmark_rankings", {
   // T-2 fix: the composite ranking score must be built from PEER-only
   // badness (confidence spans excluded -- see benchmark-scores.ts's
   // peerFlagCount comment). avgFlagCount/avgFlagSeverityScore above stay as
-  // the full picture for display; these two feed hybridCompositeScore.
+  // the full picture for display; these two fed hybridCompositeScore until
+  // R-2b (2026-09-28) retired it -- the rank now comes from the flagged-call
+  // rate and peerFlagsPer100Words (ranking-order.ts).
   avgPeerFlagCount: real("avg_peer_flag_count"),
   avgPeerFlagSeverityScore: real("avg_peer_flag_severity_score"),
   // T-19: rates, so two providers (or two bulks) with different call

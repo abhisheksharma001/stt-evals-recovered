@@ -52,74 +52,62 @@
 //
 // "disagreements" replaces "hybrid flags" throughout, including in the
 // runner-up sentences: both halves sit in the same column and the same
-// tooltip, and R-3's lesson is that one quantity gets one name on one page
-// (the table header has said "Ranked by disagreements, price" since T-57).
+// tooltip, and R-3's lesson is that one quantity gets one name on one page.
+//
+// R-2b (2026-09-28, Abhishek: "we want the most reliable STT"): price no
+// longer ranks, so it no longer appears here -- the cards order on the org
+// verdict's keys (ranking-order.ts), and the sentence names only those: the
+// flagged-call rate, then disagreements per 100 words. Everything above about
+// price ("cost decided the order", "an unknown price is never the cheapest")
+// is history; the rules that survive are that a tie is never a win and one
+// provider is never a comparison.
 
 export type RecommendationInput = {
-  /** R-4: the sentence names who was cleanest and who was cheapest, so the
-   *  provider's display name travels with its numbers. */
+  /** R-4: the sentence names who was cleanest, so the provider's display
+   *  name travels with its numbers. */
   name: string;
-  /** avgFlagCount-equivalent the composite actually reads: the average of
-   *  (peerFlagCount + severityRank(peerFlagSeverity)) across this
-   *  provider's cells. Null when no cell carried either. */
-  flagBadness: number | null;
-  costPerMinute: number | null;
+  /** R-2b: the two keys the card ranks on (ranking-order.ts). Null when no
+   *  cell carried a peer flag count. */
+  flaggedCallRate: number | null;
+  peerFlagsPer100Words: number | null;
 };
 
 const many = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
-const strictlyCheaper = (a: RecommendationInput, b: RecommendationInput): boolean =>
-  a.costPerMinute !== null && b.costPerMinute !== null && a.costPerMinute < b.costPerMinute;
-
 /**
  * The stored sentence for rank 1: what this group's calls showed, with no
  * pick in it. `ranked` is the group's providers in rank order, rank 1
- * first; providers whose every cell failed carry a null flagBadness, get
- * their own sentence upstream, and are not rivals that tie or beat.
- * `scopePhrase` already carries the call count ("this assistant's 7
- * calls"), because how it is worded depends on whether the group has an
- * assistant at all.
+ * first; providers with no flagged-call rate get their own sentence
+ * upstream, and are not rivals that tie or beat. `scopePhrase` already
+ * carries the call count ("this assistant's 7 calls"), because how it is
+ * worded depends on whether the group has an assistant at all.
  */
 export function rank1Recommendation(
   ranked: readonly RecommendationInput[],
   scopePhrase: string,
 ): string {
-  const ready = ranked.filter((p) => p.flagBadness !== null);
+  const ready = ranked.filter((p) => p.flaggedCallRate !== null);
 
   if (ready.length === 0) return `On ${scopePhrase}: no disagreement numbers yet.`;
   if (ready.length === 1) {
     return `On ${scopePhrase}: only ${ready[0]!.name} produced a transcript to compare, so nothing here is a comparison.`;
   }
 
-  const fewestBadness = Math.min(...ready.map((p) => p.flagBadness!));
-  const cleanest = ready.filter((p) => p.flagBadness === fewestBadness);
-  const fewest =
-    cleanest.length === 1
-      ? `fewest disagreements ${cleanest[0]!.name}`
-      : cleanest.length === ready.length
-        ? "every provider raised the same disagreements"
-        : `${many(cleanest.length, "provider")} tied for fewest disagreements`;
+  const lowestRate = Math.min(...ready.map((p) => p.flaggedCallRate!));
+  const atLowest = ready.filter((p) => p.flaggedCallRate === lowestRate);
+  if (atLowest.length === 1) return `On ${scopePhrase}: fewest flagged calls ${atLowest[0]!.name}.`;
 
-  // "Absent is not zero": a null costPerMinute is an unknown price, so the
-  // group cannot be said to have a cheapest until every provider in it has
-  // a price. hybridCompositeScore scores that null as the best possible
-  // cost; this sentence must not inherit that.
-  const priced = ready.filter((p) => p.costPerMinute !== null);
-  let cheapest: string;
-  if (priced.length < ready.length) {
-    cheapest = "no price on file for every provider";
-  } else {
-    const lowestCost = Math.min(...priced.map((p) => p.costPerMinute!));
-    const cheapestOnes = priced.filter((p) => p.costPerMinute === lowestCost);
-    cheapest =
-      cheapestOnes.length === 1
-        ? `cheapest ${cheapestOnes[0]!.name}`
-        : cheapestOnes.length === priced.length
-          ? "every provider costs the same per minute"
-          : `${many(cheapestOnes.length, "provider")} tied on price`;
+  const per100 = atLowest.filter((p) => p.peerFlagsPer100Words !== null);
+  const lowestPer100 = Math.min(...per100.map((p) => p.peerFlagsPer100Words!));
+  const cleanest = per100.filter((p) => p.peerFlagsPer100Words === lowestPer100);
+  const tiedOnRate = atLowest.length === ready.length ? "every provider" : many(atLowest.length, "provider");
+  if (cleanest.length === 1) {
+    return `On ${scopePhrase}: ${tiedOnRate} tied on flagged calls, fewest disagreements per 100 words ${cleanest[0]!.name}.`;
   }
-
-  return `On ${scopePhrase}: ${fewest}, ${cheapest}.`;
+  const tied = cleanest.length === 0 ? atLowest : cleanest;
+  return tied.length === ready.length
+    ? `On ${scopePhrase}: every provider tied on flagged calls and disagreements per 100 words.`
+    : `On ${scopePhrase}: ${many(tied.length, "provider")} tied for fewest flagged calls and disagreements per 100 words.`;
 }
 
 /** The stored recommendation for rank 2 and below. */
@@ -127,16 +115,18 @@ export function runnerUpRecommendation(
   me: RecommendationInput,
   rank1: RecommendationInput,
 ): string {
-  if (me.flagBadness === null || rank1.flagBadness === null) {
+  if (me.flaggedCallRate === null || rank1.flaggedCallRate === null) {
     return "Ranked below rank 1. Not enough evidence to say what separated them.";
   }
-  if (me.flagBadness < rank1.flagBadness) {
-    return "Ranked below rank 1 on price, not on accuracy -- it raised fewer or less-severe disagreements than rank 1 did.";
+  if (me.flaggedCallRate > rank1.flaggedCallRate) {
+    return "Behind rank 1: flagged on a larger share of its calls.";
   }
-  if (me.flagBadness > rank1.flagBadness) {
-    return "Behind rank 1 on disagreements: more or more-severe cross-provider disagreement and entity mismatches.";
+  if (
+    me.peerFlagsPer100Words !== null &&
+    rank1.peerFlagsPer100Words !== null &&
+    me.peerFlagsPer100Words > rank1.peerFlagsPer100Words
+  ) {
+    return "Tied with rank 1 on flagged calls; behind it on disagreements per 100 words.";
   }
-  return strictlyCheaper(rank1, me)
-    ? "Tied with rank 1 on disagreements; ranked below it on price alone."
-    : "Tied with rank 1 on disagreements with nothing separating them on price either -- this order is arbitrary.";
+  return "Tied with rank 1 on flagged calls, and nothing else measured separates them -- this order is arbitrary.";
 }

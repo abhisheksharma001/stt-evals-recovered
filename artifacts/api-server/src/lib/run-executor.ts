@@ -20,7 +20,6 @@ import {
   scoreEntities,
   SCORING_VERSION,
   severityRank,
-  hybridCompositeScore,
   normalizeTranscript,
   type HybridSeverity,
 } from "@workspace/scoring";
@@ -1486,22 +1485,7 @@ function aggregateRankingRows(
       }
       return minutes > 0 ? dollars / minutes : null;
     };
-    // T-2 fix (2026-08-27, base-solidity review): flagBadness now uses
-    // peerFlagCount/peerFlagSeverity (cross-provider disagreement + entity
-    // mismatch, available for every provider), NOT flagCount/flagSeverity
-    // (which include confidence spans -- available for only 3 of 7
-    // providers, so folding them in here punished a provider for the
-    // honesty of reporting its own uncertainty). flagBadness = avgPeerFlag-
-    // Count + avgPeerFlagSeverityScore (severityRank 0..3) -- see
-    // hybridCompositeScore's own comment for why these are blended into one
-    // number instead of weighted as two separate metrics.
-    const flagBadnessOf = (r: (typeof rowsForGroup)[number]): number | null =>
-      r.score.peerFlagCount === null && r.score.peerFlagSeverity === null
-        ? null
-        : (r.score.peerFlagCount ?? 0) + severityRank((r.score.peerFlagSeverity as HybridSeverity | null) ?? "none");
-    const maxFlagBadness = Math.max(0, ...rowsForGroup.map((r) => flagBadnessOf(r) ?? 0));
     const dollarsPerMinuteByProvider = new Map([...byProvider.entries()].map(([id, rows]) => [id, dollarsPerMinuteFor(rows)]));
-    const maxCostPerMinute = Math.max(0, ...[...dollarsPerMinuteByProvider.values()].map((v) => v ?? 0));
 
     const providerAggregates = [...byProvider.entries()].map(([providerId, rows]) => {
       const avg = (values: Array<number | null>) => {
@@ -1523,14 +1507,13 @@ function aggregateRankingRows(
       // not diluted toward zero by the cells that never measured. Stays
       // null when no cell in the group reported it -- which is every batch
       // adapter, permanently: they are handed a finished file and have no
-      // "audio ended" moment. Deliberately NOT fed to hybridCompositeScore
-      // below; it ranks nothing.
+      // "audio ended" moment. It ranks nothing.
       const latencyEndOfAudioMs = avg(rows.map((r) => r.score.latencyEndOfAudioMs));
       const costPerMinute = dollarsPerMinuteByProvider.get(providerId) ?? null;
       const diarizationScore = avg(rows.map((r) => r.score.diarizationScore));
       // avgFlagCount/avgFlagSeverityScore stay the FULL picture (confidence
       // included) for display; avgPeerFlagCount/avgPeerFlagSeverityScore
-      // (T-2) are the confidence-free numbers the composite below reads.
+      // (T-2) are the confidence-free ones.
       const avgFlagCount = avg(rows.map((r) => r.score.flagCount));
       const avgFlagSeverityScore = avg(
         rows.map((r) => (r.score.flagSeverity === null ? null : severityRank(r.score.flagSeverity as HybridSeverity))),
@@ -1539,7 +1522,6 @@ function aggregateRankingRows(
       const avgPeerFlagSeverityScore = avg(
         rows.map((r) => (r.score.peerFlagSeverity === null ? null : severityRank(r.score.peerFlagSeverity as HybridSeverity))),
       );
-      const flagBadness = avg(rows.map(flagBadnessOf));
 
       // T-19: rates. Only cells that actually carry a peer flag count take
       // part (a cell scored before hybrid flagging has null there and
@@ -1554,17 +1536,12 @@ function aggregateRankingRows(
       const cleanCallRate = flaggedCells.length
         ? flaggedCells.filter((r) => r.score.peerFlagCount === 0).length / flaggedCells.length
         : null;
-
-      // M-10a: latency is still averaged and still written to the ranking
-      // row below -- the Speed column shows it -- but it no longer feeds
-      // the composite, because it is file turnaround for a batch adapter
-      // and call length for a streaming one. See HYBRID_RANKING_WEIGHTS.
-      const composite = hybridCompositeScore({
-        flagBadness,
-        costPerMinute,
-        maxFlagBadness,
-        maxCostPerMinute,
-      });
+      // R-2b: what the card ranks on, first (ranking-order.ts) -- the org
+      // verdict's own quantity. Counted, not 1 - cleanCallRate, so two
+      // providers flagged on the same share of calls compare equal exactly.
+      const flaggedCallRate = flaggedCells.length
+        ? flaggedCells.filter((r) => (r.score.peerFlagCount ?? 0) > 0).length / flaggedCells.length
+        : null;
 
       return {
         providerId,
@@ -1583,12 +1560,7 @@ function aggregateRankingRows(
         avgPeerFlagSeverityScore,
         peerFlagsPer100Words,
         cleanCallRate,
-        // M-10c: the exact number the composite ranked on. Not
-        // reconstructible from avgPeerFlagCount + avgPeerFlagSeverityScore
-        // -- those two average independently over their own non-null cells,
-        // so a cell with one side null makes the sum differ from this.
-        flagBadness,
-        composite,
+        flaggedCallRate,
       };
     });
 
@@ -1613,7 +1585,7 @@ function aggregateRankingRows(
     // opening clause, as the group's scored-call count.
 
     // M-10c: the sentence has to look at the whole group, not just this
-    // row, because "fewest" and "cheapest" are claims about the others.
+    // row, because "fewest" is a claim about the others.
     // 2026-08-27, per Abhishek ("remove the property management term ...
     // it's in the decision logic"): the raw vertical enum (e.g.
     // "property_management") used to be embedded in this sentence -- an
@@ -1632,8 +1604,8 @@ function aggregateRankingRows(
       : `${callsScored} call${callsScored === 1 ? "" : "s"} with no assistant on file`;
     const recommendationInputs = providerAggregates.map((a) => ({
       name: a.providerName,
-      flagBadness: a.flagBadness,
-      costPerMinute: a.costPerMinute,
+      flaggedCallRate: a.flaggedCallRate,
+      peerFlagsPer100Words: a.peerFlagsPer100Words,
     }));
 
     rankingRows.push(
@@ -1668,7 +1640,7 @@ function aggregateRankingRows(
         cleanCallRate: agg.cleanCallRate,
         callsScored,
         recommendation:
-          agg.composite === null
+          agg.flaggedCallRate === null
             ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
             : index === 0
               ? rank1Recommendation(recommendationInputs, scopePhrase)
