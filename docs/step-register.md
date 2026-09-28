@@ -3772,7 +3772,8 @@ criteria object saved before this step resolves to (correction 5).
 
 ### M-17 — A daily import so nothing crosses the 14-day cliff again
 
-**Status:** unblocked 2026-09-28 — Abhishek: **install it, with a per-night cap he sets on the
+**Status:** done 2026-09-28 (M-17a-d, PRs #229-#231 + the install below; cap 0 = off until
+Abhishek sets it). Was: unblocked 2026-09-28 — Abhishek: **install it, with a per-night cap he sets on the
 Setup page** ("Nightly import: max calls per night", 0 = off, stored in app settings, read by
 the 03:00 job). Measured 2026-09-28: the corpus is 1,376 calls — 362 client (Vapi), 1,000
 public, 14 other — so ~252 a night would grow the client set by about 70 % a night uncapped.
@@ -3798,9 +3799,15 @@ across accounts, the oldest importable calls go first, and the rest print as `OV
 exit 1, no POST; cap 3 of 5 importable -> import `[v1,v2,v3]` (oldest), 2 named over cap;
 cap 300 -> all 5. Break tests on the same fake: removing the off switch sends a preview
 at cap 0; removing the cap imports all 5 at cap 3.
-**M-17d** the install --
-M-17d must not happen before M-17c is on main: the script on main today has no cap, so
-an agent installed now would import ~250 calls on its first night.
+**M-17d done 2026-09-28**, after #229-#231 merged and API `a6371f6f411a` was deployed
+(with `pnpm --filter @workspace/db run push` for the new column): the plist from
+`docs/runbooks/deploy-and-rollback.md` is at
+~/Library/LaunchAgents/ai.ellavox.stt-evals.import.plist and bootstrapped
+(`launchctl list` -> `- 0 ai.ellavox.stt-evals.import`). One `launchctl kickstart` with the
+cap at 0 logged "nightly import is off ... nothing imported"; `benchmark_calls` stayed
+1,376. **The job runs every night at 03:00 and imports nothing until Abhishek sets a cap
+on Setup > Call sources.** Order kept: the agent did not exist while the uncapped script
+was on main.
 **Correction, same day, before this row was pushed:** this line first read "and
 deliberately never run". It ran. A break-test mutation deleted the script's `jq` guard
 and re-ran the script with `jq` still on `PATH`, so it went straight past the guard and
