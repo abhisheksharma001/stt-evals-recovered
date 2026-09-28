@@ -3778,6 +3778,15 @@ the 03:00 job). Measured 2026-09-28: the corpus is 1,376 calls — 362 client (V
 public, 14 other — so ~252 a night would grow the client set by about 70 % a night uncapped.
 To be stepped as the setting (API), the Setup control (UI), the script reading it, and the
 install. (Was: `blocked` — the script is written; the launchd agent is **not** installed.)
+**M-17a done 2026-09-28** (branch `m17a-nightly-cap-setting`): `app_settings.nightly_import_cap`
+integer, not null, default **0 = off**; `GET/PATCH /benchmark/settings` carry
+`nightlyImportCap` (integer 0..500 -- 500 is the preview endpoint's own per-request
+maximum, so a bigger cap could never be reached); the PATCH is audited like the other two
+settings. Schema push: `pnpm --filter @workspace/db run push` on the dev database at deploy
+(additive column, default 0). Break test: dropping the PATCH write fails the M-17a case.
+**M-17b** the Setup control, **M-17c** the script reads the cap, **M-17d** the install --
+M-17d must not happen before M-17c is on main: the script on main today has no cap, so
+an agent installed now would import ~250 calls on its first night.
 **Correction, same day, before this row was pushed:** this line first read "and
 deliberately never run". It ran. A break-test mutation deleted the script's `jq` guard
 and re-ran the script with `jq` still on `PATH`, so it went straight past the guard and
