@@ -4472,8 +4472,24 @@ check's figure before and after.
 
 ### R-2e — A call the provider failed counts as a flagged call
 
-**Status:** not started. Decided 2026-09-28 (Abhishek: "do whatever u recommend", on R-2's
-answer in `docs/research.md`).
+**Status:** built 2026-09-28 (branch `r2e-failed-cell-flagged`). Spent nothing. Decided
+2026-09-28 (Abhishek: "do whatever u recommend", on R-2's answer in `docs/research.md`).
+After merge: deploy, `recompute-rankings.ts --apply`, confirm bulk `42769f26` unchanged.
+Learned while building:
+- **The spec missed one file.** A provider failure that exhausted its retries was written
+  with `audio_source` null (`insertResult` in `run-executor.ts` hard-coded it), and every
+  bulk that ranks the customer channel reads null as mono and drops the row. So on every
+  customer bulk (all current ones) the change would have counted nothing. The failure row
+  now records the channel it was sent; `run-executor-provider-failure.int.test.ts` holds
+  it. Rows written before this carry null and still drop out -- none are provider-fault
+  locally (0 `provider_timeout` or `provider_5xx` rows in `stt_evals`).
+- An adapter that RETURNS a failed result (rather than throwing) already went through
+  `upsertResult` with its channel; only the thrown/exhausted path was blind.
+- A provider that failed on every call of a card now gets a row (rate 1, no per-100-words
+  figure), ranked last. In the verdict it is left out, as a provider with no words always
+  was -- a verdict needs a per-100-words figure to break ties on.
+- The verdict rates gained `failedCalls` (openapi + codegen); the Clean calls tooltip on
+  Results now says a failed call counts as not clean.
 **PR:** one. Card and verdict change together: they must rank on the same quantity (R-2b),
 and shipping one without the other puts two different winners on one page again (F-223).
 **Depends on:** R-2b. **Research:** R-2 answered.
