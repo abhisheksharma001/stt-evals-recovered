@@ -4418,6 +4418,33 @@ composite input, the `recommendation` sentence), `lib/scoring/src/hybrid.test.ts
 **Change / Acceptance / Must not:** R-2's, for the cards. On bulk `42769f26` the banner's leader
 and every card's rank 1 SHALL agree.
 
+### R-2d — A tied rank 1 reads "Tied" on the card
+
+**Status:** done 2026-09-28 (PR on branch `r2d-card-shows-tied`). Spent nothing.
+**PR:** one. **Depends on:** R-2b.
+**Files:** `artifacts/stt-benchmark/src/lib/rank-ties.ts` (new, `tiedAtTop`),
+`artifacts/stt-benchmark/src/lib/rank-ties.test.ts`, `artifacts/stt-benchmark/src/pages/Rankings.tsx`
+(`RankingTable` rank cell and label, `ProductionBaselineNote`),
+`artifacts/stt-benchmark/src/pages/__render__/results.test.tsx`.
+**Today (before):** after R-2b every card on bulk `42769f26` tied on both keys; the stable
+provider-id tiebreak gave `assemblyai-universal` the trophy and "Ahead, but not decided" on all
+13, and the production note could name it "This bulk's top candidate" with a switch cost.
+**Change:** the card reads the tie back off the two numbers the server ranked on (clean-call
+rate, disagreements per 100 words -- same rule as `runnerUpRecommendation`). Tied rows show
+"Tied": no trophy, no highlight, no "Ahead". The production note on a tied card says production
+is tied (when it is one of them), or that N providers tie and no switch is named, or "Not
+benchmarked" without the cost line that named rank 1. UI only: stored ranks are unchanged.
+**Acceptance:** WHEN rank 1 on a card ties with another provider on flagged-call rate and
+disagreements per 100 words THEN the card SHALL show "Tied" for every tied provider, SHALL show
+no trophy, and SHALL name no top candidate or switch. Met: `results.test.tsx` R-2d cases.
+**Verify:** `pnpm --filter @workspace/stt-benchmark test` -- 238 pass; `pnpm run typecheck` clean.
+**Must not:** change stored ranks or the verdict; spend anything.
+**Learned:** (1) Break test: `tiedAtTop` returning nothing fails 3 unit and 2 render cases.
+(2) No existing Results fixture carried `cleanCallRate`, so no card had ever rendered a tie --
+the gap R-2b's live result exposed was invisible to the suite. (3) The org verdict can still
+name a winner on a card that ties (the verdict reads all the org's calls); the "Least
+disagreement" mark is the verdict's and stays.
+
 ### R-2c — Proxy agreement and the method check read the same quantity
 
 **Status:** done 2026-09-28 (PR on branch `r2c-proxy-method-flagged-rate`). Spent nothing.

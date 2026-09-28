@@ -869,6 +869,51 @@ describe("Results", () => {
     api.restore()
   })
 
+  // R-2d. After R-2b every card on bulk 42769f26 tied on both ranking keys,
+  // and the stable provider-id tiebreak put AssemblyAI at #1 on all 13 --
+  // a trophy on an alphabetical accident. A tie must read as a tie: no
+  // trophy, no "Ahead", and no "top candidate" to switch to.
+  const tiedRankings = rankings.map((r) =>
+    r.assistantId === "asst-rush" ? { ...r, score: { ...r.score, cleanCallRate: 1, peerFlagsPer100Words: 0 } } : r,
+  )
+
+  it("a card whose rank 1 is tied says Tied and names no top candidate", async () => {
+    const api = stubApi({ ...baseRoutes, "GET /api/benchmark/rankings": tiedRankings, "GET /api/benchmark/calls": measuredCalls })
+    renderPage(<Results />, { path: "/results" })
+
+    // Both rows of the Rush card, rank 1 included.
+    expect((await screen.findAllByText("Tied")).length).toBe(2)
+    // Only the unassigned bucket's lone provider is still "ahead".
+    expect(screen.getAllByText("Ahead, but not decided").length).toBe(1)
+    // Production (deepgram / nova-3) is not a provider row in this fixture,
+    // so the note has no quality comparison -- and no cost line naming the
+    // alphabetical rank 1 either.
+    const note = await screen.findByTestId("production-baseline")
+    expect(screen.getByTestId("baseline-tied").textContent).toBe("Not benchmarked in this bulk, so no quality comparison yet.")
+    expect(note.textContent).not.toContain("top candidate")
+    expect(screen.queryByTestId("switch-money")).toBeNull()
+    api.restore()
+  })
+
+  it("production inside a tie is told it is tied, not ahead", async () => {
+    // Named so the baseline matcher resolves deepgram / nova-3 to this row.
+    const matched = providers.map((p) => (p.id === "deepgram-nova-3" ? { ...p, name: "Deepgram" } : p))
+    const api = stubApi({
+      ...baseRoutes,
+      "GET /api/benchmark/rankings": tiedRankings,
+      "GET /api/benchmark/calls": measuredCalls,
+      "GET /api/benchmark/providers": matched,
+    })
+    renderPage(<Results />, { path: "/results" })
+
+    const tied = await screen.findByTestId("baseline-tied")
+    expect(tied.textContent).toBe(
+      "The provider in production today is tied for the best here with 1 other; nothing on these calls separates them.",
+    )
+    expect(screen.getByTestId("production-baseline").textContent).not.toContain("already ahead")
+    api.restore()
+  })
+
   // M-7c: the per-card silence above is right per card and invisible in
   // aggregate -- live, 7 of the 29 groups the all-time view renders say
   // nothing at all. The denominator is the groups THIS page renders, not the
