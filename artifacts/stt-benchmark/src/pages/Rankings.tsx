@@ -25,6 +25,7 @@ import { Link } from "wouter"
 import { Trophy, ArrowUpRight, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, Download, Star, ShieldCheck, AlertTriangle, FileText, Building2 } from "lucide-react"
 import { formatCents, formatMicrocents, formatPerMinute } from "@/lib/utils"
 import { paidVsListDiffers } from "@/lib/paid-vs-list"
+import { tiedAtTop } from "@/lib/rank-ties"
 import { countMeasured, interruptedShare, medianMs } from "@/lib/production-signals"
 import { bulkChannel } from "@/lib/audio-channel"
 import { ChannelLine } from "@/components/channel-line"
@@ -273,6 +274,9 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
 
   const winner = [...ranks].sort((a, b) => a.rank - b.rank)[0]
   const baselineRow = baseline.matchedProviderId ? ranks.find((r) => r.providerId === baseline.matchedProviderId) : null
+  // R-2d: when rank 1 is a tie, rank 1 is whichever tied provider's id sorts
+  // first -- not a candidate to switch to, and not one to be "ahead" of.
+  const tied = tiedAtTop(ranks)
 
   return (
     <div data-testid="production-baseline" className="flex flex-wrap items-start gap-2.5 border-t border-border bg-primary/5 px-4 py-3 text-sm">
@@ -299,7 +303,15 @@ function ProductionBaselineNote({ assistantId, ranks, gv }: { assistantId: strin
             {baseline.interrupted.measured === 1 ? " call" : " calls"}.{" "}
           </span>
         )}
-        {baselineRow && winner && baselineRow.providerId !== winner.providerId ? (
+        {tied.size > 0 ? (
+          <span data-testid="baseline-tied">
+            {baselineRow && tied.has(baselineRow.providerId)
+              ? `The provider in production today is tied for the best here with ${tied.size - 1} other${tied.size === 2 ? "" : "s"}; nothing on these calls separates them.`
+              : baselineRow
+                ? `${tied.size} providers tie for the best here and nothing on these calls separates them, so no switch is named.`
+                : "Not benchmarked in this bulk, so no quality comparison yet."}
+          </span>
+        ) : baselineRow && winner && baselineRow.providerId !== winner.providerId ? (
           <>
             <span className="font-semibold">This bulk's top candidate:</span>{" "}
             <span className="font-mono">{winner.providerName}</span>
@@ -445,7 +457,7 @@ function WithGroupVolume({ assistantId, children }: { assistantId: string | null
  *  pulled out so the page body reads as its hierarchy, not as one 400-line
  *  expression. */
 function RankingTable({
-  sorted, sortKey, asc, toggleSort, activeProviderId, activeRow, verdictWinnerId, viewMode, listPrices, gv, pairIds,
+  sorted, sortKey, asc, toggleSort, activeProviderId, activeRow, verdictWinnerId, viewMode, listPrices, gv, pairIds, tiedIds,
 }: {
   sorted: RankingRow[]
   sortKey: SortKey
@@ -459,6 +471,8 @@ function RankingTable({
   gv: GroupVolume
   /** S-AB2: the two providers picked for a head-to-head; every other row is dimmed. */
   pairIds: string[] | null
+  /** R-2d: providers tied with rank 1 (tiedAtTop); empty when rank 1 stands alone. */
+  tiedIds: Set<string>
 }) {
   const sortAria = (key: SortKey) => (sortKey === key ? (asc ? "ascending" : "descending") : "none")
   const renderSortIcon = (key: SortKey) =>
@@ -511,11 +525,13 @@ function RankingTable({
         {sorted.map((r) => (
           <TableRow
             key={r.providerId}
-            className={`${r.rank === 1 ? "bg-primary/5" : ""} ${pairIds && !pairIds.includes(r.providerId) ? "opacity-40" : ""}`}
+            className={`${r.rank === 1 && tiedIds.size === 0 ? "bg-primary/5" : ""} ${pairIds && !pairIds.includes(r.providerId) ? "opacity-40" : ""}`}
             data-in-pair={pairIds ? String(pairIds.includes(r.providerId)) : undefined}
           >
             <TableCell className="text-center font-mono font-medium">
-              {r.rank === 1 ? <span className="text-primary flex items-center justify-center gap-1 text-lg font-bold"><Trophy className="w-4 h-4" /> 1</span> : r.rank}
+              {tiedIds.has(r.providerId) ? (
+                <span className="text-xs uppercase text-muted-foreground" title="Tied with rank 1 on flagged calls and disagreements per 100 words. Nothing on these calls separates them, so no provider here is ranked first.">Tied</span>
+              ) : r.rank === 1 ? <span className="text-primary flex items-center justify-center gap-1 text-lg font-bold"><Trophy className="w-4 h-4" /> 1</span> : r.rank}
             </TableCell>
             <TableCell title={r.recommendation ?? undefined}>
               <div className="flex items-center gap-1.5">
@@ -534,7 +550,7 @@ function RankingTable({
                 <div className="text-xs text-primary font-medium mt-1 flex items-center" title="Named by this group's verdict: the gap to the runner-up is bigger than the margin of error.">
                   <CheckCircle2 className="w-3 h-3 mr-1" /> Least disagreement
                 </div>
-              ) : r.rank === 1 ? (
+              ) : r.rank === 1 && tiedIds.size === 0 ? (
                 <div className="text-xs text-muted-foreground font-medium mt-1" title={viewMode === "bulk" ? "Best rank, but the verdict above decided nothing: the gap is inside the margin of error or too few calls ran on both." : "Best rank across all bulks. The all-time view has no verdict, so nothing here is decided."}>
                   Ahead, but not decided
                 </div>
@@ -1095,6 +1111,7 @@ export default function Rankings() {
                             listPrices={listPrices}
                             gv={gv}
                             pairIds={viewMode === "bulk" ? pairIds : null}
+                            tiedIds={tiedAtTop(ranks)}
                           />
                           {/* R-4: the card describes its own calls and points
                               at the decision instead of making one. "Why this
