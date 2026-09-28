@@ -3788,7 +3788,17 @@ settings. Schema push: `pnpm --filter @workspace/db run push` on the dev databas
 Vapi card, "Nightly import: max calls per night" -- number input + Save, sends the cap as a
 number, will not send anything outside 0..500 or a fraction; 0 reads "0 = off". Break
 tests: dropping the 500 bound and sending the text instead of a number each fail one case.
-**M-17c** the script reads the cap, **M-17d** the install --
+**M-17c done 2026-09-28** (branch `m17c-script-reads-cap`): `scripts/daily-import.sh`
+reads `nightlyImportCap` from `GET /benchmark/settings` after the health check. 0 -> prints
+"nightly import is off" and exits 0 **before any Vapi request**; a settings answer without
+the field (API older than M-17a) -> exit 1, nothing imported; otherwise the cap is shared
+across accounts, the oldest importable calls go first, and the rest print as `OVER CAP: N
+... not imported tonight`. Verified against a throwaway fake of the four endpoints (Python
+`http.server` on 127.0.0.1, no Vapi, no DB): cap 0 -> 3 GETs, no POST; field missing ->
+exit 1, no POST; cap 3 of 5 importable -> import `[v1,v2,v3]` (oldest), 2 named over cap;
+cap 300 -> all 5. Break tests on the same fake: removing the off switch sends a preview
+at cap 0; removing the cap imports all 5 at cap 3.
+**M-17d** the install --
 M-17d must not happen before M-17c is on main: the script on main today has no cap, so
 an agent installed now would import ~250 calls on its first night.
 **Correction, same day, before this row was pushed:** this line first read "and
