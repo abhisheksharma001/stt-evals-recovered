@@ -16,8 +16,19 @@ One entry per open question (mystandard section 9). Find the code markers with
 
 **Where:** R-2b follow-up · `lib/scoring/src/verdict.ts` `VerdictCell` and `artifacts/api-server/src/lib/run-executor.ts` ranking loop · the flagged-call rate.
 **Find out:** whether a provider that times out or errors on a call is penalised anywhere in the verdict or the card rank. Abhishek's goal (2026-09-28) is "the most reliable STT"; if a failed cell is simply left out, a provider that fails often can read cleaner than one that always answers. Yes = nothing to build; no = a step that folds failures into the ranking quantity.
-**Confidence:** medium -- `VerdictCell` only carries scored cells and the ranking loop reads score rows, which a failed cell has none of (R-25b); the path from the route into both was not traced end to end.
+**Confidence:** high -- traced in the code and counted in the local DB, 2026-09-28.
 **Review:** none.
-**Status:** open.
-**Answer:** --
+**Status:** answered 2026-09-28.
+**Answer:** No -- a failed cell is left out everywhere, so it costs a provider nothing.
+- Card rank: `computeRankingsForBulk` and `computeRankingsForRun` read only `status = 'ok'` results inner-joined to a score row (`artifacts/api-server/src/lib/run-executor.ts:1744`, `:1679`). A failed cell has no score row and no ok status, so it never reaches `aggregateRankingRows`; the flagged-call rate's denominator is the provider's ok calls only.
+- Verdict: the bulk verdict's cell query has the same filter and join (`artifacts/api-server/src/lib/verdict.ts:408`), and `computeVerdict` further drops cells with no peer flag count (`lib/scoring/src/verdict.ts:352`).
+- A retry erases the failure: `upsertResult` overwrites a non-ok row when the retry succeeds (`artifacts/api-server/src/lib/run-executor.ts:1370`), so "needed a retry" leaves no trace and cannot be counted after the fact.
+
+Does it matter today? Not in any finished bulk. Local DB, 2026-09-28, all `benchmark_provider_call_results` with `status = 'failed'`:
+- 3,850 "Call has no audioObjectPath to send to a provider", 40 Vapi recording-URL HTTP 400, 25 audio fetch from our storage -- our side, and spread across every provider on the call, so they change no provider's standing.
+- The rest look provider-side but none sits in a finished bulk: Cartesia 16 "closed without flush_done" + 1 "no final transcript segment", Deepgram nova-3 9 HTTP 400, Gladia solaria 16 HTTP 400, AssemblyAI 16 "Download error, got HTTP 403" (AssemblyAI could not fetch OUR signed URL -- our side) -- all ad-hoc runs 2026-08-24..26; plus 1 Cartesia "no final transcript segment" in cancelled bulk 4fee349b.
+- Bulk 42769f26 (the live one): 17 ok cells for each of its 5 providers, 0 failed.
+- `failure_class` cannot yet say whose fault a failure was: 3,868 of 3,974 failed rows read `unknown`.
+
+What gets built differently: nothing to the rank today -- there are no provider-side failures in finished data to fold in, and counting every failure would punish all providers equally for our missing audio. Two gaps stay real for "the most reliable STT" and are Abhishek's call, not queued: (a) a provider-fault failure could count as a flagged call, which needs a fault-attributing failure class first; (b) keep a per-cell failed-attempt count so a failure a retry later cleared still shows.
 
