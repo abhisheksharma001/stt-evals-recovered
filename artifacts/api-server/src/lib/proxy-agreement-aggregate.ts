@@ -1,14 +1,13 @@
 // M-18: the pure half of proxy-agreement.ts. No db import so it can be
 // unit-tested without DATABASE_URL, same split and same reason as T-85's
 // call-disagreement-aggregate.ts.
-import { kendallTauB, severityRank, sharesTop1, type HybridSeverity } from "@workspace/scoring";
+import { kendallTauB, sharesTop1 } from "@workspace/scoring";
 
 export type ProxyAgreementRow = {
   callId: string;
   providerId: string;
   wer: number | null;
   peerFlagCount: number | null;
-  peerFlagSeverity: string | null;
 };
 
 export type ProxyAgreementFigures = {
@@ -21,15 +20,22 @@ export type ProxyAgreementFigures = {
 const mean = (values: number[]): number | null =>
   values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length;
 
-// The same quantity the ranking itself is built on: T-2's flagBadness,
-// peerFlagCount + severityRank(peerFlagSeverity), NOT flagCount/flagSeverity.
-// Copied in shape from run-executor's flagBadnessOf on purpose -- if this
-// ranked by anything else, the figure would report agreement with a ranking
-// nobody is shown.
-const flagBadness = (row: ProxyAgreementRow): number | null =>
-  row.peerFlagCount === null && row.peerFlagSeverity === null
-    ? null
-    : (row.peerFlagCount ?? 0) + severityRank((row.peerFlagSeverity as HybridSeverity | null) ?? "none");
+/**
+ * R-2c: the verdict's order -- flagged-call rate first, flags per 100 words to
+ * break a tie (lib/scoring/src/verdict.ts, R-2a) -- written as numbers the
+ * rank statistics can read. Each entry is [flaggedCallRate, flagsTiebreak];
+ * its position is how many entries sort strictly before it, so entries equal
+ * on both keys share a position (a tie) and nothing else does.
+ *
+ * Both figures below certify an ORDER, and it has to be the order the page
+ * names. Until R-2c they ranked by T-2's flagBadness (peer flag count plus a
+ * severity rank), which is neither the verdict's quantity nor its tiebreak.
+ */
+export function flaggedCallOrder(keys: readonly (readonly [number, number])[]): number[] {
+  return keys.map(
+    ([rate, tiebreak]) => keys.filter(([r, t]) => r < rate || (r === rate && t < tiebreak)).length,
+  );
+}
 
 /**
  * Per call, rank the providers two ways and compare the orders.
@@ -61,26 +67,31 @@ export function aggregateProxyAgreement(rows: readonly ProxyAgreementRow[]): Pro
 
   for (const providers of byCall.values()) {
     const wers: number[] = [];
-    const badnesses: number[] = [];
+    const keys: [number, number][] = [];
     for (const cells of providers.values()) {
       const wer = mean(cells.map((c) => c.wer).filter((v): v is number => v !== null));
-      const badness = mean(cells.map(flagBadness).filter((v): v is number => v !== null));
+      // A null count is "never hybrid-flagged": absent, never clean -- the
+      // verdict excludes the same cells. On one call every provider shares
+      // R-1's word basis, so flags per 100 words orders exactly as the count.
+      const counts = cells.map((c) => c.peerFlagCount).filter((v): v is number => v !== null);
+      const flaggedRate = mean(counts.map((c) => (c > 0 ? 1 : 0)));
       // Both sides or neither: a provider missing from one ordering cannot be
       // ranked against the other, and dropping it from just one side would
       // compare two orderings over different providers.
-      if (wer === null || badness === null) continue;
+      if (wer === null || flaggedRate === null) continue;
       wers.push(wer);
-      badnesses.push(badness);
+      keys.push([flaggedRate, mean(counts)!]);
     }
+    const flagOrder = flaggedCallOrder(keys);
     // One rule, not two. A call with fewer than two rankable providers has
     // no pairs at all, so kendallTauB's denominator is zero and it already
     // answers null -- an explicit length check here was redundant, and the
     // break test proved it by mutating it with no observable effect.
-    const tau = kendallTauB(wers, badnesses);
+    const tau = kendallTauB(wers, flagOrder);
     if (tau === null) continue;
     n += 1;
     tauTotal += tau;
-    if (sharesTop1(wers, badnesses)) top1Total += 1;
+    if (sharesTop1(wers, flagOrder)) top1Total += 1;
   }
 
   return {

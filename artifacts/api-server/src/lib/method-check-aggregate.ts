@@ -3,6 +3,8 @@
 // proxy-agreement-aggregate.ts.
 import { callWordBasis, pooledRate, spearmanPermutationP, spearmanRho } from "@workspace/scoring";
 
+import { flaggedCallOrder } from "./proxy-agreement-aggregate";
+
 export type MethodCheckRow = {
   callId: string;
   providerId: string;
@@ -24,9 +26,13 @@ export type MethodCheckProvider = {
   /** Pooled gold WER: sum of errors / sum of gold words, not a mean of
    *  per-call WERs, so a short clip does not weigh as much as a long one. */
   wer: number;
-  /** Pooled peer flags per 100 words on R-1's call word basis -- the
-   *  quantity the bulk verdict ranks by. */
+  /** Pooled peer flags per 100 words on R-1's call word basis. Since R-2c
+   *  the tiebreak, as in the verdict; the order is by `flaggedCallRate`. */
   flagsPer100Words: number;
+  /** R-2c: calls with at least one peer flag over calls with a flag reading
+   *  -- the quantity the bulk verdict ranks by (R-2a). Not in the API's
+   *  MethodCheck schema, so the response drops it; it is here for the order. */
+  flaggedCallRate: number;
   calls: number;
 };
 
@@ -69,7 +75,8 @@ export function wholeCallRows(rows: readonly MethodCheckRow[]): MethodCheckRow[]
 
 /**
  * One ordering per provider over the public bulk's whole calls, both
- * lower-is-better: pooled gold WER and pooled peer flags per 100 words. A
+ * lower-is-better: pooled gold WER, and the verdict's order (R-2c) --
+ * flagged-call rate, pooled peer flags per 100 words to break a tie. A
  * provider enters the comparison only when it carries both; one that is
  * missing either is left out of n rather than given a zero.
  */
@@ -87,16 +94,18 @@ export function aggregateMethodCheck(allRows: readonly MethodCheckRow[]): Method
     const flagged = cells.filter((c) => c.peerFlagCount !== null);
     const rate = pooledRate(flagged.map((c) => ({ flags: c.peerFlagCount!, words: basis.get(c.callId) ?? 0 })));
     if (goldWords === 0 || rate === null) continue;
+    const flaggedCalls = new Set(flagged.filter((c) => c.peerFlagCount! > 0).map((c) => c.callId)).size;
     providers.push({
       providerId,
       wer: gold.reduce((s, c) => s + c.errors!, 0) / goldWords,
       flagsPer100Words: rate,
+      flaggedCallRate: flaggedCalls / new Set(flagged.map((c) => c.callId)).size,
       calls: new Set(gold.map((c) => c.callId)).size,
     });
   }
 
   const wer = providers.map((p) => p.wer);
-  const flags = providers.map((p) => p.flagsPer100Words);
+  const flags = flaggedCallOrder(providers.map((p) => [p.flaggedCallRate, p.flagsPer100Words] as const));
   const rho = spearmanRho(wer, flags);
   const pOneSided = spearmanPermutationP(wer, flags);
   return { providers, n: providers.length, rho, pOneSided, verdict: methodCheckVerdict(rho, pOneSided) };
