@@ -70,6 +70,9 @@ export type RecommendationInput = {
    *  cell carried a peer flag count. */
   flaggedCallRate: number | null;
   peerFlagsPer100Words: number | null;
+  /** R-2e: calls this provider failed (a timeout or a server error), each
+   *  already counted in flaggedCallRate. */
+  failedCalls?: number;
 };
 
 const many = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -129,4 +132,15 @@ export function runnerUpRecommendation(
     return "Tied with rank 1 on flagged calls; behind it on disagreements per 100 words.";
   }
   return "Tied with rank 1 on flagged calls, and nothing else measured separates them -- this order is arbitrary.";
+}
+
+/**
+ * R-2e: a row whose provider failed on some calls says so, after whatever
+ * the sentence already said. Those failures are inside its flagged-call rate;
+ * without this a reader would take every flagged call for a disagreement.
+ */
+export function withFailures(sentence: string, me: RecommendationInput): string {
+  const failed = me.failedCalls ?? 0;
+  if (failed === 0) return sentence;
+  return `${sentence} ${me.name} failed on ${many(failed, "call")} (timeout or server error); each counts as a flagged call.`;
 }

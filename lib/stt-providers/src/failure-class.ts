@@ -127,3 +127,15 @@ export function classifyProviderHttpStatus(status: number): FailureClass {
   if (status === 408) return "provider_timeout";
   return "unknown";
 }
+
+/**
+ * R-2e (2026-09-28): the classes that are the PROVIDER's fault. A cell that
+ * ended `failed` with one of these counts against that provider's
+ * reliability -- one flagged call on the Results card and in the org verdict.
+ * Every other class is ours: our audio (`retention_expired`,
+ * `audio_url_forbidden`, `audio_decode`), our key (`provider_auth`), our
+ * concurrency (`rate_limited`), or not yet known (`unknown`, which includes
+ * a call with no audio file). Counting those would charge a provider for
+ * our own mistakes.
+ */
+export const PROVIDER_FAULT_CLASSES = ["provider_timeout", "provider_5xx"] as const satisfies readonly FailureClass[];

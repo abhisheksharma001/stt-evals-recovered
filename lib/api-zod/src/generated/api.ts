@@ -1968,6 +1968,7 @@ export const GetBulkVerdictsResponse = zod.object({
   "providerId": zod.string(),
   "flaggedCallRate": zod.number(),
   "flaggedCalls": zod.number(),
+  "failedCalls": zod.number(),
   "flagsPer100Words": zod.number(),
   "calls": zod.number(),
   "totalFlags": zod.number(),

@@ -316,3 +316,54 @@ describe("computeRankingsForRun -- the stored end-of-audio latency", () => {
     expect(rows[0].recommendation).not.toMatch(/audio|latenc|speed/i);
   });
 });
+
+// R-2e. The card ranks on the verdict's quantity (R-2b), so a provider
+// failure has to count on the card exactly as it does in the verdict: one
+// flagged call for a timeout or a server error, nothing for a failure of ours.
+describe("computeRankingsForRun -- provider failures (R-2e)", () => {
+  it("counts provider_timeout and provider_5xx as flagged calls on the card, and nothing else", async () => {
+    const asst = `fx-asst-r2e-${fx.suffix}`;
+    const run = await fx.run({ purpose: "batch" });
+    const callA = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const callB = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
+    const clean = await fx.provider();
+    const timedOut = await fx.provider({ name: `fx timed out ${fx.suffix}` });
+    const ours = await fx.provider();
+    const neverAnswered = await fx.provider();
+
+    const ok = async (providerId: string, callId: string) => {
+      const r = await fx.result(run.id, callId, providerId, { hypothesisTranscript: "the tenant asked about the lease" });
+      await fx.score(r.id, { peerFlagCount: 0, peerFlagSeverity: "none" });
+    };
+    await ok(clean.id, callA.id);
+    await ok(clean.id, callB.id);
+    await ok(timedOut.id, callA.id);
+    await fx.result(run.id, callB.id, timedOut.id, { status: "failed", failureClass: "provider_timeout" });
+    await ok(ours.id, callA.id);
+    await fx.result(run.id, callB.id, ours.id, { status: "failed", failureClass: "unknown" });
+    await fx.result(run.id, callA.id, neverAnswered.id, { status: "failed", failureClass: "provider_5xx" });
+    await fx.result(run.id, callB.id, neverAnswered.id, { status: "failed", failureClass: "provider_5xx" });
+
+    await computeRankingsForRun(run.id, [callA.id, callB.id], [clean.id, timedOut.id, ours.id, neverAnswered.id]);
+    const rows = await db
+      .select()
+      .from(benchmarkRankingsTable)
+      .where(eq(benchmarkRankingsTable.runId, run.id))
+      .orderBy(asc(benchmarkRankingsTable.rank));
+    await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
+
+    const row = (id: string) => rows.find((r) => r.providerId === id)!;
+    // Our `unknown` failure leaves `ours` clean on the one call it scored.
+    expect(row(ours.id).cleanCallRate).toBe(1);
+    expect(row(ours.id).recommendation).not.toContain("failed");
+    expect(row(timedOut.id).cleanCallRate).toBe(0.5);
+    expect(row(timedOut.id).recommendation).toContain(
+      `fx timed out ${fx.suffix} failed on 1 call (timeout or server error); each counts as a flagged call.`,
+    );
+    // Failed on everything: still on the card, flagged on every call, with
+    // no disagreement rate -- there was never a transcript to count.
+    expect(row(neverAnswered.id)).toMatchObject({ cleanCallRate: 0, peerFlagsPer100Words: null, rank: 4 });
+    expect(rows.map((r) => r.providerId).slice(2)).toEqual([timedOut.id, neverAnswered.id]);
+    expect(rows[0].callsScored).toBe(2);
+  });
+});

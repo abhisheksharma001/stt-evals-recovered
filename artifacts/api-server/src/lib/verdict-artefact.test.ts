@@ -18,8 +18,8 @@ const base: HeadlineVerdict = {
   noiseFloor: { sharedCalls: 6, difference: 0.4, ci95: [-0.2, 1.1], withinNoise: true },
   confidenceComparable: { reporting: 1, total: 2 },
   rates: [
-    { providerId: "a", flaggedCallRate: 3 / 7, flaggedCalls: 3, flagsPer100Words: 1.2, calls: 7, totalFlags: 12, totalWords: 1000 },
-    { providerId: "b", flaggedCallRate: 4 / 7, flaggedCalls: 4, flagsPer100Words: 1.6, calls: 7, totalFlags: 16, totalWords: 1000 },
+    { providerId: "a", flaggedCallRate: 3 / 7, flaggedCalls: 3, failedCalls: 0, flagsPer100Words: 1.2, calls: 7, totalFlags: 12, totalWords: 1000 },
+    { providerId: "b", flaggedCallRate: 4 / 7, flaggedCalls: 4, failedCalls: 0, flagsPer100Words: 1.6, calls: 7, totalFlags: 16, totalWords: 1000 },
   ],
   sentence: "Too close to call on 7 calls.",
 };
@@ -62,8 +62,8 @@ describe("renderVerdictArtefact", () => {
     const html = render({
       ...base,
       rates: [
-        { providerId: "a", flaggedCallRate: 5 / 7, flaggedCalls: 5, flagsPer100Words: 1.0, calls: 7, totalFlags: 10, totalWords: 1000 },
-        { providerId: "b", flaggedCallRate: 3 / 7, flaggedCalls: 3, flagsPer100Words: 1.8, calls: 7, totalFlags: 18, totalWords: 1000 },
+        { providerId: "a", flaggedCallRate: 5 / 7, flaggedCalls: 5, failedCalls: 0, flagsPer100Words: 1.0, calls: 7, totalFlags: 10, totalWords: 1000 },
+        { providerId: "b", flaggedCallRate: 3 / 7, flaggedCalls: 3, failedCalls: 0, flagsPer100Words: 1.8, calls: 7, totalFlags: 18, totalWords: 1000 },
       ],
     });
     const table = html.slice(html.indexOf("<tbody>"));

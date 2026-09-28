@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import {
   benchmarkBulksTable,
   benchmarkCallsTable,
@@ -30,6 +30,7 @@ import {
   getProviderApiModel,
   isFailureClass,
   isRetryableFailureClass,
+  PROVIDER_FAULT_CLASSES,
   type FailureClass,
   type ProviderTranscribeResult,
   vendorOfProviderId,
@@ -40,7 +41,7 @@ import { writeAudit } from "./audit";
 import { refreshBulkStatus } from "./bulk-status";
 import { getOrCacheAudioBytes, readCellAudioSource, type CellAudio, type CellAudioSource } from "./audio-cache";
 import { computeHybridFlagsForRun } from "./hybrid-flagging";
-import { rank1Recommendation, runnerUpRecommendation } from "./ranking-recommendation";
+import { rank1Recommendation, runnerUpRecommendation, withFailures } from "./ranking-recommendation";
 import { runAutoAgentVerificationForRun } from "./agent-verify";
 import { drainWithConcurrency, envInt } from "./concurrency";
 import { cellKey, isCellDone, staleResultIdsToClear } from "./cell-resumption";
@@ -1074,6 +1075,10 @@ async function runCell(
           failureClassOf(err) ??
           lastTransient.result?.failureClass ??
           "unknown",
+        // R-2e: these bytes were sent, so the channel is known -- and a
+        // provider-fault failure counts against the provider only on the
+        // channel its bulk ranks (aggregateRankingRows, bulkVerdicts).
+        audioSource,
       });
     } catch (insertErr) {
       // A failed bookkeeping insert must never take the whole run down --
@@ -1273,6 +1278,9 @@ async function insertResult(
      * failure nobody has classified -- but both have to be chosen.
      */
     failureClass: FailureClass | null;
+    /** R-2e: the channel sent to the provider, when the failure came after
+     *  sending it. Omitted = no audio reached a provider. */
+    audioSource?: CellAudioSource;
   },
   options: { replaceOk?: boolean } = {},
 ): Promise<void> {
@@ -1298,8 +1306,9 @@ async function insertResult(
       // a skip -- no audio was ever transcribed, so there is no channel to
       // name. Null here means "no transcription happened", which is a
       // different thing from the null on pre-M-5 rows (those are mono); the
-      // status column is what tells them apart.
-      audioSource: null,
+      // status column is what tells them apart. R-2e: a provider failure
+      // after the audio was sent names the channel it was sent.
+      audioSource: fields.audioSource ?? null,
     },
     options,
   );
@@ -1382,6 +1391,31 @@ type RankingResultRow = {
   score: typeof benchmarkScoresTable.$inferSelect;
 };
 
+// R-2e: a cell the provider itself failed (PROVIDER_FAULT_CLASSES). No
+// transcript and no score row -- it counts as one flagged call and nothing
+// else.
+type ProviderFailureRow = Pick<
+  typeof benchmarkProviderCallResultsTable.$inferSelect,
+  "callId" | "providerId" | "audioSource"
+>;
+
+function providerFailuresQuery(runScope: SQL) {
+  return db
+    .select({
+      callId: benchmarkProviderCallResultsTable.callId,
+      providerId: benchmarkProviderCallResultsTable.providerId,
+      audioSource: benchmarkProviderCallResultsTable.audioSource,
+    })
+    .from(benchmarkProviderCallResultsTable)
+    .where(
+      and(
+        runScope,
+        eq(benchmarkProviderCallResultsTable.status, "failed"),
+        inArray(benchmarkProviderCallResultsTable.failureClass, [...PROVIDER_FAULT_CLASSES]),
+      ),
+    );
+}
+
 // T-1 fix (2026-08-27, base-solidity review): shared aggregation core,
 // extracted so both computeRankingsForRun (ad-hoc runs) and
 // computeRankingsForBulk (below -- rankings spanning every shard of a
@@ -1393,6 +1427,7 @@ type RankingResultRow = {
 // each other) -- showing 50 calls of evidence out of 1,000.
 function aggregateRankingRows(
   results: RankingResultRow[],
+  failures: ProviderFailureRow[],
   calls: (typeof benchmarkCallsTable.$inferSelect)[],
   providers: (typeof benchmarkProvidersTable.$inferSelect)[],
   audioSource?: CellAudioSource,
@@ -1413,6 +1448,8 @@ function aggregateRankingRows(
     audioSource === undefined
       ? results
       : results.filter((r) => (r.result.audioSource ?? "mono") === audioSource);
+  const failuresOnChannel =
+    audioSource === undefined ? failures : failures.filter((f) => (f.audioSource ?? "mono") === audioSource);
   // R-1: one word basis per call, shared by every provider on it, over the
   // scope being ranked (this run for an ad-hoc run, the bulk's runs for a
   // bulk). A provider used to be measured against its own word count, which
@@ -1446,6 +1483,9 @@ function aggregateRankingRows(
     const rowsForGroup = onChannel.filter(
       (r) => (callById.get(r.result.callId)?.sourceAssistantId ?? NO_ASSISTANT_KEY) === assistantKey,
     );
+    const failuresForGroup = failuresOnChannel.filter(
+      (f) => (callById.get(f.callId)?.sourceAssistantId ?? NO_ASSISTANT_KEY) === assistantKey,
+    );
 
     // A ranking row still carries `vertical` as a display tag (2026-08-27):
     // an assistant's calls are expected to share one vertical, but this
@@ -1463,6 +1503,13 @@ function aggregateRankingRows(
       const list = byProvider.get(row.result.providerId) ?? [];
       list.push(row);
       byProvider.set(row.result.providerId, list);
+    }
+    // R-2e: a provider that only failed in this group still gets a row --
+    // flagged on every call, which is what it was.
+    const failedCountByProvider = new Map<string, number>();
+    for (const f of failuresForGroup) {
+      failedCountByProvider.set(f.providerId, (failedCountByProvider.get(f.providerId) ?? 0) + 1);
+      if (!byProvider.has(f.providerId)) byProvider.set(f.providerId, []);
     }
 
     // T-61: score.costPerMinute on a CELL is that cell's whole cost (rate x
@@ -1533,14 +1580,18 @@ function aggregateRankingRows(
       const totalPeerFlags = flaggedCells.reduce((sum, r) => sum + (r.score.peerFlagCount ?? 0), 0);
       const totalWords = flaggedCells.reduce((sum, r) => sum + (wordBasis.get(r.result.callId) ?? 0), 0);
       const peerFlagsPer100Words = totalWords > 0 ? (totalPeerFlags / totalWords) * 100 : null;
-      const cleanCallRate = flaggedCells.length
-        ? flaggedCells.filter((r) => r.score.peerFlagCount === 0).length / flaggedCells.length
+      // R-2e: a provider failure is one more call, and a flagged one. It adds
+      // nothing to the per-100-words rate above -- no transcript, no words.
+      const failedCalls = failedCountByProvider.get(providerId) ?? 0;
+      const callsCounted = flaggedCells.length + failedCalls;
+      const cleanCallRate = callsCounted
+        ? flaggedCells.filter((r) => r.score.peerFlagCount === 0).length / callsCounted
         : null;
       // R-2b: what the card ranks on, first (ranking-order.ts) -- the org
       // verdict's own quantity. Counted, not 1 - cleanCallRate, so two
       // providers flagged on the same share of calls compare equal exactly.
-      const flaggedCallRate = flaggedCells.length
-        ? flaggedCells.filter((r) => (r.score.peerFlagCount ?? 0) > 0).length / flaggedCells.length
+      const flaggedCallRate = callsCounted
+        ? (flaggedCells.filter((r) => (r.score.peerFlagCount ?? 0) > 0).length + failedCalls) / callsCounted
         : null;
 
       return {
@@ -1561,6 +1612,7 @@ function aggregateRankingRows(
         peerFlagsPer100Words,
         cleanCallRate,
         flaggedCallRate,
+        failedCalls,
       };
     });
 
@@ -1598,7 +1650,9 @@ function aggregateRankingRows(
     // scored-call count (rowsForGroup, deduped by call), not any one
     // provider's sampleSize. R-4 reads it here as well as on the row,
     // because the sentence opens with it.
-    const callsScored = new Set(rowsForGroup.map((r) => r.result.callId)).size;
+    // R-2e: a call a provider failed is evidence too, so it counts here even
+    // when no provider on it produced a transcript.
+    const callsScored = new Set([...rowsForGroup.map((r) => r.result.callId), ...failuresForGroup.map((f) => f.callId)]).size;
     const scopePhrase = assistantId
       ? `this assistant's ${callsScored} call${callsScored === 1 ? "" : "s"}`
       : `${callsScored} call${callsScored === 1 ? "" : "s"} with no assistant on file`;
@@ -1606,6 +1660,7 @@ function aggregateRankingRows(
       name: a.providerName,
       flaggedCallRate: a.flaggedCallRate,
       peerFlagsPer100Words: a.peerFlagsPer100Words,
+      failedCalls: a.failedCalls,
     }));
 
     rankingRows.push(
@@ -1642,9 +1697,12 @@ function aggregateRankingRows(
         recommendation:
           agg.flaggedCallRate === null
             ? "Insufficient evidence (no cell succeeded) -- do not rank this provider yet."
-            : index === 0
-              ? rank1Recommendation(recommendationInputs, scopePhrase)
-              : runnerUpRecommendation(recommendationInputs[index]!, recommendationInputs[0]!),
+            : withFailures(
+                index === 0
+                  ? rank1Recommendation(recommendationInputs, scopePhrase)
+                  : runnerUpRecommendation(recommendationInputs[index]!, recommendationInputs[0]!),
+                recommendationInputs[index]!,
+              ),
       })),
     );
   }
@@ -1679,8 +1737,9 @@ export async function computeRankingsForRun(
         eq(benchmarkProviderCallResultsTable.status, "ok"),
       ),
     );
+  const failures = await providerFailuresQuery(eq(benchmarkProviderCallResultsTable.runId, runId));
 
-  const rows = aggregateRankingRows(results, calls, providers);
+  const rows = aggregateRankingRows(results, failures, calls, providers);
 
   await db.transaction(async (tx) => {
     await tx.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, runId));
@@ -1744,6 +1803,7 @@ export async function computeRankingsForBulk(bulkId: string): Promise<void> {
           eq(benchmarkProviderCallResultsTable.status, "ok"),
         ),
       );
+    const failures = await providerFailuresQuery(inArray(benchmarkProviderCallResultsTable.runId, runIds));
 
     const [bulk] = await db
       .select({ selectionCriteria: benchmarkBulksTable.selectionCriteria })
@@ -1752,6 +1812,7 @@ export async function computeRankingsForBulk(bulkId: string): Promise<void> {
       .limit(1);
     const rows = aggregateRankingRows(
       results,
+      failures,
       calls,
       providers,
       bulk?.selectionCriteria.requireCustomerAudio === true ? "customer" : "mono",
