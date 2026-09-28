@@ -177,7 +177,19 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.ellavox.stt-evals.bac
 launchctl bootout   gui/$(id -u)/ai.ellavox.stt-evals.backup   # bootstrap again to reload
 ```
 
-## The daily import (M-17) — written, NOT scheduled
+## The daily import (M-17) — scheduled, capped, off until a cap is set
+
+**Installed 2026-09-28 (M-17d).** launchd runs it at 03:00 as
+`ai.ellavox.stt-evals.import`. It reads **"Nightly import: max calls per night"** from
+Setup › Call sources (`nightlyImportCap`, `GET /benchmark/settings`) before it asks Vapi
+for anything: **0 = off and is the default** — the log says "nightly import is off" and
+nothing is imported. Above 0 it imports at most that many calls a night, all accounts
+together, oldest first, and prints `OVER CAP: N ... not imported tonight` for the rest. A
+settings answer without the field stops the run with exit 1 — never an uncapped import.
+To stop it entirely: `launchctl bootout gui/$(id -u)/ai.ellavox.stt-evals.import`.
+
+The history below is kept as it was written; the "no agent is installed" paragraph is
+what was true until 2026-09-28.
 
 Vapi deletes a call's recording 14 days after the call. Six are already gone.
 `scripts/daily-import.sh` closes that hole: it previews the last day per

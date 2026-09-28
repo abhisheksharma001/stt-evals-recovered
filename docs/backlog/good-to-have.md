@@ -1,3 +1,14 @@
+## Found 2026-09-28 (M-17d install): the 02:00 backup failed and nothing said so
+
+`launchctl list` showed `- 1 ai.ellavox.stt-evals.backup`: this morning's run exited 1.
+`~/Library/Logs/stt-evals-backup.log` ends "!! container stt-evals-pg is not running" --
+the database was down from 2026-09-27 17:30 UTC (the outage fixed as O-205, restart policy
+now `unless-stopped`), so there was no 2026-09-28 dump. launchd does not retry a calendar
+job, and the only trace was the exit code and a log line nobody reads. A dump was taken by
+hand the same day (`stt-evals-2026-09-28.dump`, 4.7 MB). Worth: a failed backup that
+announces itself -- for example the API's health or the Overview naming the newest dump's
+age -- so a missed night is seen the next morning, not found by accident.
+
 ## Found 2026-09-28 (end-to-end review, in a browser against API `cb8587d5d269`)
 
 Every page loaded (Overview, Orgs, Calls, Bulks, Results, Setup), the footer badge named the live
