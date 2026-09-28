@@ -153,10 +153,10 @@ export const defaultProviders = [
     // and $0.0077 is the *Flux* streaming regular rate verified 2026-08-29,
     // for Flux and not for nova-3. No nova-3 streaming rate has been read
     // off the pricing page by anyone here. Carried rather than left null
-    // because hybridCompositeScore scores a null cost as the cheapest
-    // possible (O-37) and cost is 15% of the composite, so an unpriced row
-    // would outrank a priced one the moment someone enabled it. M-11d reads
-    // the real rate before this row is trusted for cost.
+    // because, until R-2b (2026-09-28) took price out of the ranking, the
+    // composite scored a null cost as the cheapest possible (O-37), so an
+    // unpriced row would have outranked a priced one. M-11d reads the real
+    // rate before this row is trusted for cost.
     costPerMinute: 0.0077,
     // M-19a: nova-3 boosts through `keyterm`, and the streaming adapter
     // sends it.

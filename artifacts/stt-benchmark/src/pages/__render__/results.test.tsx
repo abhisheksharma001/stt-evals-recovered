@@ -1131,6 +1131,8 @@ describe("Results", () => {
     const rankedBy = screen.getAllByText(/^Ranked by/)
     expect(rankedBy.length).toBeGreaterThan(0)
     for (const el of rankedBy) expect(el.textContent).not.toMatch(/speed/i)
+    // R-2b: nor price -- the cards rank on the verdict's keys only.
+    for (const el of rankedBy) expect(el.textContent).not.toMatch(/price/i)
 
     // Every title on the page, not just the ones this test knows to look for.
     // A tooltip may mention speed to disclaim it; none may list it as an input.

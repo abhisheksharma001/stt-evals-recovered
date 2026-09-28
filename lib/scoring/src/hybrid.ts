@@ -431,65 +431,13 @@ export function combineHybridFlags(params: {
   };
 }
 
-// --- Ranking composite (replaces the gold-based one in index.ts) --------
+// --- Ranking ------------------------------------------------------------
 //
-// FR-S8's composite used to weight entity/alphanumeric accuracy heaviest,
-// with WER/latency/cost as secondary. Without a gold transcript there's no
-// accuracy metric left at all -- flags (how much a provider disagreed with
-// its peers, how often its own confidence was low, how often its entities
-// didn't match) become the primary signal instead, with cost as the same
-// secondary tie-breaker it always was. Same shape/weighting style as
-// RANKING_WEIGHTS in index.ts, deliberately not merged with it -- that one
-// is kept only for historical runs scored before this change.
-//
-// M-10a (2026-09-06): latency used to sit here at 0.15 and no longer does,
-// because `latencyFinalMs` is not one quantity. It is `finalAt -
-// submittedAt`, which for the six batch adapters is how long a vendor took
-// to hand back a file, and for Cartesia is the length of the call -- our
-// adapter streams at real time. Measured across the live corpus: openai
-// 4.6 s, deepgram-nova-3 5.5 s, gladia 10.7 s, assemblyai 12.3 s, cartesia
-// 80.8 s. The last number is 16x the others because it is a different
-// measurement, not because Cartesia is slow.
-//
-// It was deciding real ranks, not just decorating them: of 62 assistant
-// groups, 33 had every provider tied on flag badness, so the flag term
-// cancelled and the order came from latency and cost alone. Weighting a
-// number that means two different things is worse than not weighting it --
-// so latency is shown on the Results page and no longer voted with. The
-// key is removed rather than set to zero: a zero weight is a weight
-// somebody restores without re-deriving why it was zero. It earns its way
-// back only once end-of-speech latency is actually measured (M-10b).
-export const HYBRID_RANKING_WEIGHTS = {
-  flags: 0.85,
-  cost: 0.15,
-} as const;
-
-export type HybridCompositeInput = {
-  // avgFlagCount + avgFlagSeverityScore (severityRank 0..3), averaged across
-  // a provider's cells -- one blended "how much went wrong" number rather
-  // than two separately-weighted ones, so a provider with a few high-
-  // severity flags and one with many low-severity flags can still be
-  // compared on the same scale.
-  flagBadness: number | null;
-  costPerMinute: number | null;
-  maxFlagBadness: number;
-  maxCostPerMinute: number;
-};
-
-/** Returns null when there's no evidence at all (every cell failed) --
- * callers should surface that as "insufficient evidence," same convention
- * as the old compositeScore(). */
-export function hybridCompositeScore(input: HybridCompositeInput): number | null {
-  if (input.flagBadness === null) return null;
-
-  const flagComponent =
-    input.maxFlagBadness <= 0 ? 1 : 1 - Math.min(input.flagBadness / input.maxFlagBadness, 1);
-  const costComponent =
-    input.costPerMinute === null || input.maxCostPerMinute <= 0
-      ? 1
-      : 1 - Math.min(input.costPerMinute / input.maxCostPerMinute, 1);
-
-  return (
-    HYBRID_RANKING_WEIGHTS.flags * flagComponent + HYBRID_RANKING_WEIGHTS.cost * costComponent
-  );
-}
+// There is no ranking composite here any more. It began as flags 0.70 +
+// latency 0.15 + cost 0.15; M-10a (2026-09-06) took latency out because it
+// is file turnaround for a batch adapter and call length for a streaming one;
+// R-2b (2026-09-28, Abhishek: "we are not seeing the cheapest option in this
+// whole thing, we want the most reliable STT") took cost out, which left one
+// term -- and the flag term was the wrong quantity anyway. The cards rank on
+// the org verdict's keys (flagged-call rate, then peer flags per 100 words;
+// verdict.ts) in artifacts/api-server/src/lib/ranking-order.ts.

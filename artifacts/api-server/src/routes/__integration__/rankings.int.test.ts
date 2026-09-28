@@ -96,15 +96,17 @@ describe("GET /api/benchmark/rankings", () => {
 // groups for as long as it did. computeRankingsForRun only reads rows and
 // writes rankings; it calls no provider and spends nothing.
 describe("computeRankingsForRun -- the stored recommendation sentence", () => {
-  it("does not claim rank 1 had the fewest disagreements when the group tied", async () => {
+  it("does not let price decide, or claim a leader, when the group tied", async () => {
     const asst = `fx-asst-tie-${fx.suffix}`;
     const run = await fx.run({ purpose: "batch" });
     const call = await fx.call({ sourceAssistantId: asst, durationSeconds: 60 });
-    const cheap = await fx.provider();
+    // R-2b: `dear` is created first so its id sorts first. Before R-2b the
+    // composite gave this tie to the cheaper provider; now nothing measured
+    // separates them and the stable id order stands.
     const dear = await fx.provider();
+    const cheap = await fx.provider();
 
-    // Same flag badness on both sides, different price: the only thing left
-    // in the composite after M-10a is cost, so price is what decided this.
+    // Same flags on both sides, different price.
     for (const [provider, microcents] of [
       [cheap, 220_000],
       [dear, 430_000],
@@ -129,15 +131,16 @@ describe("computeRankingsForRun -- the stored recommendation sentence", () => {
     // them before asserting -- a failed expect must not leave rows behind.
     await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
 
-    expect(rows.map((r) => r.providerId)).toEqual([cheap.id, dear.id]);
+    expect(rows.map((r) => r.providerId)).toEqual([dear.id, cheap.id]);
     expect(rows[0].recommendation).not.toContain("fewest");
-    expect(rows[0].recommendation).toContain("On this assistant's 1 call:");
-    expect(rows[0].recommendation).toContain("every provider raised the same disagreements");
-    expect(rows[0].recommendation).toContain(`cheapest ${cheap.name}`);
+    expect(rows[0].recommendation).toBe(
+      "On this assistant's 1 call: every provider tied on flagged calls and disagreements per 100 words.",
+    );
     // The runner-up carried the same false claim, and carried it on the
     // cheapest, equally-clean provider in 33 live groups.
     expect(rows[1].recommendation).not.toContain("more or more-severe");
-    expect(rows[1].recommendation).toContain("Tied with rank 1 on disagreements");
+    expect(rows[1].recommendation).toContain("this order is arbitrary");
+    for (const r of rows) expect(r.recommendation).not.toMatch(/cheap|price/i);
 
     // R-4: what the aggregation stops storing. Every row used to end
     // "Confidence: low -- only N scored call(s) ... Do not treat as
@@ -180,10 +183,8 @@ describe("computeRankingsForRun -- the stored recommendation sentence", () => {
     await db.delete(benchmarkRankingsTable).where(eq(benchmarkRankingsTable.runId, run.id));
 
     expect(rows[0].providerId).toBe(clean.id);
-    expect(rows[0].recommendation).toBe(
-      `On this assistant's 1 call: fewest disagreements ${clean.name}, every provider costs the same per minute.`,
-    );
-    expect(rows[1].recommendation).toContain("Behind rank 1 on disagreements");
+    expect(rows[0].recommendation).toBe(`On this assistant's 1 call: fewest flagged calls ${clean.name}.`);
+    expect(rows[1].recommendation).toBe("Behind rank 1: flagged on a larger share of its calls.");
     for (const r of rows) {
       expect(r.recommendation).not.toContain("Leading candidate");
       expect(r.recommendation).not.toContain("decision-grade");

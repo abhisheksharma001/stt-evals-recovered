@@ -90,7 +90,7 @@ const SORT_LABELS: Record<SortKey, string> = {
 }
 
 const SORT_TITLES: Record<SortKey, string> = {
-  rank: "From disagreements (cross-provider disagreement + wrong entities only) and price. Not from speed, and not from Flags per call, which includes a provider's own low-confidence words.",
+  rank: "From the share of calls with a disagreement (cross-provider disagreement + wrong entities only), then disagreements per 100 words -- the verdict's own order. Not from price, not from speed, and not from Flags per call, which includes a provider's own low-confidence words.",
   avgFlagCount: "Average flags per call, including a provider's own low-confidence words. Only providers that report confidence add those, so compare with care; the small 'peer' number below is what Rank uses.",
   avgFlagSeverityScore: "How serious the flags were, 0 = none .. 3 = high, averaged over this provider's transcripts in this group.",
   peerFlagsPer100Words: "Disagreements with the other providers plus wrong entities, per 100 words transcribed. Confidence excluded, so it is comparable across all providers and call lengths.",
@@ -1068,8 +1068,8 @@ export default function Rankings() {
                               <Badge variant="outline" className="font-mono font-normal">{ranks.length} providers</Badge>
                             </CardTitle>
                             <div className="flex items-center gap-4">
-                              <span className="text-xs font-mono text-muted-foreground" title="Rank = disagreements, then price. Speed is shown but not ranked on -- it is file turnaround for a batch API and call length for a streaming one, so the numbers are not comparable. Sorting a column changes the view, not the rank.">
-                                Ranked by <span className="text-foreground font-semibold">disagreements, price</span>
+                              <span className="text-xs font-mono text-muted-foreground" title="Rank = share of calls flagged, then disagreements per 100 words -- the same order as the verdict. Neither price nor speed is ranked on: price is not what this picks for, and speed is file turnaround for a batch API and call length for a streaming one, so the numbers are not comparable. Sorting a column changes the view, not the rank.">
+                                Ranked by <span className="text-foreground font-semibold">flagged calls, disagreements</span>
                               </span>
                               <Button
                                 variant="outline"
