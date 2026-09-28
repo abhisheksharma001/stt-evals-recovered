@@ -30,5 +30,9 @@ Does it matter today? Not in any finished bulk. Local DB, 2026-09-28, all `bench
 - Bulk 42769f26 (the live one): 17 ok cells for each of its 5 providers, 0 failed.
 - `failure_class` cannot yet say whose fault a failure was: 3,868 of 3,974 failed rows read `unknown`.
 
-What gets built differently: nothing to the rank today -- there are no provider-side failures in finished data to fold in, and counting every failure would punish all providers equally for our missing audio. Two gaps stay real for "the most reliable STT" and are Abhishek's call, not queued: (a) a provider-fault failure could count as a flagged call, which needs a fault-attributing failure class first; (b) keep a per-cell failed-attempt count so a failure a retry later cleared still shows.
+What gets built differently: nothing to the rank today -- there are no provider-side failures in finished data to fold in, and counting every failure would punish all providers equally for our missing audio. Two gaps stay real for "the most reliable STT": (a) a provider-fault failure could count as a flagged call; (b) keep a per-cell failed-attempt count so a failure a retry later cleared still shows.
+
+**Correction, 2026-09-28:** the first version of this answer said (a) "needs a fault-attributing failure class first". It does not: `lib/stt-providers/src/failure-class.ts` already has `provider_timeout` and `provider_5xx`, set at the throw site. The 3,868 `unknown` rows are the "no audioObjectPath" failures, which are ours.
+
+**Decided 2026-09-28** (Abhishek: "do whatever u recommend"): (a) yes -- queued as R-2e in `docs/step-register.md`, counting only `provider_timeout` and `provider_5xx`. (b) not now: the rank reads each cell's final state, and first-attempt failures in a bulk can come from our own concurrency limits (T-6: per-vendor slots "not yet tuned against real 429s", `artifacts/api-server/src/lib/run-executor.ts`), so a retry count would partly measure us. Revisit if R-2e ever shows provider failures in a finished bulk.
 
