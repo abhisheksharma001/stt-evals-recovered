@@ -4383,7 +4383,18 @@ and every card's rank 1 SHALL agree.
 
 ### R-2c — Proxy agreement and the method check read the same quantity
 
-**Status:** not started. Spends nothing.
+**Status:** done 2026-09-28 (PR on branch `r2c-proxy-method-flagged-rate`). Spent nothing.
+Both now order the flag side with `flaggedCallOrder` (`proxy-agreement-aggregate.ts`):
+flagged-call rate first, then flags per 100 words -- the verdict's order. Learned:
+(1) proxy agreement had ranked by T-2's flagBadness (count + severity rank), which the
+verdict never read; severity is out of it now and `peerFlagSeverity` left the query.
+(2) Per call every provider shares R-1's word basis, so the per-100 tiebreak is the mean
+flag count there. (3) Method check, live public bulk 4fee349b, 7 providers: **before rho
+0.786, p 0.024, agrees -> after rho 0.750, p 0.033, agrees**. Proxy agreement unchanged
+(1 labelled call, n 0). (4) `flaggedCallRate` is on the aggregate's provider rows but not
+in the API's MethodCheck schema, so the response drops it (no UI reads the rows).
+(5) Break tests: per-100 on the method check fails its R-2c case; flag count on proxy
+agreement fails its R-2c case; dropping the tiebreak fails 6.
 **PR:** one.
 **Depends on:** R-2a (not R-2b: both certify an ORDER, and the order the page names is the
 verdict's).
