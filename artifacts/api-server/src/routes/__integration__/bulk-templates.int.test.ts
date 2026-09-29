@@ -4,11 +4,20 @@
 // blob, a duration band resolved once at save time, a name that must stay
 // unique, and a delete that is undoable only from the audit trail. Launch
 // is deliberately absent: it spends provider money.
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { pool } from "@workspace/db";
+import { writeAudit } from "../../lib/audit";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
+
+// R-24a: the real writeAudit, wrapped so one case can make it fail AFTER its
+// insert ran -- which proves the insert rolls back with the delete, not only
+// that a throw is handled.
+vi.mock("../../lib/audit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/audit")>();
+  return { ...actual, writeAudit: vi.fn(actual.writeAudit) };
+});
 
 const fx = new Fixtures();
 
@@ -98,5 +107,32 @@ describe("bulk templates", () => {
     const malformed = await request(server).delete("/api/benchmark/bulk-templates/not-a-uuid");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toMatch(/templateId/);
+  });
+
+  it("keeps the template, and writes no delete row, when the audit insert fails (R-24a)", async () => {
+    const made = await create(`fx-tpl-atomic-${fx.suffix}`);
+    expect(made.status).toBe(201);
+
+    const actual = (await vi.importActual<typeof import("../../lib/audit")>("../../lib/audit")).writeAudit;
+    vi.mocked(writeAudit).mockImplementationOnce(async (entry, executor) => {
+      await actual(entry, executor);
+      throw new Error("R-24a test: audit insert failed");
+    });
+
+    const failed = await request(server)
+      .delete(`/api/benchmark/bulk-templates/${made.body.id}`)
+      .set("x-actor", fx.actor);
+    expect(failed.status).toBe(500);
+
+    const list = await request(server).get("/api/benchmark/bulk-templates");
+    expect(list.body.map((t: { id: string }) => t.id)).toContain(made.body.id);
+    expect((await auditFor(made.body.id)).map((r) => r.action)).toEqual(["create"]);
+
+    // And the next attempt goes through, with exactly one delete row.
+    const retried = await request(server).delete(`/api/benchmark/bulk-templates/${made.body.id}`).set("x-actor", fx.actor);
+    expect(retried.status).toBe(204);
+    const rows = await auditFor(made.body.id);
+    expect(rows.map((r) => r.action)).toEqual(["delete", "create"]);
+    expect((rows[0].beforeState as { name: string }).name).toBe(`fx-tpl-atomic-${fx.suffix}`);
   });
 });

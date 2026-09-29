@@ -4472,9 +4472,13 @@ check's figure before and after.
 
 ### R-2e — A call the provider failed counts as a flagged call
 
-**Status:** built 2026-09-28 (branch `r2e-failed-cell-flagged`). Spent nothing. Decided
-2026-09-28 (Abhishek: "do whatever u recommend", on R-2's answer in `docs/research.md`).
-After merge: deploy, `recompute-rankings.ts --apply`, confirm bulk `42769f26` unchanged.
+**Status:** done 2026-09-28 (PR #238, `b1e0865`), deployed `4606ede56da3 -> b1e0865f330b`.
+Spent nothing. Decided 2026-09-28 (Abhishek: "do whatever u recommend", on R-2's answer in
+`docs/research.md`). **Live:** `recompute-rankings.ts --apply` (free) rewrote 3 bulks and 17
+standalone runs; bulk `42769f26`'s cards are byte-identical to a snapshot taken before the
+deploy, and its verdict is identical except the new `failedCalls: 0` on all 5 rates.
+`stt_evals` holds 0 `provider_timeout` or `provider_5xx` rows, so no rank moved; the change
+starts counting on the next bulk a provider fails on.
 Learned while building:
 - **The spec missed one file.** A provider failure that exhausted its retries was written
   with `audio_source` null (`insertResult` in `run-executor.ts` hard-coded it), and every
@@ -6235,7 +6239,13 @@ when the lost audit row is the half that cannot be retried.
 
 ### R-24a — Deleting a bulk template writes its audit row in the same transaction
 
-**Status:** not started. Decided 2026-09-28 (Abhishek: "do whatever u recommend").
+**Status:** built 2026-09-29 (branch `r24a-template-delete-audit-tx`, worktree). Spent
+nothing. Decided 2026-09-28 (Abhishek: "do whatever u recommend"). Learned: a drizzle
+transaction satisfies `Pick<typeof db, "insert">`, so `writeAudit`'s new optional executor
+needs no cast and the other 29 call sites compile unchanged. The test wraps the REAL
+`writeAudit` and throws only after its insert ran -- so it proves the audit row rolls back
+with the delete, not merely that a throw is caught. Express 5 turns the throw into a 500.
+No deploy-visible change except that a failed audit insert now leaves the template in place.
 **PR:** one, in a worktree (R-24's standing rule).
 **Depends on:** R-24. **Research:** none.
 **Files:** `artifacts/api-server/src/lib/audit.ts` (`writeAudit`),

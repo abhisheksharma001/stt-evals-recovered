@@ -10,15 +10,22 @@ export function actorFromRequest(req: Request): string {
   return header?.trim() || "unknown";
 }
 
-export async function writeAudit(entry: {
-  entityType: string;
-  entityId: string;
-  actorLabel: string;
-  action: string;
-  beforeState?: unknown;
-  afterState?: unknown;
-}): Promise<void> {
-  await db.insert(auditLogTable).values({
+/** R-24a: anything that can insert -- `db`, or a transaction handed in so the
+ *  audit row lands (or rolls back) with the change it records. */
+export type AuditExecutor = Pick<typeof db, "insert">;
+
+export async function writeAudit(
+  entry: {
+    entityType: string;
+    entityId: string;
+    actorLabel: string;
+    action: string;
+    beforeState?: unknown;
+    afterState?: unknown;
+  },
+  executor: AuditExecutor = db,
+): Promise<void> {
+  await executor.insert(auditLogTable).values({
     entityType: entry.entityType,
     entityId: entry.entityId,
     actorLabel: entry.actorLabel,

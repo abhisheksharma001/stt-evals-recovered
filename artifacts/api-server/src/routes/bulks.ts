@@ -851,21 +851,32 @@ router.delete("/benchmark/bulk-templates/:templateId", async (req, res): Promise
     respondInvalid(res, params.error);
     return;
   }
-  const [deleted] = await db
-    .delete(bulkTemplatesTable)
-    .where(eq(bulkTemplatesTable.id, params.data.templateId))
-    .returning();
+  // R-24a: the audit row is the only copy of a deleted template, so the
+  // delete and its audit insert land together or not at all. They used to
+  // be two statements: a failed insert left the template gone, the caller
+  // told it was not, and nothing to restore it from.
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(bulkTemplatesTable)
+      .where(eq(bulkTemplatesTable.id, params.data.templateId))
+      .returning();
+    if (!row) return undefined;
+    await writeAudit(
+      {
+        entityType: "bulk_template",
+        entityId: row.id,
+        actorLabel: actorFromRequest(req),
+        action: "delete",
+        beforeState: serializeTemplate(row),
+      },
+      tx,
+    );
+    return row;
+  });
   if (!deleted) {
     res.status(404).json({ error: "Bulk template not found" });
     return;
   }
-  await writeAudit({
-    entityType: "bulk_template",
-    entityId: deleted.id,
-    actorLabel: actorFromRequest(req),
-    action: "delete",
-    beforeState: serializeTemplate(deleted),
-  });
   res.status(204).end();
 });
 
