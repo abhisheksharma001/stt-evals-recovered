@@ -6239,8 +6239,9 @@ when the lost audit row is the half that cannot be retried.
 
 ### R-24a — Deleting a bulk template writes its audit row in the same transaction
 
-**Status:** built 2026-09-29 (branch `r24a-template-delete-audit-tx`, worktree). Spent
-nothing. Decided 2026-09-28 (Abhishek: "do whatever u recommend"). Learned: a drizzle
+**Status:** done 2026-09-29 -- PR #239, merged `85a3c12`, deployed `85a3c12adc57` (healthz
+ok, database ok). Not exercised live on purpose: the audit log is append-only, so a test
+delete would leave permanent rows; the integration case is the proof. Spent nothing. Decided 2026-09-28 (Abhishek: "do whatever u recommend"). Learned: a drizzle
 transaction satisfies `Pick<typeof db, "insert">`, so `writeAudit`'s new optional executor
 needs no cast and the other 29 call sites compile unchanged. The test wraps the REAL
 `writeAudit` and throws only after its insert ran -- so it proves the audit row rolls back
@@ -6266,6 +6267,42 @@ inside the transaction) and then reads the template back. Break test: move the a
 back outside the transaction -> that case fails.
 **Must not:** touch the gold-clear route or any other audit site; wrap anything in
 `auditOrLog`; spend anything.
+
+---
+
+### R-24b — Deleting an agent mark writes its audit row in the same transaction
+
+**Status:** built 2026-09-29 (branch `r24b-agent-mark-delete-audit-tx`, worktree). Spent
+nothing. Chosen from the 29 sites left after R-24a: it is the only other route whose audit
+row is a full copy of a deleted row. Every other site is a create, an update or an action,
+where losing the audit row loses history but the entity itself survives; here the audit row
+is the only copy of a note a human wrote while reading a call. The gold-clear route
+(`PATCH /benchmark/calls/:callId`) would rank next and stays out (no gold work).
+**Found while choosing:** bulk creation at the cap evicts the oldest bulk inside its
+transaction (`createBulkFromCriteria`, `artifacts/api-server/src/lib/bulks.ts`), but the
+`bulk` / `create` audit row that names `evictedBulkId` is written after the commit. A failed
+insert there leaves no record anywhere that a bulk was evicted. It holds only the id, not a
+copy, so it ranks below this one -- the next candidate for R-24c.
+Learned: the R-24a shape transfers unchanged -- no new code in `writeAudit`.
+**PR:** one, in a worktree (R-24's standing rule).
+**Depends on:** R-24a (the optional executor on `writeAudit`). **Research:** none.
+**Files:** `artifacts/api-server/src/routes/agent-marks.ts` (`DELETE /benchmark/agent-marks/:markId`),
+`artifacts/api-server/src/routes/__integration__/agent-marks.int.test.ts`.
+**Today:** the route deletes the mark with `.returning()`, then calls `writeAudit` with the
+deleted row as `beforeState`. If that insert throws, the mark is already gone, the caller gets
+a 500 saying it was not, and the only copy of the mark is lost.
+**Change:** run the delete and the audit insert inside one `db.transaction`, passing `tx` to
+`writeAudit`. No row -> 404 as before; otherwise 204.
+**Acceptance:** WHEN the audit insert fails during an agent-mark delete THEN the mark SHALL
+still exist AND the response SHALL be an error; WHEN it succeeds THEN the mark SHALL be gone
+AND exactly one `agent_mark` / `delete` audit row SHALL exist for it.
+**Verify:** `pnpm run typecheck` clean; `TEST_DATABASE_URL=... pnpm exec vitest run --config
+./vitest.integration.config.ts src/routes/__integration__/agent-marks.int.test.ts` (in
+`artifacts/api-server`) passes, including the case that wraps the real `writeAudit`, throws
+after its insert ran, and reads the mark back. Break test: move the audit call back outside
+the transaction -> that case alone fails.
+**Must not:** touch the gold-clear route or any other audit site; change `writeAudit`; wrap
+anything in `auditOrLog`; spend anything.
 
 ---
 
