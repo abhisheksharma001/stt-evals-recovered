@@ -8305,6 +8305,33 @@ cards below the list.
 
 ---
 
+### R-58 — The watch tick's bulk selection uses the tick's own clock
+
+**Status:** open, queued 2026-09-29 -- next, because CI runs the suite it breaks.
+**PR:** one.
+**Depends on:** nothing. **Research:** none.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (`previewBulkSelection`,
+`createBulkFromCriteria`), `artifacts/api-server/src/lib/watch-tick.ts` (`runOneSchedule`),
+`artifacts/api-server/src/routes/__integration__/watch-tick.int.test.ts` (only if a case
+needs the date named).
+**Today:** `runWatchTick({ now })` threads `now` into its own window, but calls
+`previewBulkSelection` and `createBulkFromCriteria` without it; both resolve the selection
+against the wall clock (`createBulkFromCriteria` sets `const now = new Date()`). The suite pins
+`NOW` to 2026-09-15, so from 2026-09-29 the seeded calls read as past Vapi's 14-day retention
+and 7 of 11 cases fail (bug log, 2026-09-29).
+**Change:** both functions take an optional `now?: Date` (default `new Date()`, so every
+other caller is unchanged) and pass it to the selection resolver; `runOneSchedule` passes its
+`now` to both. No change to any test's pinned date -- the fix is that the tick has one clock.
+**Acceptance:** WHEN the watch-tick suite runs on any date after 2026-09-29 THEN all 11 cases
+SHALL pass with `NOW` still pinned to 2026-09-15.
+**Verify:** `pnpm run typecheck` clean; the watch-tick suite 11/11 and the full
+`pnpm run test:integration` green. Break test: drop `now` from the `createBulkFromCriteria`
+call in `watch-tick.ts` -> the launching cases fail again.
+**Must not:** change a pinned test date; change the retention rule; switch the watch
+scheduler on; spend anything (the suite's own safety notes stand).
+
+---
+
 ### S-2 — Say what the catalog is and what the cards are
 
 **Status:** `done` 2026-09-08 (PR #115, `11ecdae`), deployed
