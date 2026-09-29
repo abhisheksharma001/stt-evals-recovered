@@ -387,6 +387,7 @@ async function runOneSchedule(input: {
     // rule: no opinion on file means no floor.
     requireCustomerAudioDefault: true,
     minCustomerWordsDefault: undefined,
+    now,
   });
   if (!priced.estimate) {
     // No providers on the template, so there is no number to check a cap
@@ -413,6 +414,7 @@ async function runOneSchedule(input: {
     day,
     template,
     criteria: bulkCriteria,
+    now,
   });
   return {
     outcome: result.launched ? "launched" : "held:cost_gate",
@@ -490,8 +492,9 @@ async function createBulkWithName(input: {
   day: string;
   template: typeof bulkTemplatesTable.$inferSelect;
   criteria: BulkSelectionCriteria;
+  now: Date;
 }): Promise<Awaited<ReturnType<typeof createBulkFromCriteria>>> {
-  const { schedule, day, template, criteria } = input;
+  const { schedule, day, template, criteria, now } = input;
   const base = `${template.name} ${day} watch-${schedule.id.slice(0, 8)}`;
   const attempt = (name: string) =>
     createBulkFromCriteria({
@@ -511,6 +514,7 @@ async function createBulkWithName(input: {
       minCustomerWordsDefault: undefined,
       watchScheduleId: schedule.id,
       watchDay: day,
+      now,
     });
   try {
     return await attempt(base);

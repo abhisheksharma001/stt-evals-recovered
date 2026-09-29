@@ -6272,7 +6272,9 @@ back outside the transaction -> that case fails.
 
 ### R-24b — Deleting an agent mark writes its audit row in the same transaction
 
-**Status:** built 2026-09-29 (branch `r24b-agent-mark-delete-audit-tx`, worktree). Spent
+**Status:** `done` 2026-09-29 (PR #240, `7bdfa8d`), deployed `7bdfa8deeadc`. Not exercised
+live on purpose -- deleting a real mark to watch its audit row would destroy the thing the
+step protects; the integration case is the proof. Spent
 nothing. Chosen from the 29 sites left after R-24a: it is the only other route whose audit
 row is a full copy of a deleted row. Every other site is a create, an update or an action,
 where losing the audit row loses history but the entity itself survives; here the audit row
@@ -8307,7 +8309,11 @@ cards below the list.
 
 ### R-58 — The watch tick's bulk selection uses the tick's own clock
 
-**Status:** open, queued 2026-09-29 -- next, because CI runs the suite it breaks.
+**Status:** built 2026-09-29 (branch `r58-watch-tick-clock`, worktree). Spent nothing.
+Learned: the tick reaches `createBulkFromCriteria` through a private helper,
+`createBulkWithName` (the name-collision retry in `watch-tick.ts`), so `now` is threaded
+through that too -- same file, no new one. No test changed: the suite went 7/11 -> 11/11
+with `NOW` still pinned to 2026-09-15.
 **PR:** one.
 **Depends on:** nothing. **Research:** none.
 **Files:** `artifacts/api-server/src/lib/bulks.ts` (`previewBulkSelection`,

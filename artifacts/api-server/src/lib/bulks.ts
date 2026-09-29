@@ -590,13 +590,17 @@ export async function previewBulkSelection(input: {
    *  preview stands in for will use, or the count in the dialog is not the
    *  count that gets frozen. */
   minCustomerWordsDefault: number | undefined;
+  /** R-58: the clock the selection is resolved against (relative window,
+   *  retention cutoff). Defaults to the wall clock; the watch tick passes its
+   *  own `now` so one tick reads one time. */
+  now?: Date;
 }): Promise<BulkPreviewResult> {
   const { min, max } = resolveDurationBand(input);
   const criteria = withCustomerWordsDefault(
     withCustomerAudioDefault(input.criteria, input.requireCustomerAudioDefault),
     input.minCustomerWordsDefault,
   );
-  const selection = await resolveCriteriaSelection(criteria, min, max);
+  const selection = await resolveCriteriaSelection(criteria, min, max, input.now);
   const providerIds = input.providerIds ?? [];
   let estimate: BulkPreviewResult["estimate"] = null;
   if (providerIds.length > 0) {
@@ -698,11 +702,14 @@ export async function createBulkFromCriteria(input: {
    */
   watchScheduleId?: string;
   watchDay?: string;
+  /** R-58: same as previewBulkSelection's `now` -- the watch tick passes its
+   *  own, so the call set it priced is the call set that gets frozen. */
+  now?: Date;
 }): Promise<CreateBulkResult> {
   if ((input.watchScheduleId === undefined) !== (input.watchDay === undefined)) {
     throw new Error("watchScheduleId and watchDay must be set together");
   }
-  const now = new Date();
+  const now = input.now ?? new Date();
   const { min: minDuration, max: maxDuration } = resolveDurationBand(input);
   const shardSize = input.shardSize ?? 50;
 

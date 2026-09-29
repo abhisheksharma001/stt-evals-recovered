@@ -10,7 +10,8 @@ latter sets `const now = new Date()` -- so the retention cutoff is measured from
 clock while everything else in the tick uses the injected date. CI runs this suite, so every
 PR goes red until it is fixed. Production is not affected (there `now` IS the wall clock).
 Reproduce: `TEST_DATABASE_URL=... pnpm exec vitest run --config ./vitest.integration.config.ts
-src/routes/__integration__/watch-tick.int.test.ts` in `artifacts/api-server`. Fix queued as R-58.
+src/routes/__integration__/watch-tick.int.test.ts` in `artifacts/api-server`. Fixed by R-58
+(2026-09-29): the tick now passes its `now` to both.
 
 ## Found 2026-09-28 (M-17d install): the 02:00 backup failed and nothing said so
 
