@@ -1,3 +1,17 @@
+## Found 2026-09-29 (building R-24b): the watch-tick suite went red on its own, 14 days after its pinned date
+
+`artifacts/api-server/src/routes/__integration__/watch-tick.int.test.ts` pins `NOW` to
+2026-09-15 09:00 and seeds its calls an hour before it. 7 of its 11 cases fail from
+2026-09-29 on, on `main` as well as on the R-24b branch, with the tick settling `failed`:
+"no corpus calls matched: 0 of 3 in scope (past Vapi's 14-day retention window and never
+cached 3)". Cause: `runWatchTick` takes `now`, but `previewBulkSelection` and
+`createBulkFromCriteria` (`artifacts/api-server/src/lib/bulks.ts`) never receive it -- the
+latter sets `const now = new Date()` -- so the retention cutoff is measured from the wall
+clock while everything else in the tick uses the injected date. CI runs this suite, so every
+PR goes red until it is fixed. Production is not affected (there `now` IS the wall clock).
+Reproduce: `TEST_DATABASE_URL=... pnpm exec vitest run --config ./vitest.integration.config.ts
+src/routes/__integration__/watch-tick.int.test.ts` in `artifacts/api-server`. Fix queued as R-58.
+
 ## Found 2026-09-28 (M-17d install): the 02:00 backup failed and nothing said so
 
 `launchctl list` showed `- 1 ai.ellavox.stt-evals.backup`: this morning's run exited 1.

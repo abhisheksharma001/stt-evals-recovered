@@ -9,12 +9,21 @@
 // The third is the FK: a mark outlives the call that prompted it
 // (`onDelete: "set null"`), which is the opposite of what benchmark_agent_scans
 // does on the same column, so it is worth proving rather than trusting.
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { agentMarksTable, benchmarkCallsTable, db, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { writeAudit } from "../../lib/audit";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
+
+// R-24b: the real writeAudit, wrapped so one case can make it fail AFTER its
+// insert ran -- which proves the insert rolls back with the delete, not only
+// that a throw is handled.
+vi.mock("../../lib/audit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/audit")>();
+  return { ...actual, writeAudit: vi.fn(actual.writeAudit) };
+});
 
 const fx = new Fixtures();
 
@@ -215,6 +224,41 @@ describe("DELETE /api/benchmark/agent-marks/:markId", () => {
       .delete(`/api/benchmark/agent-marks/${mark.body.id}`)
       .set("x-actor", fx.actor);
     expect(second.status).toBe(404);
+  });
+
+  it("keeps the mark, and writes no delete row, when the audit insert fails (R-24b)", async () => {
+    const mark = await post({ note: "keep me" });
+    expect(mark.status).toBe(201);
+    const auditActions = async () => {
+      const res = await request(server)
+        .get("/api/benchmark/audit-log")
+        .query({ entityType: "agent_mark", entityId: mark.body.id });
+      expect(res.status).toBe(200);
+      return (res.body as { action: string; beforeState: unknown }[]).map((r) => r.action);
+    };
+    const before = await auditActions();
+
+    const actual = (await vi.importActual<typeof import("../../lib/audit")>("../../lib/audit")).writeAudit;
+    vi.mocked(writeAudit).mockImplementationOnce(async (entry, executor) => {
+      await actual(entry, executor);
+      throw new Error("R-24b test: audit insert failed");
+    });
+
+    const failed = await request(server)
+      .delete(`/api/benchmark/agent-marks/${mark.body.id}`)
+      .set("x-actor", fx.actor);
+    expect(failed.status).toBe(500);
+
+    const [kept] = await db.select().from(agentMarksTable).where(eq(agentMarksTable.id, mark.body.id));
+    expect(kept?.note).toBe("keep me");
+    expect(await auditActions()).toEqual(before);
+
+    // A retry goes through and leaves exactly one delete row holding the mark.
+    const retried = await request(server)
+      .delete(`/api/benchmark/agent-marks/${mark.body.id}`)
+      .set("x-actor", fx.actor);
+    expect(retried.status).toBe(204);
+    expect((await auditActions()).filter((a) => a === "delete")).toHaveLength(1);
   });
 });
 

@@ -271,22 +271,31 @@ router.delete("/benchmark/agent-marks/:markId", async (req, res): Promise<void> 
     return;
   }
 
-  const [deleted] = await db
-    .delete(agentMarksTable)
-    .where(eq(agentMarksTable.id, parsedParams.data.markId))
-    .returning();
+  // R-24b: the audit row is the only copy of a deleted mark -- the note a
+  // human wrote while reading a call -- so the delete and its audit insert
+  // land together or not at all (the R-24a pattern).
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(agentMarksTable)
+      .where(eq(agentMarksTable.id, parsedParams.data.markId))
+      .returning();
+    if (!row) return undefined;
+    await writeAudit(
+      {
+        entityType: "agent_mark",
+        entityId: row.id,
+        actorLabel: actorFromRequest(req),
+        action: "delete",
+        beforeState: serializeMark(row),
+      },
+      tx,
+    );
+    return row;
+  });
   if (!deleted) {
     res.status(404).json({ error: "Agent mark not found" });
     return;
   }
-
-  await writeAudit({
-    entityType: "agent_mark",
-    entityId: deleted.id,
-    actorLabel: actorFromRequest(req),
-    action: "delete",
-    beforeState: serializeMark(deleted),
-  });
 
   res.status(204).end();
 });
