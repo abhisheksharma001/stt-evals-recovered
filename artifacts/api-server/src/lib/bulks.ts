@@ -880,24 +880,29 @@ export async function createBulkFromCriteria(input: {
       }
       throw err;
     }
+    // R-24c: in the same transaction as the eviction above. This row is the
+    // only record that `evicted` ever existed -- written after the commit, a
+    // failed insert left the oldest bulk gone with nothing saying so.
+    await writeAudit(
+      {
+        entityType: "bulk",
+        entityId: inserted.id,
+        actorLabel: input.actorLabel,
+        action: "create",
+        afterState: {
+          name: inserted.name,
+          status: inserted.status,
+          callCount: callIds.length,
+          excludedRetentionExpiredCount,
+          estimatedCostCents,
+          estimatedSttCostCents,
+          estimatedAgentCostCents,
+          evictedBulkId: evicted,
+        },
+      },
+      tx,
+    );
     return { bulk: inserted, evictedBulkId: evicted };
-  });
-
-  await writeAudit({
-    entityType: "bulk",
-    entityId: bulk.id,
-    actorLabel: input.actorLabel,
-    action: "create",
-    afterState: {
-      name: bulk.name,
-      status: bulk.status,
-      callCount: callIds.length,
-      excludedRetentionExpiredCount,
-      estimatedCostCents,
-      estimatedSttCostCents,
-      estimatedAgentCostCents,
-      evictedBulkId,
-    },
   });
 
   if (bulk.status === "draft") {
