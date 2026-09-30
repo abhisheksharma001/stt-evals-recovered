@@ -6232,6 +6232,52 @@ copy of something (gold clear first), leave the rest until that shape is proven.
 Nothing here is fixed until that call is made, because either choice is easy to write and
 only one of them is right.
 
+**Ranked 2026-09-30, the 27 sites left after R-24a/b/c** (line numbers as of `0245d4f`).
+Ranked by what is lost for good when the audit insert fails, not by how easy the fix is.
+The six `backfill-*.ts` scripts also call `writeAudit`; they are one-off operator scripts,
+not among the 30, and are not ranked.
+
+*Tier A — an update whose audit `beforeState` is the only copy of what it overwrote.* Same
+class as R-24a/b. One step each, in this order:
+
+1. `artifacts/api-server/src/routes/agent-marks.ts:255` — `PATCH /benchmark/agent-marks/:markId`.
+   Overwrites `note`, the text a human wrote while reading a call. **R-24d.**
+2. `artifacts/api-server/src/routes/benchmark.ts:1131` — `PATCH /benchmark/providers/:providerId`.
+   Overwrites `configNote` (human text), `costPerMinute` and `manuallyDisabled`.
+3. `artifacts/api-server/src/routes/watch.ts:196` — `PATCH /benchmark/watch-schedules/:scheduleId`.
+   Overwrites the schedule, including its spend caps (`dailyCapCents`, `monthlyCapCents`).
+
+*Tier B — provider or model work starts before the audit is written.* A transaction cannot
+undo a provider call, so R-24's shape does not fix these; a 500 here also invites a second
+click that spends again. **Not stepped: needs its own grill** (for example: write the run
+rows and the audit in one transaction, then fire the work after commit).
+`artifacts/api-server/src/lib/bulks.ts:992` (`launchBulk`),
+`artifacts/api-server/src/lib/bulks.ts:1085` (`retryBulkFailedCells`),
+`artifacts/api-server/src/routes/bulks.ts:942` (template launch),
+`artifacts/api-server/src/routes/watch.ts:253` (run now),
+`artifacts/api-server/src/lib/run-executor.ts:947` (end of a run's execution, in the
+background, so no caller sees the 500),
+`artifacts/api-server/src/routes/benchmark.ts:1637` (analyze-failure: the model call is
+paid before the diagnosis is saved; the save and the audit could share a transaction, the
+spend could not).
+
+*Tier C — the entity itself keeps the fact; a lost audit row loses who and when, and the
+caller is told a success failed.* R-24's shape fits; lowest value, so last, and one step
+each only once Tier A is done. Creates: `routes/benchmark.ts:389` (call),
+`lib/vapi-import.ts:350` (Vapi import), `routes/benchmark.ts:955` and `:1085` (provider,
+model enable), `routes/benchmark.ts:1353` (run -- the audit is before the run executes, so
+a transaction here does prevent the orphan pending run), `routes/bulks.ts:834` (template),
+`routes/watch.ts:137` (schedule), `routes/agent-marks.ts:161` (mark). Actions:
+`routes/benchmark.ts:649` and `:680` (de-id attestations; both approver labels are on the
+call row), `routes/benchmark.ts:1460` (run archive), `routes/benchmark.ts:1257` (settings --
+the audit carries no `beforeState`, so the old values are lost whether it lands or not;
+that is its own gap, not R-24's), `lib/bulks.ts:1126` (cancel), `routes/agent.ts:169` and
+`:213` (scan approve, reject). All paths under `artifacts/api-server/src/`.
+
+*Out:* `routes/benchmark.ts:607` (`PATCH /benchmark/calls/:callId`, the gold-clear route --
+no gold work), and the two `auditOrLog` sites in `lib/agent-verify.ts` (T-37's swallow is
+correct there: the row is a record OF the scan).
+
 **Must not:** wrap all 30 sites "for now"; treat the 500-after-commit as the whole bug,
 when the lost audit row is the half that cannot be retried.
 
@@ -6310,7 +6356,9 @@ anything in `auditOrLog`; spend anything.
 
 ### R-24c — Creating a bulk writes its audit row in the same transaction as the eviction
 
-**Status:** built 2026-09-30 (branch `r24c-bulk-create-audit-tx`, worktree). Spent nothing.
+**Status:** `done` 2026-09-30 (PR #242, `0245d4f`), deployed `0245d4f87e2a`. Not exercised
+live on purpose -- it would need a real bulk created at the cap, which evicts a real bulk;
+the integration case is the proof. Spent nothing.
 Found while choosing R-24b (see its row). Learned: every value the audit row carries is known
 before the transaction ends -- the only one that was not is the new bulk's id, and that comes
 back from the insert inside it -- so the move is the whole change.
@@ -6336,6 +6384,37 @@ after its insert ran; full `pnpm run test:integration` green. Break test: move t
 back after the transaction -> that case alone fails.
 **Must not:** touch any other audit site, the eviction rules or `MAX_LIVE_BULKS`; change
 `writeAudit`; wrap anything in `auditOrLog`; spend anything.
+
+---
+
+### R-24d — Editing an agent mark writes its audit row in the same transaction
+
+**Status:** `todo`. Top of R-24's Tier A (see its ranking): the audit row's `beforeState`
+is the only copy of the note the edit overwrote -- the same note R-24b protected on delete.
+**PR:** one, in a worktree (R-24's standing rule).
+**Depends on:** R-24a (the optional executor on `writeAudit`). **Research:** none.
+**Files:** `artifacts/api-server/src/routes/agent-marks.ts` (`PATCH /benchmark/agent-marks/:markId`),
+`artifacts/api-server/src/routes/__integration__/agent-marks.int.test.ts`.
+**Today:** the route reads the mark (`before`), validates, updates it with `.returning()`,
+then calls `writeAudit` with `serializeMark(before)` as `beforeState`. If that insert throws,
+the note is already overwritten, the caller gets a 500 saying it was not, and the old note
+is gone.
+**Change:** run the update and the audit insert inside one `db.transaction`, passing `tx` to
+`writeAudit` -- R-24b's DELETE route in the same file is the pattern. The `before` read, the
+404 and every 400 stay where they are, before the transaction. Same audit fields, same
+values, same 200 response.
+**Acceptance:** WHEN the audit insert fails during an agent-mark edit THEN the mark SHALL
+still hold its old note AND the response SHALL be an error; WHEN it succeeds THEN the mark
+SHALL hold the new note AND exactly one `agent_mark` / `update` audit row SHALL hold the
+old note in `beforeState`.
+**Verify:** `pnpm run typecheck` clean; `TEST_DATABASE_URL=... pnpm exec vitest run --config
+./vitest.integration.config.ts src/routes/__integration__/agent-marks.int.test.ts` (in
+`artifacts/api-server`) passes, including a new case that wraps the real `writeAudit`
+(R-24b's case in the same file shows how), throws after its insert ran, and reads the mark
+back. Break test: move the audit call back after the transaction -> that case alone fails.
+**Must not:** touch any other audit site; move the `before` read into the transaction (the
+read-then-write gap is older than R-24 and not this step); change `writeAudit`; wrap
+anything in `auditOrLog`; spend anything.
 
 ---
 
