@@ -6308,6 +6308,37 @@ anything in `auditOrLog`; spend anything.
 
 ---
 
+### R-24c — Creating a bulk writes its audit row in the same transaction as the eviction
+
+**Status:** built 2026-09-30 (branch `r24c-bulk-create-audit-tx`, worktree). Spent nothing.
+Found while choosing R-24b (see its row). Learned: every value the audit row carries is known
+before the transaction ends -- the only one that was not is the new bulk's id, and that comes
+back from the insert inside it -- so the move is the whole change.
+**PR:** one, in a worktree (R-24's standing rule).
+**Depends on:** R-24a (the optional executor on `writeAudit`). **Research:** none.
+**Files:** `artifacts/api-server/src/lib/bulks.ts` (`createBulkFromCriteria`),
+`artifacts/api-server/src/routes/__integration__/bulk-eviction.int.test.ts`.
+**Today:** at `MAX_LIVE_BULKS` the transaction deletes the oldest bulk and inserts the new
+one; after it commits, `writeAudit` records `bulk` / `create` with `evictedBulkId`. If that
+insert throws, the oldest bulk is already gone, the caller gets a 500, and nothing anywhere
+says a bulk was evicted. The row holds only the id, not a copy -- which is why this ranked
+after R-24b.
+**Change:** call `writeAudit(..., tx)` inside the transaction, after the insert. Same fields,
+same values. `launchBulk` stays after the commit.
+**Acceptance:** WHEN the audit insert fails while creating a bulk at the cap THEN the oldest
+bulk SHALL still exist AND the new bulk SHALL NOT AND the response SHALL be an error; WHEN
+it succeeds THEN the oldest SHALL be gone AND exactly one `bulk` / `create` audit row SHALL
+name it as `evictedBulkId`.
+**Verify:** `pnpm run typecheck` clean; `TEST_DATABASE_URL=... pnpm exec vitest run --config
+./vitest.integration.config.ts src/routes/__integration__/bulk-eviction.int.test.ts` (in
+`artifacts/api-server`) passes, including the case that wraps the real `writeAudit` and throws
+after its insert ran; full `pnpm run test:integration` green. Break test: move the audit call
+back after the transaction -> that case alone fails.
+**Must not:** touch any other audit site, the eviction rules or `MAX_LIVE_BULKS`; change
+`writeAudit`; wrap anything in `auditOrLog`; spend anything.
+
+---
+
 ### R-25 — B-21 is real, and both the register's fix and the vendor's docs would get it wrong
 
 **Status:** split 2026-09-26 into R-25a (the gate, done) and R-25b (the 16 rows).
@@ -8309,7 +8340,9 @@ cards below the list.
 
 ### R-58 — The watch tick's bulk selection uses the tick's own clock
 
-**Status:** built 2026-09-29 (branch `r58-watch-tick-clock`, worktree). Spent nothing.
+**Status:** `done` 2026-09-30 -- PR #241, merged `435d9ed`, deployed `435d9ed10001`; CI on
+`main` green again on that commit. Spent nothing. Break tests: `now` dropped from the create
+call fails 5 cases, from the preview call 2 -- both calls are held.
 Learned: the tick reaches `createBulkFromCriteria` through a private helper,
 `createBulkWithName` (the name-collision retry in `watch-tick.ts`), so `now` is threaded
 through that too -- same file, no new one. No test changed: the suite went 7/11 -> 11/11

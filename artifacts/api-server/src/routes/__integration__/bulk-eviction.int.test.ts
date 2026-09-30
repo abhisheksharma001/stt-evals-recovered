@@ -23,13 +23,22 @@
 // (vitest.integration.config.ts), so the only table this can reach is the
 // throwaway one, and files run one at a time (`fileParallelism: false`) with
 // each file cleaning up after itself.
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { and, eq } from "drizzle-orm";
 import request from "supertest";
-import { db, pool, benchmarkAgentScansTable, benchmarkBulksTable } from "@workspace/db";
+import { db, pool, auditLogTable, benchmarkAgentScansTable, benchmarkBulksTable } from "@workspace/db";
+import { writeAudit } from "../../lib/audit";
 import { MAX_LIVE_BULKS } from "../../lib/bulks";
 import { server } from "./server";
 import { Fixtures } from "./fixtures";
+
+// R-24c: the real writeAudit, wrapped so one case can make it fail AFTER its
+// insert ran -- which proves the audit row rolls back with the eviction, not
+// only that a throw is handled. Every other call passes straight through.
+vi.mock("../../lib/audit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/audit")>();
+  return { ...actual, writeAudit: vi.fn(actual.writeAudit) };
+});
 
 const fx = new Fixtures();
 
@@ -158,5 +167,69 @@ describe("POST /api/benchmark/bulks at the bulk cap", () => {
     expect(live).toHaveLength(10);
     const liveIds = new Set(live.map((b) => b.id));
     for (const b of seeded) expect(liveIds.has(b.id)).toBe(true);
+  });
+
+  // R-24c. The `bulk` / `create` audit row is the only record that the
+  // evicted bulk ever existed -- it names `evictedBulkId`. It used to be
+  // written after the eviction committed, so a failed insert left the oldest
+  // bulk gone, a 500 saying nothing happened, and no record anywhere.
+  it("keeps the oldest bulk when the create's audit row fails to land", async () => {
+    const [doomed] = await seedBulks(MAX_LIVE_BULKS);
+
+    const accountLabel = `fx-evict-audit-${fx.suffix}`;
+    await fx.call({ durationSeconds: 60, sourceAccountLabel: accountLabel });
+    const provider = await fx.provider({ costPerMinute: 0.5 });
+    const name = `audit fails at the cap ${fx.suffix}`;
+    const create = () =>
+      request(server)
+        .post("/api/benchmark/bulks")
+        .set("x-actor", fx.actor)
+        .send({
+          name,
+          // M-5/M-16, same reasons as the first case.
+          criteria: { accountLabel, requireCustomerAudio: false, minCustomerWords: 0 },
+          providerIds: [provider.id],
+          minDurationSeconds: 30,
+          maxDurationSeconds: 300,
+        });
+    const createRows = async () =>
+      (
+        await db
+          .select({ afterState: auditLogTable.afterState })
+          .from(auditLogTable)
+          .where(
+            and(
+              eq(auditLogTable.entityType, "bulk"),
+              eq(auditLogTable.action, "create"),
+              eq(auditLogTable.actorLabel, fx.actor),
+            ),
+          )
+      ).filter((r) => (r.afterState as { evictedBulkId?: string } | null)?.evictedBulkId === doomed.id);
+
+    const actual = (await vi.importActual<typeof import("../../lib/audit")>("../../lib/audit")).writeAudit;
+    vi.mocked(writeAudit).mockImplementationOnce(async (entry, executor) => {
+      await actual(entry, executor);
+      throw new Error("R-24c test: audit insert failed");
+    });
+
+    const failed = await create();
+    expect(failed.status).toBe(500);
+
+    // Nothing moved: the oldest is still there, the new one never landed,
+    // and no audit row claims an eviction that did not happen.
+    const [kept] = await db.select().from(benchmarkBulksTable).where(eq(benchmarkBulksTable.id, doomed.id));
+    expect(kept).toBeDefined();
+    const named = await db.select().from(benchmarkBulksTable).where(eq(benchmarkBulksTable.name, name));
+    expect(named).toHaveLength(0);
+    expect(await db.select({ id: benchmarkBulksTable.id }).from(benchmarkBulksTable)).toHaveLength(MAX_LIVE_BULKS);
+    expect(await createRows()).toHaveLength(0);
+
+    // A retry goes through: the oldest goes, and exactly one audit row says so.
+    const retried = await create();
+    expect(retried.status).toBe(201);
+    fx.adoptBulk(retried.body.id);
+    const gone = await db.select().from(benchmarkBulksTable).where(eq(benchmarkBulksTable.id, doomed.id));
+    expect(gone).toHaveLength(0);
+    expect(await createRows()).toHaveLength(1);
   });
 });
