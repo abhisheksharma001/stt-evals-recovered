@@ -42,6 +42,8 @@ export interface BenchmarkCall {
   /** @nullable */
   sourceAssistantId?: string | null;
   /** @nullable */
+  sourceAssistantVersion?: string | null;
+  /** @nullable */
   sourceStartedAt?: Date | null;
   /** @nullable */
   sourceTranscriberProvider?: string | null;

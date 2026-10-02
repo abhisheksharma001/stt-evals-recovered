@@ -1769,6 +1769,9 @@ components:
         sourceCallId: { type: ["string", "null"] }
         sourceAccountLabel: { type: ["string", "null"] }
         sourceAssistantId: { type: ["string", "null"] }
+        # CV-1: Vapi's `assistantVersion` for the call, verbatim (e.g. "v5").
+        # Null means Vapi did not say, or the row predates the column.
+        sourceAssistantVersion: { type: ["string", "null"] }
         sourceStartedAt: { type: ["string", "null"], format: date-time }
         # Best-effort: which STT model produced draftTranscript, per Vapi's
         # own assistant config at import time. Null when Vapi didn't echo it

@@ -79,3 +79,29 @@ describe("POST /api/benchmark/vapi/import", () => {
     expect(res.body.error).not.toMatch(/Unknown or unconfigured/);
   });
 });
+
+// CV-1: the half of the acceptance sentence that holds without Vapi on the
+// socket. The importer writes `call.assistantVersion ?? null` into this column
+// (lib/vapi-import.ts); here two rows are planted as the importer would leave
+// them and read back through GET /api/benchmark/calls, proving the column, the
+// serializer and the spec carry the value verbatim and keep null as null. The
+// write itself is proved by the live import in the register's Verify.
+describe("GET /api/benchmark/calls -- sourceAssistantVersion (CV-1)", () => {
+  it("returns the imported version verbatim, and null when Vapi did not say", async () => {
+    const versioned = await fx.call({
+      sourceProvider: "vapi",
+      sourceCallId: `fx-vapi-v5-${fx.suffix}`,
+      sourceAssistantVersion: "v5",
+    });
+    const unversioned = await fx.call({
+      sourceProvider: "vapi",
+      sourceCallId: `fx-vapi-none-${fx.suffix}`,
+    });
+
+    const res = await request(server).get("/api/benchmark/calls");
+    expect(res.status).toBe(200);
+    const byId = new Map(res.body.map((c: { id: string }) => [c.id, c]));
+    expect(byId.get(versioned.id)).toMatchObject({ sourceAssistantVersion: "v5" });
+    expect(byId.get(unversioned.id)).toMatchObject({ sourceAssistantVersion: null });
+  });
+});
