@@ -11635,8 +11635,9 @@ spends nothing); write to Vapi; touch the nightly import cap (M-17, stays 0).
 **PR:** one.
 **Depends on:** CV-1 (the column, and the imported calls).
 **Research:** none.
-**Files:** `artifacts/api-server/src/lib/compare-versions.ts` (new; the one reader),
-`artifacts/api-server/src/lib/compare-versions.test.ts` (new), 
+**Files:** artifacts/api-server/src/lib/compare-versions.ts (new; the one reader — written
+plain, not backticked, because it does not exist yet and CI checks backticked paths),
+artifacts/api-server/src/lib/compare-versions.test.ts (new),
 `artifacts/api-server/src/routes/benchmark.ts` (one GET), `lib/api-spec/openapi.yaml`.
 **Today:** the outcome fields exist per call — `source_success_evaluation` (T-11,
 verbatim `"true"`/`"false"`/null), `source_ended_reason` (T-11; `assistant-forwarded-call`
