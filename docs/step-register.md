@@ -11553,3 +11553,126 @@ render case. Restored with
 **Must not:** change what eviction deletes; touch `BULK_COST_THRESHOLD_CENTS` or any
 other constant in the file; make the cap env-tunable (a number nobody re-derives is a
 number somebody sets to 1,000).
+
+---
+
+## Part CV — Compare versions: one agent, one change, before vs after
+
+**Why this part exists (2026-10-02).** Land And Apartment moved three production
+agents from Deepgram to AssemblyAI (assistant v3 → v4 on 09-24, v4 → v5 universal-3-5-pro
+on 09-28). A one-off script outside this repo (`~/vapi-stt-compare/vapi_stt_compare.py`)
+measured it: WER against a Whisper reference fell 26.2 % → 19.0 % v3 → v5 (bootstrap range
+−7 % … +48 %, n = 352 calls over three agents), successEvaluation true 90.2 % → 95.9 %
+(p = .04). The tool could not do this: it never stores WHICH assistant version answered a
+call, and it has no before/after read of the outcome fields it already stores. Decided by
+Abhishek 2026-10-02 ("lets do it"): build the comparison first, vocabulary tuning after,
+production auto-apply last and only with the client's OK. Order matters inside this part:
+Vapi keeps 14 days of calls, so every v3 call (09-17 … 09-23) is gone by 2026-10-07.
+CV-1 ships first and imports those calls in its own Verify.
+
+Not stepped yet, each needs its own grill: CV-3 (a booking signal per call — read
+`APPFOLIO_CREATE_SHOWING` tool results out of `artifact.messages`, the tool-result shape
+is only known from the LAA agents); CV-4 (a Results-page view of CV-2); CV-5 (per-version
+production disagreement via M-8a, needs a customer-channel bulk per version — spends).
+
+### CV-1 — Store the assistant version that answered each imported call
+
+**Status:** todo.
+
+**PR:** one.
+**Depends on:** nothing.
+**Research:** none. `assistantVersion` was read live on 2026-10-01/02 on all 352 Vapi
+calls of the three LAA assistants (string, e.g. `"v5"`); confidence high that the field
+exists on `GET /call`, medium on its shape being stable — so it is stored verbatim as
+text, never parsed.
+**Files:** `lib/db/src/schema/benchmark-calls.ts` (one column),
+`artifacts/api-server/src/lib/vapi.ts` (`VapiCall.assistantVersion?: string`),
+`artifacts/api-server/src/lib/vapi-import.ts` (the insert, beside `sourceAssistantId`),
+`artifacts/api-server/src/lib/serialize-call.ts` (expose it), `lib/api-spec/openapi.yaml`
+(`BenchmarkCall.sourceAssistantVersion`, nullable string),
+`artifacts/api-server/src/routes/__integration__/vapi-import.int.test.ts` (one case).
+**Today:** `benchmark_calls` carries `source_assistant_id` but nothing says which VERSION
+of that assistant took the call. The corpus holds 1,376 calls; the 353 Land And Apartment
+calls stop at 2026-09-09. The 352 calls of the Deepgram → AssemblyAI change (09-17 …
+10-02, assistants `8a0bd090…`, `15701095…`, `2e7119e0…`; 31 of `8a0bd090…`'s OLDER calls
+are already in the corpus) are not imported. `GET /api/benchmark/calls` has no field
+containing "Version".
+**Change:** one nullable text column `source_assistant_version` on `benchmark_calls`,
+written at import from `call.assistantVersion ?? null`, verbatim. Exposed on
+`BenchmarkCall` as `sourceAssistantVersion`. Null means "Vapi did not say" (or imported
+before CV-1) and is never read as a version. No backfill: the saved `<callId>.artifact.json`
+sidecars hold the artifact object only, not the call's top-level fields, so the value
+cannot be recovered from disk, and the 353 older LAA calls are past Vapi's retention.
+**Acceptance:** WHEN a Vapi call whose `assistantVersion` is `"v5"` is imported THEN
+`GET /api/benchmark/calls` SHALL return that row with `sourceAssistantVersion` equal to
+`"v5"`; AND WHEN the call carries no `assistantVersion` THEN the field SHALL be null.
+**Verify:**
+```
+pnpm run typecheck
+pnpm --filter @workspace/db run push
+cd artifacts/api-server && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/stt_evals_test pnpm run test:integration
+```
+A pass: typecheck clean; `vapi-import.int.test.ts` gains exactly one case and is green.
+Then deploy, then the live import that is this step's real proof — account
+`land-and-apartment` (label "Land And Apartment", `GET /api/benchmark/vapi/accounts`),
+each of the three assistant ids above, `startDate` 2026-09-17, `endDate` now, via
+`POST /api/benchmark/vapi/preview` first (read-only, says how many are new) and then
+`POST /api/benchmark/vapi/import` with the same body. After it:
+```
+curl -s localhost:8177/api/benchmark/calls | jq '[.[]|select(.sourceAssistantVersion!=null)]|group_by(.sourceAssistantVersion)|map({v:.[0].sourceAssistantVersion,n:length})'
+```
+shows at least two distinct versions with n > 0 each, and the total of new rows equals
+the preview's "new" count. Record the per-version counts in this row when done — they are
+the denominators CV-2 will show.
+**Must not:** parse or normalise the version string; infer a version from dates or from
+the transcriber model; launch a bulk, run or any provider call (import caches audio and
+spends nothing); write to Vapi; touch the nightly import cap (M-17, stays 0).
+
+### CV-2 — One read: an assistant's calls split by version, outcomes side by side
+
+**Status:** todo.
+
+**PR:** one.
+**Depends on:** CV-1 (the column, and the imported calls).
+**Research:** none.
+**Files:** `artifacts/api-server/src/lib/compare-versions.ts` (new; the one reader),
+`artifacts/api-server/src/lib/compare-versions.test.ts` (new), 
+`artifacts/api-server/src/routes/benchmark.ts` (one GET), `lib/api-spec/openapi.yaml`.
+**Today:** the outcome fields exist per call — `source_success_evaluation` (T-11,
+verbatim `"true"`/`"false"`/null), `source_ended_reason` (T-11; `assistant-forwarded-call`
+= transferred) — but nothing groups them by anything, and the only before/after in the
+tool is Watch's trailing-30-day baseline (`docs/PRD-v8-watch.md`), which compares days,
+not versions. The one-off script's numbers (v3 → v5: success 90.2 → 95.9 %, transfer
+63.4 → 70.3 %) live in a log file on a laptop.
+**Change:** `GET /api/benchmark/compare-versions?assistantId=<id>` returns, for that
+assistant, one block per distinct `sourceAssistantVersion` ordered by first
+`sourceStartedAt`: `version`, `calls`, `firstCallAt`, `lastCallAt`,
+`success: { true, false, absent }` (three counts — absent is reported, never folded into
+false), `forwarded` (count of `endedReason === "assistant-forwarded-call"`), and
+`endedReasons` (count per distinct reason). Plus one `delta` object between the OLDEST
+and NEWEST version present: for success rate (denominator = true + false) and forwarded
+rate (denominator = calls), the difference in percentage points and a 95 % range
+(two-proportion, normal approximation — the same test the one-off script used), and
+`tooFew: true` when either side has under 20 calls, in which case the range is still
+returned and the UI (CV-4) must say so. Calls with a null version are counted once in
+`unversioned` and are in no block. `?assistantId` missing → 400. No UI in this step.
+**Acceptance:** WHEN the three LAA assistants' calls are in the corpus with versions
+THEN the read for `8a0bd090…` SHALL return one block per version present with `calls`
+summing to that assistant's versioned call count, `success.true + false + absent`
+equal to `calls` in every block, and a `delta` whose success-rate difference matches
+`(true/(true+false))` of newest minus oldest to within rounding; AND WHEN an assistant
+has only one version THEN `delta` SHALL be null.
+**Verify:**
+```
+pnpm run typecheck
+pnpm --filter @workspace/api-server test
+curl -s "localhost:8177/api/benchmark/compare-versions?assistantId=8a0bd090-5627-46fb-9d70-20cb66d824c1" | jq .
+```
+A pass: unit tests cover absent-not-false, forwarded count, the one-version null delta,
+the tooFew flag at 19 vs 20, and the range formula against one hand-computed case; the
+live curl's per-version `calls` match the CV-1 counts recorded in that row; the success
+delta for `8a0bd090…` is within 1 pp of the script's figure for the same assistant
+(`~/vapi-stt-compare/run_wer3.log`) once the same calls are in both.
+**Must not:** compute or show WER (the tool has no reference for these calls; that is a
+bulk, and a bulk spends); read `prod_*` or disagreement fields (CV-5); treat null
+successEvaluation as false; call Vapi or any provider.
