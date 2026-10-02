@@ -331,6 +331,7 @@ export async function importVapiCalls(
         sourceCallId: call.id,
         sourceAccountLabel: account.label,
         sourceAssistantId: call.assistantId ?? null,
+        sourceAssistantVersion: call.assistantVersion ?? null,
         sourceStartedAt: startedAt ? new Date(startedAt) : null,
         // Best-effort -- null when Vapi doesn't echo the assistant config
         // back on this call. See transcriberOf()'s comment in lib/vapi.ts.

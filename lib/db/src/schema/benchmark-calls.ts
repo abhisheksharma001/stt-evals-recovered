@@ -59,6 +59,10 @@ export const benchmarkCallsTable = pgTable("benchmark_calls", {
   sourceCallId: text("source_call_id"),
   sourceAccountLabel: text("source_account_label"),
   sourceAssistantId: text("source_assistant_id"),
+  // CV-1: which VERSION of that assistant answered the call, verbatim from
+  // Vapi's `assistantVersion` (e.g. "v5"). Never parsed. Null means Vapi did
+  // not say, or the row was imported before this column existed.
+  sourceAssistantVersion: text("source_assistant_version"),
   sourceStartedAt: timestamp("source_started_at", { withTimezone: true }),
   // Which STT model actually produced draftTranscript, read from Vapi's own
   // assistant config at import time (best-effort -- Vapi's public schema

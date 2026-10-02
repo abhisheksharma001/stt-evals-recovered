@@ -154,6 +154,9 @@ export type VapiCostEntry = {
 export type VapiCall = {
   id: string;
   assistantId?: string;
+  // CV-1: the assistant version that took the call, e.g. "v5". Read live
+  // 2026-10-01/02 on all 352 LAA calls; stored verbatim, never parsed.
+  assistantVersion?: string;
   status?: string;
   // T-11: why the call ended, in Vapi's own vocabulary (e.g.
   // "customer-ended-call", "assistant-forwarded-call", "voicemail",

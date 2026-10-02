@@ -50,6 +50,7 @@ export function serializeCall(
     sourceCallId: call.sourceCallId,
     sourceAccountLabel: call.sourceAccountLabel,
     sourceAssistantId: call.sourceAssistantId,
+    sourceAssistantVersion: call.sourceAssistantVersion,
     sourceStartedAt: call.sourceStartedAt,
     sourceTranscriberProvider: call.sourceTranscriberProvider,
     sourceTranscriberModel: call.sourceTranscriberModel,
