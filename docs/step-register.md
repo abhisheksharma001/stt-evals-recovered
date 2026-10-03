@@ -11568,7 +11568,9 @@ call, and it has no before/after read of the outcome fields it already stores. D
 Abhishek 2026-10-02 ("lets do it"): build the comparison first, vocabulary tuning after,
 production auto-apply last and only with the client's OK. Order matters inside this part:
 Vapi keeps 14 days of calls, so every v3 call (09-17 … 09-23) is gone by 2026-10-07.
-CV-1 ships first and imports those calls in its own Verify.
+CV-1 ships first and imports those calls in its own Verify. (Corrected 2026-10-03: the
+window is rolling, measured from the request day, so 09-17 and 09-18 were already gone
+when CV-1's import ran on 10-03; the v3 rows that survived are counted in CV-1's row.)
 
 Not stepped yet, each needs its own grill: CV-3 (a booking signal per call — read
 `APPFOLIO_CREATE_SHOWING` tool results out of `artifact.messages`, the tool-result shape
@@ -11577,7 +11579,25 @@ production disagreement via M-8a, needs a customer-channel bulk per version — 
 
 ### CV-1 — Store the assistant version that answered each imported call
 
-**Status:** todo.
+**Status:** done 2026-10-03 (PR #245, main 57cfba7, API deployed 57cfba7ad820). Live
+import ran the same day, account `land-and-apartment`, `startDate` 2026-09-19 (see the
+retention note above), `endDate` 2026-10-04, one preview + one import per assistant:
+`8a0bd090…` 168 previewed → 166 imported (2 no recording); `15701095…` 87 → 84 (3);
+`2e7119e0…` 91 → 89 (2). Every imported count equals the preview's "new" count minus the
+no-recording skips. `GET /api/benchmark/calls` now carries 339 rows with a version, all
+verbatim `"v3"` / `"v4"` / `"v5"`, none parsed. **Per-version counts (CV-2's
+denominators):** total v3 97, v4 83, v5 159; by assistant `8a0bd090…` v3 48 / v4 39 /
+v5 79, `15701095…` v3 19 / v4 23 / v5 42, `2e7119e0…` v3 30 / v4 21 / v5 38.
+Learned: (1) the integration suite cannot reach the import write without Vapi on the
+socket, so the one test case plants rows and reads them back through the route; the
+write is proved by this import, not by a test. (2) Vapi's retention is a rolling
+14-day window measured at request time, not a date on a calendar: the 09-17/18 calls
+were already refused on 10-03 ("Please adjust your date filter to Sat Sep 19 2026 or
+later"), so the v3 count here is 97 of the 352-call study's v3 share, not all of it.
+(3) Preview over the whole account with `limit` 500 answers Vapi 504; per-assistant
+`limit` 400 works. (4) `scripts/deploy-api.sh` refuses an untracked folder as a dirty
+tree, and a folder the local `.gitignore` hides cannot be stashed in the same
+`git stash push -u` as the `.gitignore` change itself — two stashes.
 
 **PR:** one.
 **Depends on:** nothing.
